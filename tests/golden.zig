@@ -1,0 +1,1131 @@
+//! Golden screenshot tests: render real screens through the production
+//! Skia pipeline and compare gray8 output byte-for-byte against committed
+//! PGM files. Run with `zig build test -Dskia -Dgolden`.
+//! Baselines are explicit: add -Dupdate-goldens to create missing goldens
+//! or rewrite mismatched ones, then review (any PGM viewer) and commit.
+//! Without it a missing golden fails — CI can never mint a baseline —
+//! and a mismatch lands a .actual.pgm next to the golden.
+
+const std = @import("std");
+const build_options = @import("build_options");
+const h = @import("nokre");
+
+const skia = h.render.skia;
+const golden = h.testing.golden;
+
+fn expectGolden(gpa: std.mem.Allocator, pixels: []const u8, w: usize, h_px: usize, sub_path: []const u8) !void {
+    // -Dupdate-goldens reaches the library here: the flag is a property
+    // of this build, not of any one test, so every assertion applies it.
+    golden.update = build_options.update_goldens;
+    try golden.expectMatches(gpa, pixels, w, h_px, sub_path);
+}
+
+fn renderGolden(harness: *h.testing.Harness, comptime name: []const u8) !void {
+    const gpa = std.testing.allocator;
+    harness.app.setMeasurer(skia.measurer());
+
+    var surface = try skia.Surface.init(harness.app.viewport.w, harness.app.viewport.h, 1);
+    defer surface.deinit();
+    harness.renderTo(surface.canvas());
+
+    try expectGolden(gpa, surface.pixels(), surface.pixelWidth(), surface.pixelHeight(), "tests/goldens/" ++ name ++ ".pgm");
+}
+
+fn buildElements(_: ?*anyopaque, app: *h.App) !void {
+    const tree = &app.tree;
+    const root = tree.rootId();
+    _ = try tree.append(root, .{ .heading = .{ .content = "Elements", .level = .h1 } });
+    _ = try tree.append(root, .{ .heading = .{ .content = "Section", .level = .h2 } });
+    _ = try tree.append(root, .{ .heading = .{ .content = "Subsection", .level = .h3 } });
+    _ = try tree.append(root, .{ .text = .{ .content = "Prose text that is long enough to wrap onto a second line inside this viewport." } });
+    _ = try tree.append(root, .{ .text = .{ .content = "mono: fn main() !void", .style = .{ .family = .mono } } });
+    _ = try tree.append(root, .{ .divider = .{} });
+    const box = try tree.append(root, .{ .box = .{} });
+    _ = try tree.append(box, .{ .text = .{ .content = "Boxed." } });
+    _ = try tree.append(root, .{ .button = .{ .label = "Press me" } });
+    _ = try tree.append(root, .{ .button = .{ .label = "Disabled", .disabled = true } });
+    _ = try tree.append(root, .{ .toggle = .{ .label = "On", .on = true } });
+}
+
+test "golden: elements screen" {
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 400, .h = 480 }, null, buildElements);
+    defer harness.deinit();
+    try renderGolden(&harness, "elements");
+}
+
+fn buildForm(_: ?*anyopaque, app: *h.App) !void {
+    const tree = &app.tree;
+    const root = tree.rootId();
+    _ = try tree.append(root, .{ .heading = .{ .content = "Form", .level = .h1 } });
+    _ = try tree.append(root, .{ .text_input = .{ .label = "Name", .placeholder = "Your name" } });
+    _ = try tree.append(root, .{ .text_input = .{ .label = "City", .value = "Berlin", .cursor = 6 } });
+    _ = try tree.append(root, .{ .button = .{ .label = "Submit" } });
+}
+
+fn buildSpans(_: ?*anyopaque, app: *h.App) !void {
+    const tree = &app.tree;
+    const root = tree.rootId();
+    _ = try tree.append(root, .{ .heading = .{ .level = .h1, .spans = &.{
+        .{ .text = "Rokovski " },
+        .{ .text = "Feedback", .strong = true },
+    } } });
+    _ = try tree.append(root, .{
+        .text = .{
+            .spans = &.{
+                .{ .text = "Plain, " },
+                .{ .text = "strong", .strong = true },
+                .{ .text = ", " },
+                .{ .text = "emphasis", .emphasis = true },
+                .{ .text = ", " },
+                .{ .text = "both", .strong = true, .emphasis = true },
+                .{ .text = ", and " },
+                .{ .text = "code()", .code = true },
+                .{ .text = ", " },
+                // A drawn rule, not a face: it must sit through the lowercase
+                // band and stop exactly where the run does, on both lines when
+                // one wraps.
+                .{ .text = "struck through", .strike = true },
+                .{ .text = " — wrapping across faces onto further lines without breaking words." },
+            },
+        },
+    });
+    _ = try tree.append(root, .{ .text = .{ .spans = &.{
+        .{ .text = "Prose with " },
+        .{ .text = "bold italic", .strong = true, .emphasis = true },
+        .{ .text = " and a " },
+        .{ .text = "dark run", .ink = .dark },
+        .{ .text = "." },
+    } } });
+    _ = try tree.append(root, .{ .text = .{ .style = .{ .family = .mono }, .spans = &.{
+        .{ .text = "mono " },
+        .{ .text = "bold", .strong = true },
+        .{ .text = " " },
+        .{ .text = "italic", .emphasis = true },
+    } } });
+}
+
+test "golden: span faces across families" {
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 400, .h = 320 }, null, buildSpans);
+    defer harness.deinit();
+    try renderGolden(&harness, "spans");
+}
+
+test "golden: form with focused input caret" {
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 280 }, null, buildForm);
+    defer harness.deinit();
+    // Focus the second input so the golden pins caret + focus ring drawing.
+    try harness.pressKey(.tab, .{});
+    try harness.pressKey(.tab, .{});
+    try renderGolden(&harness, "form-focused");
+}
+
+fn buildPassword(_: ?*anyopaque, app: *h.App) !void {
+    const tree = &app.tree;
+    const root = tree.rootId();
+    _ = try tree.append(root, .{ .heading = .{ .content = "Sign in", .level = .h1 } });
+    _ = try tree.append(root, .{ .text_input = .{
+        .label = "Passphrase",
+        .value = "hunter2",
+        .cursor = 7,
+        .obscured = true,
+    } });
+}
+
+test "golden: obscured input draws a bullet run with the caret after it" {
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 200 }, null, buildPassword);
+    defer harness.deinit();
+    try harness.pressKey(.tab, .{});
+    try renderGolden(&harness, "password");
+}
+
+fn buildGlyphButtons(_: ?*anyopaque, app: *h.App) !void {
+    const tree = &app.tree;
+    const root = tree.rootId();
+    _ = try tree.append(root, .{ .heading = .{ .content = "Cycle", .level = .h1 } });
+    const pager = try tree.append(root, .{ .stack = .{ .axis = .horizontal } });
+    _ = try tree.append(pager, .{ .button = .{ .label = "Previous month", .icon = .chevron_left, .icon_only = true } });
+    _ = try tree.append(pager, .{ .text = .{ .content = "March" } });
+    _ = try tree.append(pager, .{ .button = .{ .label = "Next month", .icon = .chevron_right, .icon_only = true, .disabled = true } });
+}
+
+test "golden: glyph-form buttons flanking words, focused and disabled" {
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 160 }, null, buildGlyphButtons);
+    defer harness.deinit();
+    // Focus the enabled glyph button: pins the ring on the bare square.
+    try harness.pressKey(.tab, .{});
+    try renderGolden(&harness, "glyph-button");
+}
+
+fn buildButtonForms(_: ?*anyopaque, app: *h.App) !void {
+    const tree = &app.tree;
+    const root = tree.rootId();
+    _ = try tree.append(root, .{ .heading = .{ .content = "Emphasis", .level = .h1 } });
+    const pair = try tree.append(root, .{ .stack = .{ .axis = .horizontal } });
+    _ = try tree.append(pair, .{ .button = .{ .label = "Save" } });
+    _ = try tree.append(pair, .{ .button = .{ .label = "Cancel", .secondary = true } });
+    // Icon pill and icon-only side by side; icon-only has no emphasis
+    // variants by design (no pill to outline — append rejects it).
+    const icon_row = try tree.append(root, .{ .stack = .{ .axis = .horizontal } });
+    _ = try tree.append(icon_row, .{ .button = .{ .label = "Add reminder", .icon = .alarm_clock_plus } });
+    _ = try tree.append(icon_row, .{ .button = .{ .label = "Next month", .icon = .chevron_right, .icon_only = true } });
+    const dimmed = try tree.append(root, .{ .stack = .{ .axis = .horizontal } });
+    _ = try tree.append(dimmed, .{ .button = .{ .label = "Filled off", .disabled = true } });
+    _ = try tree.append(dimmed, .{ .button = .{ .label = "Outlined off", .secondary = true, .disabled = true } });
+}
+
+test "golden: button emphasis — filled, outlined, icon pill, icon-only, disabled pair" {
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 280 }, null, buildButtonForms);
+    defer harness.deinit();
+    // Focus the secondary: pins the ring against the outline, not a fill.
+    try harness.pressKey(.tab, .{});
+    try harness.pressKey(.tab, .{});
+    try renderGolden(&harness, "button-forms");
+}
+
+test "golden: the ring around a filled button keeps its gap" {
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 280 }, null, buildButtonForms);
+    defer harness.deinit();
+    // The other half of the pair: focus the filled pill. Two rounded
+    // shapes at the same corner is where an abutting ring used to leave
+    // an anti-aliasing seam, so the gap needs pinning here specifically.
+    try harness.pressKey(.tab, .{});
+    try renderGolden(&harness, "button-focused-fill");
+}
+
+fn buildActionRow(_: ?*anyopaque, app: *h.App) !void {
+    const tree = &app.tree;
+    const root = tree.rootId();
+    _ = try tree.append(root, .{ .heading = .{ .content = "Draft", .level = .h1 } });
+    const row = try tree.append(root, .{ .stack = .{ .axis = .horizontal } });
+    for ([_][]const u8{ "Publish", "Save draft", "Duplicate", "Archive", "Delete" }) |label| {
+        _ = try tree.append(row, .{ .button = .{ .label = label } });
+    }
+}
+
+test "golden: an overflowing button row folds its tail behind More" {
+    // Too narrow for five actions: pins the pills that stay standing,
+    // the outlined control at the row's trailing end, and the fact that
+    // nothing is left clipped at the edge.
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 200 }, null, buildActionRow);
+    defer harness.deinit();
+    try renderGolden(&harness, "button-row-folded");
+    // The sheet it opens: the button that gave up its slot leading the
+    // ones that had overflowed, each restated whole.
+    try harness.tapLabel("More");
+    try renderGolden(&harness, "button-row-folded-sheet");
+}
+
+fn buildInProgressButtons(_: ?*anyopaque, app: *h.App) !void {
+    const tree = &app.tree;
+    const root = tree.rootId();
+    _ = try tree.append(root, .{ .heading = .{ .content = "At work", .level = .h1 } });
+    // A resting pill beside a running one: same form, same fill, same
+    // full-strength ink — busy is not unavailable, and the only
+    // difference is the words standing down for the `…`.
+    const pair = try tree.append(root, .{ .stack = .{ .axis = .horizontal } });
+    _ = try tree.append(pair, .{ .button = .{ .label = "Save changes" } });
+    _ = try tree.append(pair, .{ .button = .{ .label = "Send changes", .in_progress = true } });
+    // The other three forms at work: the outline still carries its
+    // border, the icon pill holds the width its glyph and words bought,
+    // and the glyph form stands the `…` on the bare tap target.
+    const forms = try tree.append(root, .{ .stack = .{ .axis = .horizontal } });
+    _ = try tree.append(forms, .{ .button = .{ .label = "Cancel upload", .secondary = true, .in_progress = true } });
+    _ = try tree.append(forms, .{ .button = .{ .label = "Add reminder", .icon = .alarm_clock_plus, .in_progress = true } });
+    _ = try tree.append(forms, .{ .button = .{ .label = "Next month", .icon = .chevron_right, .icon_only = true, .in_progress = true } });
+    // Both flags at once: `in_progress` wins the pixels, `disabled` wins
+    // the focus stop — so this one dims and Tab passes it by.
+    _ = try tree.append(root, .{ .button = .{ .label = "Retry", .disabled = true, .in_progress = true } });
+    // With a number, the track takes the ellipsis's slot — filled pill
+    // and outlined, so both tone pairs are on the page. A dimmed pill
+    // keeps its `…` (above): the meter's tones exist to be read.
+    const measured = try tree.append(root, .{ .stack = .{ .axis = .horizontal } });
+    _ = try tree.append(measured, .{ .button = .{ .label = "Upload photos", .in_progress = true, .progress_percent = 60 } });
+    _ = try tree.append(measured, .{ .button = .{ .label = "Sync library", .secondary = true, .in_progress = true, .progress_percent = 25 } });
+}
+
+test "golden: buttons at work — the ellipsis in every form, each holding its size" {
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 440, .h = 300 }, null, buildInProgressButtons);
+    defer harness.deinit();
+    // Two tabs: past the resting pill and onto the running one. A busy
+    // button keeps its focus stop, so the ring has to draw on it — that
+    // is the whole reason it stays reachable.
+    try harness.pressKey(.tab, .{});
+    try harness.pressKey(.tab, .{});
+    try renderGolden(&harness, "button-in-progress");
+}
+
+fn buildAuthButtons(_: ?*anyopaque, app: *h.App) !void {
+    const tree = &app.tree;
+    const root = tree.rootId();
+    _ = try tree.append(root, .{ .heading = .{ .content = "Sign in", .level = .h1 } });
+    // The words are the app's on both — nokre ships the mark and no
+    // translation of the vendor's string, so every sign-in button names
+    // its own wording.
+    _ = try tree.append(root, .{ .button = .{ .label = "Sign in with Apple", .provider = .apple } });
+    // The outlined emphasis — Apple's third sanctioned style — with the
+    // same button localized, which is how a translated app renders it.
+    // Two *identically* named sign-in buttons on one screen would fail
+    // the a11y audit, and rightly: a screen reader user could not tell
+    // them apart.
+    _ = try tree.append(root, .{ .button = .{
+        .label = "Mit Apple anmelden",
+        .provider = .apple,
+        .secondary = true,
+    } });
+    // Beside an ordinary pill, so the mark's optical size against a
+    // Lucide glyph at the same scale is reviewable in one image.
+    _ = try tree.append(root, .{ .button = .{ .label = "Add reminder", .icon = .alarm_clock_plus } });
+}
+
+test "golden: sign-in buttons carry the vendor mark in both emphases" {
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 300 }, null, buildAuthButtons);
+    defer harness.deinit();
+    try renderGolden(&harness, "auth-button");
+}
+
+test "golden: the filled sign-in button inverts with the appearance" {
+    // Apple sanctions black, white, and white-outlined. The filled pill
+    // is `.ink` on `.paper`, and both flip with the appearance — so the
+    // dark screen *is* Apple's white button, with no second style and no
+    // colour anywhere.
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 300 }, null, buildAuthButtons);
+    defer harness.deinit();
+    harness.app.setScheme(.dark);
+    try renderGolden(&harness, "auth-button-dark");
+}
+
+fn buildLists(_: ?*anyopaque, app: *h.App) !void {
+    const tree = &app.tree;
+    const root = tree.rootId();
+    _ = try tree.append(root, .{ .heading = .{ .content = "Steps", .level = .h1 } });
+
+    // Ordered from 9, so the marker column has to widen for "10." and
+    // every item's words still start on the same x.
+    const ordered = try tree.append(root, .{ .list = .{ .ordered = true, .start = 9 } });
+    for ([_][]const u8{
+        "Open the case.",
+        "Disconnect the battery before touching anything else.",
+        "Lift the tray straight out.",
+    }) |line| {
+        const item = try tree.append(ordered, .{ .list_item = .{} });
+        _ = try tree.append(item, .{ .text = .{ .content = line } });
+    }
+
+    _ = try tree.append(root, .{ .heading = .{ .content = "Notes", .level = .h2 } });
+    // Unordered, with a nested level: the indent is what carries depth.
+    const bullets = try tree.append(root, .{ .list = .{} });
+    const first = try tree.append(bullets, .{ .list_item = .{} });
+    _ = try tree.append(first, .{ .text = .{ .content = "Torque to spec." } });
+    const nested = try tree.append(first, .{ .list = .{} });
+    const inner = try tree.append(nested, .{ .list_item = .{} });
+    _ = try tree.append(inner, .{ .text = .{ .content = "4 Nm on the corners." } });
+    const second = try tree.append(bullets, .{ .list_item = .{} });
+    _ = try tree.append(second, .{ .text = .{ .content = "Keep the shim." } });
+}
+
+test "golden: ordered and unordered lists with a shared marker column" {
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 400, .h = 400 }, null, buildLists);
+    defer harness.deinit();
+    try renderGolden(&harness, "lists");
+}
+
+fn buildCodeBlock(_: ?*anyopaque, app: *h.App) !void {
+    const tree = &app.tree;
+    const root = tree.rootId();
+    _ = try tree.append(root, .{ .heading = .{ .content = "Verbatim", .level = .h1 } });
+    // Fits: no clip, no indicator, indentation preserved.
+    _ = try tree.append(root, .{ .code_block = .{
+        .content = "fn main() !void {\n    log(\"hi\");\n}",
+    } });
+    _ = try tree.append(root, .{ .text = .{ .content = "Prose keeps the page margin." } });
+    // Overflows: declines the margin, bleeds to the screen edges, clips
+    // mid-glyph there, and rides the 2px indicator.
+    _ = try tree.append(root, .{ .code_block = .{
+        .content = "const long = try allocator.dupe(u8, \"a line far wider than the viewport\");\n    indented();",
+    } });
+}
+
+test "golden: a code block that fits, and one that bleeds and clips" {
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 400, .h = 280 }, null, buildCodeBlock);
+    defer harness.deinit();
+    try renderGolden(&harness, "code-block");
+}
+
+fn buildBlockquote(_: ?*anyopaque, app: *h.App) !void {
+    const tree = &app.tree;
+    const root = tree.rootId();
+    _ = try tree.append(root, .{ .heading = .{ .content = "Quoted", .level = .h1 } });
+    const quote = try tree.append(root, .{ .blockquote = .{} });
+    _ = try tree.append(quote, .{ .text = .{ .content = "Everything should be made as simple as possible, but no simpler." } });
+    // The attribution is words inside the quote, not a field on it.
+    _ = try tree.append(quote, .{ .text = .{ .content = "\u{2014} attributed", .style = .{ .scale = .small, .ink = .dark } } });
+    _ = try tree.append(root, .{ .text = .{ .content = "Surrounding prose keeps the page margin." } });
+}
+
+test "golden: a blockquote's leading rule spans everything it quotes" {
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 400, .h = 240 }, null, buildBlockquote);
+    defer harness.deinit();
+    try renderGolden(&harness, "blockquote");
+}
+
+fn buildInlineLinks(_: ?*anyopaque, app: *h.App) !void {
+    const tree = &app.tree;
+    const root = tree.rootId();
+    _ = try tree.append(root, .{ .heading = .{ .content = "Consent", .level = .h1 } });
+    _ = try tree.append(root, .{ .text = .{ .spans = &.{
+        .{ .text = "By continuing you accept the " },
+        .{ .text = "terms of service", .route = "terms" },
+        .{ .text = " and the " },
+        .{ .text = "privacy policy", .route = "privacy" },
+        .{ .text = ", which explain what we keep." },
+    } } });
+}
+
+test "golden: inline links underline, and a focused one rings every line" {
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 220 }, null, buildInlineLinks);
+    defer harness.deinit();
+    // Tab to the first link: it wraps, so the ring is two boxes.
+    try harness.pressKey(.tab, .{});
+    try renderGolden(&harness, "inline-links");
+}
+
+fn buildDocument(_: ?*anyopaque, app: *h.App) !void {
+    // Legal content fetched at runtime: opens at `##`, jumps to `####`,
+    // and mixes every part of the subset. The app hands over bytes it
+    // did not write and gets ordinary elements back.
+    _ = try app.tree.append(app.tree.rootId(), .{ .document = .{
+        .label = "Terms of Service",
+        .source =
+        \\## Terms of Service
+        \\
+        \\Effective **today**. By continuing you accept these terms and
+        \\the [privacy policy](privacy).
+        \\
+        \\#### What we keep
+        \\
+        \\1. Your account name.
+        \\2. Anything you type into a `note`.
+        \\
+        \\> We never sell it.
+        \\
+        \\Contact us at [support](mailto:help@example.com) — an external
+        \\link, drawn exactly like a routed one; the split is semantic.
+        ,
+    } });
+}
+
+test "golden: a fetched Markdown document expands into ordinary elements" {
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 400, .h = 460 }, null, buildDocument);
+    defer harness.deinit();
+    try renderGolden(&harness, "document");
+}
+
+fn buildBadges(_: ?*anyopaque, app: *h.App) !void {
+    const tree = &app.tree;
+    const root = tree.rootId();
+    _ = try tree.append(root, .{ .heading = .{ .content = "Badges", .level = .h1 } });
+    const row = try tree.append(root, .{ .stack = .{ .axis = .horizontal } });
+    _ = try tree.append(row, .{ .badge = .{ .label = "Active" } });
+    _ = try tree.append(row, .{ .badge = .{ .label = "3 pending" } });
+    _ = try tree.append(root, .{ .text = .{ .content = "Inline status chips: words in a border, no hue." } });
+}
+
+test "golden: badges are intrinsic-width chips in a horizontal row" {
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 160 }, null, buildBadges);
+    defer harness.deinit();
+    try renderGolden(&harness, "badge");
+}
+
+fn buildCheckboxes(_: ?*anyopaque, app: *h.App) !void {
+    const tree = &app.tree;
+    const root = tree.rootId();
+    _ = try tree.append(root, .{ .heading = .{ .content = "Consent", .level = .h1 } });
+    _ = try tree.append(root, .{ .checkbox = .{ .label = "I agree to the terms", .checked = true } });
+    _ = try tree.append(root, .{ .checkbox = .{ .label = "Email me updates" } });
+    _ = try tree.append(root, .{ .button = .{ .label = "Continue" } });
+}
+
+test "golden: checkboxes checked, unchecked, and focused" {
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 240 }, null, buildCheckboxes);
+    defer harness.deinit();
+    // Focus the first checkbox: pins the check mark under the focus ring.
+    try harness.pressKey(.tab, .{});
+    try renderGolden(&harness, "checkbox");
+}
+
+fn buildMeters(_: ?*anyopaque, app: *h.App) !void {
+    const tree = &app.tree;
+    const root = tree.rootId();
+    _ = try tree.append(root, .{ .heading = .{ .content = "Cycle", .level = .h1 } });
+    _ = try tree.append(root, .{ .meter = .{ .label = "12 of 30 days", .value = 12, .max = 30 } });
+    // Empty and full pin the fill's edge cases against the track border.
+    _ = try tree.append(root, .{ .meter = .{ .label = "0 of 30 days", .value = 0, .max = 30 } });
+    _ = try tree.append(root, .{ .meter = .{ .label = "30 of 30 days", .value = 30, .max = 30 } });
+}
+
+test "golden: meters at empty, partial, and full fill" {
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 240 }, null, buildMeters);
+    defer harness.deinit();
+    try renderGolden(&harness, "meter");
+}
+
+fn buildQr(_: ?*anyopaque, app: *h.App) !void {
+    const tree = &app.tree;
+    const root = tree.rootId();
+    _ = try tree.append(root, .{ .heading = .{ .content = "Invite", .level = .h1 } });
+    _ = try tree.append(root, .{ .qr = .{ .label = "Invite link", .value = "https://example.com/invite/XKCD-1234" } });
+    _ = try tree.append(root, .{ .copyable = .{ .label = "Or copy it", .value = "https://example.com/invite/XKCD-1234" } });
+}
+
+test "golden: qr code with its copyable twin" {
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 480 }, null, buildQr);
+    defer harness.deinit();
+    try renderGolden(&harness, "qr");
+}
+
+test "golden: qr code stays ink-on-paper in dark appearance" {
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 480 }, null, buildQr);
+    defer harness.deinit();
+    harness.app.setScheme(.dark);
+    try renderGolden(&harness, "qr-dark");
+}
+
+fn buildTiles(_: ?*anyopaque, app: *h.App) !void {
+    const tree = &app.tree;
+    const root = tree.rootId();
+    _ = try tree.append(root, .{ .heading = .{ .content = "Circle", .level = .h1 } });
+    const group = try tree.append(root, .{
+        .tile_group = .{
+            // Long enough to wrap at this viewport: pins the multi-line
+            // description layout, not just the single-line case.
+            .description = "Manage who belongs to this circle, invite new members, or leave it entirely when you are done.",
+        },
+    });
+    _ = try tree.append(group, .{ .tile = .{ .label = "Members", .detail = "12 people", .route = "members" } });
+    _ = try tree.append(group, .{ .tile = .{ .label = "Invites", .route = "invites" } });
+    _ = try tree.append(group, .{ .tile = .{ .label = "Leave circle" } });
+}
+
+test "golden: tile group with focused row, details, chevrons, and description" {
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 280 }, null, buildTiles);
+    defer harness.deinit();
+    // Focus the first tile: pins the mixed-radius stroke (top corners
+    // curving with the group border, bottom at the row radius) and the
+    // skipped separator beneath it.
+    try harness.pressKey(.tab, .{});
+    try renderGolden(&harness, "tiles");
+}
+
+fn buildRadioGroup(_: ?*anyopaque, app: *h.App) !void {
+    const tree = &app.tree;
+    const root = tree.rootId();
+    _ = try tree.append(root, .{ .heading = .{ .content = "Choices", .level = .h1 } });
+    _ = try tree.append(root, .{ .radio_group = .{
+        .label = "Delivery",
+        .options = &.{ "Email", "SMS", "None" },
+        .selected = 1,
+    } });
+}
+
+fn buildIcons(_: ?*anyopaque, app: *h.App) !void {
+    const tree = &app.tree;
+    const root = tree.rootId();
+    _ = try tree.append(root, .{ .heading = .{ .content = "Icons", .level = .h1 } });
+    const row = try tree.append(root, .{ .stack = .{ .axis = .horizontal } });
+    _ = try tree.append(row, .{ .icon = .{ .name = .accessibility, .label = "Accessibility" } });
+    _ = try tree.append(row, .{ .icon = .{ .name = .activity } });
+    _ = try tree.append(row, .{ .icon = .{ .name = .airplay, .scale = .h3 } });
+    _ = try tree.append(row, .{ .icon = .{ .name = .alarm_clock_check, .scale = .h2, .ink = .dark } });
+    _ = try tree.append(row, .{ .icon = .{ .name = .air_vent, .scale = .h1 } });
+    // Beside same-scale text: pins the shared line-height alignment.
+    const inline_row = try tree.append(root, .{ .stack = .{ .axis = .horizontal } });
+    _ = try tree.append(inline_row, .{ .icon = .{ .name = .alarm_clock_plus } });
+    _ = try tree.append(inline_row, .{ .text = .{ .content = "Add an alarm" } });
+}
+
+test "golden: icons across scales and beside text" {
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 200 }, null, buildIcons);
+    defer harness.deinit();
+    try renderGolden(&harness, "icons");
+}
+
+test "golden: radio group with focus ring" {
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 240 }, null, buildRadioGroup);
+    defer harness.deinit();
+    // Focused so the golden pins selected dot, unselected rings, and ring.
+    try harness.pressKey(.tab, .{});
+    try renderGolden(&harness, "radio-group");
+}
+
+fn buildSelect(_: ?*anyopaque, app: *h.App) !void {
+    const tree = &app.tree;
+    const root = tree.rootId();
+    _ = try tree.append(root, .{ .heading = .{ .content = "Preferences", .level = .h1 } });
+    _ = try tree.append(root, .{ .select = .{
+        .label = "Language",
+        .options = &.{ "English", "Deutsch", "Français" },
+        .selected = 1,
+    } });
+    _ = try tree.append(root, .{ .button = .{ .label = "Save" } });
+}
+
+test "golden: select field and its open picker" {
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 400 }, null, buildSelect);
+    defer harness.deinit();
+    // Focused field: pins the chevron, value text, and field-hugging ring.
+    try harness.pressKey(.tab, .{});
+    try renderGolden(&harness, "select");
+    // Open picker: pins scrim dither, title, and the selected option chip.
+    try harness.pressKey(.enter, .{});
+    try renderGolden(&harness, "select-picker");
+}
+
+fn buildCountrySelect(_: ?*anyopaque, app: *h.App) !void {
+    const tree = &app.tree;
+    const root = tree.rootId();
+    _ = try tree.append(root, .{ .heading = .{ .content = "Shipping", .level = .h1 } });
+    _ = try tree.append(root, .{ .select = .{
+        .label = "Country",
+        .options = &.{ "Argentina", "Australia", "Austria", "Brazil", "Canada", "Denmark", "Germany", "Iceland", "Ireland" },
+    } });
+}
+
+test "golden: long select picker carries a filter that narrows the rows" {
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 560 }, null, buildCountrySelect);
+    defer harness.deinit();
+    try harness.pressKey(.tab, .{});
+    try harness.pressKey(.enter, .{});
+    // Open: pins the filter field (focused) above the full row list.
+    try renderGolden(&harness, "select-picker-filter");
+    // Narrowed: pins filtered rows under an unmoved field and the
+    // picker's unchanged height.
+    try harness.typeText("ir");
+    try renderGolden(&harness, "select-picker-filtered");
+}
+
+fn buildCopyable(_: ?*anyopaque, app: *h.App) !void {
+    const tree = &app.tree;
+    const root = tree.rootId();
+    _ = try tree.append(root, .{ .heading = .{ .content = "Emergency codes", .level = .h1 } });
+    _ = try tree.append(root, .{ .copyable = .{ .label = "Recovery code", .value = "XKCD-1234-QRST" } });
+    _ = try tree.append(root, .{ .copyable = .{ .label = "Invite link", .value = "nokre.app/i/9f3k2" } });
+    // Wider than the field: pins the middle elision and the glyph's
+    // reserved slot.
+    _ = try tree.append(root, .{ .copyable = .{ .label = "Signed link", .value = "https://nokre.app/i/9f3k2?sig=4f1fe2f0a9c04d2e8b7a" } });
+}
+
+test "golden: copyable fields with mono value, copy glyph, and focus ring" {
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 300 }, null, buildCopyable);
+    defer harness.deinit();
+    // Focused first field: pins the field-hugging ring, the mono value,
+    // and the trailing copy glyph.
+    try harness.pressKey(.tab, .{});
+    try renderGolden(&harness, "copyable");
+    // Acknowledged: pins the check standing in for the copy glyph, and —
+    // against the frame above — that reserving the slot at the wider mark
+    // keeps every value pixel where it was.
+    try harness.pressKey(.enter, .{});
+    try harness.expectCopied("XKCD-1234-QRST");
+    try renderGolden(&harness, "copyable-acknowledged");
+}
+
+fn buildTextArea(_: ?*anyopaque, app: *h.App) !void {
+    const tree = &app.tree;
+    const root = tree.rootId();
+    _ = try tree.append(root, .{ .heading = .{ .content = "Feedback", .level = .h1 } });
+    _ = try tree.append(root, .{ .text_area = .{
+        .label = "Comments",
+        .value = "First line.\nA second line long enough to wrap onto another row of the field.",
+        .cursor = 12,
+    } });
+    _ = try tree.append(root, .{ .text_area = .{
+        .label = "Anything else",
+        .placeholder = "Optional",
+    } });
+}
+
+test "golden: text area grows with content, sibling shows the empty minimum" {
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 400 }, null, buildTextArea);
+    defer harness.deinit();
+    // Focused first area: pins wrapped lines, hard break, and the caret
+    // on the second line's start.
+    try harness.pressKey(.tab, .{});
+    try renderGolden(&harness, "text-area");
+}
+
+fn buildTableScroll(_: ?*anyopaque, app: *h.App) !void {
+    const tree = &app.tree;
+    const root = tree.rootId();
+    const table = try tree.append(root, .{ .table = .{} });
+    const header = try tree.append(table, .{ .row = .{ .header = true } });
+    for ([_][]const u8{ "Name", "Kind" }) |label| {
+        const cell = try tree.append(header, .{ .cell = .{} });
+        _ = try tree.append(cell, .{ .text = .{ .content = label } });
+    }
+    for ([_][2][]const u8{ .{ "alpha", "mono" }, .{ "beta", "prose" } }) |r| {
+        const row = try tree.append(table, .{ .row = .{} });
+        for (r) |cell_text| {
+            const cell = try tree.append(row, .{ .cell = .{} });
+            _ = try tree.append(cell, .{ .text = .{ .content = cell_text } });
+        }
+    }
+    // 108 puts the offset-0 edge mid-glyph through line 4 (spans start
+    // every 32px): the cut itself is the "more here" affordance the
+    // audit's cleanly_clipped_scroll_region rule demands. Offset 32
+    // keeps a mid-glyph cut at the bottom edge in the rendered frame
+    // too, so the golden pins the affordance, not just the geometry.
+    const scroll = try tree.append(root, .{ .scroll_region = .{ .height = 108, .offset = 32 } });
+    for (0..8) |i| {
+        var buf: [24]u8 = undefined;
+        const line = try std.fmt.bufPrint(&buf, "Line {d}", .{i + 1});
+        _ = try tree.append(scroll, .{ .text = .{ .content = line } });
+    }
+}
+
+test "golden: table and scrolled region" {
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 320 }, null, buildTableScroll);
+    defer harness.deinit();
+    try renderGolden(&harness, "table-scroll");
+}
+
+test "golden: 2x integer scale is pixel-doubled" {
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 200, .h = 120 }, null, buildForm);
+    defer harness.deinit();
+    harness.app.setMeasurer(skia.measurer());
+
+    var surface = try skia.Surface.init(200, 120, 2);
+    defer surface.deinit();
+    harness.renderTo(surface.canvas());
+    try expectGolden(std.testing.allocator, surface.pixels(), surface.pixelWidth(), surface.pixelHeight(), "tests/goldens/form-2x.pgm");
+}
+
+fn buildNavScreen(_: ?*anyopaque, app: *h.App) anyerror!void {
+    const tree = &app.tree;
+    const root = tree.rootId();
+    _ = try tree.append(root, .{ .heading = .{ .content = "Library", .level = .h1 } });
+    _ = try tree.append(root, .{ .segmented = .{
+        .label = "View",
+        .options = &.{ "List", "Grid" },
+        .selected = 1,
+    } });
+    _ = try tree.append(root, .{ .text = .{ .content = "Content flows in the area the nav leaves behind." } });
+}
+
+const nav_routes = [_]h.RouteDef{
+    .{ .name = "library", .title = "Library", .build = buildNavScreen },
+    .{ .name = "settings", .title = "Settings", .build = buildNavScreen },
+};
+
+const nav_items = [_]h.Destination{
+    .{ .route = "library", .icon = .library },
+    .{ .route = "settings", .icon = .settings },
+};
+
+test "golden: wide viewport centers the capped bottom pane" {
+    var harness = try h.testing.Harness.initWithNav(std.testing.allocator, .{ .w = 640, .h = 300 }, &nav_routes, &nav_items, null, "library");
+    defer harness.deinit();
+    try renderGolden(&harness, "nav-wide");
+}
+
+test "golden: narrow viewport gives the bottom pane the full width" {
+    var harness = try h.testing.Harness.initWithNav(std.testing.allocator, .{ .w = 400, .h = 300 }, &nav_routes, &nav_items, null, "library");
+    defer harness.deinit();
+    try renderGolden(&harness, "nav-bottom");
+}
+
+// A page long enough to scroll under a nav that no longer hides
+// anything: the two states the groundless bar has to get right.
+fn buildLongNavScreen(_: ?*anyopaque, app: *h.App) anyerror!void {
+    const tree = &app.tree;
+    const root = tree.rootId();
+    _ = try tree.append(root, .{ .heading = .{ .content = "Library", .level = .h1 } });
+    for (0..12) |i| {
+        var buf: [32]u8 = undefined;
+        const line = try std.fmt.bufPrint(&buf, "Line {d} of the long page.", .{i + 1});
+        _ = try tree.append(root, .{ .text = .{ .content = line } });
+    }
+}
+
+const long_nav_routes = [_]h.RouteDef{
+    .{ .name = "library", .title = "Library", .build = buildLongNavScreen },
+    .{ .name = "settings", .title = "Settings", .build = buildLongNavScreen },
+};
+
+test "golden: mid-scroll, the page runs on behind and between the items" {
+    var harness = try h.testing.Harness.initWithNav(std.testing.allocator, .{ .w = 400, .h = 300 }, &long_nav_routes, &nav_items, null, "library");
+    defer harness.deinit();
+    harness.app.setSafeBottom(34);
+    try harness.scroll(harness.app.tree.rootId(), 40);
+    try renderGolden(&harness, "nav-scroll-mid");
+}
+
+test "golden: scrolled to the end, the page stands clear of the items" {
+    var harness = try h.testing.Harness.initWithNav(std.testing.allocator, .{ .w = 400, .h = 300 }, &long_nav_routes, &nav_items, null, "library");
+    defer harness.deinit();
+    harness.app.setSafeBottom(34);
+    // Past the end: the clamp lands on the last line, `nav_content_gap`
+    // above the destinations, with nothing behind them.
+    try harness.scroll(harness.app.tree.rootId(), 10_000);
+    try renderGolden(&harness, "nav-scroll-end");
+}
+
+test "golden: safe_bottom keeps nav items above the band, fill runs through it" {
+    var harness = try h.testing.Harness.initWithNav(std.testing.allocator, .{ .w = 400, .h = 300 }, &nav_routes, &nav_items, null, "library");
+    defer harness.deinit();
+    // The iPhone home-indicator inset: 34 logical px.
+    harness.app.setSafeBottom(34);
+    try renderGolden(&harness, "nav-safe-bottom");
+}
+
+// Five destinations whose titles cannot make a row on a phone: the nav
+// collapses to the chip that stands in for all of them.
+const crowded_nav_routes = [_]h.RouteDef{
+    .{ .name = "library", .title = "Library", .build = buildNavScreen },
+    .{ .name = "settings", .title = "Settings", .build = buildNavScreen },
+    .{ .name = "explore", .title = "Explore", .build = buildNavScreen },
+    .{ .name = "downloads", .title = "Downloads", .build = buildNavScreen },
+    .{ .name = "subs", .title = "Subscriptions", .build = buildNavScreen },
+};
+
+const crowded_nav_items = [_]h.Destination{
+    .{ .route = "library", .icon = .library },
+    .{ .route = "settings", .icon = .settings },
+    .{ .route = "explore", .icon = .compass },
+    .{ .route = "downloads", .icon = .download },
+    .{ .route = "subs", .icon = .user },
+};
+
+test "golden: a nav too crowded for a row collapses to the current section" {
+    var harness = try h.testing.Harness.initWithNav(std.testing.allocator, .{ .w = 375, .h = 300 }, &crowded_nav_routes, &crowded_nav_items, null, "explore");
+    defer harness.deinit();
+    try renderGolden(&harness, "nav-collapsed");
+}
+
+test "golden: the crowded roster reopens as a row once the window can hold it" {
+    var harness = try h.testing.Harness.initWithNav(std.testing.allocator, .{ .w = 1000, .h = 300 }, &crowded_nav_routes, &crowded_nav_items, null, "explore");
+    defer harness.deinit();
+    // Past the 560px cap the row takes its natural width and centers —
+    // the shape a wide window has always been able to hold, and used to
+    // be denied because the pane stopped growing.
+    try renderGolden(&harness, "nav-row-reopened");
+}
+
+test "golden: the collapsed chip stops short of the notices indicator" {
+    var harness = try h.testing.Harness.initWithNav(std.testing.allocator, .{ .w = 375, .h = 300 }, &crowded_nav_routes, &crowded_nav_items, null, "explore");
+    defer harness.deinit();
+    try harness.app.notify("Sync failed", "Changes are kept locally.", "library");
+    harness.app.minimizeNotices();
+    // The chip is as wide as what it holds, so the bar between it and
+    // the indicator is page — not a stretched control with a button
+    // sitting on top of it.
+    try renderGolden(&harness, "nav-collapsed-indicator");
+}
+
+test "golden: the collapsed nav's picker lists the sections above the chip" {
+    var harness = try h.testing.Harness.initWithNav(std.testing.allocator, .{ .w = 375, .h = 420 }, &crowded_nav_routes, &crowded_nav_items, null, "explore");
+    defer harness.deinit();
+    harness.app.setMeasurer(skia.measurer());
+    harness.app.performLayout();
+    // Press the chip: the section list opens *above* it — the chip stays
+    // visible, because a menu over its own control would sit under the
+    // finger still holding it. Current row marked, screen behind dimmed.
+    const nav = h.layout.findNav(&harness.app.tree).?;
+    var it = harness.app.tree.children(nav);
+    try harness.app.tap(harness.app.tree.rectOf(it.next().?).center());
+    try renderGolden(&harness, "nav-collapsed-picker");
+}
+
+test "golden: the section menu clears the home-indicator band" {
+    var harness = try h.testing.Harness.initWithNav(std.testing.allocator, .{ .w = 375, .h = 420 }, &crowded_nav_routes, &crowded_nav_items, null, "explore");
+    defer harness.deinit();
+    // The phone the shape was got wrong on. Every other picker golden
+    // runs at `safe_bottom = 0`, where a bottom-anchored pane's fill
+    // bleeds off-screen and the mistake cannot show: this menu stood on
+    // the bar, so the same bleed came down over the chip instead.
+    harness.app.setSafeBottom(34);
+    harness.app.setMeasurer(skia.measurer());
+    harness.app.performLayout();
+    const nav = h.layout.findNav(&harness.app.tree).?;
+    var it = harness.app.tree.children(nav);
+    try harness.app.tap(harness.app.tree.rectOf(it.next().?).center());
+    try renderGolden(&harness, "nav-menu-safe-bottom");
+}
+
+test "golden: the collapsed nav mirrors under RTL chrome" {
+    var harness = try h.testing.Harness.initWithNav(std.testing.allocator, .{ .w = 375, .h = 300 }, &crowded_nav_routes, &crowded_nav_items, null, "explore");
+    defer harness.deinit();
+    // The label leads from the right and the chevron takes the left —
+    // the chevron itself does not flip, being vertically symmetric.
+    harness.app.setDirection(.rtl);
+    try renderGolden(&harness, "nav-collapsed-rtl");
+}
+
+// A route the roster does not name: the screen joins the chrome as its
+// own entry rather than leaving the nav marking nothing — or marking a
+// section the visitor never opened (`nav.effectiveRoster`).
+const offroster_nav_routes = [_]h.RouteDef{
+    .{ .name = "library", .title = "Library", .build = buildNavScreen },
+    .{ .name = "settings", .title = "Settings", .build = buildNavScreen },
+    .{ .name = "terms", .title = "Terms", .build = buildNavScreen },
+};
+
+test "golden: the row names a screen that is none of its destinations" {
+    var harness = try h.testing.Harness.initWithNav(std.testing.allocator, .{ .w = 640, .h = 300 }, &offroster_nav_routes, &nav_items, null, "terms");
+    defer harness.deinit();
+    // The marker wears a current destination's plating and the shared
+    // file-text mark — the same chip, minus the focus ring it can never
+    // take (`element.NavHere`).
+    try renderGolden(&harness, "nav-here-row");
+}
+
+test "golden: the collapsed chip carries the off-roster screen too" {
+    var harness = try h.testing.Harness.initWithNav(std.testing.allocator, .{ .w = 375, .h = 300 }, &offroster_nav_routes, &nav_items, null, "terms");
+    defer harness.deinit();
+    try renderGolden(&harness, "nav-here-collapsed");
+}
+
+test "golden: the off-roster marker mirrors under RTL chrome" {
+    var harness = try h.testing.Harness.initWithNav(std.testing.allocator, .{ .w = 640, .h = 300 }, &offroster_nav_routes, &nav_items, null, "terms");
+    defer harness.deinit();
+    // The whole row runs from the trailing edge, marker last — which
+    // under RTL is the leftmost plate, its glyph on the right of its
+    // words like every other destination's.
+    harness.app.setDirection(.rtl);
+    try renderGolden(&harness, "nav-here-rtl");
+}
+
+fn buildSegmentedOverflow(_: ?*anyopaque, app: *h.App) !void {
+    const tree = &app.tree;
+    const root = tree.rootId();
+    _ = try tree.append(root, .{ .heading = .{ .content = "Months", .level = .h1 } });
+    _ = try tree.append(root, .{ .segmented = .{
+        .label = "Month",
+        .options = &.{ "January", "February", "March", "April", "May", "June" },
+        .selected = 3,
+    } });
+}
+
+test "golden: overflowing segmented scrolls to the selected chip" {
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 320, .h = 140 }, null, buildSegmentedOverflow);
+    defer harness.deinit();
+    try renderGolden(&harness, "segmented-overflow");
+}
+
+test "golden: the focused track's ring clears the fill and the selected chip" {
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 320, .h = 140 }, null, buildSegmentedOverflow);
+    defer harness.deinit();
+    // The other rounded fill a ring has to stand off from, and the one
+    // case where a chip's own outline sits inside a focused element.
+    try harness.pressKey(.tab, .{});
+    try renderGolden(&harness, "segmented-focused");
+}
+
+fn buildSheetScreen(_: ?*anyopaque, app: *h.App) !void {
+    const tree = &app.tree;
+    const root = tree.rootId();
+    _ = try tree.append(root, .{ .heading = .{ .content = "Behind", .level = .h1 } });
+    _ = try tree.append(root, .{ .text = .{ .content = "Content under the scrim: dimmed by the checkerboard, still legible as context." } });
+    const sheet = try app.presentSheet("Sheet");
+    _ = try tree.append(sheet, .{ .toggle = .{ .label = "A choice", .on = true } });
+}
+
+test "golden: modal sheet over a dithered scrim" {
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 400, .h = 360 }, null, buildSheetScreen);
+    defer harness.deinit();
+    try renderGolden(&harness, "sheet");
+}
+
+fn buildNoticeScreen(_: ?*anyopaque, app: *h.App) !void {
+    const tree = &app.tree;
+    const root = tree.rootId();
+    _ = try tree.append(root, .{ .heading = .{ .content = "Content", .level = .h1 } });
+    _ = try tree.append(root, .{ .text = .{ .content = "Flows above the banner, never under it." } });
+    try app.notify("Sync failed", "Changes are kept locally.", "library");
+}
+
+test "golden: notice banner in the bottom pane" {
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 400, .h = 300 }, null, buildNoticeScreen);
+    defer harness.deinit();
+    try renderGolden(&harness, "notice-banner");
+}
+
+fn buildNoticesPaneScreen(_: ?*anyopaque, app: *h.App) !void {
+    const tree = &app.tree;
+    const root = tree.rootId();
+    _ = try tree.append(root, .{ .heading = .{ .content = "Content", .level = .h1 } });
+    _ = try tree.append(root, .{ .text = .{ .content = "Muted under the scrim while the pane is open." } });
+    try app.notify("Sync failed", "Changes are kept locally.", "library");
+    try app.notify("Update ready", "Restart to apply.", "library");
+    try app.openNoticesPane();
+}
+
+test "golden: notices pane lists every pending notice" {
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 400, .h = 360 }, null, buildNoticesPaneScreen);
+    defer harness.deinit();
+    try renderGolden(&harness, "notices-pane");
+}
+
+fn buildCrowdedNoticesPaneScreen(_: ?*anyopaque, app: *h.App) !void {
+    const tree = &app.tree;
+    const root = tree.rootId();
+    _ = try tree.append(root, .{ .heading = .{ .content = "Content", .level = .h1 } });
+    for ([_][2][]const u8{
+        .{ "Settings saved", "This notice stays until dismissed or minimized." },
+        .{ "Sync failed", "Changes are kept locally. Open to review them." },
+        .{ "Primes counted", "1270607 primes below 20000000." },
+        .{ "Payload hashed", "Digest written beside the archive." },
+        .{ "Export ready", "The file is in your downloads." },
+    }) |n| try app.notify(n[0], n[1], "library");
+    try app.openNoticesPane();
+}
+
+test "golden: a notices pane past its cap scrolls instead of clipping its rows" {
+    // A phone on its side. `sheet_min_top` is a far bigger share of 390
+    // than of 844, so five notices come to more than the pane may be
+    // tall; the rows go in a scroll region and the last visible one is
+    // cut by the region's edge with the indicator beside it, rather than
+    // drawn past the pane and lost.
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 844, .h = 390 }, null, buildCrowdedNoticesPaneScreen);
+    defer harness.deinit();
+    try renderGolden(&harness, "notices-pane-scrolled");
+}
+
+fn buildIndicatorScreen(_: ?*anyopaque, app: *h.App) !void {
+    const tree = &app.tree;
+    const root = tree.rootId();
+    _ = try tree.append(root, .{ .heading = .{ .content = "Content", .level = .h1 } });
+    _ = try tree.append(root, .{ .text = .{ .content = "Minimized notices wait behind the indicator." } });
+    try app.notify("Sync failed", "Changes are kept locally.", "library");
+    app.minimizeNotices();
+}
+
+test "golden: minimized notices leave only the indicator" {
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 400, .h = 300 }, null, buildIndicatorScreen);
+    defer harness.deinit();
+    try renderGolden(&harness, "notices-minimized");
+}
+
+test "golden: the indicator rides at the end of the destinations' row" {
+    var harness = try h.testing.Harness.initWithNav(std.testing.allocator, .{ .w = 500, .h = 300 }, &nav_routes, &nav_items, null, "library");
+    defer harness.deinit();
+    try harness.app.notify("Sync failed", "Changes are kept locally.", "library");
+    harness.app.minimizeNotices();
+    // The row is a centered group of its own width, so the indicator
+    // travels with it rather than sitting in the corner of a pane
+    // nothing draws.
+    try renderGolden(&harness, "nav-with-indicator");
+}
+
+fn buildBackHome(_: ?*anyopaque, app: *h.App) !void {
+    _ = try app.tree.append(app.tree.rootId(), .{ .link = .{ .label = "Detail", .route = "detail" } });
+}
+
+fn buildBackDetail(_: ?*anyopaque, app: *h.App) !void {
+    const root = app.tree.rootId();
+    _ = try app.tree.append(root, .{ .heading = .{ .content = "Detail", .level = .h1 } });
+    _ = try app.tree.append(root, .{ .text = .{ .content = "A pushed screen: the framework installed the back control beside the title." } });
+}
+
+test "golden: pushed screen gets back chrome on the title line" {
+    const routes = [_]h.RouteDef{
+        .{ .name = "home", .title = "Home", .build = buildBackHome },
+        .{ .name = "detail", .title = "Detail", .build = buildBackDetail },
+    };
+    var harness = try h.testing.Harness.initWithRoutes(std.testing.allocator, .{ .w = 360, .h = 200 }, &routes, null, "home");
+    defer harness.deinit();
+    try harness.app.navigate("detail");
+    try renderGolden(&harness, "back-chrome");
+}
+
+test "golden: the back gesture past its threshold draws the control engaged" {
+    const routes = [_]h.RouteDef{
+        .{ .name = "home", .title = "Home", .build = buildBackHome },
+        .{ .name = "detail", .title = "Detail", .build = buildBackDetail },
+    };
+    var harness = try h.testing.Harness.initWithRoutes(std.testing.allocator, .{ .w = 360, .h = 200 }, &routes, null, "home");
+    defer harness.deinit();
+    try harness.app.navigate("detail");
+    // Mid-gesture, past the point of no return: the only thing on screen
+    // that a back gesture ever changes. Nothing has slid — this frame and
+    // "back-chrome" differ by one glyph (docs/introduction.md).
+    try harness.app.dispatch(.{ .edge_pan = .{ .from = .left, .dx = 0, .phase = .begin } });
+    try harness.app.dispatch(.{ .edge_pan = .{ .from = .left, .dx = 360, .phase = .move } });
+    try renderGolden(&harness, "back-armed");
+}
+
+fn buildPersian(_: ?*anyopaque, app: *h.App) !void {
+    const tree = &app.tree;
+    const root = tree.rootId();
+    _ = try tree.append(root, .{ .heading = .{ .content = "سلام دنیا", .level = .h1 } });
+    // The l10n course's greeting: Arabic script with a ZWNJ join
+    // (می‌آید), a Latin acronym mid-sentence, and Latin punctuation —
+    // the full reordering surface in one paragraph.
+    _ = try tree.append(root, .{ .text = .{ .content = "سلام! این بند از یک کاتالوگ ARB می‌آید که در خود باینری کامپایل شده است." } });
+    // Digits take their own LTR runs inside the RTL sentence.
+    _ = try tree.append(root, .{ .text = .{ .content = "سال 1404 است و 42 مورد باقی مانده." } });
+    _ = try tree.append(root, .{ .text = .{ .spans = &.{
+        .{ .text = "متن " },
+        .{ .text = "پررنگ", .strong = true },
+        .{ .text = " در میان جمله." },
+    } } });
+    _ = try tree.append(root, .{ .button = .{ .label = "افزودن مورد" } });
+    _ = try tree.append(root, .{ .text_input = .{ .label = "نام", .value = "دریوش" } });
+    _ = try tree.append(root, .{ .text = .{ .content = "English keeps its own left-aligned paragraph beside them." } });
+}
+
+test "golden: Persian text is shaped, reordered, and right-aligned" {
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 400, .h = 480 }, null, buildPersian);
+    defer harness.deinit();
+    // Focus the input: pins the RTL value at the field's right edge.
+    // Focus homes the cursor to the value's end (input.zig), which in
+    // RTL is the value's visual *left* — the caret lands there.
+    try harness.pressKey(.tab, .{});
+    try harness.pressKey(.tab, .{});
+    try renderGolden(&harness, "persian");
+}
+
+fn buildPersianRtl(_: ?*anyopaque, app: *h.App) !void {
+    // The same evidence, now with the chrome mirrored (setDirection):
+    // labels lead from the right, the toggle knob and track sit at the
+    // trailing edge, the tile chevron points back, the segmented runs
+    // right-to-left — while the paragraph still aligns by its own bytes.
+    app.setDirection(.rtl);
+    const tree = &app.tree;
+    const root = tree.rootId();
+    _ = try tree.append(root, .{ .heading = .{ .content = "تنظیمات", .level = .h1 } });
+    _ = try tree.append(root, .{ .text_input = .{ .label = "نام", .value = "دریوش" } });
+    _ = try tree.append(root, .{ .toggle = .{ .label = "اعلان‌ها", .on = true } });
+    _ = try tree.append(root, .{ .segmented = .{ .label = "نما", .options = &.{ "فهرست", "شبکه" }, .selected = 0 } });
+    const group = try tree.append(root, .{ .tile_group = .{} });
+    _ = try tree.append(group, .{ .tile = .{ .label = "حساب کاربری", .route = "account" } });
+    _ = try tree.append(root, .{ .button = .{ .label = "ذخیره" } });
+    _ = try tree.append(root, .{ .text = .{ .content = "English keeps its own left-aligned paragraph beside them." } });
+}
+
+test "golden: RTL locale mirrors the chrome; text still aligns by content" {
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 400, .h = 480 }, null, buildPersianRtl);
+    defer harness.deinit();
+    try renderGolden(&harness, "persian-rtl-chrome");
+}
+
+test "trace: PixelSink writes a PGM frame per step" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 280 }, null, buildForm);
+    defer harness.deinit();
+    harness.app.setMeasurer(skia.measurer());
+
+    var sink = try skia.PixelSink.init(std.testing.io, tmp.dir, std.testing.allocator, "frames");
+    try harness.startTrace(sink.observer());
+
+    try harness.pressKey(.tab, .{});
+    try harness.typeText("Ada");
+
+    for ([_][]const u8{ "frames/0000-init.pgm", "frames/0001-key-tab.pgm", "frames/0002-type-Ada.pgm" }) |path| {
+        const frame = try golden.readPgm(std.testing.io, tmp.dir, std.testing.allocator, path);
+        defer frame.deinit(std.testing.allocator);
+        try std.testing.expectEqual(@as(usize, 360), frame.w);
+        try std.testing.expectEqual(@as(usize, 280), frame.h);
+    }
+}

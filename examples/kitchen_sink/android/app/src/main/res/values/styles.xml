@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Frame chrome follows the OS theme (the Windows shell's dark-mode
+     posture); nokre content itself never recolors. -->
+<resources>
+    <style name="NokreTheme" parent="@android:style/Theme.Material.Light.NoActionBar" />
+</resources>

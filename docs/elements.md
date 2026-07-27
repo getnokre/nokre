@@ -1,0 +1,1088 @@
+# Elements
+
+The complete, closed set. Every element carries its semantics with it —
+role, label, and state are intrinsic, which is why accessibility can be
+derived rather than annotated. Layout metrics live in
+[src/core/layout.zig](../src/core/layout.zig) (`metrics`).
+
+There is no styling API. If an element doesn't do what you want, the answer
+is a different composition of these elements, not a customization hook.
+
+## Static
+
+### `text`
+Body copy. Wraps greedily at word boundaries within the parent width.
+Options: `style` (family `mono`/`prose`, scale, one of the thirteen grays).
+
+Inline structure comes from `spans` — Markdown's inline vocabulary, not
+a styling hook: each span is a run of the content with `strong` (bold),
+`emphasis` (italic), `code` (the mono family, verbatim voice), `strike`
+(struck through), and optionally its own gray, which faces the same
+append-time contrast gate as the element's ink. Give either `content` or
+`spans`, never both: with spans, `append` writes the concatenation into
+`content`, so assistive tech announces one plain text node — span
+boundaries are invisible to it by design. That places the same duty on
+spans that grayscale places on color: a span may restate emphasis the
+words carry, never be information's only carrier. **`strike` is where
+that duty bites hardest**: a struck price is heard as a price, so the
+words around it have to say which one applies ("Fees are ~~£20~~ £0"
+reads correctly struck or not; a bare struck list of options does not).
+Wrapping treats the spanned text as one flow — a word crossing a span
+boundary never breaks there — and measures each run with its real face;
+bold and italic are drawn faces bundled per family, never synthesized.
+`strike` is not a face: no bundled family ships a struck variant and
+synthesizing one would re-open the rasterizer variance the bundled fonts
+exist to close, so it is a 1px rule drawn a quarter of the em above the
+baseline — through the lowercase band — and it costs the measurement
+nothing. Scale stays element-level: mixed sizes inside a line would
+break the uniform line box.
+
+A span with a destination is an **inline link**, and the one carve-out
+from everything above. It is a control, not styling: underlined, its
+own tab stop in document order, activated by tap/Enter/Space, and
+announced to assistive tech as a link inside the paragraph — a link
+nobody can hear is worse than no link at all, so the invisibility rule
+stops exactly where behavior starts. A destination is exactly one of
+two kinds, and the split is semantic, never visual: a `route` resolves
+through the router like a `link` element's, so a bad one fails as
+`error.UnknownRoute` where every other bad route does; an `external`
+URL is handed to the system browser through the
+[open_url](services.md) service, whose closed scheme allowlist
+(https/http/mailto) is checked at `append` — nokre still renders no
+external content. `append` holds both kinds to the rules every other
+control obeys: exactly one non-empty destination, and words that
+aren't only whitespace.
+
+A link that wraps — or that a bidi line splits into separate visual
+runs — occupies several rectangles, and every one of them underlines,
+rings when focused, and takes taps; the prose between them does none of
+those. Drawing, hit testing, and the focus ring all read the same
+geometry walk, so what you see underlined is exactly what you can tap.
+
+### `heading`
+`h1` through `h6`, mapped to fixed sizes on the type scale. Headings are
+structure, not styling — the a11y audit fails if you skip levels.
+
+| Level | px | Level | px |
+| --- | --- | --- | --- |
+| `h1` | 32 | `h4` | 18 |
+| `h2` | 24 | `h5` | 16 (body) |
+| `h3` | 20 | `h6` | 12 (small) |
+
+Only three sizes sit above the 16px body, so size alone cannot carry six
+levels. Every level draws **bold**, in the family's real bundled bold
+face — never synthetic emboldening — which is what keeps `h5` and `h6`
+reading as headings beside the prose they share a size with. Contrast is
+unaffected: nokre holds all text to 4.5:1 regardless of size, declining
+WCAG's large-text exemption, so the scale carries no palette consequences.
+Takes `spans` like `text` (base face bold
+prose, base ink `.ink`) for the `code` word inside a title; because the
+base is already bold, a span's `strong` adds nothing to a heading and a
+span without it does not drop back to regular — span variants compose
+onto the element's face rather than replacing it.
+
+### `icon`
+One named Lucide glyph, laid out as a square line-height box so it
+aligns with same-scale text beside it. Options: `name` (the `IconName`
+enum — its value is the icon-font codepoint), `scale` (the six text
+scales), `ink` (the thirteen grays), `label`. `IconName` holds every
+glyph in the bundled font, under Lucide's current name for it — the
+retired aliases are absent (`square_activity`, never `activity_square`),
+and so are the brand marks Lucide dropped from the font. An empty label means
+decorative: hidden from assistive tech, any ink allowed. A non-empty
+label makes it a meaningful image: it is announced by name and its ink
+must clear the same contrast gate as text.
+
+### `divider`
+A 1px horizontal rule across the parent width.
+
+### `badge`
+A static inline status label: small-scale text inside a rounded 1px
+`.g10` border, sized to its content. Where color-coded chips carry state
+by hue elsewhere, here the words carry it — "Active", "Owner",
+"3 pending". The border is grouping, not state, so it draws `.g10` like
+`box`, not the `.g6` state carrier of selected chips. Never interactive
+(an actionable chip is a `button`), and the label must be non-empty —
+an empty badge is a floating border saying nothing. For status inside a
+`tile` row, use the tile's `detail` line instead of nesting a badge.
+Semantics: plain static text; assistive tech hears the words, which is
+everything the badge says.
+
+### `meter`
+How much of a whole is filled: a full-width bar under words that state
+it, at `text_input`'s label scale. As with `badge`, the words carry the
+state — `label` ("12 of 30 days") is mandatory, rendered above the bar,
+and is what assistive tech hears; the `value`/`max` fill only restates
+it visually. `append` rejects an empty label or a value outside
+0...max. The track is the `segmented` pattern: dimmed `.g11` with a 1px
+`.g6` border carrying WCAG 1.4.11, an `.ink` fill inside. Never
+interactive, never animated — for indeterminate waiting, write
+"Loading…" as `text`; a spinner is animation, which nokre refuses.
+Semantics: plain static text, the words.
+
+### `qr`
+A verbatim value restated as a scannable QR code — `copyable`'s visual
+twin for the value that leaves through a camera instead of the
+clipboard. `label` (mandatory, rendered above at `text_input`'s label
+scale) is what assistive tech announces; `value` (mandatory, and
+carried alongside the label) is the encoded text. Encoding happens once
+at `append` — medium error correction, no knobs — via the vendored
+reference implementation ([deps/qrcodegen](../deps/qrcodegen/),
+Nayuki's C library: single file, no heap, deterministic); a value that
+cannot encode is rejected there (`QrValueTooLong`, `QrValueNotText`).
+
+The square renders at a whole number of pixels per module (fractional
+modules blur and break scanning) with the spec's 4-module quiet zone,
+capped at `metrics.qr_max_side`. It is the one surface that ignores the
+appearance: scanners want dark modules on a light ground, so the code
+draws ink-on-paper from the light palette in dark mode too — a
+deliberately light tile. Never interactive; put a `copyable` beside it
+carrying the same value for the clipboard path. Semantics: an image
+named by the label, carrying the value.
+
+## Containers
+
+### `stack`
+Vertical (default) or horizontal flow. `gap` (default 8), `padding`
+(default 0). The tree root is a vertical stack with padding 16.
+
+A borderless stack's padding is an advised margin, not a wall: children
+are inset by it as usual, but an element that must reach an edge to
+work — today only an overflowing `segmented` track — may decline the
+advice and bleed through it, never past the nearest drawn edge. Which
+element bleeds is the framework's decision, not a knob. Negative
+`padding` and `gap` are rejected at `append`: the escape a negative
+inset buys elsewhere is exactly what declining the advice provides,
+bounded by an edge instead of a number.
+
+A horizontal stack holding nothing but **actions** — `button`s and
+`link`s, in any mix — is a row of actions, and one too narrow for them
+folds instead of running off the edge. See
+[the folded tail](#the-folded-tail-more) below. Nothing opts in.
+
+### `box`
+Grouping container: vertical flow, optional 1px border (default on),
+`padding` (default 12), optional `fill` gray. Boxes group; they do not
+decorate. A box's edge is a wall: the margin advice stops at it, so
+nothing ever bleeds across a border.
+
+In vertical flow a box takes the full width. Unstretched — as a child of
+a horizontal `stack`, or inside a table cell — it hugs its widest child
+plus its own padding, so a row of small boxes stays a row instead of
+running off the edge after two.
+
+### `scroll_region`
+A viewport over vertically flowing children. `height` fixes the viewport
+height; leave it null to fill the space remaining below the region.
+Content is clipped; a 2px indicator bar reflects the offset. Focusable:
+arrow keys, page up/down, home/end scroll it. `content_height` is written
+by layout.
+
+The bar has two tones, switched by state, never by time: emphasized
+while its surface is engaged — focused, held by a touch drag, or the
+last thing scrolling input moved — and quiet at rest. The overlay
+scrollbar's prominent-when-relevant behavior without its two failures:
+"fade after the scroll stops" needs the wall-clock timer the
+deterministic core refuses, and a bar that vanishes at rest takes the
+only sign the content scrolls with it. So emphasis latches until the
+next non-scroll input, and the resting bar stays readable. At rest the
+primary "more is there" affordance is the content itself, cut
+mid-element at the viewport edge; the audit fails a fixed-height region
+whose offset-0 edge cuts nothing visible (see
+[accessibility](accessibility.md)) — adjust the height a few px so the
+edge crosses ink, not a gap or a text line's leading.
+
+The window itself needs no wrapper: content taller than the viewport
+scrolls implicitly — wheel outside any scroll region, scroll keys when no
+widget consumes them — and Tab always scrolls the focused element into
+view. The implicit window scroll is not a tab stop.
+
+Wheel scrolling routes at the pointer, event by event: delta a region
+cannot consume chains outward to enclosing regions and then the window.
+A touch drag instead belongs to the scroller it starts in — momentum
+included — even when the finger leaves it or its content runs out;
+nothing else moves until the finger lifts.
+
+## Interactive
+
+Every interactive element **requires a label**. That is not a convention
+and not a lint: `tree.append` refuses to construct an interactive element
+with an empty label — an inaccessible control cannot exist.
+
+### `button`
+`label`, `on_press`, `disabled`, `in_progress`. Focused buttons render
+inverted (ink fill, paper text). Activated by tap, Enter, or Space.
+
+`secondary` is the one emphasis knob: an outlined pill — ambient
+background, 1px `.g6` border (the segmented/toggle WCAG 1.4.11
+carrier), `.ink` text — beside the filled primary. Identical geometry,
+so the pair aligns; identical semantics, so assistive tech hears no
+difference. Because its text draws on the ambient, it passes the same
+contrast gate as `text` — a secondary button on a dark box fill is
+rejected at `append`. There is no tertiary and no danger variant: one
+filled, one outlined, and the words carry the rest.
+
+`in_progress` says the button has been pressed and the work it started
+is still running — not "loading", because nothing is being loaded, and
+not a spinner, because a spinner is animation this frame model does not
+have. The words stand down for `…`, the literal form of suspense and the
+same mark nokre elides text with, centered in the pill at the size the
+label and icon already bought it: the button does not resize when the
+press starts or when the result lands, so nothing under the finger
+moves. It does not dim. `disabled` is unavailable and dims; `in_progress`
+is busy and stays at full strength, because the `…` is the only sign the
+work is happening. A leading icon or vendor mark stands down with the
+words; the glyph form has no pill, so the `…` takes the bare touch target
+where the glyph was.
+
+The button stops activating — tap, Enter, and Space all pass over it, so
+a second press cannot start the work twice — but unlike `disabled` it
+**keeps its focus stop**. The user pressed this button, usually with the
+keyboard; taking the stop out from under their own focus is the loss
+WCAG 3.2.2 is about. Assistive tech is told what the pixels say: same
+accessible name (the `…` is a state, not a name — a voice-control user
+keeps the phrase they were about to say), disabled *and* busy
+(`aria-disabled` + `aria-busy`, AccessKit's `busy`), still reachable.
+
+Setting both flags is allowed and is not a redundancy to reconcile: an
+app deriving one from its form and the other from its work is doing the
+normal thing. `in_progress` wins the pixels, `disabled` wins the focus
+stop. In tests, `tap` on a button with work in progress fails with
+`error.InProgress` rather than pressing nothing quietly.
+
+```zig
+// In the press handler: send the work, then say so.
+app.tree.get(state.save_id).?.button.in_progress = true;
+
+// In the reply handler, when it lands:
+app.tree.get(state.save_id).?.button.in_progress = false;
+```
+
+Nothing clears it for you. nokre has no clock and no notion of what
+your work is, so the state is yours to end — as ordinary a field as the
+label beside it. Clear it on **every** path that ends the work, not just
+the one that succeeds: a button cleared only by the success reply sits
+at `…` forever the first time the work fails, times out, or is
+cancelled, and it is the one control on screen that cannot be pressed
+to recover.
+
+`progress_percent` (0–100) is the same state with a number attached.
+Set it and the `…` gives way to a meter track in that same slot —
+`meter`'s own geometry, centered, growing from the leading edge and
+mirroring under RTL. The pill does not change size, fill, or tone: only
+what stands in the middle changes, so a button at 0% is still visibly
+the button, which is exactly what a pill that filled itself could not
+manage. Leave it null when the work cannot say — `…` means *no
+estimate*, and a bar moving on a guess is worse than no bar.
+
+The two tone pairs are the palette's, not a choice: inside the filled
+pill the track is `.g7` with a `.paper` fill, because `g7` is the only
+step clearing WCAG 1.4.11 (3:1) against the `ink` ground *and* against
+the fill inside it in both appearances; the outlined pill sits on the
+ambient ground and so reuses a standalone `meter`'s proven `.g11` track,
+`.g6` boundary, `.ink` fill. A **disabled** button keeps its `…` even
+with a number set: 1.4.11 exempts inactive components, which is the only
+reason the pill may dim at all, and a dim pill is not a ground a meter
+can be read on.
+
+Rejected at `append`: a percentage without `in_progress` (it measures
+nothing), past 100, on `icon_only` (a bare glyph target has nowhere to
+read a bar), or on a `provider` button (no vendor sanctions a bar inside
+their artwork). Mutating into any of those afterwards is the audit's
+`malformed_progress`.
+
+The words and the accessible name do not change. Assistive tech gets the
+number as the node's *value* — "Save changes, 60%" — rather than a
+`progressbar` role the node cannot have while it is a button: the same
+trade `meter` makes, where the state is in the words and the fill only
+restates it.
+
+```zig
+// From a worker's progress reply:
+const btn = &app.tree.get(state.save_id).?.button;
+btn.progress_percent = pct;   // in_progress already true
+
+// And when it lands — clear both; a number outliving the work is
+// what `malformed_progress` catches.
+btn.in_progress = false;
+btn.progress_percent = null;
+```
+
+Setting `icon` (an `IconName`) draws the named Lucide glyph inside the
+pill, leading the label — both stay visible. An icon never hides the
+words by itself; the pill just grows by one glyph advance.
+
+Setting `icon_only` as well drops the pill: only the glyph renders,
+quiet on the ambient surface, centered on the standard 44px touch
+target — the exact control framework chrome already uses for Back and
+the sheet close, opened to consumers. Icon-only is an explicit
+exception, not an inference: it requires `icon` (`append` rejects it
+without one), and nothing else changes — the label stays mandatory, is
+what assistive tech announces, and is how tests reach it
+(`tapLabel("Next cycle")`); disabled dims the glyph as the pill dims
+its text. Reach for it where a compact repeated control sits beside the
+words that explain it — a prev/next pager flanking a heading, a row's
+trailing action. An icon-only button whose meaning isn't obvious from
+its surroundings should have kept its words — the labeled pill is the
+default, the bare glyph is the exception.
+
+Setting `provider` makes it a conforming vendor sign-in button: the
+vendor's mark leads the label, and `append` fills the label in with the
+vendor's mandated wording when you leave it empty. This is the one place
+in nokre where the visual spec is **not nokre's to choose** — every
+detail of these buttons is the vendor's, which is exactly why `provider`
+is the whole API. There is no size, no ink, no corner radius, and no
+custom label: a knob here would be an invitation to violate the
+guidelines the button exists to satisfy.
+
+```zig
+_ = try tree.append(root, .{ .button = .{
+    .label = "",                 // append supplies "Sign in with Apple"
+    .provider = .apple,
+    .on_press = .{ .ctx = state, .call = startSignIn },
+} });
+```
+
+Nothing else changes. Role is `button`, activation is a plain button's,
+the label is what assistive tech announces and how tests reach it, and
+the mark is decorative — it carries no accessible name of its own, so it
+is hidden from assistive tech and exempt from the contrast gate, the same
+rule an unlabeled `icon` follows. It does **not** mirror under RTL: a
+logotype is not directional, the same reason a `qr` symbol never flips.
+Its *position* does mirror, because leading is leading.
+
+The emphasis pair maps onto the vendor's sanctioned styles instead of
+adding new ones. Apple sanctions three — black, white, and white with a
+black outline — and all three fall out of the palette nokre already has:
+the filled default is `.ink` on `.paper`, which is the black button in
+light appearance and, because both flip, the white one in dark; and
+`secondary` is the outlined third. That is why a conforming Sign in with
+Apple button needs no colour at all. `icon` and `icon_only` are both
+rejected at `append` — the mark occupies the icon slot, and no vendor
+sanctions a glyph-only sign-in button.
+
+Two things this does not do for you. **Localization**: Apple requires
+the mandated string translated to the app's language, and nokre ships
+no translation of it — inventing one would be fabricating a mandated
+string. A translated app sets `label` itself, to the vendor's own
+published wording for that locale. **Google**: not offered, and not
+pending. Its guidelines require the official multicolour G, and a gray
+one is not a sanctioned variant, so a `.google` arm could only render a
+button that violates them — while a compliant one would put colour in
+the frame, which is the grayscale refusal itself. Sign-in with Google
+still works; the button is a plain `button` with your own words. The
+argument, and what compliance would have cost, is in
+[internals/oauth.md](internals/oauth.md).
+
+The marks themselves are not nokre's work and are not covered by its
+license — see
+[LICENSE-Brand.txt](../src/assets/fonts/LICENSE-Brand.txt).
+
+#### The folded tail (`More`)
+
+Put actions in a horizontal `stack` and nokre shows as many as fit. When
+they don't all fit, the row **folds**: the last completely visible one
+gives up its slot to a control labelled "More", and pressing that opens a
+sheet holding it and everything after it, in the row's own order.
+
+This is not opt-in and takes no setup — no flag on the stack, no wrapper,
+no width to declare. Any row of actions you have already written folds
+the moment it runs out of room.
+
+```zig
+const row = try tree.append(root, .{ .stack = .{ .axis = .horizontal, .gap = 8 } });
+_ = try tree.append(row, .{ .button = .{ .label = "Publish", .on_press = ... } });
+_ = try tree.append(row, .{ .button = .{ .label = "Save draft", .on_press = ... } });
+_ = try tree.append(row, .{ .button = .{ .label = "Archive", .on_press = ... } });
+_ = try tree.append(row, .{ .link = .{ .label = "More details", .route = "details" } });
+// Narrow enough, this renders: Publish · More
+```
+
+There is no API for it — no `overflow` knob, no "collapse at" width, no
+way to nominate which action folds first. How many actions a row can show
+is the framework's decision, like the nav's shape: you declare them,
+nokre draws as many as the viewport allows and reshapes as it changes.
+
+**What counts as a row of actions:** every child is a `button` or a
+`link`. Those are the two press-me leaves whose whole state is what they
+call or where they go, so the sheet can restate one *whole* — same
+action or route, same emphasis, same disabled and in-progress state — and
+the press means the same thing in both places. A `toggle`, `checkbox`,
+`select`, or field keeps its state in the node, and a restatement of one
+would take the press and leave the original saying the old thing.
+
+Anything else in the row and it doesn't fold: two arrows with a month
+between them is a pager, not a menu, and folding "March" behind a control
+named for having more would be nonsense. A row of one action doesn't fold
+either — that hides the only action twice. Those rows keep the behavior
+every over-wide row had before the fold existed.
+
+The fold is deliberately one action deeper than the overflow itself. The
+one that was already half off the screen is not the one to replace:
+put the control there and it stands at the very edge it exists to
+rescue, and the row reads as two failures at once.
+
+Details worth knowing:
+
+- **Folded is gone, not dimmed.** A folded action draws nothing, takes no
+  tap, keeps no focus stop, and is invisible to assistive tech. Tab goes
+  from the last standing one to More.
+- **Your nodes survive.** The actions stay in the tree with their ids and
+  their state; a wider viewport puts them straight back. Mutating a
+  folded button (`in_progress`, `disabled`) is fine and shows up when it
+  returns — or immediately, in the sheet, which restates each one whole.
+- **Focus follows the shape.** If the action you were on folds away,
+  focus lands on the control that now holds it; when the row grows back,
+  focus moves off the departing control to the row's trailing end
+  (WCAG 3.2.2).
+- **Pressing an action in the sheet closes it**, the way choosing a row
+  closes a picker — unless the press did nothing (disabled, or work
+  already running), in which case the sheet stays where it is.
+- **Not inside a sheet.** There is one sheet at a time, so a row already
+  inside one has nowhere to fold to; it keeps every action it was given
+  and clips like any other over-wide content. A sheet is a handful of
+  controls, not a toolbar.
+- **The sheet closes if the fold moves under it.** The window grew and
+  the actions are back on the row, or it folded deeper and the open list
+  no longer names everything hidden: either way the sheet is dismissed
+  rather than left saying something untrue.
+- **In tests**, a folded action is not addressable by its words:
+  `getByLabel` reports it as folded, and `tap` on a node id you kept
+  fails with `error.Folded`. Reach it the way a user does — `tapLabel("More")`,
+  then the action.
+
+### `link`
+`label` + exactly one destination: `route` or `external`. Underlined.
+Links never carry arbitrary actions; if you want an action, use a
+button. The `route` is a reference: a route name, optionally with
+arguments (`note~42`, see [routing.md](routing.md)) — same for every
+other `route` field below. `external` is a URL handed to the system
+browser on activation, held to the [open_url](services.md) scheme
+allowlist (https/http/mailto) at `append`; it draws identically to a
+routed link, because where a link goes is semantics, not a visual
+variant. Setting both, or neither, is rejected at `append`.
+
+### `toggle`
+On/off state as an iOS-style pill switch: `label`, `on`, `on_toggle`.
+Flipped by tap/Enter/Space; the change applies immediately — a toggle
+never needs a submit button beside it. On: `.ink` track, `.paper` knob
+at the trailing edge. Off: dimmed `.g11` track, knob at the leading
+edge, both outlined `.g6` — as in `segmented`, the border is what
+carries the WCAG 1.4.11 state. Semantics: a switch (announced on/off),
+not a checkbox — a choice that waits for a submit control is a
+`checkbox`. The row is `metrics.touch_target` (44px) deep — the switch
+and its words centered in it — because the 20px track is the whole
+affordance and a one-line row would leave it at the WCAG floor; it
+matches the tile rows in `radio_group` and the select picker. Stack two
+of these (or a toggle and a checkbox) and the flow gap between them
+collapses: each already carries its own padding, and counting the
+stack's gap on top would hold them three gaps apart. Anything else
+beside one — a pill, a field — keeps the full gap.
+
+### `checkbox`
+On/off state as a square check box: `label`, `checked`, `on_toggle`.
+The same interaction as `toggle` — flipped by tap/Enter/Space — but the
+opposite contract: checking commits nothing by itself; the choice waits
+for a nearby control to gather it (consent-then-submit, picking members
+from a list). If flipping it takes effect immediately, it should have
+been a `toggle`. Checked: `.ink` box with a `.paper` check glyph.
+Unchecked: dimmed `.g11` box outlined `.g6` — the toggle/segmented
+WCAG 1.4.11 pattern. There is no indeterminate state; a "some of these"
+summary is a screen problem, not a control problem. Semantics: a
+checkbox (announced checked/unchecked). Its row is 44px deep for the
+same reason `toggle`'s is.
+
+### `radio_group`
+The same exclusive-choice semantics as `segmented` in a different form:
+a full-width tile group under a visible group label (small scale, like
+`text_input`'s) — a rounded 1px `.g10` border around 44px option rows,
+one hairline between them. Same fields — `label`, `options` (2+),
+`selected`, `on_select`. One tab stop (focus takes the group's own
+border, not the label); ↑/↓ (and ←/→) move the selection and commit
+immediately; tapping a row selects it. Reach for it when every option
+should stay visible at once — a choice made once and submitted — where
+`segmented`'s scrolling track would hide some. The
+group border is grouping, not state: the selected row's filled circle
+with a paper dot (unselected rows show a `.g6` ring) carries the
+selection.
+
+### `text_input`
+Single-line. `label` is mandatory and rendered above the field (small
+scale). `value`, `placeholder`, `cursor` (byte offset), `on_change`,
+`on_submit` (Enter). Editing is UTF-8 codepoint-aware (backspace/delete,
+←/→, Home/End). `composition` holds in-progress IME text, rendered dark
+with an underline; IME is live on every shell
+([internals/platform-shells.md](internals/platform-shells.md) has the
+per-shell contract).
+
+`obscured` makes it a password field: every codepoint (composition
+included) renders as a bullet at a fixed advance, and the value is
+withheld from assistive tech (announced as a secure field) and from
+test traces. Editing, placeholder, and caret behavior are unchanged.
+The placeholder stays plain — it is a hint, not the secret.
+
+### `text_area`
+Multi-line `text_input`: same fields minus `on_submit`, because Enter
+inserts a newline — a field that swallows Enter to submit loses the one
+key a multi-line editor cannot give up. Submission belongs to an
+explicit `button` next to it.
+
+The value wraps exactly like prose (greedy, word-boundary, hard `\n`
+breaks) and the field grows with its content, never below three rows —
+there is no inner scrollbar to fight the page's own scrolling. ↑/↓ move
+the caret between visual lines preserving its horizontal position;
+Home/End go to the bounds of the caret's line (the whole value is a ↑/↓
+walk away). Everything else — codepoint-aware editing, placeholder, IME
+composition — matches `text_input`. Semantics: a multiline text field
+carrying the value.
+
+### `select`
+An exclusive choice among many options, in `text_input`'s clothing: the
+same labeled-field geometry, showing the current option with a chevron
+affordance. Same fields as `radio_group` — `label`, `options` (2+),
+`selected`, `on_select`. Reach for it when the options are too many to
+lay out in place; for a handful, prefer `radio_group`, which shows
+every choice at once, or `segmented` for a choice the user switches
+repeatedly.
+
+Activation (tap/Enter/Space) opens the framework's picker: a modal
+bottom panel with the select's label as its title and one 44px tile row
+per option — hairline-separated, like `radio_group`'s rows — scrolling
+when they overflow. It uses the sheet's geometry and
+scrim and may stack above an open sheet. The current option is
+focused on open and rendered as a dimmed `.g11` chip with a 1px `.g6`
+border (the `segmented` pattern); ↑/↓ move between rows without
+wrapping, Enter/Space or a tap commits — closing the picker, updating
+the field, and firing `on_select`. Esc or a tap on the scrim closes
+without committing. Focus always returns to the field. Nothing is
+committed until a row is chosen, unlike `radio_group`'s immediate
+arrow-key commits — a closed dropdown is a promise, an open list is
+a preview.
+
+Long lists (8+ options) get a filter: a labeled `text_input` pinned
+between the title and the rows, focused on open — a list that long
+wants typing, not scanning. Typing narrows the rows to the options
+containing the query (ASCII-case-insensitive substring); a query
+matching nothing leaves the words "No matches" where the rows were.
+The picker keeps the full list's height while the rows come and go, so
+the field never moves under the typing. This is framework chrome, like
+the picker itself — there is nothing to configure and no API. Short
+lists stay bare: fewer than eight rows scan faster by eye than by
+typing, and open with the current option focused as before.
+
+Semantics: the field is a combo box carrying the current option as its
+value; the picker is a modal dialog of option rows with selection
+state, its filter a plain labeled text field. There is no multi-select;
+if a choice needs more than one answer, the screen wants rethinking
+more than the widget wants features.
+
+### `copyable`
+A verbatim value the user carries away — a recovery code, an invite
+link — in `text_input`'s labeled-field clothing: `label` above, `value`
+in mono inside the field, a copy glyph at the trailing edge. Both are
+mandatory; `append` rejects an empty value — a control that copies
+nothing cannot exist. One tab stop; activation (tap/Enter/Space) writes
+the value to the platform clipboard through the shell — the behavior is
+intrinsic, there is no action to wire.
+
+So is the reaction: the copy glyph becomes a check, and stays one until
+the next input. A copy leaves the screen identical, so without a mark
+activation looks inert — and the screen cannot supply the mark either,
+because clearing it after a moment needs the wall-clock timer the
+deterministic core refuses. It latches instead, exactly as the scroll
+indicator's emphasis does. Only one control in the app is ever marked:
+copying somewhere else moves the mark there. Activating the marked
+field copies again and returns the glyph — with no animation to replay,
+the mark leaving is the only visible sign the second copy happened, and
+a check that just sat there would read as a dead control. The glyph's
+slot is reserved at the wider of the two marks, so nothing under it
+moves when they swap. Assistive tech hears "Copied" from a polite live
+region on the field, arriving and leaving with the mark.
+
+Not an editor — the value cannot be changed in place; a value that
+needs editing is a `text_input`, and prose worth reading is `text`.
+A value wider than the field elides in the middle (`ab…yz`, marker
+dimmed): both ends survive because both ends are what a human checks a
+pasted value against, and the display is only a receipt — activation
+copies the whole value, semantics announce it whole. Semantics: a
+button named by the label, carrying the value — assistive tech hears
+both.
+
+### `tile_group` / `tile`
+A bordered vertical group of tappable rows — the list-row form of
+`button` and `link`. `tile_group` children must be `tile`s; a tile
+anywhere else is rejected at `append`. The group draws `radio_group`'s
+geometry — a rounded 1px `.g10` border, 44px rows, one hairline between
+them — but here the border is pure grouping: no selection, no state.
+An optional `description` hangs below the border in dimmed small print,
+wrapped at the group width: the group-level counterpart of a tile's
+`detail`, for a caption that belongs to the set of rows rather than any
+one of them. Assistive tech hears it as the group's value.
+
+Each `tile` is its own tab stop carrying `label`, an optional dimmed
+`detail` line beneath it (the row grows by one small line to fit), and
+either a `route` or an `on_press`: a `route` tile renders a trailing
+chevron and navigates like a `link`; an `on_press` tile acts like a
+`button`. Its accessible role follows the same split. Focus is the
+picker's pattern — a heavier stroke hugging the row — because an outset
+ring would collide with the separators.
+
+Reach for tiles where a screen is a list of destinations or row-shaped
+actions (settings screens, detail screens). For an exclusive choice
+among options, that is `radio_group`, not a tile group.
+
+### `list` / `list_item`
+An ordered or unordered sequence of peer items. `list` children must be
+`list_item`s; a `list_item` outside a list is rejected at `append`.
+Options: `ordered` (default false) and `start` (the first ordinal of an
+ordered list, so a list resumed after a paragraph keeps counting).
+
+**Markers are derived, never authored.** An unordered list takes the
+bullet at every depth; an ordered one numbers from `start`. There is no
+field to set one, so a list can never number itself wrongly, and no
+marker ever contradicts the order assistive tech announces. The marker
+sits in a leading band sized for the widest marker in the list and
+right-aligned inside it, so every item's words start on the same column
+even when the count crosses into double digits; a wrapped line hangs
+under those words, never back under the marker. The band is leading, so
+it mirrors under `App.setDirection(.rtl)`.
+
+A `list_item` holds document blocks — `text` and nested lists — not
+arbitrary content. A `heading` inside one would claim an outline
+position the list cannot own, and a `table` reads as a mistake at list
+depth; both are rejected at `append`. Nesting is capped at three levels,
+also at `append`: past that the indent has eaten the line without saying
+anything the words don't. Parsed Markdown flattens deeper levels onto
+the third rather than failing, the way it rebases heading levels (see
+[markdown.md](markdown.md)).
+
+Items flow tighter than free-standing blocks — they are one run of prose
+broken into pieces, not separate thoughts. A list draws no edge, so the
+margin advice passes through it (see `stack`). Never interactive: a list
+of destinations is a `tile_group`, not a list with links in it. The
+audit fails a list with no items — `append` cannot catch that, since a
+list is built before its items exist. Semantics: `list` / `listitem`;
+assistive tech renders positions from the structure itself, so nokre's
+derived marker stays out of the announced text.
+
+### `blockquote`
+An attributed quotation: words that belong to someone other than the
+surrounding prose. Marked by a 1px `.g10` rule down the leading edge —
+the grouping tone `box` and `tile_group` use, not the `.g6` state
+carrier, because a quote is structure and never state — spanning the
+full height of what it holds, plus an indent past it.
+
+The attribution is words *inside* the quote, not a field on it: a quote
+whose source only a border implies is a quote whose source nobody
+hears. Children are the document block set — `text`, lists, code
+blocks, and nested quotes — with headings and tables rejected at
+`append`, exactly as in a `list_item`.
+
+The rule is an edge it draws, so unlike `list` a blockquote **consumes**
+the advised margin (see `stack`): an overflowing `code_block` inside one
+clips at the rule, never across it. The rule and the indent both mirror
+under `App.setDirection(.rtl)`. Semantics: `blockquote`.
+
+### `code_block`
+A verbatim block: whitespace preserved, never reflowed. `content` is
+mandatory (`append` rejects an empty block). It renders in the mono
+family, one line per newline, with **no word wrap** — a wrapped code
+line lies about where the code breaks and re-indents the one after it.
+
+It draws no fill and no border. A frame would be decoration, and would
+move the text onto a surface the contrast gate then has to re-prove; a
+block that wants one goes inside a `box`. What marks it is the mono
+voice and the preserved whitespace.
+
+A block wider than its parent scrolls horizontally — framework
+behavior, no API — on the overflowing `segmented` track's terms: it
+declines the advised margin and bleeds to the nearest drawn edge (the
+screen at the root, a box's border otherwise), so lines clip mid-glyph
+at that edge rather than mid-page, while resting lines keep the content
+alignment. A 2px indicator in the `scroll_region` pattern rides the
+bottom, quiet at rest and emphasized while the block is engaged.
+Focusable, because it scrolls: ←/→ walk it four mono advances at a time
+(a code indent), and every other key falls through to the page. A
+horizontal wheel or drag over it scrolls it; vertical delta belongs to
+the page — a code block scrolls one axis and the other is not its
+business.
+
+**The lines never mirror.** Verbatim content is defined by its own
+bytes, like a `qr` symbol's modules: source is written left-to-right and
+its leading whitespace *is* its structure, so right-anchoring lines
+under `App.setDirection(.rtl)` would shred the indentation and put every
+line's end on screen first. Offset 0 shows the start of the lines in
+both directions. The indicator does mirror, hugging the trailing edge
+like every other scroll bar.
+
+There is deliberately no horizontal twin of the
+`cleanly_clipped_scroll_region` audit rule: a region's height is the
+consumer's to nudge, but a code block's overflow comes from its longest
+line — for parsed Markdown, bytes the app never chose — so the rule
+would fire on content nobody can fix.
+
+Semantics: `code`, announced whole as one node — a verbatim block is
+read out, not navigated line by line.
+
+### `table` / `row` / `cell`
+`table` children must be `row`s; row children must be `cell`s — `append`
+rejects anything else at construction. Column widths are per-column
+intrinsic maxima; the grid is
+drawn with 1px lines. Mark header rows with `.header = true`.
+
+### `segmented`
+An exclusive choice among 2+ fixed options — radiogroup semantics, not
+tabs. `label` (the group's accessible name), `options`, `selected`,
+`on_select`. One tab stop; ←/→ move the selection and commit immediately;
+tapping a segment selects it. If activating a choice should navigate,
+that is the nav's job, not this element's.
+
+Reach for segmented when the user switches between the options
+repeatedly in place — views, filters, content sections. A choice made
+once and gathered by a form reads better as `radio_group` or `select`.
+
+A track wider than its parent scrolls horizontally. This is framework
+behavior with no API. Margins in nokre are advice, not walls (see
+`stack`), and an overflowing track is the element that must decline
+them: it bleeds through the surrounding padding to the nearest drawn
+edge — the screen at the root; a box's border stops it — squaring the
+track's corners where it reaches one. Resting chips keep the content
+alignment (the declined margin becomes a content inset), so the scroll
+positions are exactly the unbled track's; what changes is where chips
+clip: mid-chip at the screen edge, not mid-page (the static "more is
+there" affordance — nokre has no animation to hint with), scrolling
+through the margin band on their way there. A 2px indicator bar in the
+`scroll_region` pattern — both tones included, quiet at rest and
+emphasized while the track is engaged — rides the bottom of the track,
+within the content span. It stands in a strip the track grows for it
+rather than in the chips' own padding, so a scrolling track is deeper
+than the same track when it fits — deeper above the chips as well as
+below, or the band would read as chips pushed against its top edge. The offset is scroll state like `scroll_region`'s —
+consumers never write it. Horizontal wheel/trackpad input over the
+track scrolls it freely without touching the selection; a selection
+change scrolls minimally to bring its chip fully into view: ←/→ walk it
+a chip at a time (committing each step, as radiogroup semantics say
+they must), and tapping a chip clipped at the edge selects it and
+reveals the next. Assistive tech is unaffected — every option is
+announced whether or not it is on screen.
+
+There is deliberately no tablist element: nokre rebuilds subtrees
+instantly, so co-existing tab panels never exist and tablist semantics
+would be a lie to screen readers. Content-switching is a `segmented`
+whose change action rebuilds, or it is navigation.
+
+Visually, segmented is a track/chip pair: the track fills `.g11`
+(dimmed), the selected option is an elevated `.paper` chip with `.ink`
+text and a 1px `.g6` border. The border is what carries WCAG non-text
+contrast (1.4.11) — paper on the track alone is ~1.3:1, but `.g6`
+clears 3:1 against both the chip and the track in both appearances.
+`nav` reuses the exact same pattern — see below.
+
+## Navigation chrome
+
+The stack these controls move — the route table, the four motions, and
+the path that encodes it — is [routing.md](routing.md); what follows is
+the chrome.
+
+### `nav` / `nav_item`
+App-level navigation, installed once — not placed in route builders:
+
+```zig
+try app.setNav(&.{
+    .{ .route = "library", .icon = .library },
+    .{ .route = "settings", .icon = .settings },
+});
+try app.navigate("library");
+```
+
+The nav survives every router rebuild and leads the focus order as the
+navigation landmark. Placement and shape are both the framework's
+decisions, not the consumer's, and there is no API for either: the bar
+is always the bottom band of the viewport, and whatever it holds — the
+row of destinations, the collapsed chip, the minimized-notices square —
+is measured at its own width and centered there.
+
+A destination is a `route` — never an action — and an `icon` (any
+[`IconName`](#icon)), and nothing else. **It carries no label**: what a
+screen is called is its route's [`title`](routing.md), declared once at
+the route table, so the nav and the screen cannot disagree about where
+you are. `setNav` accepts 2–5 destinations, and refuses a route the
+table does not have or one that takes arguments — a destination is a
+place the app always has, and an argument would make it one particular
+screen. The glyph is **required**, not optional: a row where some
+destinations have marks and others do not is worse than either uniform
+answer. It leads the label at the label's own 16px, both always
+visible; it is decorative to assistive tech, which hears the words.
+
+**The bar has no ground.** There is no track, no fill, no hairline —
+the nav is its items and nothing else, each on a plate of its own, with
+`metrics.nav_item_gap` (8px) of page showing between them. The plates
+are three levels: the page, the destinations on `.g11` (the dim track
+tone every other control uses), and the current route one step above
+them on `.g10`, outlined in `mid` and lettered in `.ink` — `mid` rather
+than the `.g6` other chips use, because `.g6` is 2.7:1 against `.g10`,
+under the 1.4.11 floor, and `mid` is the lightest tone that clears it
+on both of the chip's sides. The current item is exposed as
+`aria-current`; consumers never manage selected state. Activating an
+item **pushes** its destination, so crossing the nav leaves a way back
+to the screen you crossed from ([routing.md](routing.md)); activating
+the destination already showing does nothing.
+
+**Each destination is as wide as its own words** — its glyph, the gap
+after it, the label, and `metrics.nav_item_pad_h` (20px) on either
+side: the button's 16 with 4 added back, because a pill's ends curve
+away from the words. Equal slots would stretch each pill to a share of
+the bar and set its words adrift in a strip of identical lozenges. The
+row is measured, then centered on the viewport as one group, the
+notices indicator — when there is one — riding at its trailing end. The
+gap between plates is drawn, not laid out: each item's *rect* is its
+pill grown half a gap on either side, so the targets meet end to end
+and a thumb landing between two destinations still lands on one of
+them.
+
+Plates are **pills** — the corner is half the slot's height, derived
+rather than fixed, so the shape follows the slot instead of drifting
+back to a rounded rectangle the next time the row grows. Nothing else
+in the library is a pill: the nav is the one place a control is *only*
+a target, with nothing around it to square up against. The collapsed
+chip takes the same corner, and the notices indicator beside them — a
+pill as tall as it is wide — is a circle.
+
+Because nothing hides what passes behind it, every screen with bottom
+chrome reserves `metrics.nav_content_gap` (24px) below its last element,
+on top of the bar and the OS safe band. Scrolled to the end, a page
+stands clear of the nav; mid-scroll, lines pass behind the items and
+down into the safe band — that glimpse of a half-covered line is the
+only thing left saying there is more below.
+
+A slot is 52px tall, the one control in the library that grows *past*
+`touch_target` rather than up to it: it is the chrome a thumb reaches
+for without looking, stacked against the bottom edge where reach is
+worst. Below it the bar keeps `metrics.nav_bar_pad_b` (16px) of clear
+space, the same inset the page's own margin takes from the frame —
+except that the OS band counts toward it, so on a phone the items sit
+just above the home-indicator strip rather than 16px above a strip that
+is already empty.
+
+Where the labels fit, the nav is that row. Where they do not, it
+**collapses**: the bar shows the current section alone, as the same
+chip wearing that section's glyph with a chevron-up at its trailing
+edge, and the other destinations move behind a picker that opens above
+it — carrying their glyphs into the list, so a mark means the same
+thing in both shapes.
+
+The threshold is measured, not a breakpoint: the row fits when its
+pills, the gaps between them, the bar's insets, and the indicator's
+reserved square fit the **viewport** — a longer word costs the row that
+word and nothing more, and the reserve is counted whether or not an
+indicator is showing, so the nav never changes shape because a notice
+arrived. The viewport, not the 560px pane: that cap is a line-length
+argument, governing the bottom chrome that holds prose — the banner,
+the notices pane, the sheet, a select's picker — and nothing in the bar
+is prose, so the row grows past the cap to exactly the width its items
+need and no further. Icons cost width, so they push rosters into the
+chip sooner; a set that fits in landscape and not in portrait reshapes
+as the device turns, one too wide for a laptop reopens the moment the
+window reaches the width it asked for, and translations change the
+answer — the same app can be a row in English and a chip in German,
+which is the point of measuring.
+
+The collapsed chip does not grow at all: it is one control, and a
+control that widened to hold one word would be its own kind of wrong.
+It is centered like the row, with the minimized-notices square counted
+into the same group and riding at its trailing end, so the two read as
+one bar. A lone square with no destinations beside it is that group by
+itself, centered — the one piece of chrome that does not move under
+[right-to-left](localization.md) mirroring, since a centered control
+has no leading edge to swap. The section card the chip opens is
+centered on the same group.
+
+The chip is a `combo_box` to assistive tech, not a link: it opens a list
+and takes a choice. Its accessible name is always "Section" and the
+current section is its *value*, so the control a screen-reader user
+looks for does not rename itself every time it is used. The list is the
+select's picker in behavior and a card in shape: it stands on the chip's
+leading edge, as wide as its longest row rather than as wide as the
+pane, with the current section marked. A select's picker is
+bottom-anchored because its owner is somewhere in the page; this one's
+owner is right below it, so the list is measured from the chip and
+draws no title — "Sections" stays as the dialog's accessible name,
+which is the only place it was ever needed. Choosing one navigates
+exactly as tapping a row item does — a push — and choosing the screen
+you are already on does nothing: the shape must not decide what a
+choice costs.
+
+**The chip is the one control that acts on the press.** Holding it opens
+the list, so the same press can travel to a row and choose it by letting
+go — the menu-bar gesture, without a menu bar. Three releases, three
+outcomes: over a row it goes there, back on the chip it *leaves the menu
+open* so a second press can choose by tap, and anywhere else it closes
+having chosen nothing. Nothing is committed by the press itself.
+
+That middle outcome is what makes the drag an addition rather than a
+replacement: a plain click, the Tab/↑/↓/Enter path, and a screen
+reader's own activation all reach every section without dragging
+anything (WCAG 2.5.1), and moving off before letting go always aborts
+(WCAG 2.5.2). The list opens *above* the chip rather than over it —
+a menu covering its own control would put a row under the finger still
+holding it, with nowhere to release that means "never mind". While the
+menu is open, moving the pointer moves **focus** to the row under it:
+the state ↑/↓ already move and assistive tech already announces — not
+hover returning by another door, because hover is a state with no
+keyboard equivalent and this is precisely the keyboard's.
+
+### `nav_here`
+**A screen that is none of the destinations names itself.** Most apps
+have more routes than nav sections — a detail screen, a legal page, a
+screen reached from a notice. On one of those, the roster matches
+nothing, and both shapes have to answer "where am I" anyway.
+
+They answer it with one extra entry, appended to the roster the chrome
+draws from: the current route's [`title`](routing.md), wearing the shared
+`file_text` mark. In the row it is a `nav_here` — a plate at the trailing
+end, in the current destination's plating. Collapsed, it is what the chip
+carries, so the answer does not depend on the shape. Consumers append
+neither, and name neither: every line of the roster — the destinations
+and this one alike — is labelled from the route table.
+
+The mark is one glyph for every off-roster screen, not a per-route field.
+A destination earns a recognizable mark by being somewhere you return to;
+this is only ever *here*, and a mark of its own would make each of these
+look like a destination the roster forgot.
+
+**The marker is a label, not a destination.** It is `static_text` to
+assistive tech — named "Current screen", with the title as its value,
+the same split the chip makes — takes no focus, is not in the tab order,
+and answers no press. A destination is a link that goes somewhere; this
+one goes where you already are. In the picker, though, it *is* a row:
+last, selected, so the chip's value is one of its own options rather
+than a name the list does not contain. Choosing it is declined by the
+rule that already declines the current destination.
+
+**Nothing is inherited.** A screen pushed from Settings is not "in"
+Settings, and the nav does not mark Settings while you are on it. nokre
+never asked consumers to declare a hierarchy, so it has none to walk, and
+guessing one from the stack would light a section on the strength of how
+the visitor happened to arrive: two doors to the same screen would light
+different sections, and a shared link opening it directly would light
+none. What used to happen here was worse and simpler — the chip fell back
+to the *first* destination, naming a section the visitor may never have
+opened.
+
+The extra entry is measured like any other, so the collapse threshold
+needed no rule for it: a row with one more pill in it collapses at a
+wider viewport, which is the threshold working, not an exception to it.
+Crossing back onto a destination drops the entry and the row returns to
+the roster alone.
+
+### Back control
+A pushed screen always has a way back, and the framework installs it:
+whenever the route stack is deeper than one screen, the rebuild places
+a back control ahead of anything the route's builder appends — a
+chevron-left glyph on the sheet-close's 44px touch target, sharing the
+first content element's line (a heading, by convention) with
+that element indented past it. The target hangs into the page margin on
+both axes so the *glyph* is what lines up: its leading edge sits on the
+text column, and it centers on that first line's cap region rather than
+its line box, which a heading without descenders reads low against.
+Its accessible name is always "Back"; activation pops one screen
+(`App.navigateBack`). There is nothing to configure and nothing to wire
+— consumers never build their own back control, and a pushed screen
+without one cannot exist. The stack root (depth 1) has nothing to go
+back to and gets none — including the first section the app opens on,
+until the nav is crossed; a screen that must not be returned to is a stack
+problem — enter it with `replace` or `switchTo`, not `push`.
+
+The one state it draws is **armed**: a back gesture is in progress and
+past the point where releasing would commit
+([routing.md](routing.md#the-back-gesture)). The chevron becomes an
+**arrow** — the mark changes and nothing else does, the same move an
+acknowledged `copyable` makes when its copy glyph becomes a check. A
+chevron points the way navigation goes; an arrow is the going, so the
+armed control states the outcome it is promising rather than looking
+like a button being held. It is a latch, not an animation — one repaint
+as the threshold is crossed, one as it is crossed back — and it is drawn
+at all because a threshold that can only be felt is no threshold on a
+device with haptics turned off.
+
+## Layers
+
+### `sheet`
+The only modal surface, created through the app — never appended
+directly to build content:
+
+```zig
+const sheet = try app.presentSheet("Filter results");
+_ = try app.tree.append(sheet, .{ .toggle = .{ .label = "Only unread" } });
+```
+
+A bottom-anchored panel (top corners rounded, `.g6` outline), at most
+`metrics.sheet_max_w` (560px) wide and never closer than
+`metrics.sheet_min_top` (48px) to the top edge. The framework pins a
+close control — a quiet Lucide square-x glyph with the accessible name "Close",
+occupying the full 44px touch target — in the header corner and moves
+focus to it; everything
+behind the sheet is inert — unreachable by Tab, tap, and scroll — and is
+dimmed by a 1px `.paper` checkerboard scrim, which keeps the pixels
+inside the thirteen-gray palette. Esc or a tap on the scrim dismisses
+it (`App.dismissSheet` does so programmatically), and focus returns to
+the element that had it. One sheet at a time; a second `presentSheet` is
+rejected at the call site, and navigating away dismisses it.
+
+It appears in place, fully formed — no slide, no fade (WCAG 2.3.3, and
+nokre has no animation to begin with).
+
+### `notice`
+A persistent notice, raised through the app:
+
+```zig
+try app.notify("Sync failed", "Changes are kept locally.", "sync");
+```
+
+A notice is a title, an optional description, and the route its open
+control deep-links to. Pending notices surface in exactly one of three
+states, all living in the bottom pane:
+
+- **Banner** — the front notice as a row anchored to the viewport
+  bottom, hiding the nav while it shows. It reserves its own band, so it
+  can never obscure content. Leading control: *open* (deep-links to the
+  notice's route, minimizing first) when it is the only notice, *expand*
+  (opens the notices pane) when there are more. Trailing controls:
+  *minimize* and *dismiss*.
+- **Notices pane** — a modal, sheet-like panel listing every pending
+  notice with per-row open/dismiss controls and a "Dismiss all" button.
+  Esc or a tap on the scrim minimizes it. It keeps the sheet's height cap
+  (`metrics.sheet_min_top` clear of the top edge), and the rows sit in a
+  scroll region inside it, so a list longer than the cap allows — which a
+  landscape phone reaches after very few notices — scrolls by wheel,
+  drag, or keyboard rather than being clipped at the pane's edge. The
+  header and "Dismiss all" stay put: the control that empties the list
+  should not scroll away as the list grows.
+- **Minimized** — an indicator glyph that reopens the pane. It belongs to
+  the bar rather than to the pane: it rides at the trailing end of
+  whatever the bar is centering — the row of destinations, or the
+  collapsed chip — and centers alone when there is no nav.
+
+All controls are Lucide glyphs on 44px targets with accessible names.
+Notices never steal focus and **never time out** (WCAG 2.2.1 — there is
+no auto-dismiss API to misuse). Duplicates (by title) are dropped; a new
+notice re-surfaces minimized ones as the banner; an open sheet takes the
+bottom pane, parking notices behind the indicator until it closes.
+Notices survive navigation. Screen readers announce the banner politely
+as a status live region.
+
+## Actions
+
+Actions are context + function-pointer pairs (`Action`, `ToggleAction`,
+`ChangeAction`, `SelectAction`) — nokre never allocates closures:
+
+```zig
+.on_press = .{ .ctx = state, .call = onSave }
+```
+
+## Proposing an element
+
+The set is closed, but not frozen: a new element is argued in on
+semantics — one sentence stating what it *means*, or it doesn't go in —
+and lands via the maintainer checklist in
+[internals/contributing.md](internals/contributing.md).

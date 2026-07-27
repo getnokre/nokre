@@ -1,0 +1,10 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": [ "REPLACE_WITH_YOUR_APPLE_TEAM_ID.dev.nokre.kitchensink_test" ],
+        "components": [ { "/": "*" } ]
+      }
+    ]
+  }
+}

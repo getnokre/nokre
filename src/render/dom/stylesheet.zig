@@ -1,0 +1,1612 @@
+//! The DOM edition's stylesheet, written out of nokre's own source.
+//!
+//! Every number here that could disagree with the library is read from
+//! the library instead: the thirteen grays and both ramps from
+//! [color.zig](../../core/color.zig), the six type scales from
+//! [text.zig](../../core/text.zig), every padding, radius, target and
+//! stroke from [layout.zig](../../core/layout.zig)'s `metrics`, each
+//! container's own default gap and padding from the element structs in
+//! [element.zig](../../core/element.zig), and the page margin from the
+//! root stack in [tree.zig](../../core/tree.zig). Nothing is
+//! transcribed, so nothing can drift — which is the only honest way to
+//! run an edition that claims to look like the one it is standing
+//! beside.
+//!
+//! Where the reference composes a number rather than naming one — a
+//! chip's ink plus its pad, a target centred on a line it is taller
+//! than — the composition is written here as the same arithmetic over
+//! the same constants, not as the integer it happens to come to. The
+//! rule this file follows throughout: **if `renderer.zig` computes it,
+//! compute it; if `layout.zig` names it, name it.**
+//!
+//! Two structural facts about CSS shape most of what follows.
+//!
+//! - **Custom properties inherit.** A `--pad` set once on the page
+//!   reaches every descendant, so a container that reads one has to
+//!   *declare* its own default first or it silently adopts its
+//!   ancestor's. Every container that spends `--pad` or `--gap` opens
+//!   its rule by setting them, and an element field arrives as an
+//!   inline style that outranks that declaration.
+//! - **`border-box` puts the border inside the box.** The reference
+//!   strokes a rect *within* its own bounds (`hsk_stroke_rect` insets by
+//!   half the thickness), so a 1px border here is the same pixel the
+//!   reference paints — which is also why a padding written beside a
+//!   border must be the reference's inset *minus* that border.
+//!
+//! It is not a styling API and no app may add to it. What a consumer
+//! writes is elements; what this file decides is how one is drawn, in
+//! exactly the sense `renderer.zig` decides it for the Skia edition.
+
+const std = @import("std");
+
+const color = @import("../../core/color.zig");
+const element = @import("../../core/element.zig");
+const layout = @import("../../core/layout.zig");
+const text_mod = @import("../../core/text.zig");
+const tree_mod = @import("../../core/tree.zig");
+
+const Gray = color.Gray;
+const Scale = text_mod.Scale;
+const metrics = layout.metrics;
+const root_stack = tree_mod.root_stack;
+
+pub const Options = struct {
+    /// Where the bundled faces are served from. The edition ships no
+    /// font stack and no fallback list: nokre renders in these and
+    /// nothing else, and a page that quietly fell back to the system UI
+    /// font would be describing a different library.
+    fonts: []const u8 = "/assets/fonts",
+    /// The faces' file extension. woff2 is what a site should serve —
+    /// a TTF over HTTP is the same outlines without the compression —
+    /// but a page pointing straight at nokre's bundled binaries says
+    /// `.ttf`, and the format hint follows the suffix rather than
+    /// being asserted beside it.
+    font_suffix: []const u8 = ".woff2",
+    /// Emit the `@font-face` block at all. A driver that has already
+    /// declared the faces — or that is embedding this sheet in a page
+    /// which does — turns it off.
+    font_faces: bool = true,
+};
+
+pub fn write(gpa: std.mem.Allocator, out: *std.ArrayList(u8), options: Options) !void {
+    if (options.font_faces) try writeFaces(gpa, out, options.fonts, options.font_suffix);
+
+    // ---- the palette, both ramps ----
+    //
+    // Which ramp a page paints in is `App.appearance()`: the app's own
+    // `scheme` resolved against what the OS reports (color.zig). A
+    // scheme is a consumer API on every other platform, so it is one
+    // here — a driver running the app stamps the resolved answer on the
+    // document root as `data-appearance`, and the second ramp below
+    // hangs off it.
+    try out.appendSlice(gpa, "\n:root {\n  color-scheme: light dark;\n");
+    try writeRamp(gpa, out, .light, "  ");
+    try out.appendSlice(gpa,
+        \\  --ink: var(--g2);
+        \\  --dark: var(--g3);
+        \\  --mid: var(--g5);
+        \\  --light: var(--g9);
+        \\  --paper: var(--g12);
+        \\
+    );
+
+    // ---- the metrics, named for the CSS that spends them ----
+    //
+    // `--pad` and `--gap` are deliberately *absent* from this list. They
+    // are the element fields `Stack` and `Box` carry, so they belong to
+    // whichever container is being drawn — declared by its own rule and
+    // overridden by an inline style — and a page-wide value under those
+    // names would be inherited by every nested container that never set
+    // one. That was exactly the bug: a stack whose padding is zero drew
+    // the page's 16.
+    inline for (.{
+        .{ "pane", metrics.sheet_max_w },
+        // The root stack's own two numbers (tree.zig): the page margin,
+        // and the space between two blocks.
+        .{ "page-pad", root_stack.padding },
+        .{ "page-gap", root_stack.gap },
+        .{ "control-gap", metrics.control_gap },
+        .{ "border", metrics.border },
+        .{ "radius", metrics.radius },
+        .{ "radius-card", metrics.radius_card },
+        .{ "touch", metrics.touch_target },
+        .{ "tap-target", metrics.tap_target },
+        .{ "focus", metrics.focus_stroke },
+        .{ "focus-clear", metrics.focus_clear },
+        .{ "tile-pad-h", metrics.tile_pad_h },
+        .{ "tile-pad-v", metrics.tile_pad_v },
+        .{ "cell-pad", metrics.cell_pad },
+        .{ "list-gap", metrics.list_gap },
+        .{ "list-marker-gap", metrics.list_marker_gap },
+        .{ "quote-indent", metrics.quote_indent },
+        .{ "icon-gap", metrics.icon_gap },
+        .{ "icon-glyph", metrics.icon_glyph },
+        .{ "badge-pad-h", metrics.badge_pad_h },
+        .{ "badge-pad-v", metrics.badge_pad_v },
+        .{ "meter-h", metrics.meter_h },
+        .{ "seg-pad-h", metrics.seg_pad_h },
+        .{ "seg-pad-v", metrics.seg_pad_v },
+        .{ "seg-track-pad", metrics.seg_track_pad },
+        .{ "seg-scroll-head", metrics.seg_scroll_head },
+        .{ "seg-scroll-gutter", metrics.seg_scroll_gutter },
+        .{ "button-pad-h", metrics.button_pad_h },
+        .{ "button-pad-v", metrics.button_pad_v },
+        .{ "input-pad", metrics.input_pad },
+        .{ "input-label-gap", metrics.input_label_gap },
+        .{ "toggle-w", metrics.toggle_track_w },
+        .{ "toggle-h", metrics.toggle_track_h },
+        .{ "toggle-inset", metrics.toggle_knob_inset },
+        .{ "checkbox", metrics.checkbox_box },
+        .{ "radio-glyph", metrics.radio_glyph },
+        .{ "radio-dot-inset", metrics.radio_dot_inset },
+        .{ "sheet-pad", metrics.sheet_pad },
+        .{ "sheet-min-top", metrics.sheet_min_top },
+        .{ "notice-pad", metrics.notice_pad },
+        .{ "nav-item-pad-h", metrics.nav_item_pad_h },
+        .{ "nav-bar-pad", metrics.nav_bar_pad },
+        .{ "nav-bar-pad-h", metrics.nav_bar_pad_h },
+        .{ "nav-item-gap", metrics.nav_item_gap },
+        .{ "nav-bar-pad-b", metrics.nav_bar_pad_b },
+        .{ "nav-content-gap", metrics.nav_content_gap },
+        // How far the back control's target hangs past the leading
+        // edge, so its *glyph* lines up with the text column.
+        .{ "back-bleed", layout.back_bleed },
+        // The one slot the library grows *past* `touch_target` rather
+        // than up to it: its own vertical padding around one line.
+        .{ "nav-slot", layout.navItemHeight() },
+        // A radio's dot and a toggle's knob: the reference derives both
+        // from the ring and the track it sits in, so the derivation is
+        // what travels rather than the pixel it lands on.
+        .{ "radio-dot", metrics.radio_glyph - 2 * metrics.radio_dot_inset },
+        .{ "toggle-knob", metrics.toggle_track_h - 2 * metrics.toggle_knob_inset },
+        // A checkbox's corner (`checkbox_box / 4` in `drawCheckbox`) and
+        // a radio's, which is the full half — a circle.
+        .{ "checkbox-radius", @divTrunc(metrics.checkbox_box, 4) },
+    }) |m| {
+        try out.print(gpa, "  --{s}: {d}px;\n", .{ m[0], m[1] });
+    }
+
+    // A count rather than a length: the rows a `text_area` opens at.
+    try out.print(gpa, "  --text-area-rows: {d};\n", .{metrics.text_area_min_rows});
+
+    // The clear space kept below the bar, exactly as `navBarBottomPad`
+    // computes it: the OS band counts toward the inset rather than
+    // stacking under it, so a home-indicator strip already *is* that
+    // clear space and only a desktop window pays the whole 16.
+    try out.appendSlice(gpa,
+        \\  --safe-b: env(safe-area-inset-bottom, 0px);
+        \\  --bar-bottom: max(var(--nav-bar-pad), calc(var(--nav-bar-pad-b) - var(--safe-b)));
+        \\
+    );
+
+    // ---- the type scale ----
+    inline for (@typeInfo(Scale).@"enum".fields) |f| {
+        const s: Scale = @enumFromInt(f.value);
+        try out.print(gpa, "  --px-{s}: {d}px;\n  --lh-{s}: {d}px;\n", .{
+            f.name, s.px(), f.name, s.lineHeight(),
+        });
+    }
+    try out.appendSlice(gpa, "}\n");
+
+    // ---- the second ramp ----
+    // Not an inversion of the first: light-on-dark stems read heavier,
+    // so the dark ramp is solved separately as ratios against a true
+    // black page (internals/pixel-model.md).
+    //
+    // It is written under two selectors, from one loop so neither can
+    // drift. The media query is all a page with no app behind it — a
+    // screen serialized to a file — has to go on. `data-appearance` is
+    // core's own answer, and it already *contains* the system's, since
+    // that is what `Scheme.auto` resolves through. So the query stands
+    // down the moment the attribute appears: an app pinned to light
+    // must stay light on a dark desktop, and a media query that kept
+    // its say would overrule the very setting the reader chose.
+    try out.appendSlice(gpa, "\n@media (prefers-color-scheme: dark) {\n  :root:not([data-appearance]) {\n");
+    try writeRamp(gpa, out, .dark, "    ");
+    try out.appendSlice(gpa, "  }\n}\n");
+    // `color-scheme` narrows to the one appearance too, so the form
+    // controls, the scrollbars and the canvas the browser draws on its
+    // own account follow the app rather than the desktop.
+    try out.appendSlice(gpa, "\n:root[data-appearance=\"light\"] { color-scheme: light; }\n");
+    try out.appendSlice(gpa, ":root[data-appearance=\"dark\"] {\n  color-scheme: dark;\n");
+    try writeRamp(gpa, out, .dark, "  ");
+    try out.appendSlice(gpa, "}\n");
+
+    try out.appendSlice(gpa, sheet);
+    try writeDerived(gpa, out);
+}
+
+/// The thirteen grays of one appearance, as custom properties. A
+/// function rather than an inline loop at each site because the dark
+/// ramp is spent under two selectors — the system query and core's own
+/// answer — and two hand-written copies of thirteen bytes is exactly
+/// the drift this file exists to rule out.
+fn writeRamp(gpa: std.mem.Allocator, out: *std.ArrayList(u8), appearance: color.Appearance, indent: []const u8) !void {
+    inline for (@typeInfo(Gray).@"enum".fields) |f| {
+        const g: Gray = @enumFromInt(f.value);
+        const b = g.byte(appearance);
+        try out.print(gpa, "{s}--{s}: #{x:0>2}{x:0>2}{x:0>2};\n", .{ indent, f.name, b, b, b });
+    }
+}
+
+/// The rules whose *values* are computed rather than named — a mark's
+/// codepoint, a breakpoint, and the six placements of the back control.
+/// They sit after the static sheet so each is the last word on its
+/// selector.
+fn writeDerived(gpa: std.mem.Allocator, out: *std.ArrayList(u8)) !void {
+    // The two container defaults, read off the element structs: a stack
+    // pads nothing and gaps by `Stack.gap`, a box pads by `Box.padding`.
+    // Declared rather than inherited — see the note on custom properties
+    // at the top of this file — and outranked by the inline style the
+    // serializer writes when the field differs from these.
+    const stack: element.Stack = .{};
+    const box: element.Box = .{};
+    try out.print(gpa,
+        \\
+        \\.stack {{ --pad: {d}px; --gap: {d}px; }}
+        \\.box {{ --pad: {d}px; }}
+        \\
+    , .{ stack.padding, stack.gap, box.padding });
+
+    // The checked box's mark, from `element.zig` rather than typed out:
+    // it is a private-use codepoint in the icon face, and a raw one in
+    // the byte stream is at the mercy of whatever decides the sheet's
+    // encoding.
+    try out.print(
+        gpa,
+        "\ninput.check::after {{ content: \"\\{x}\"; }}\n",
+        .{try std.unicode.utf8Decode(element.checkbox_check)},
+    );
+
+    // A banner as wide as the viewport has no side edges to round: the
+    // reference squares the corners and drops the side borders there,
+    // keeping the boundary on the top hairline alone (`drawPaneChrome`).
+    // The breakpoint is the pane cap itself, so it cannot drift from
+    // `--pane` above.
+    try out.print(gpa,
+        \\
+        \\@media (max-width: {d}px) {{
+        \\  /* No side border left to be part of the inset, so the words
+        \\     take the whole pad from the screen edge — which is where
+        \\     the reference puts them either way. */
+        \\  .notice {{ border-radius: 0; border-inline: 0; padding-inline: var(--notice-pad); }}
+        \\}}
+        \\
+    , .{metrics.sheet_max_w});
+
+    // The back control's vertical placement, per the scale of the line
+    // it marks. `layoutRow` centres the 44px target on the *cap region*
+    // of that line — caps run about three eighths of the font size above
+    // the baseline — which is above the row's own top at every scale,
+    // because no line the library sets is as tall as the target. The
+    // offset is therefore negative throughout, and the control reaches
+    // into the page margin on this axis exactly as it does on the other.
+    //
+    // Six rules rather than one, because the number is the scale's: an
+    // h1 wants -4 where body text wants -11, and a control that used one
+    // figure for both sits visibly low under half the screens in an app.
+    // A container that draws and insets nothing hands the pairing down
+    // to its own first block (`handsDownBack`), so each selector asks
+    // about that child too.
+    try out.appendSlice(gpa, "\n/* The back control, centred on the cap region of the line it marks. */\n");
+    inline for (.{
+        .{ "h1", Scale.h1 },
+        .{ "h2", Scale.h2 },
+        .{ "h3", Scale.h3 },
+        .{ "h4", Scale.h4 },
+        .{ "h5, p", Scale.body },
+        .{ "h6", Scale.small },
+    }, .{ "h1", "h2", "h3", "h4", "body", "small" }) |row, scale_name| {
+        const s: Scale = row[1];
+        const yoff = s.baseline() - @divTrunc(3 * s.px(), 8) - @divTrunc(metrics.touch_target, 2);
+        try out.print(
+            gpa,
+            ".nokre > .icon-button.back:has(+ :is({s}, .s-{s}))," ++
+                " .nokre > .icon-button.back:has(+ :is(.document, .stack.hands-back) > :first-child:is({s}, .s-{s}))" ++
+                " {{ top: calc(var(--page-pad) + {d}px); }}\n",
+            .{ row[0], scale_name, row[0], scale_name, yoff },
+        );
+    }
+}
+
+fn writeFaces(gpa: std.mem.Allocator, out: *std.ArrayList(u8), dir: []const u8, ext: []const u8) !void {
+    // The format hint must match the container or browsers skip the
+    // source outright; anything that is neither woff flavor is served as
+    // raw TrueType/OpenType.
+    const format = if (std.mem.eql(u8, ext, ".woff2"))
+        "woff2"
+    else if (std.mem.eql(u8, ext, ".woff"))
+        "woff"
+    else
+        "truetype";
+    const Face = struct { family: []const u8, style: []const u8, weight: u16, file: []const u8, arabic: bool };
+    // The same faces the Skia edition selects by index — mono and prose
+    // in four variants each, the icon face, and the Arabic-script
+    // companion every family falls back to.
+    const faces = [_]Face{
+        .{ .family = "prose", .style = "normal", .weight = 400, .file = "prose", .arabic = false },
+        .{ .family = "prose", .style = "normal", .weight = 700, .file = "prose-bold", .arabic = false },
+        .{ .family = "prose", .style = "italic", .weight = 400, .file = "prose-italic", .arabic = false },
+        .{ .family = "prose", .style = "italic", .weight = 700, .file = "prose-bolditalic", .arabic = false },
+        .{ .family = "mono", .style = "normal", .weight = 400, .file = "mono", .arabic = false },
+        .{ .family = "mono", .style = "normal", .weight = 700, .file = "mono-bold", .arabic = false },
+        .{ .family = "mono", .style = "italic", .weight = 400, .file = "mono-italic", .arabic = false },
+        .{ .family = "mono", .style = "italic", .weight = 700, .file = "mono-bolditalic", .arabic = false },
+        // Core never requests the companion: in the Skia edition any
+        // Arabic-script codepoint in a run makes the shim substitute it.
+        // `unicode-range` is a browser doing the same substitution, and
+        // it carries no italic — the script has no italic tradition, so
+        // an italic request resolves to the upright weight. That
+        // resolution is what `font-synthesis: none` in the reset below
+        // guarantees: without it a browser shears the upright face and
+        // invents the variant the bundle deliberately does not ship.
+        .{ .family = "prose", .style = "normal", .weight = 400, .file = "arabic", .arabic = true },
+        .{ .family = "prose", .style = "normal", .weight = 700, .file = "arabic-bold", .arabic = true },
+        .{ .family = "mono", .style = "normal", .weight = 400, .file = "arabic", .arabic = true },
+        .{ .family = "mono", .style = "normal", .weight = 700, .file = "arabic-bold", .arabic = true },
+    };
+    for (faces) |f| {
+        try out.print(
+            gpa,
+            "@font-face {{ font-family: {s}; font-style: {s}; font-weight: {d}; font-display: swap;" ++
+                " src: url({s}/{s}{s}) format(\"{s}\"){s}; }}\n",
+            .{
+                f.family,                                                                                    f.style, f.weight, dir, f.file, ext, format,
+                if (f.arabic) "; unicode-range: U+0600-06FF, U+200C-200D, U+FB50-FDFF, U+FE70-FEFF" else "",
+            },
+        );
+    }
+    try out.print(
+        gpa,
+        "@font-face {{ font-family: icons; font-weight: 400; font-display: block;" ++
+            " src: url({s}/{s}{s}) format(\"{s}\"); }}\n",
+        // The icon face keeps its upstream name where a page points at
+        // nokre's own bundle; a site that subset it named it for what
+        // it is.
+        .{ dir, if (std.mem.eql(u8, ext, ".woff2")) "icons" else "lucide", ext, format },
+    );
+}
+
+const sheet =
+    \\
+    \\/* ---- reset ------------------------------------------------------ */
+    \\
+    \\/* A reset here is not tidiness, it is the edition's half of pixel
+    \\   determinism. Everything below removes a decision some browser
+    \\   makes on the library's behalf and the reference does not make at
+    \\   all — a UA margin, a synthesized face, a subpixel-smoothed stem.
+    \\   What is left is the tree's own geometry, drawn the same way in
+    \\   every engine. */
+    \\
+    \\*, *::before, *::after { box-sizing: border-box; }
+    \\
+    \\/* The reference strokes a rect *inside* its own bounds, so a
+    \\   border-box border is the same pixel it paints — and a padding
+    \\   written beside a border is the reference's inset less that
+    \\   border. Every such subtraction below says so where it appears. */
+    \\
+    \\html {
+    \\  -webkit-text-size-adjust: 100%;
+    \\  -moz-text-size-adjust: 100%;
+    \\  text-size-adjust: 100%;
+    \\}
+    \\body { margin: 0; }
+    \\
+    \\/* Nothing nokre draws carries a margin. Spacing between blocks is
+    \\   the stack's `gap` and the padding an element declares, both of
+    \\   which are fields on the tree — a UA margin is a layout value the
+    \\   browser decided on the library's behalf.
+    \\
+    \\   It is not cosmetic. `hr`'s UA rule includes `margin-inline: auto`,
+    \\   and an auto inline margin on a flex item beats `stretch`: the
+    \\   divider collapsed to zero width and vanished, taking the UA's
+    \\   block margins with it as a gap where a rule should have been.
+    \\
+    \\   Zero specificity (`:where`), so every rule below still wins —
+    \\   the code block's bleed and the panes' centring are margins the
+    \\   *edition* chose, which is a different thing. */
+    \\:where(.nokre, .nav, .notice, .notices-pane, .sheet, .picker),
+    \\:where(.nokre, .nav, .notice, .notices-pane, .sheet, .picker) :where(*) {
+    \\  margin: 0;
+    \\  padding: 0;
+    \\}
+    \\
+    \\/* A fieldset is the grouping `radio_group` and `segmented` are, and
+    \\   a legend is their label — but a legend is not an ordinary child:
+    \\   every engine pulls it out of its parent's formatting context and
+    \\   into the border, so a flex fieldset's `gap` never reaches it and
+    \\   the label sits at a different distance in each browser. Block
+    \\   flow with an explicit margin is the arrangement all three agree
+    \\   on, which is why neither group lays itself out with flex. */
+    \\fieldset { display: block; border: 0; min-width: 0; }
+    \\legend { display: block; float: none; }
+    \\
+    \\/* Form controls inherit the page's type. `font` covers family,
+    \\   size, weight and line height; the spacing properties and the
+    \\   alignment are separate UA decisions and Safari keeps its own
+    \\   unless told otherwise. */
+    \\button, input, select, textarea {
+    \\  font: inherit;
+    \\  color: inherit;
+    \\  letter-spacing: inherit;
+    \\  word-spacing: inherit;
+    \\  text-align: inherit;
+    \\  text-transform: inherit;
+    \\}
+    \\
+    \\/* No synthesized faces, ever. The bundle ships real drawn bold and
+    \\   italic (core/text.zig), and the Arabic companion ships neither —
+    \\   so a browser left to its own devices shears an upright face into
+    \\   a fake oblique and smears the stems of a fake bold, which is the
+    \\   rasterizer variance the bundling exists to close. */
+    \\* { font-synthesis: none; }
+    \\
+    \\/* Grayscale antialiasing, to match the reference exactly: the shim
+    \\   sets `SkFont::Edging::kAntiAlias` and `setSubpixel(false)`, while
+    \\   a browser on macOS defaults to subpixel-smoothed text that reads
+    \\   a weight heavier than what every other platform draws. */
+    \\.nokre, .nav, .notice, .notices-pane, .sheet, .picker {
+    \\  -webkit-font-smoothing: antialiased;
+    \\  -moz-osx-font-smoothing: grayscale;
+    \\}
+    \\
+    \\/* There is no pressed state in nokre, so there is none to flash:
+    \\   the grey wash a mobile browser paints over a tapped control is a
+    \\   state the library does not have. */
+    \\.nokre, .nav, .notice, .notices-pane, .sheet, .picker { -webkit-tap-highlight-color: transparent; }
+    \\
+    \\/* A rule the reference draws is a rule: one unbroken line from the
+    \\   run's start to its end. `skip-ink` cuts gaps around descenders,
+    \\   which is a typographic opinion no draw call here expresses. */
+    \\a, s, u, ins, del { text-decoration-skip-ink: none; }
+    \\
+    \\/* ---- direction --------------------------------------------------- */
+    \\
+    \\/* Every string takes its base direction from its own first strong
+    \\   character, which is what `plaintext` means — UAX #9 P2/P3, the
+    \\   rule `bidi.paragraphDirection` implements and every text path in
+    \\   the reference runs through, so a Persian paragraph reads right to
+    \\   left in an otherwise left-to-right screen without its draw site
+    \\   knowing (`Painter.drawText`, `ParagraphCursor`). One rule rather
+    \\   than an attribute per emitted element, for the same reason the
+    \\   reference put it in the painter rather than at each call.
+    \\
+    \\   The list is *what holds one of core's strings* — a paragraph, a
+    \\   cell, a control's label — and not every element: `plaintext` on
+    \\   an inline box isolates it, and core resolves a run and the spans
+    \\   inside it as one paragraph, so isolating each `<strong>` would
+    \\   reorder a mixed-direction sentence differently from the edition
+    \\   standing beside this one. Hence the second rule, which hands the
+    \\   decorations back to the paragraph they belong to.
+    \\
+    \\   A code block is named in neither: its lines do not mirror,
+    \\   because a verbatim block is bytes in the order they were
+    \\   written (`drawCodeBlock`). */
+    \\:is(.nokre, .nav, .notice, .notices-pane, .sheet, .picker)
+    \\  :is(p, h1, h2, h3, h4, h5, h6, li, td, th, legend, label, button, a, span,
+    \\      input, textarea, select, option) {
+    \\  unicode-bidi: plaintext;
+    \\}
+    \\:is(p, h1, h2, h3, h4, h5, h6) :is(a, span, strong, em, s, code) {
+    \\  unicode-bidi: normal;
+    \\}
+    \\
+    \\/* Mirrored chrome (`App.setDirection`) — the rows, the leading
+    \\   edges, the nav. Text is not this question and never was; it
+    \\   aligns by its content above, which is why an app never has to
+    \\   call `setDirection` to get RTL *text* right.
+    \\
+    \\   The whole sheet is written in logical properties, so this one
+    \\   declaration is the mirroring. It is scoped to nokre's own
+    \\   surfaces rather than set on the document: the attribute is the
+    \\   driver's to stamp, but the page around an embedded app is not
+    \\   this edition's to turn around. */
+    \\:root[data-direction="rtl"] :is(.nokre, .nav, .notice, .notices-pane, .sheet, .picker) {
+    \\  direction: rtl;
+    \\}
+    \\
+    \\/* No transition and no animation, anywhere, ever. Motion is a
+    \\   vestibular hazard (WCAG 2.3.3), an untestable intermediate state,
+    \\   and a tax on determinism; nokre has none to configure or to
+    \\   disable, so there is none here to disable either. The rule is a
+    \\   guard, not a preference — which is why it is not behind
+    \\   prefers-reduced-motion. */
+    \\*, *::before, *::after {
+    \\  transition: none !important;
+    \\  animation: none !important;
+    \\  scroll-behavior: auto !important;
+    \\}
+    \\
+    \\/* There are no :hover rules in this file. Not one. An affordance
+    \\   only a pointer can discover is information withheld from touch
+    \\   and keyboard users, so the whole category is absent — here as in
+    \\   the library. */
+    \\
+    \\/* ---- the root ---------------------------------------------------- */
+    \\
+    \\/* The type base, and every surface it has to reach. The chrome
+    \\   layers are siblings of the screen rather than children of it —
+    \\   a fixed bar inside a scrolling column would scroll — so they
+    \\   inherit nothing from it and are named here instead. A page that
+    \\   set this on `body` would be styling its host, which an edition
+    \\   mounted into someone else's document has no business doing. */
+    \\.nokre, .nav, .notice, .notices-pane, .sheet, .picker {
+    \\  color: var(--ink);
+    \\  font-family: prose;
+    \\  font-size: var(--px-body);
+    \\  line-height: var(--lh-body);
+    \\}
+    \\
+    \\/* The tree root is a vertical stack; a driver puts `nokre` on
+    \\   whatever it wraps the screen in. Its padding and gap are the root
+    \\   stack's own fields, not a page style — `tree.root_stack` is where
+    \\   both numbers live. */
+    \\.nokre {
+    \\  --pad: var(--page-pad);
+    \\  --gap: var(--page-gap);
+    \\  position: relative;
+    \\  display: flex;
+    \\  flex-direction: column;
+    \\  gap: var(--gap);
+    \\  padding: var(--pad);
+    \\  background: var(--paper);
+    \\}
+    \\
+    \\/* The bottom reserve is the library's, and it is `trailingSpace`
+    \\   plus `navBarHeight` to the pixel: nothing may *rest* behind the
+    \\   destinations, so a fully scrolled page still leaves the content
+    \\   gap above the bar, the bar's own top pad, its slot, and the clear
+    \\   space below it. The OS band is inside `--bar-bottom`, exactly as
+    \\   `navBarBottomPad` puts it there. */
+    \\.nokre.has-chrome {
+    \\  padding-bottom: calc(
+    \\    var(--nav-content-gap) + var(--nav-bar-pad) + var(--nav-slot) + var(--bar-bottom) + var(--safe-b)
+    \\  );
+    \\}
+    \\
+    \\/* A flex item will not shrink below its own min-content unless it
+    \\   is told it may, and a code block's min-content is its longest
+    \\   line — which is the thing that is supposed to scroll rather than
+    \\   push the pane wider. */
+    \\.nokre > *, .stack > *, .box > *, blockquote > *, li > *, .scroll > * { min-width: 0; }
+    \\
+    \\/* Every surface that scrolls sideways, told the same thing
+    \\   directly. A segmented track's min-content is all of its chips
+    \\   laid end to end, and a track nested in a fieldset never reached
+    \\   the rule above — so the *page* grew to fit the chips, which on a
+    \\   phone is a document wider than the screen. Everything downstream
+    \\   of that reads as broken: a horizontally scrolled page leaves
+    \\   every fixed layer — the nav, a sheet, the scrim — covering the
+    \\   viewport it was measured against rather than the part you are
+    \\   looking at. */
+    \\.seg-track, pre.code, .table-wrap { min-width: 0; max-width: 100%; }
+    \\
+    \\/* And the page cannot be widened from inside in the first place.
+    \\   `clip`, not `hidden`: it establishes no scroll container, so the
+    \\   page still scrolls vertically and nothing here becomes a
+    \\   containing block for the chrome. What it clips at is the screen
+    \\   edge, which is where an element that declines the advised margin
+    \\   was told to stop anyway. */
+    \\.nokre { overflow-x: clip; }
+    \\
+    \\/* ---- containers -------------------------------------------------- */
+    \\
+    \\/* Each opens by declaring the two element fields it spends. Without
+    \\   that declaration it would inherit its parent's — custom
+    \\   properties do — and a stack whose padding is zero would draw the
+    \\   page's margin instead. An inline style carrying the field
+    \\   outranks the declaration, which is exactly the precedence
+    \\   wanted. */
+    \\.stack {
+    \\  display: flex;
+    \\  flex-direction: column;
+    \\  gap: var(--gap);
+    \\  padding: var(--pad);
+    \\}
+    \\/* Rows place children at their intrinsic widths and let the row
+    \\   overflow; a run of actions too wide for one folds its tail into
+    \\   the `more` control (overflow.zig) rather than wrapping to a
+    \\   second line, so there is no wrapping to switch on here. */
+    \\.stack.row { flex-direction: row; flex-wrap: nowrap; align-items: center; }
+    \\/* And each child takes its own width. `layoutHorizontalFlow` places
+    \\   them at `intrinsicSize` — capped at the row's span, never
+    \\   *shared* down to fit it — so a row too full overflows rather than
+    \\   squeezing every item in it a little. */
+    \\.stack.row > * { flex: none; max-width: 100%; }
+    \\
+    \\/* A box groups; it does not decorate. Its edge is a wall — the
+    \\   margin advice stops at it, so nothing bleeds across a border.
+    \\   Its inner flow gap is the library's, not a field: `layoutBlock`
+    \\   flows a box's children at `control_gap` and a box carries no gap
+    \\   to override it with. */
+    \\.box {
+    \\  display: flex;
+    \\  flex-direction: column;
+    \\  gap: var(--control-gap);
+    \\  border: var(--border) solid var(--g10);
+    \\  border-radius: var(--radius-card);
+    \\  padding: calc(var(--pad) - var(--border));
+    \\}
+    \\/* Borderless, the padding is the whole inset again. */
+    \\.box.bare { border: 0; padding: var(--pad); }
+    \\
+    \\.document { --pad: 0px; display: flex; flex-direction: column; gap: var(--control-gap); }
+    \\.scroll { --pad: 0px; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: var(--control-gap); }
+    \\
+    \\/* ---- type -------------------------------------------------------- */
+    \\
+    \\/* Every level draws bold, in the family's real bundled bold face —
+    \\   which is what keeps h5 and h6 reading as headings beside the
+    \\   prose they share a size with. Only three sizes sit above the body,
+    \\   so size alone was never going to carry six levels. */
+    \\h1, h2, h3, h4, h5, h6 { font-weight: 700; }
+    \\h1 { font-size: var(--px-h1); line-height: var(--lh-h1); }
+    \\h2 { font-size: var(--px-h2); line-height: var(--lh-h2); }
+    \\h3 { font-size: var(--px-h3); line-height: var(--lh-h3); }
+    \\h4 { font-size: var(--px-h4); line-height: var(--lh-h4); }
+    \\h5 { font-size: var(--px-body); line-height: var(--lh-body); }
+    \\h6 { font-size: var(--px-small); line-height: var(--lh-small); }
+    \\/* No tracking anywhere in the type, and no margins. The reference
+    \\   measures a string with the face's own advances and nothing else,
+    \\   so a letter-spacing here would put every wrap point in this
+    \\   edition one word away from the other's; spacing between blocks is
+    \\   the stack's `gap`, and an element that added its own margin would
+    \\   be deciding a layout value the tree already carries. */
+    \\
+    \\/* Whitespace is content. nokre wraps greedily at spaces and honours
+    \\   `\n`, and it measures the string it was given — so a run of
+    \\   spaces is a run of spaces and a lone one still owns a line box.
+    \\   `normal` collapses all of that: it dropped embedded newlines,
+    \\   and it collapsed the single space that gives a swatch its height
+    \\   until thirteen shades came out as circles. */
+    \\p, h1, h2, h3, h4, h5, h6 { white-space: pre-wrap; }
+    \\/* And a word too long for the column overflows rather than
+    \\   breaking: `wrap` splits at spaces and lets an unbreakable run
+    \\   run on, which is what keeps a URL one selectable token. The page
+    \\   clips it at the screen edge, exactly as the reference does. */
+    \\p { overflow-wrap: normal; }
+    \\strong { font-weight: 700; }
+    \\em { font-style: italic; }
+    \\/* No bundled family ships a struck variant and synthesizing one
+    \\   would reopen the rasterizer variance the bundling exists to
+    \\   close, so it is a rule, not a face. */
+    \\s { text-decoration-thickness: var(--border); }
+    \\/* A span changes the *face*, never the scale: mixed sizes inside a
+    \\   line would break the uniform line box, which is why `scale`
+    \\   stays element-level in the element set. `font-size: inherit`
+    \\   is the one that matters — a UA shrinks `code` to a fraction of
+    \\   its parent, and the reference draws it at the run's own size. */
+    \\code { font-family: mono; font-size: inherit; }
+    \\
+    \\.mono { font-family: mono; }
+    \\.s-small { font-size: var(--px-small); line-height: var(--lh-small); }
+    \\.s-body  { font-size: var(--px-body);  line-height: var(--lh-body); }
+    \\.s-h4    { font-size: var(--px-h4);    line-height: var(--lh-h4); }
+    \\.s-h3    { font-size: var(--px-h3);    line-height: var(--lh-h3); }
+    \\.s-h2    { font-size: var(--px-h2);    line-height: var(--lh-h2); }
+    \\.s-h1    { font-size: var(--px-h1);    line-height: var(--lh-h1); }
+    \\
+    \\.g0 { color: var(--g0); } .g1 { color: var(--g1); } .g2 { color: var(--g2); }
+    \\.g3 { color: var(--g3); } .g4 { color: var(--g4); } .g5 { color: var(--g5); }
+    \\.g6 { color: var(--g6); } .g7 { color: var(--g7); } .g8 { color: var(--g8); }
+    \\.g9 { color: var(--g9); } .g10 { color: var(--g10); } .g11 { color: var(--g11); }
+    \\.g12 { color: var(--g12); }
+    \\
+    \\/* Whitespace preserved, never reflowed: a wrapped code line lies
+    \\   about where the code breaks and re-indents the one after it. It
+    \\   draws no fill and no border — a frame would be decoration, and
+    \\   would move the text onto a surface the contrast gate then has to
+    \\   re-prove. Wider than its parent it declines the advised margin
+    \\   and bleeds to the nearest drawn edge, then scrolls — while the
+    \\   margin comes back as a content inset, so its lines stay aligned
+    \\   with the prose around them.
+    \\
+    \\   `--bleed` is `CodeBlock.bleed`, which layout wrote after
+    \\   accumulating `Ctx.margin` down the tree: zero for a block that
+    \\   fits, and the whole advice for one that does not. It arrives as
+    \\   an inline style rather than a cascade, because the accumulation
+    \\   is a walk and CSS has no way to run one — a custom property that
+    \\   added its own parent's value to itself is a cycle, and a cycle
+    \\   resolves to nothing at all. */
+    \\pre.code {
+    \\  font-family: mono;
+    \\  font-size: var(--px-body);
+    \\  line-height: var(--lh-body);
+    \\  white-space: pre;
+    \\  overflow-x: auto;
+    \\  /* One axis, and the other is not its business. Left at `visible`,
+    \\     CSS promotes it to `auto` and the block eats the page's
+    \\     vertical scroll. */
+    \\  overflow-y: hidden;
+    \\  margin-inline: calc(-1 * var(--bleed, 0px));
+    \\  padding-inline: var(--bleed, 0px);
+    \\  scrollbar-width: thin;
+    \\  scrollbar-color: var(--g9) transparent;
+    \\}
+    \\
+    \\/* The 2px indicator that rides the bottom of anything overflowing
+    \\   horizontally, in the scroll_region pattern: quiet at rest, and
+    \\   never fading on a timer, because a bar that vanishes takes the
+    \\   only sign the content scrolls with it. */
+    \\pre.code::-webkit-scrollbar, .table-wrap::-webkit-scrollbar, .seg-track::-webkit-scrollbar { height: 2px; }
+    \\pre.code::-webkit-scrollbar-track, .table-wrap::-webkit-scrollbar-track, .seg-track::-webkit-scrollbar-track { background: transparent; }
+    \\pre.code::-webkit-scrollbar-thumb, .table-wrap::-webkit-scrollbar-thumb, .seg-track::-webkit-scrollbar-thumb { background: var(--g9); }
+    \\
+    \\/* The 1px rule is the grouping tone, not the state carrier: a quote
+    \\   is structure and never state. It draws an edge, so unlike a list
+    \\   it consumes the advised margin — nothing bleeds across it. The
+    \\   band is `quote_indent` measured from the quote's own edge, and
+    \\   the rule is drawn *inside* that band, so the padding is the
+    \\   indent less the rule. */
+    \\blockquote {
+    \\  display: flex;
+    \\  flex-direction: column;
+    \\  gap: var(--control-gap);
+    \\  border-inline-start: var(--border) solid var(--g10);
+    \\  padding-inline-start: calc(var(--quote-indent) - var(--border));
+    \\}
+    \\
+    \\/* Items flow tighter than free-standing blocks: one run of prose
+    \\   broken into pieces, not separate thoughts. A list draws no edge,
+    \\   so the margin advice passes through it.
+    \\
+    \\   `--list-gutter` is layout's own `listGutter` — the widest marker
+    \\   in the list plus the gap after it — written onto the element by
+    \\   the serializer, because it is a *measured* width and no constant
+    \\   can stand in for it. Uniform across the list, so item words align
+    \\   down one column however the ordinals grow. */
+    \\ul.list, ol.list {
+    \\  --pad: 0px;
+    \\  display: flex;
+    \\  flex-direction: column;
+    \\  gap: var(--list-gap);
+    \\  padding-inline-start: var(--list-gutter, calc(var(--quote-indent) + var(--list-marker-gap)));
+    \\}
+    \\ul.list { list-style: disc; }
+    \\ol.list { list-style: decimal; }
+    \\li { display: list-item; }
+    \\li::marker { color: var(--ink); }
+    \\li > ul.list, li > ol.list { margin-top: var(--list-gap); }
+    \\
+    \\/* shadcn tables: the grid is horizontal separators only — no outer
+    \\   border and no vertical rules, one hairline above every row but
+    \\   the first, spanning the table's whole width. Column widths are
+    \\   per-column intrinsic maxima, which is what `auto` layout already
+    \\   computes. */
+    \\/* No bleed: `layoutTable` never takes the advised margin. A table
+    \\   is an intrinsic-width block on the leading edge, and one too wide
+    \\   for its column scrolls where it stands. */
+    \\.table-wrap {
+    \\  overflow-x: auto;
+    \\  overflow-y: hidden;
+    \\  scrollbar-width: thin;
+    \\  scrollbar-color: var(--g9) transparent;
+    \\}
+    \\table { border-collapse: collapse; }
+    \\th, td { border: 0; padding: var(--cell-pad); text-align: start; vertical-align: top; }
+    \\tr + tr > th, tr + tr > td { border-top: var(--border) solid var(--g10); }
+    \\/* A cell is a flow of its own, with the tighter gap layout gives it
+    \\   (`layoutTable` flows cell children at 4px). A table cell cannot
+    \\   be a flex container without leaving the table formatting context,
+    \\   so the gap is spent as a margin between siblings instead. */
+    \\th > * + *, td > * + * { margin-top: 4px; }
+    \\/* A header row is marked by tone, not by weight: the reference
+    \\   swaps the row's text ink to `mid` and changes nothing else. */
+    \\th { font-weight: 400; color: var(--mid); }
+    \\
+    \\hr { border: 0; border-top: var(--border) solid var(--g10); }
+    \\
+    \\/* Where color-coded chips carry state by hue elsewhere, here the
+    \\   words carry it — so the border is grouping and draws .g10, not
+    \\   the .g6 the state carriers use. */
+    \\.badge {
+    \\  display: inline-flex;
+    \\  align-self: flex-start;
+    \\  align-items: center;
+    \\  font-size: var(--px-small);
+    \\  line-height: var(--lh-small);
+    \\  padding: var(--badge-pad-v) var(--badge-pad-h);
+    \\  border: var(--border) solid var(--g10);
+    \\  border-radius: var(--radius);
+    \\}
+    \\
+    \\/* The track is a pill — its corner is half its height, derived
+    \\   rather than chosen — and the fill sits *inside* the boundary,
+    \\   one border in on every side, with the corner it has room for.
+    \\   The border alone is that inset: `border-box` already holds the
+    \\   fill off by it, so a padding here would inset it twice. */
+    \\.meter { display: flex; flex-direction: column; gap: var(--input-label-gap); }
+    \\.meter-track {
+    \\  height: var(--meter-h);
+    \\  background: var(--g11);
+    \\  border: var(--border) solid var(--g6);
+    \\  border-radius: calc(var(--meter-h) / 2);
+    \\}
+    \\.meter-fill {
+    \\  height: 100%;
+    \\  background: var(--ink);
+    \\  border-radius: calc(var(--meter-h) / 2 - var(--border));
+    \\}
+    \\
+    \\/* Label above, code below — the order `drawQr` draws them in, the
+    \\   labeled-field shape every element with a caption takes. The
+    \\   square's side is layout's `qrSide`: whole pixels per module, so
+    \\   the serializer writes it and CSS never scales it to a fraction,
+    \\   which is what stops a symbol scanning. */
+    \\.qr { display: flex; flex-direction: column; gap: var(--input-label-gap); align-items: flex-start; }
+    \\.qr svg { max-width: 100%; height: auto; }
+    \\
+    \\/* One line-height tall, so it aligns with same-scale text beside
+    \\   it: the glyph is drawn at the scale's size and centred in that
+    \\   box rather than standing on the baseline like a letter. `1lh` is
+    \\   the element's own line height, which the scale classes set.
+    \\
+    \\   Its *width* is the glyph's advance and nothing more. A mark
+    \\   inside a control costs exactly that plus `icon_gap` everywhere
+    \\   the library measures one — `navItemWidth`, `intrinsicSize`'s
+    \\   button arm, `navChipWidth` — so a square box here would be
+    \\   wider than the width core measured the control at. That gap does
+    \\   not show as a stretched pill; it shows in every decision made
+    \\   against a measured width, and the nav's row is where it showed
+    \\   worst: eight pixels a destination, so the roster ran past both
+    \\   screen edges before `navCollapses` agreed it no longer fitted. */
+    \\.icon {
+    \\  font-family: icons;
+    \\  font-style: normal;
+    \\  font-weight: 400;
+    \\  display: inline-flex;
+    \\  align-items: center;
+    \\  justify-content: center;
+    \\  flex: none;
+    \\  height: 1lh;
+    \\  vertical-align: bottom;
+    \\}
+    \\/* The `icon` *element* is the exception, and the only one:
+    \\   `intrinsicSize` gives it a `lineHeight` box on both axes, because
+    \\   standing on its own it is a block in the flow rather than a mark
+    \\   in a run. */
+    \\.icon.square { width: 1lh; }
+    \\
+    \\/* ---- links and controls ------------------------------------------ */
+    \\
+    \\/* Underlined, always: a link nobody can see is a link only a
+    \\   pointer finds, and there is no pointer state to find it with.
+    \\   Inside a paragraph that underline is the browser's, drawn along
+    \\   whatever lines the run happens to occupy. */
+    \\a.link { color: inherit; text-decoration: underline; text-underline-offset: 2px; text-decoration-thickness: var(--border); }
+    \\
+    \\/* A `link` element is not a run inside a paragraph: it is a block of
+    \\   its own, one line tall with the rule on the last of the two
+    \\   pixels below it — which is exactly what `intrinsicSize` reserves
+    \\   ("room for the underline") and `drawNode` then draws. A border is
+    \\   how that lands on the pixel the reference picks, where a text
+    \\   decoration would land wherever the face's own underline metric
+    \\   says. The 24px floor is the WCAG 2.5.8 target a bare word has to
+    \\   clear. */
+    \\a.link.block {
+    \\  align-self: flex-start;
+    \\  display: inline-block;
+    \\  min-width: var(--tap-target);
+    \\  white-space: nowrap;
+    \\  text-decoration: none;
+    \\  padding-bottom: calc(2px - var(--border));
+    \\  border-bottom: var(--border) solid currentColor;
+    \\}
+    \\
+    \\.btn {
+    \\  align-self: flex-start;
+    \\  display: inline-flex;
+    \\  align-items: center;
+    \\  gap: var(--icon-gap);
+    \\  /* Body line height plus the pad is 36, and the reference says so
+    \\     in as many words. The 44px target is for a control that is
+    \\     *nothing but* a target — the bare glyph below — not for a pill
+    \\     with words in it, which clears the 24px floor on its own. */
+    \\  padding: var(--button-pad-v) var(--button-pad-h);
+    \\  border: var(--border) solid transparent;
+    \\  border-radius: var(--radius);
+    \\  background: var(--ink);
+    \\  color: var(--paper);
+    \\}
+    \\/* An outline is the boundary a state carrier draws, so it is `.g6`,
+    \\   the same tone every compact control's edge takes. */
+    \\.btn.secondary { background: transparent; color: var(--ink); border-color: var(--g6); }
+    \\/* Disabled is the one place a tone may dim: 1.4.11 exempts inactive
+    \\   components. The filled pill drops to `.g6` under `.g11` words;
+    \\   the outlined one gives up the state carrier for the grouping
+    \\   tone, because an inactive control states nothing. */
+    \\.btn[disabled] { background: var(--g6); color: var(--g11); border-color: transparent; }
+    \\.btn.secondary[disabled] { background: transparent; color: var(--g6); border-color: var(--g10); }
+    \\/* No pill. An icon-only button is the glyph and the target it
+    \\   stands on — the reference draws the mark and nothing else, at
+    \\   Lucide's own 24px design grid so the strokes land on whole
+    \\   pixels, centred in a 44px square. */
+    \\.btn.icon-only {
+    \\  width: var(--touch);
+    \\  height: var(--touch);
+    \\  padding: 0;
+    \\  justify-content: center;
+    \\  background: transparent;
+    \\  border-color: transparent;
+    \\  color: var(--ink);
+    \\}
+    \\.btn.icon-only[disabled] { background: transparent; color: var(--g6); }
+    \\
+    \\/* A percentage fills the pill as the work goes. On a filled button
+    \\   the track is `.g7` — already clear of the ground it sits on —
+    \\   and the fill is paper; on an outlined one it is the dim `.g11`
+    \\   track with the boundary stroke a standalone meter carries, and
+    \\   the fill is ink. */
+    \\.btn { position: relative; }
+    \\/* In flow, taking the width layout measured; hidden, because what
+    \\   stands in its place is drawn over it. */
+    \\.btn-strut { visibility: hidden; }
+    \\.btn-wait { position: absolute; inset: 0; display: grid; place-content: center; }
+    \\.btn-track {
+    \\  position: absolute;
+    \\  inset: 0 var(--button-pad-h);
+    \\  margin-block: auto;
+    \\  height: var(--meter-h);
+    \\  border-radius: calc(var(--meter-h) / 2);
+    \\  background: var(--g7);
+    \\}
+    \\.btn-fill { display: block; height: 100%; border-radius: calc(var(--meter-h) / 2 - var(--border)); background: var(--paper); }
+    \\.btn.secondary .btn-track { background: var(--g11); border: var(--border) solid var(--g6); }
+    \\.btn.secondary .btn-fill { background: var(--ink); }
+    \\
+    \\/* A bordered vertical group of tappable rows: 44px rows, one
+    \\   hairline between them, the border pure grouping. */
+    \\.tiles { border: var(--border) solid var(--g10); border-radius: var(--radius-card); overflow: hidden; }
+    \\.tile {
+    \\  display: flex;
+    \\  align-items: center;
+    \\  gap: var(--icon-gap);
+    \\  width: 100%;
+    \\  padding: var(--tile-pad-v) var(--tile-pad-h);
+    \\  border: 0;
+    \\  border-top: var(--border) solid var(--g10);
+    \\  background: transparent;
+    \\  color: inherit;
+    \\  text-align: start;
+    \\  text-decoration: none;
+    \\}
+    \\.tiles > *:first-child, .tiles > *:first-child .tile { border-top: 0; }
+    \\.tile-text { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+    \\/* Body prose in ink, in the regular face: the row is a
+    \\   destination, not a heading. */
+    \\.tile-label { font-weight: 400; }
+    \\.tile-detail, .tiles-desc { font-size: var(--px-small); line-height: var(--lh-small); color: var(--dark); }
+    \\/* The caption hangs below the group's border at the labeled-field
+    \\   gap, not the stack's — `tileGroupDescHeight` spends
+    \\   `input_label_gap` on it — so the two are wrapped and spaced
+    \\   together rather than left to the page's flow. */
+    \\.tile-group { display: flex; flex-direction: column; gap: var(--input-label-gap); }
+    \\
+    \\/* The row is the control and the row is the target: 44px tall,
+    \\   as wide as the control plus its words and no wider. */
+    \\.ctl {
+    \\  display: flex;
+    \\  align-self: flex-start;
+    \\  align-items: center;
+    \\  gap: var(--control-gap);
+    \\  min-height: var(--touch);
+    \\}
+    \\.ctl-label { flex: none; }
+    \\/* Two of them stacked collapse against each other: a row already
+    \\   carries `(touch_target - lineHeight) / 2` of clear space above
+    \\   and below, and spending the stack's gap on top of that is three
+    \\   gaps' worth of air for what reads as one (`selfPadded`). Only
+    \\   between two of them — a pill or a field beside one is a
+    \\   different weight and keeps the full gap. */
+    \\.ctl + .ctl { margin-top: calc(-1 * var(--gap, var(--page-gap))); }
+    \\
+    \\/* The box, the ring and the track are *drawings of state*; the row
+    \\   is the control. So no press ever lands on one of them.
+    \\
+    \\   This is not tidiness. A checkbox flips itself *before* the click
+    \\   event is dispatched and un-flips itself *after* every listener
+    \\   has run — so a driver that toggles the tree during the event and
+    \\   writes the answer back finds the browser undoing it a moment
+    \\   later, and the control sits one press behind for good. Cancelling
+    \\   the press on the row stops the activation before it starts, which
+    \\   is the only version of this with no race in it. Keyboard focus is
+    \\   untouched: Tab still reaches them, and Space goes through core
+    \\   like every other key. */
+    \\input.check, input.toggle, .radios input[type="radio"], .seg input { pointer-events: none; }
+    \\
+    \\/* The compact controls keep their borders at .g6: they sit against
+    \\   the .g11 track, where .g7 falls to 2.5:1. */
+    \\input.check {
+    \\  appearance: none;
+    \\  width: var(--checkbox);
+    \\  height: var(--checkbox);
+    \\  flex: none;
+    \\  background: var(--g11);
+    \\  border: var(--border) solid var(--g6);
+    \\  border-radius: var(--checkbox-radius);
+    \\  display: grid;
+    \\  place-content: center;
+    \\}
+    \\/* The mark is drawn at the body size, like every other glyph that
+    \\   sits beside words rather than standing alone. */
+    \\input.check::after { font-family: icons; font-size: var(--px-body); line-height: 1; color: var(--paper); visibility: hidden; }
+    \\input.check:checked { background: var(--ink); border-color: var(--ink); }
+    \\input.check:checked::after { visibility: visible; }
+    \\
+    \\/* The knob is the track less its inset on both sides, and it sits
+    \\   at that inset from the track's edge — the border is drawn *on*
+    \\   the track rather than added to it, so the padding here is the
+    \\   inset less the border `border-box` already spent. */
+    \\input.toggle {
+    \\  appearance: none;
+    \\  width: var(--toggle-w);
+    \\  height: var(--toggle-h);
+    \\  flex: none;
+    \\  display: flex;
+    \\  align-items: center;
+    \\  padding: calc(var(--toggle-inset) - var(--border));
+    \\  border: var(--border) solid var(--g6);
+    \\  border-radius: calc(var(--toggle-h) / 2);
+    \\  background: var(--g11);
+    \\}
+    \\input.toggle::after {
+    \\  content: "";
+    \\  width: var(--toggle-knob);
+    \\  aspect-ratio: 1;
+    \\  border-radius: 50%;
+    \\  /* Off, the knob is paper carrying the same state edge the track
+    \\     does; on, the track is ink and the knob needs no boundary of
+    \\     its own against it. */
+    \\  background: var(--paper);
+    \\  border: var(--border) solid var(--g6);
+    \\}
+    \\input.toggle:checked { background: var(--ink); border-color: var(--ink); }
+    \\input.toggle:checked::after { border-color: transparent; margin-inline-start: auto; }
+    \\
+    \\/* A column of tile rows under a label, in the tile group's shape.
+    \\   Block flow, not flex: the legend is the label and no engine puts
+    \\   a legend in its parent's flex line (see the reset). */
+    \\.radios > .tiles { margin-top: var(--input-label-gap); }
+    \\.radios input[type="radio"] {
+    \\  appearance: none;
+    \\  width: var(--radio-glyph);
+    \\  height: var(--radio-glyph);
+    \\  flex: none;
+    \\  border: var(--border) solid var(--g6);
+    \\  border-radius: 50%;
+    \\  display: grid;
+    \\  place-content: center;
+    \\}
+    \\/* Selected is a filled ring with a paper centre — not an ink dot on
+    \\   bare ground: `drawRadioGroup` fills the whole glyph and insets
+    \\   the dot out of it, so the state is the ring, and the dot is what
+    \\   is left of the ground. */
+    \\.radios input[type="radio"]:checked { background: var(--ink); border-color: var(--ink); }
+    \\.radios input[type="radio"]:checked::after {
+    \\  content: "";
+    \\  width: var(--radio-dot);
+    \\  height: var(--radio-dot);
+    \\  border-radius: 50%;
+    \\  background: var(--paper);
+    \\}
+    \\
+    \\/* Track and chip: the track fills .g11, the selected option is an
+    \\   elevated .paper chip with an .ink label and a .g6 border — the
+    \\   border is what carries WCAG 1.4.11, since paper on the track
+    \\   alone is ~1.3:1. Chips sit end to end with no gap between them;
+    \\   `segContentWidth` sums their widths and nothing else. */
+    \\.seg-track {
+    \\  display: flex;
+    \\  gap: 0;
+    \\  padding: var(--seg-track-pad);
+    \\  background: var(--g11);
+    \\  border-radius: var(--radius);
+    \\  width: max-content;
+    \\  max-width: 100%;
+    \\  overflow-x: auto;
+    \\  overflow-y: hidden;
+    \\  scrollbar-width: thin;
+    \\}
+    \\/* A track wider than its column declines the advised margin and
+    \\   reaches the nearest drawn edge, so its chips clip at the screen
+    \\   rather than mid-page — and the corners square off there, because
+    \\   the band continues past the edge instead of rounding against
+    \\   nothing (`drawSegmented` fills at radius 0 for the same reason).
+    \\   The margin comes straight back as content padding, so a resting
+    \\   chip stays aligned with the prose above it and the space the
+    \\   offset travels through is the unbled track's.
+    \\
+    \\   `--bleed` is `Segmented.bleed`, which layout wrote: zero for a
+    \\   track that fits, and zero for one boxed in with no clear path to
+    \\   an edge, so the class is on the element only when core decided
+    \\   both that the chips overflow and that there is somewhere to
+    \\   overflow to. CSS cannot ask either question — it can see neither
+    \\   the measured content width nor how far the advice accumulated —
+    \\   which is why the answer arrives from the tree.
+    \\
+    \\   `max-width` has to be released as well as `width` set: it
+    \\   resolves against the containing block, so the cap from the rule
+    \\   above would take back exactly what the negative margin bought. */
+    \\.seg-track.bled {
+    \\  width: auto;
+    \\  max-width: none;
+    \\  border-radius: 0;
+    \\  margin-inline: calc(-1 * var(--bleed));
+    \\  padding-inline: calc(var(--bleed) + var(--seg-track-pad));
+    \\  /* Scrolling costs height, exactly as it does in `layoutBlock`:
+    \\     the scroll affordance gets its own strip below the chips
+    \\     rather than the 2px track pad they already stand on, and the
+    \\     chips keep some of it above them — otherwise a track that
+    \\     scrolls reads tighter than the same track when it fits. */
+    \\  padding-block:
+    \\    calc(var(--seg-track-pad) + var(--seg-scroll-head))
+    \\    calc(var(--seg-track-pad) + var(--seg-scroll-gutter));
+    \\}
+    \\.seg { flex: none; }
+    \\.seg input { position: absolute; opacity: 0; }
+    \\.seg span {
+    \\  display: flex;
+    \\  align-items: center;
+    \\  /* The chip is the track less its pad on both sides: body line
+    \\     height plus the chip's own, and the border is drawn *on* that
+    \\     box rather than added to it. The track is then 36. */
+    \\  height: calc(var(--lh-body) + 2 * var(--seg-pad-v));
+    \\  padding-inline: calc(var(--seg-pad-h) - var(--border));
+    \\  border: var(--border) solid transparent;
+    \\  /* The chip's corner is the track's, less the pad it sits in. */
+    \\  border-radius: calc(var(--radius) - var(--seg-track-pad));
+    \\  color: var(--dark);
+    \\  white-space: nowrap;
+    \\}
+    \\.seg input:checked + span { background: var(--paper); border-color: var(--g6); color: var(--ink); }
+    \\
+    \\/* The labelled fields outline in .g7: their borders run the full
+    \\   width of the pane, where a heavier tone reads as a box rather
+    \\   than a hairline. */
+    \\.field { display: flex; flex-direction: column; gap: var(--input-label-gap); }
+    \\/* Small scale, but full ink: it is the field's name, and the
+    \\   library dims the *detail* lines, never the labels. */
+    \\.field-label { font-size: var(--px-small); line-height: var(--lh-small); color: var(--ink); }
+    \\/* A field is sized by what it holds, not by the 44px target: one
+    \\   line of body text inside its own pad and border, which is the
+    \\   36px `labeledFieldHeight` computes. The big target belongs to a
+    \\   control that is *nothing but* a target — a bare glyph — and a
+    \\   field derived from text clears the 24px floor on its own. */
+    \\.field-box {
+    \\  display: flex;
+    \\  align-items: center;
+    \\  gap: var(--icon-gap);
+    \\  width: 100%;
+    \\  padding: var(--input-pad);
+    \\  border: var(--border) solid var(--g7);
+    \\  border-radius: var(--radius);
+    \\  background: transparent;
+    \\  text-align: start;
+    \\}
+    \\.field-box input, .field-box textarea { flex: 1; min-width: 0; border: 0; padding: 0; background: transparent; appearance: none; }
+    \\.field-value { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    \\.field-box input:focus, .field-box textarea:focus { outline: none; }
+    \\/* `text_area_min_rows` of body text — the field's own pad is the
+    \\   box's, so the control inside it is exactly the rows. */
+    \\.field-box textarea { resize: vertical; height: calc(var(--text-area-rows) * var(--lh-body)); }
+    \\.field-box input::placeholder, .field-box textarea::placeholder { color: var(--mid); }
+    \\.copyable code { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    \\/* The affordance is quiet; the acknowledgement is not — the check
+    \\   arrives in ink, because it is the only visible sign the copy
+    \\   happened. */
+    \\.copyable .icon.mid { color: var(--mid); }
+    \\
+    \\/* A bare glyph control: the whole affordance is the target, so it
+    \\   gets the 44px one rather than the 24px floor. */
+    \\.icon-button {
+    \\  display: inline-flex;
+    \\  /* A flex item stretches to the column's width unless it says
+    \\     otherwise, and a bare glyph control stretched across the page
+    \\     is a 44px target pretending to be a banner. */
+    \\  align-self: flex-start;
+    \\  align-items: center;
+    \\  justify-content: center;
+    \\  width: var(--touch);
+    \\  height: var(--touch);
+    \\  flex: none;
+    \\  padding: 0;
+    \\  border: 0;
+    \\  background: transparent;
+    \\  border-radius: var(--radius);
+    \\}
+    \\.icon-button .icon, .btn.icon-only .icon {
+    \\  font-size: var(--icon-glyph);
+    \\  width: var(--icon-glyph);
+    \\  height: var(--icon-glyph);
+    \\}
+    \\
+    \\/* The framework's back control shares the first content element's
+    \\   line — a heading, by convention — with that element indented
+    \\   past it. Its target hangs into the page margin on both axes so
+    \\   the *glyph* is what lines up: the leading edge of the mark sits
+    \\   on the text column, not the leading edge of the target. The
+    \\   vertical half is generated per scale at the end of this sheet. */
+    \\/* Offsets are measured from the containing block's *padding box*,
+    \\   which is inside the border and outside the padding — so the page
+    \\   margin is still ahead of them and every inset here spends it
+    \\   before the bleed comes off. */
+    \\.nokre > .icon-button.back {
+    \\  position: absolute;
+    \\  inset-inline-start: calc(var(--page-pad) - var(--back-bleed));
+    \\  /* Nothing to centre on: `layoutRow` takes no offset when the
+    \\     block it pairs with holds no words of its own, and the control
+    \\     opens the row where it stands. */
+    \\  top: var(--page-pad);
+    \\}
+    \\.nokre > .icon-button.back + * { padding-inline-start: calc(var(--touch) + var(--icon-gap) - var(--back-bleed)); }
+    \\/* A container that draws and insets nothing does not own the row's
+    \\   first line — the block inside it does, so the indent lands there
+    \\   (`handsDownBack`). Indenting the container instead pushes its
+    \\   every paragraph into the chevron's band. */
+    \\.nokre > .icon-button.back + :is(.document, .stack.hands-back) { padding-inline-start: 0; }
+    \\.nokre > .icon-button.back + :is(.document, .stack.hands-back) > :first-child {
+    \\  padding-inline-start: calc(var(--touch) + var(--icon-gap) - var(--back-bleed));
+    \\}
+    \\
+    \\/* Standing alone the indicator is the bar's only content, so it is
+    \\   the group: one square, centred, like every other shape the bar
+    \\   wears. Where the bar has a group already — a row of destinations
+    \\   or the collapsed chip — it is not this layer at all but a child
+    \\   of that row (`indicatorRidesNavGroup`), so the two centre as one
+    \\   instead of each finding its own edge. */
+    \\.nav-indicator {
+    \\  position: fixed;
+    \\  bottom: calc(var(--bar-bottom) + var(--safe-b));
+    \\  inset-inline: 0;
+    \\  z-index: 2;
+    \\  height: var(--nav-slot);
+    \\  display: flex;
+    \\  justify-content: center;
+    \\  align-items: center;
+    \\  /* The layer spans the bar to centre one control in it, so it has
+    \\     to let the page through either side of that control — the same
+    \\     discipline `.nav` keeps for the same reason. */
+    \\  pointer-events: none;
+    \\}
+    \\/* In the bar it plates itself on the same .g11 a destination does,
+    \\   being one more thing in that row, and takes the destinations'
+    \\   corner — a circle, being a pill as tall as it is wide. */
+    \\/* Centred on the items' own band, not on the bar: that padding is
+    \\   asymmetric — more below, where the frame is — and centring in
+    \\   the bar's box would leave the indicator riding low against the
+    \\   destinations it sits beside. */
+    \\.nav-indicator .icon-button, .nav-row > .icon-button {
+    \\  align-self: center;
+    \\  background: var(--g11);
+    \\  border-radius: 50%;
+    \\  pointer-events: auto;
+    \\}
+    \\
+    \\/* ---- focus ------------------------------------------------------- */
+    \\
+    \\/* One 2px stroke in ink, in one of two placements, and never a
+    \\   second line beside an existing one.
+    \\
+    \\   Held two pixels clear of the rect, by default. The clear is
+    \\   structural rather than decorative: two anti-aliased arcs sharing
+    \\   a boundary do not sum to full coverage, and the shortfall reads
+    \\   as a light hairline tracing the corner.
+    \\
+    \\   Where an element already owns an outline, focus *takes it over*:
+    \\   the stroke lands on the element's own edge — a negative offset,
+    \\   because the reference strokes a rect from the inside — so the box
+    \\   does not move, its boundary thickens and darkens. Drawing both
+    \\   gave two strokes in two tones two pixels apart, which reads as a
+    \\   seam, not a state. */
+    \\:focus-visible { outline: var(--focus) solid var(--ink); outline-offset: var(--focus-clear); }
+    \\.field-box:focus-within,
+    \\.tile:focus-visible,
+    \\.picker-item:focus-visible,
+    \\.chip:focus-visible,
+    \\.btn.secondary:focus-visible {
+    \\  outline: var(--focus) solid var(--ink);
+    \\  outline-offset: calc(-1 * var(--focus));
+    \\}
+    \\.field-box:focus-within { border-color: var(--ink); }
+    \\.btn.secondary:focus-visible, .chip:focus-visible { border-color: transparent; }
+    \\
+    \\/* Where the row is the control, the row is what carries the
+    \\   indicator: the reference rings the whole checkbox or toggle row,
+    \\   the whole radio group's card, and the whole segmented track —
+    \\   never the 20px drawing of state inside one. */
+    \\.ctl:has(:focus-visible), .seg-track:has(:focus-visible) {
+    \\  outline: var(--focus) solid var(--ink);
+    \\  outline-offset: var(--focus-clear);
+    \\}
+    \\.radios > .tiles:has(:focus-visible) {
+    \\  outline: var(--focus) solid var(--ink);
+    \\  outline-offset: calc(-1 * var(--focus));
+    \\}
+    \\.ctl :focus-visible, .seg input:focus-visible, .radios input:focus-visible { outline: none; }
+    \\
+    \\.visually-hidden {
+    \\  position: absolute;
+    \\  width: 1px; height: 1px;
+    \\  margin: -1px; padding: 0; border: 0;
+    \\  overflow: hidden;
+    \\  clip-path: inset(50%);
+    \\  white-space: nowrap;
+    \\}
+    \\
+    \\/* ---- bottom chrome ----------------------------------------------- */
+    \\
+    \\/* The bar has no ground: no track, no fill, no hairline. The nav is
+    \\   its items and nothing else, each on a plate of its own, with 8px
+    \\   of page showing between them. Three levels: the page, the
+    \\   destinations on .g11, and the current route one step above them
+    \\   on .g10, outlined in mid and lettered in ink — mid because .g6 is
+    \\   2.7:1 against .g10, under the 1.4.11 floor. */
+    \\.nav {
+    \\  position: fixed;
+    \\  inset-inline: 0;
+    \\  bottom: 0;
+    \\  z-index: 2;
+    \\  display: flex;
+    \\  justify-content: center;
+    \\  padding-top: var(--nav-bar-pad);
+    \\  padding-bottom: calc(var(--bar-bottom) + var(--safe-b));
+    \\  pointer-events: none;
+    \\}
+    \\/* A *row* of destinations is measured and centred on the viewport
+    \\   as one group, and it does not wrap: `navCollapses` asks whether
+    \\   the roster fits on one line and gives the nav its collapsed shape
+    \\   when it does not, so a second line is a state the library has
+    \\   already ruled out. */
+    \\.nav-row {
+    \\  display: flex;
+    \\  flex-wrap: nowrap;
+    \\  justify-content: center;
+    \\  gap: var(--nav-item-gap);
+    \\  padding-inline: var(--nav-bar-pad-h);
+    \\  pointer-events: auto;
+    \\}
+    \\/* Pills: the corner is half the slot's height, derived rather than
+    \\   fixed, so the shape follows the slot instead of drifting back to
+    \\   a rounded rectangle the next time the row grows. Nothing else in
+    \\   the library is a pill. The pad is the reference's, less the
+    \\   border drawn inside it. */
+    \\.chip {
+    \\  display: inline-flex;
+    \\  align-items: center;
+    \\  gap: var(--icon-gap);
+    \\  height: var(--nav-slot);
+    \\  padding-inline: calc(var(--nav-item-pad-h) - var(--border));
+    \\  border: var(--border) solid transparent;
+    \\  border-radius: calc(var(--nav-slot) / 2);
+    \\  background: var(--g11);
+    \\  color: var(--dark);
+    \\  text-decoration: none;
+    \\  white-space: nowrap;
+    \\}
+    \\.chip.current { background: var(--g10); border-color: var(--mid); color: var(--ink); }
+    \\
+    \\/* The collapsed chip needs no rule of its own: it is one control
+    \\   standing in for the bar, and the bar centres what it holds at
+    \\   that thing's own width whether it is five destinations or one
+    \\   chip. Pinned to the pane's leading edge instead, it sat at one
+    \\   end of a wide display with the notices control at the other.
+    \\   `layoutNavChrome` centres the same group. */
+    \\
+    \\/* The banner owns the bottom pane — the nav is hidden and inert
+    \\   until the notices minimize, so this stands where the bar would
+    \\   have. Its fill bleeds through the OS band to the physical edge,
+    \\   like every bottom-anchored surface here: the band holds no
+    \\   content, only surface. */
+    \\.notice {
+    \\  position: fixed;
+    \\  inset-inline: 0;
+    \\  bottom: 0;
+    \\  z-index: 2;
+    \\  display: flex;
+    \\  align-items: flex-start;
+    \\  gap: var(--icon-gap);
+    \\  width: min(100%, var(--pane));
+    \\  margin-inline: auto;
+    \\  /* `notice_pad` is measured from the rect, and the outline is
+    \\     drawn inside it — so the border is part of that inset, not
+    \\     added to it. */
+    \\  padding: calc(var(--notice-pad) - var(--border));
+    \\  padding-bottom: calc(var(--notice-pad) - var(--border) + var(--safe-b));
+    \\  /* A banner is the dim track tone, not paper: it is a surface
+    \\     sitting on the page, and `.g6` is the boundary that says so. */
+    \\  background: var(--g11);
+    \\  border: var(--border) solid var(--g6);
+    \\  border-bottom: 0;
+    \\  border-radius: var(--radius-card) var(--radius-card) 0 0;
+    \\}
+    \\.notice-words { flex: 1; min-width: 0; }
+    \\/* Regular face: the title is a line of body prose, and the
+    \\   description under it is what steps back. */
+    \\.notice-desc { font-size: var(--px-small); line-height: var(--lh-small); color: var(--dark); }
+    \\/* The controls stay centred on the title's *first line*, so a
+    \\   target taller than that line hangs into the padding above and
+    \\   below rather than pushing the words down. */
+    \\.notice > .icon-button { margin-block-start: calc((var(--lh-body) - var(--touch)) / 2); }
+    \\/* The trailing pair packs flush: each already carries its own
+    \\   padding around a 24px glyph, so the air between two of them is
+    \\   visual, and `icon_gap` separates the group from the words rather
+    \\   than the targets from each other. */
+    \\.notice > .icon-button + .icon-button { margin-inline-start: calc(-1 * var(--icon-gap)); }
+    \\
+    \\/* A notice inside the pane is a row, not the banner: there is a
+    \\   surface under it already, so the dim track carries it and it
+    \\   flows with its siblings. */
+    \\.notices-pane .notice {
+    \\  position: static;
+    \\  width: auto;
+    \\  margin-inline: 0;
+    \\  /* No outline to hold the words off, so the pad is the whole
+    \\     inset again. */
+    \\  padding: var(--notice-pad);
+    \\  border: 0;
+    \\  border-radius: var(--radius);
+    \\}
+    \\
+    \\/* ---- layers ------------------------------------------------------ */
+    \\
+    \\/* While a modal layer is open the rest of the tree is inert, and
+    \\   the scrim is what says so. It is a 1px checkerboard of *paper*
+    \\   — `canvas.dither(viewport, .paper)` — not a black wash: no
+    \\   alpha, so no off-palette gray can appear, and it mutes the
+    \\   inert layer by half-covering it rather than by tinting it. A
+    \\   2px repeating conic gradient is the same checkerboard. */
+    \\.scrim {
+    \\  position: fixed;
+    \\  inset: 0;
+    \\  width: 100dvw;
+    \\  height: 100dvh;
+    \\  z-index: 3;
+    \\  /* Two offset 45° gradients are the checkerboard, and unlike a
+    \\     conic one they say so in a form every engine agrees on. */
+    \\  background-image:
+    \\    linear-gradient(45deg, var(--paper) 25%, transparent 25% 75%, var(--paper) 75%),
+    \\    linear-gradient(45deg, var(--paper) 25%, transparent 25% 75%, var(--paper) 75%);
+    \\  background-size: 2px 2px;
+    \\  background-position: 0 0, 1px 1px;
+    \\}
+    \\/* One surface for all three: a paper body with rounded top
+    \\   corners, standing on the bottom edge, outlined in `.g6`. That
+    \\   tone is not the grouping `.g10` a box draws — it is the WCAG
+    \\   1.4.11 boundary between the live layer and the dimmed one under
+    \\   it, read against a scrim that is paper over content rather than
+    \\   plain paper. */
+    \\.sheet, .notices-pane, .picker {
+    \\  --pad: 0px;
+    \\  position: fixed;
+    \\  z-index: 4;
+    \\  display: flex;
+    \\  flex-direction: column;
+    \\  gap: var(--control-gap);
+    \\  background: var(--paper);
+    \\  border: var(--border) solid var(--g6);
+    \\  overflow-y: auto;
+    \\  overscroll-behavior: contain;
+    \\}
+    \\.sheet, .notices-pane, .picker:not(.above-nav) {
+    \\  inset-inline: 0;
+    \\  bottom: 0;
+    \\  width: min(100%, var(--pane));
+    \\  margin-inline: auto;
+    \\  /* Dynamic units, because a phone's viewport is not a constant:
+    \\     the URL bar comes and goes, and a pane measured against the
+    \\     large viewport hides its own bottom edge under it. */
+    \\  max-height: calc(100% - var(--sheet-min-top));
+    \\  max-height: calc(100dvh - var(--sheet-min-top));
+    \\  /* `pane_edge` is the pad plus the border it sits inside, and
+    \\     `border-box` has already spent the border. */
+    \\  padding: var(--sheet-pad);
+    \\  padding-bottom: calc(var(--sheet-pad) + var(--safe-b));
+    \\  /* The body extends past the bottom and the clip squares it off;
+    \\     here the same thing is said by rounding only the top. */
+    \\  border-radius: var(--radius-card) var(--radius-card) 0 0;
+    \\  border-bottom: 0;
+    \\}
+    \\/* h2 *scale*, regular face. A pane's title is chrome the framework
+    \\   writes, not a `heading` element the app appended — the reference
+    \\   draws it with the plain prose face, and every heading level
+    \\   drawing bold is a rule about headings. */
+    \\.pane-title { font-size: var(--px-h2); line-height: var(--lh-h2); font-weight: 400; }
+    \\/* Only the two panes that pin a control to the header corner
+    \\   narrow their title for one. A select's picker has none, so its
+    \\   title takes the full width. */
+    \\.sheet > .pane-title, .notices-pane > .pane-title {
+    \\  padding-inline-end: calc(var(--touch) + var(--icon-gap));
+    \\}
+    \\/* Centred on the title's first line; the target is wider than that
+    \\   line, so it grows symmetrically into the header's pad. */
+    \\.sheet > .icon-button.sheet-close, .notices-pane > .icon-button {
+    \\  position: absolute;
+    \\  inset-inline-end: var(--sheet-pad);
+    \\  top: calc(var(--sheet-pad) + (var(--lh-h2) - var(--touch)) / 2);
+    \\}
+    \\
+    \\/* A select's picker is a bottom-anchored pane because its owner is
+    \\   somewhere in the page. The nav's section list is the exception:
+    \\   its owner is on screen right below it, so it stands on the bar
+    \\   rather than covering it. */
+    \\.picker, .notices-pane {
+    \\  /* One scroller per layer. The pane is a surface with a height
+    \\     cap; what moves inside it is the scroll_region the framework
+    \\     put there, and a pane that also scrolled would give a list two
+    \\     places to be halfway down. The sheet is not here: it holds
+    \\     whatever the app appended and has no region of its own, so the
+    \\     surface is the scroller. */
+    \\  overflow: hidden;
+    \\}
+    \\/* The region takes the height the header and "Dismiss all" leave,
+    \\   and `min-height: 0` is what lets it be shorter than its rows —
+    \\   without it a flex item floors at its content and the pane grows
+    \\   past its own cap instead of scrolling. */
+    \\.picker > .scroll, .notices-pane > .scroll { flex: 1; min-height: 0; }
+    \\/* Picker rows are tiles: flush but for the hairline separator, not
+    \\   gapped like free-flowing content — `layoutBlock` flows them at
+    \\   `border` where a free region uses the control gap. */
+    \\.picker > .scroll { gap: var(--border); }
+    \\/* The section list is the tile group's card, not the modal pane's
+    \\   surface: it floats clear of every edge, so all four corners are
+    \\   its own and all four are drawn. It is sized to its longest row
+    \\   rather than to the pane — a card standing on a chip, not a slab
+    \\   across the screen — and its rows sit flush inside the 1px edge,
+    \\   exactly as a `tile_group` seats its tiles, so the border is the
+    \\   whole of its padding. */
+    \\.picker.above-nav {
+    \\  bottom: calc(var(--bar-bottom) + var(--safe-b) + var(--nav-slot) + var(--nav-item-gap));
+    \\  width: max-content;
+    \\  /* Capped where the chip is capped — the bar's own inset off the
+    \\     viewport, not the pane's width: this card stands on the bar. */
+    \\  max-width: calc(100% - 2 * var(--nav-bar-pad-h));
+    \\  max-height: calc(100dvh - var(--sheet-min-top));
+    \\  padding: 0;
+    \\  /* Centred on the bar's group, which is centred on the viewport —
+    \\     so `auto` margins are the whole of it, and this layer needs no
+    \\     measured width from anywhere to land where `layoutNavMenu` puts
+    \\     it. Aligned to the chip's leading edge instead, it would have
+    \\     needed the chip's own width, which is a rect, and no rect
+    \\     reaches this edition. */
+    \\  inset-inline: 0;
+    \\  margin-inline: auto;
+    \\  border-radius: var(--radius-card);
+    \\}
+    \\/* The row is 44px tall with its outline drawn *inside* that box —
+    \\   the chip is a state, not an extra pixel of height — so the pad
+    \\   is the tile's less the border it is drawn beside. */
+    \\.picker-item {
+    \\  position: relative;
+    \\  display: flex;
+    \\  align-items: center;
+    \\  gap: var(--icon-gap);
+    \\  padding: calc(var(--tile-pad-v) - var(--border)) calc(var(--tile-pad-h) - var(--border));
+    \\  border: var(--border) solid transparent;
+    \\  border-radius: var(--radius);
+    \\  color: var(--dark);
+    \\}
+    \\/* The current choice is a dim chip on paper, its state carried by
+    \\   the boundary as everywhere else — not by weight. */
+    \\.picker-item[aria-selected="true"] {
+    \\  background: var(--g11);
+    \\  border-color: var(--g6);
+    \\  color: var(--ink);
+    \\}
+    \\/* Hairlines between plain rows only, drawn in the 1px flow gap
+    \\   layout leaves between them rather than taken out of a row's own
+    \\   height: a chip carries its own outline, and a rule abutting it
+    \\   reads as a glitch. */
+    \\.picker-item + .picker-item { box-shadow: 0 calc(-1 * var(--border)) 0 var(--g10); }
+    \\/* The shadow a row carries is the one *above* it, so both halves of
+    \\   `drawPickerSeparators`'s test — neither this row nor the one
+    \\   before it may be a chip — are rules about the row that owns the
+    \\   line. Written as `:has(+ chip)` this reached one row too high: it
+    \\   took the line above the chip's *predecessor* and left the line
+    \\   abutting the chip itself, which is the one thing the reference
+    \\   goes out of its way not to draw. */
+    \\.picker-item[aria-selected="true"],
+    \\.picker-item[aria-selected="true"] + .picker-item,
+    \\.picker-item:focus-visible,
+    \\.picker-item:focus-visible + .picker-item { box-shadow: none; }
+    \\
+;

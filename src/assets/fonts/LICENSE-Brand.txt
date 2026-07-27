@@ -1,0 +1,55 @@
+brand.ttf — vendor sign-in marks
+================================
+
+This file is NOT nokre's work and is NOT covered by nokre's license.
+
+It exists because nokre's canvas renders paths through exactly one
+operation (drawText), so a vendor's sign-in mark has to arrive as a font
+glyph the way the Lucide icon set does. It is kept separate from
+lucide.ttf and from the text faces on purpose: those carry ISC, OFL, and
+Apache upstream licenses, and a trademark glyph inside any of them would
+misrepresent that license to everyone who redistributes nokre.
+
+Contents
+--------
+
+  U+E900  apple   The Apple logo. A trademark of Apple Inc.
+
+Terms
+-----
+
+The marks in this file are the trademarks of their owners and are used
+solely to render the sign-in buttons those owners require, per each
+owner's published brand guidelines:
+
+  Apple    developer.apple.com/design/human-interface-guidelines/
+           sign-in-with-apple
+
+Use of these marks does not imply endorsement of nokre, or of any
+application built with it, by their owners. Neither nokre nor its
+authors claim any right in them.
+
+The glyph set is closed at the marks listed above. Adding an arbitrary
+brand glyph here is a trademark liability rather than a feature, and any
+addition must come with the vendor's own artwork and the guideline it is
+used under — never a redraw. See tools/make-brand-font.py.
+
+Provenance
+----------
+
+Each outline is imported from the owner's own published asset, never
+recreated by hand: Apple's guidelines say explicitly not to recreate
+their logo, and every other owner says something equivalent.
+
+The Apple outline here is transcribed verbatim from Apple's published
+SVG, in its original 814 x 1000 frame, and is inlined in
+tools/make-brand-font.py — so what is committed can be diffed against
+the source Apple ships, and nothing about it was drawn by hand. That
+script does the mechanical part only: the y-flip into font coordinates,
+the scale to cap height, the side bearings, and the cubic-to-quadratic
+conversion TrueType requires. Regenerate with:
+
+    python3 tools/make-brand-font.py
+
+It is deterministic — same artwork in, same bytes out — so this file
+changes in a commit only when the artwork does.

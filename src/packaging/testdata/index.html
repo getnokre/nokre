@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kitchen &amp; Sink</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="style.css">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000000">
+<style>
+  :root { --page-col: 560px; }
+  @media (min-width: 900px) { :root { --page-col: 760px; } }
+  body { margin: 0; background: var(--paper); }
+  #app { max-width: calc(var(--page-col) + 2 * var(--page-pad)); margin-inline: auto; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script type="module">
+  import { mount } from "./live.js";
+  await mount({ wasm: "./app.wasm", into: document.getElementById("app") });
+</script>
+</body>
+</html>

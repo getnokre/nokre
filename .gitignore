@@ -1,0 +1,16 @@
+zig-out/
+.zig-cache/
+zig-cache/
+deps/*
+!deps/qrcodegen/
+*.o
+*.a.tmp
+.DS_Store
+*.xcodeproj/xcuserdata/
+*.xcuserstate
+examples/kitchen_sink/ios/build/
+examples/kitchen_sink/android/build/
+examples/kitchen_sink/android/app/build/
+examples/kitchen_sink/android/app/.cxx/
+examples/kitchen_sink/android/.gradle/
+examples/kitchen_sink/android/local.properties

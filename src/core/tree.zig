@@ -1,0 +1,885 @@
+//! The retained semantic tree. Consumers build and mutate this; layout,
+//! rendering, accessibility, focus, and testing all read from it.
+//!
+//! NodeIds are generational: using an id after its node was removed is
+//! detected, not undefined behavior, until a single slot has been freed
+//! 4096 times — the generation counter then wraps and an id that old
+//! could alias a live node (see `NodeId` for why the widths are what
+//! they are). All strings passed in are duplicated
+//! into a tree-owned arena — the tree never borrows consumer memory.
+//! Arena memory is reclaimed on `deinit`, not on node removal; rebuild the
+//! tree (router navigation does this) rather than churning nodes in place.
+
+const std = @import("std");
+const element_mod = @import("element.zig");
+const geometry = @import("geometry.zig");
+const color = @import("color.zig");
+const markdown = @import("markdown.zig");
+// For the external-destination scheme check only: the allowlist is the
+// service's one fact, consulted here so construction and the OS call
+// cannot disagree about which URLs exist.
+const open_url = @import("../services/open_url/open_url.zig");
+const qr = @import("qr.zig");
+
+pub const Element = element_mod.Element;
+pub const Rect = geometry.Rect;
+
+/// The root every tree opens with: a vertical stack whose padding is the
+/// page margin and whose gap is the space between two blocks. Named
+/// rather than written inline at `init`, because a second edition lays
+/// the root out itself — the DOM one hangs the `nokre` class's padding
+/// and gap off exactly these two numbers — and a page margin that
+/// disagreed with the reference's would be the one value no element
+/// could correct for.
+pub const root_stack: element_mod.Stack = .{ .axis = .vertical, .gap = 8, .padding = 16 };
+
+/// Packed to exactly 32 bits: the DOM serializer, the a11y bridge, and
+/// the wasm boundary all move an id as one `u32` (`@bitCast`), so the
+/// total width is a wire format. Within it, the split favors the
+/// generation over the index: a million-node tree is out of reach, but
+/// a router rebuild frees and reallocates the content subtree on every
+/// navigation, so low slots cycle once per screen change — the
+/// generation counter is what a long session actually spends. At u12 a
+/// stale id can alias a live node only after the same slot has been
+/// freed 4096 times; at the u8 it replaces, ~256 navigations — an
+/// ordinary session — was enough.
+pub const NodeId = packed struct(u32) {
+    index: u20,
+    gen: u12,
+
+    pub const invalid: NodeId = .{ .index = std.math.maxInt(u20), .gen = std.math.maxInt(u12) };
+
+    pub fn eql(a: NodeId, b: NodeId) bool {
+        return a.index == b.index and a.gen == b.gen;
+    }
+
+    pub fn isValid(self: NodeId) bool {
+        return !self.eql(invalid);
+    }
+};
+
+const Node = struct {
+    element: Element,
+    parent: NodeId = .invalid,
+    first_child: NodeId = .invalid,
+    last_child: NodeId = .invalid,
+    next_sibling: NodeId = .invalid,
+    prev_sibling: NodeId = .invalid,
+    gen: u12 = 0,
+    alive: bool = false,
+    /// Written by layout each frame; coordinates are absolute logical px.
+    rect: Rect = .zero,
+};
+
+pub const Tree = struct {
+    gpa: std.mem.Allocator,
+    arena: std.heap.ArenaAllocator,
+    nodes: std.ArrayList(Node),
+    free_list: std.ArrayList(u20),
+    root: NodeId,
+
+    pub fn init(gpa: std.mem.Allocator) !Tree {
+        var tree: Tree = .{
+            .gpa = gpa,
+            .arena = std.heap.ArenaAllocator.init(gpa),
+            .nodes = .empty,
+            .free_list = .empty,
+            .root = .invalid,
+        };
+        tree.root = try tree.allocNode(.{ .stack = root_stack });
+        return tree;
+    }
+
+    pub fn deinit(self: *Tree) void {
+        self.nodes.deinit(self.gpa);
+        self.free_list.deinit(self.gpa);
+        self.arena.deinit();
+    }
+
+    pub fn rootId(self: *const Tree) NodeId {
+        return self.root;
+    }
+
+    /// Appends a child under `parent`. String fields are copied.
+    /// Malformed structure is rejected here, not detected later: an
+    /// invalid tree cannot be built (see docs/accessibility.md).
+    pub fn append(self: *Tree, parent: NodeId, element: Element) !NodeId {
+        const id = try self.createDetached(parent, element);
+        const p = self.nodePtrUnchecked(parent);
+        const prev_last = p.last_child;
+        const n = self.nodePtrUnchecked(id);
+        if (prev_last.isValid()) {
+            self.nodePtrUnchecked(prev_last).next_sibling = id;
+            n.prev_sibling = prev_last;
+        } else {
+            self.nodePtrUnchecked(parent).first_child = id;
+        }
+        self.nodePtrUnchecked(parent).last_child = id;
+        try self.expandLinked(id, element);
+        return id;
+    }
+
+    /// A `document` is expanded once it is linked in, so its children
+    /// go through `append` — the parser produces nothing the framework
+    /// does not already know, and every rule there applies to parsed
+    /// content for free. Every insertion path runs this, so a document
+    /// lands expanded no matter where in the sibling order it enters. A
+    /// parse that the tree refuses surfaces as the insertion's error.
+    fn expandLinked(self: *Tree, id: NodeId, element: Element) !void {
+        if (element != .document) return;
+        errdefer self.remove(id) catch {};
+        try markdown.expand(self, id, self.getConst(id).?.document.source);
+    }
+
+    /// `append`, but linked immediately after `sibling`. App chrome uses
+    /// this to keep focus order aligned with visual order (a notice goes
+    /// right after the nav, before content).
+    pub fn insertAfter(self: *Tree, sibling: NodeId, element: Element) !NodeId {
+        const sib = self.node(sibling) orelse return error.InvalidNode;
+        const parent = sib.parent;
+        if (!parent.isValid()) return error.InvalidNode;
+        const id = try self.createDetached(parent, element);
+        const next = self.nodePtrUnchecked(sibling).next_sibling;
+        const n = self.nodePtrUnchecked(id);
+        n.prev_sibling = sibling;
+        n.next_sibling = next;
+        self.nodePtrUnchecked(sibling).next_sibling = id;
+        if (next.isValid()) {
+            self.nodePtrUnchecked(next).prev_sibling = id;
+        } else {
+            self.nodePtrUnchecked(parent).last_child = id;
+        }
+        try self.expandLinked(id, element);
+        return id;
+    }
+
+    /// `append`, but linked as the first child.
+    pub fn insertFirst(self: *Tree, parent: NodeId, element: Element) !NodeId {
+        if (self.node(parent) == null) return error.InvalidNode;
+        const id = try self.createDetached(parent, element);
+        const first = self.nodePtrUnchecked(parent).first_child;
+        const n = self.nodePtrUnchecked(id);
+        n.next_sibling = first;
+        if (first.isValid()) {
+            self.nodePtrUnchecked(first).prev_sibling = id;
+        } else {
+            self.nodePtrUnchecked(parent).last_child = id;
+        }
+        self.nodePtrUnchecked(parent).first_child = id;
+        try self.expandLinked(id, element);
+        return id;
+    }
+
+    fn createDetached(self: *Tree, parent: NodeId, element: Element) !NodeId {
+        if (self.node(parent) == null) return error.InvalidNode;
+        try self.validateAppend(parent, element);
+        const owned = try self.dupeStrings(element);
+        const id = try self.allocNode(owned);
+        self.nodePtrUnchecked(id).parent = parent;
+        return id;
+    }
+
+    /// Removes a node and its whole subtree.
+    pub fn remove(self: *Tree, id: NodeId) !void {
+        if (id.eql(self.root)) return error.CannotRemoveRoot;
+        const n = self.node(id) orelse return error.InvalidNode;
+
+        if (n.prev_sibling.isValid()) {
+            self.nodePtrUnchecked(n.prev_sibling).next_sibling = n.next_sibling;
+        } else if (n.parent.isValid()) {
+            self.nodePtrUnchecked(n.parent).first_child = n.next_sibling;
+        }
+        if (n.next_sibling.isValid()) {
+            self.nodePtrUnchecked(n.next_sibling).prev_sibling = n.prev_sibling;
+        } else if (n.parent.isValid()) {
+            self.nodePtrUnchecked(n.parent).last_child = n.prev_sibling;
+        }
+        self.releaseSubtree(id);
+    }
+
+    pub fn clearChildren(self: *Tree, id: NodeId) !void {
+        const n = self.node(id) orelse return error.InvalidNode;
+        var child = n.first_child;
+        while (child.isValid()) {
+            const next = self.nodePtrUnchecked(child).next_sibling;
+            self.releaseSubtree(child);
+            child = next;
+        }
+        const np = self.nodePtrUnchecked(id);
+        np.first_child = .invalid;
+        np.last_child = .invalid;
+    }
+
+    pub fn get(self: *Tree, id: NodeId) ?*Element {
+        const n = self.nodePtr(id) orelse return null;
+        return &n.element;
+    }
+
+    pub fn getConst(self: *const Tree, id: NodeId) ?*const Element {
+        const n = self.node(id) orelse return null;
+        return &n.element;
+    }
+
+    pub fn parentOf(self: *const Tree, id: NodeId) ?NodeId {
+        const n = self.node(id) orelse return null;
+        return if (n.parent.isValid()) n.parent else null;
+    }
+
+    /// Whether `id` is `ancestor` or one of its descendants.
+    pub fn isDescendant(self: *const Tree, id: NodeId, ancestor: NodeId) bool {
+        var cur: ?NodeId = id;
+        while (cur) |c| : (cur = self.parentOf(c)) {
+            if (c.eql(ancestor)) return true;
+        }
+        return false;
+    }
+
+    pub fn rectOf(self: *const Tree, id: NodeId) Rect {
+        const n = self.node(id) orelse return .zero;
+        return n.rect;
+    }
+
+    pub fn setRect(self: *Tree, id: NodeId, rect: Rect) void {
+        if (self.nodePtr(id)) |n| n.rect = rect;
+    }
+
+    /// Replaces a text-bearing element's content, copying `content`.
+    pub fn setContent(self: *Tree, id: NodeId, content: []const u8) !void {
+        const el = self.get(id) orelse return error.InvalidNode;
+        const owned = try self.arena.allocator().dupe(u8, content);
+        switch (el.*) {
+            // New content replaces the whole text, so stale spans (ranges
+            // over the old bytes) are dropped rather than dangling.
+            .text => |*t| {
+                t.content = owned;
+                t.spans = &.{};
+            },
+            .heading => |*h| {
+                h.content = owned;
+                h.spans = &.{};
+            },
+            // Same rule for the caret: a position past the new value's
+            // end is stale state, dropped (clamped) rather than dangling
+            // into bytes that no longer exist.
+            .text_input => |*i| {
+                i.value = owned;
+                i.cursor = @min(i.cursor, owned.len);
+            },
+            .text_area => |*ta| {
+                ta.value = owned;
+                ta.cursor = @min(ta.cursor, owned.len);
+            },
+            else => return error.NotTextBearing,
+        }
+    }
+
+    /// Copies `s` into tree-owned memory. Used by event handling for
+    /// text-input edits.
+    pub fn ownString(self: *Tree, s: []const u8) ![]const u8 {
+        return self.arena.allocator().dupe(u8, s);
+    }
+
+    pub const ChildIterator = struct {
+        tree: *const Tree,
+        next_id: NodeId,
+
+        pub fn next(self: *ChildIterator) ?NodeId {
+            if (!self.next_id.isValid()) return null;
+            const id = self.next_id;
+            self.next_id = self.tree.node(id).?.next_sibling;
+            return id;
+        }
+    };
+
+    pub fn children(self: *const Tree, id: NodeId) ChildIterator {
+        const first = if (self.node(id)) |n| n.first_child else NodeId.invalid;
+        return .{ .tree = self, .next_id = first };
+    }
+
+    pub fn childCount(self: *const Tree, id: NodeId) usize {
+        var it = self.children(id);
+        var n: usize = 0;
+        while (it.next()) |_| n += 1;
+        return n;
+    }
+
+    /// Allocation-free depth-first pre-order traversal of the whole tree.
+    pub const DfsIterator = struct {
+        tree: *const Tree,
+        next_id: NodeId,
+        /// Subtree boundary: the climb for a next sibling stops here.
+        stop: NodeId = .invalid,
+
+        pub fn next(self: *DfsIterator) ?NodeId {
+            if (!self.next_id.isValid()) return null;
+            const id = self.next_id;
+            const n = self.tree.node(id).?;
+            if (n.first_child.isValid()) {
+                self.next_id = n.first_child;
+            } else {
+                var cur = id;
+                self.next_id = .invalid;
+                while (cur.isValid() and !cur.eql(self.stop)) {
+                    const cn = self.tree.node(cur).?;
+                    if (cn.next_sibling.isValid()) {
+                        self.next_id = cn.next_sibling;
+                        break;
+                    }
+                    cur = cn.parent;
+                }
+            }
+            return id;
+        }
+    };
+
+    pub fn dfs(self: *const Tree) DfsIterator {
+        return .{ .tree = self, .next_id = self.root };
+    }
+
+    /// Depth-first pre-order over `scope` and its descendants only.
+    pub fn dfsUnder(self: *const Tree, scope: NodeId) DfsIterator {
+        return .{ .tree = self, .next_id = scope, .stop = scope };
+    }
+
+    /// The root's child of `role`, if it has one. Chrome (nav, sheet,
+    /// picker, notice, notices pane, the notices indicator) lives at the
+    /// root and at most one of each may exist, so this is both how
+    /// `validateAppend` enforces uniqueness and how layout finds them.
+    pub fn rootChild(self: *const Tree, role: element_mod.Role) ?NodeId {
+        var it = self.children(self.root);
+        while (it.next()) |c| {
+            if (self.getConst(c).?.role() == role) return c;
+        }
+        return null;
+    }
+
+    /// Whether `id` is the notices pane or the scroll region it holds its
+    /// rows in — the two nodes a notice row may hang off.
+    pub fn inNoticesPane(self: *const Tree, id: NodeId) bool {
+        return switch (self.getConst(id).?.role()) {
+            .notices_pane => true,
+            .scroll_region => if (self.parentOf(id)) |p|
+                self.getConst(p).?.role() == .notices_pane
+            else
+                false,
+            else => false,
+        };
+    }
+
+    // ---- internals ----
+
+    fn validateAppend(self: *const Tree, parent: NodeId, element: Element) !void {
+        const parent_role = self.getConst(parent).?.role();
+        switch (parent_role) {
+            .table => if (element.role() != .row) return error.TableChildMustBeRow,
+            .row => if (element.role() != .cell) return error.RowChildMustBeCell,
+            // A nav renders one of two shapes and never a mix: the row of
+            // destinations — optionally tailed by the marker for a screen
+            // that is none of them — or the collapsed chip standing in
+            // for all of them (`nav.syncNavChrome`). Row and chip
+            // together would put the same section in the focus order
+            // twice; the marker joins the row because it is *not* in the
+            // focus order at all, and the chip already carries what it
+            // would have said (`element.NavHere`).
+            .nav => switch (element.role()) {
+                // Past the marker there is nothing to add: it is the
+                // tail of the row, and a destination behind it would be
+                // read after the screen it is standing on.
+                .nav_item => {
+                    if (self.navHasCurrent(parent)) return error.NavShapeIsExclusive;
+                    if (self.navHasHere(parent)) return error.NavItemAfterNavHere;
+                },
+                .nav_here => {
+                    if (self.navHasCurrent(parent)) return error.NavShapeIsExclusive;
+                    if (self.navHasHere(parent)) return error.MultipleNavHere;
+                },
+                .nav_current => if (self.childCount(parent) != 0) return error.NavShapeIsExclusive,
+                else => return error.NavChildMustBeNavItem,
+            },
+            .tile_group => if (element.role() != .tile) return error.TileGroupChildMustBeTile,
+            .list => if (element.role() != .list_item) return error.ListChildMustBeListItem,
+            .list_item => if (!isDocumentBlock(element.role())) return error.InvalidListItemChild,
+            .blockquote => if (!isDocumentBlock(element.role())) return error.InvalidBlockquoteChild,
+            // A picker holds its option scroll region, optionally led by
+            // the framework's filter field.
+            .picker => if (element.role() != .scroll_region and element.role() != .text_input) return error.InvalidPickerChild,
+            else => {},
+        }
+        // A sign-in button's words are the vendor's, so "any non-empty
+        // label" is not the rule it is failing — checked ahead of the
+        // general one so the error names the specific fix: the vendor's
+        // own published string for the locale being rendered
+        // (element.zig). nokre ships the mark, never a translation.
+        if (element == .button and element.button.provider != null and element.button.label.len == 0)
+            return error.AuthButtonNeedsVendorLabel;
+        switch (element) {
+            .button, .link, .toggle, .checkbox, .text_input, .text_area, .nav_item, .segmented, .tile, .radio_group, .select, .copyable, .icon_button, .picker_item => {
+                if (element.label().len == 0) return error.UnlabeledInteractive;
+            },
+            else => {},
+        }
+        switch (element) {
+            // Spanned text: content is derived (append writes the
+            // concatenation), so providing both is ambiguous and
+            // rejected rather than silently resolved.
+            .text => |t| try self.validateSpans(parent, t.content, t.spans, t.style.ink),
+            .heading => |h| try self.validateSpans(parent, h.content, h.spans, .ink),
+            // A link goes exactly one place. Both destinations set is
+            // ambiguity refused rather than resolved, and an external
+            // one faces open_url's closed scheme set here, at
+            // construction — so a link that can be built is a link that
+            // can be opened.
+            .link => |l| {
+                if (l.external) |url| {
+                    if (l.route.len != 0) return error.RouteAndExternal;
+                    if (!open_url.schemeAllowed(url)) return error.UnsupportedScheme;
+                } else if (l.route.len == 0) return error.EmptyRoute;
+            },
+            // Icon-only is a rendering exception, not a state of its own:
+            // without a glyph there is nothing to render, and without a
+            // pill there is no emphasis to vary.
+            .button => |b| {
+                // The vendor's mark occupies the icon slot, and no
+                // vendor sanctions a glyph-only sign-in button — so
+                // neither combination is a thing to resolve, and both
+                // are refused at the call site instead. These come first
+                // because they name the more specific misuse: a
+                // provider button asking for the glyph form should hear
+                // about the provider, not about a missing icon.
+                if (b.provider != null and b.icon != null) return error.AuthButtonHasNoIcon;
+                if (b.provider != null and b.icon_only) return error.AuthButtonNeedsItsLabel;
+                // No vendor sanctions a progress bar inside their
+                // button, and the brand pill is drawn through a
+                // light-pinned canvas at the true endpoints — a track on
+                // that ground would be nokre restyling artwork that is
+                // not nokre's. Sign-in has no percentage anyway.
+                if (b.provider != null and b.progress_percent != null) return error.AuthButtonHasNoMeter;
+                if (b.icon_only and b.icon == null) return error.IconOnlyButtonNeedsIcon;
+                if (b.icon_only and b.secondary) return error.IconOnlyButtonHasNoEmphasis;
+                // A percentage describes work; without work there is
+                // nothing for it to describe, and on a 24px glyph target
+                // there is nowhere to read it. Both are call-site
+                // mistakes, not states to resolve at draw time.
+                if (b.progress_percent) |pct| {
+                    if (!b.in_progress) return error.ProgressNeedsInProgress;
+                    if (b.icon_only) return error.IconOnlyButtonHasNoMeter;
+                    if (pct > 100) return error.ProgressOutOfRange;
+                }
+            },
+            // Margins are advice a child may decline (layout's
+            // `Ctx.margin`); the outward escape a negative inset buys
+            // elsewhere has no meaning here, so the hack cannot be built.
+            .stack => |s| if (s.padding < 0 or s.gap < 0) return error.NegativeSpacing,
+            .box => |bx| if (bx.padding < 0) return error.NegativeSpacing,
+            .row => if (parent_role != .table) return error.RowOutsideTable,
+            .cell => if (parent_role != .row) return error.CellOutsideRow,
+            .tile => if (parent_role != .tile_group) return error.TileOutsideTileGroup,
+            .list_item => if (parent_role != .list) return error.ListItemOutsideList,
+            // The depth cap is a construction rule, not a rendering
+            // one: past it the indent has eaten the line and says
+            // nothing the words don't. Content nokre does not control
+            // (parsed Markdown) flattens deeper levels onto this one
+            // rather than failing, exactly as it rebases heading levels.
+            .list => if (self.listDepth(parent) >= element_mod.max_list_depth) {
+                return error.ListNestingTooDeep;
+            },
+            .nav_item, .nav_current => if (parent_role != .nav) return error.NavItemOutsideNav,
+            // Not `UnlabeledInteractive` — the marker is not interactive
+            // and never enters the focus order (`element.NavHere`). It
+            // still may not be blank: a plate with no words is a plate
+            // saying you are nowhere. The title it carries is already
+            // non-empty by the time it gets here (`Router.init`), so
+            // this catches a marker built by hand.
+            .nav_here => |n| {
+                if (parent_role != .nav) return error.NavItemOutsideNav;
+                if (n.label.len == 0) return error.EmptyNavHere;
+            },
+            // The folded tail of a row of actions, and nothing else:
+            // installed by `overflow.syncOverflowChrome` on the row that
+            // overflowed, one per row. A consumer reaching for it is
+            // reaching for a shape nokre chooses (element.zig).
+            .more => {
+                const parent_el = self.getConst(parent).?;
+                if (parent_el.* != .stack or parent_el.stack.axis != .horizontal) {
+                    return error.MoreOutsideButtonRow;
+                }
+                var it = self.children(parent);
+                while (it.next()) |c| {
+                    if (self.getConst(c).?.* == .more) return error.MultipleMoreControls;
+                }
+            },
+            .nav => {
+                if (!parent.eql(self.root)) return error.NavMustBeAtRoot;
+                if (self.rootChild(.nav) != null) return error.MultipleNavs;
+            },
+            .segmented => |s| {
+                if (s.options.len < 2) return error.SegmentedNeedsTwoOptions;
+                for (s.options) |opt| {
+                    if (opt.len == 0) return error.SegmentedEmptyOption;
+                }
+                if (s.selected >= s.options.len) return error.SegmentedSelectionOutOfRange;
+            },
+            .radio_group => |rg| {
+                if (rg.options.len < 2) return error.RadioGroupNeedsTwoOptions;
+                for (rg.options) |opt| {
+                    if (opt.len == 0) return error.RadioGroupEmptyOption;
+                }
+                if (rg.selected >= rg.options.len) return error.RadioGroupSelectionOutOfRange;
+            },
+            .select => |s| {
+                if (s.options.len < 2) return error.SelectNeedsTwoOptions;
+                for (s.options) |opt| {
+                    if (opt.len == 0) return error.SelectEmptyOption;
+                }
+                if (s.selected >= s.options.len) return error.SelectSelectionOutOfRange;
+            },
+            // A badge is chrome around its words; empty words leave a
+            // meaningless floating border.
+            .badge => |b| if (b.label.len == 0) return error.EmptyBadge,
+            // A verbatim block with nothing verbatim in it is a tab
+            // stop over blank space.
+            .code_block => |c| if (c.content.len == 0) return error.EmptyCodeBlock,
+            // The label is the document's accessible name, as a sheet's
+            // title is: derived names fail on content that does not
+            // open with a heading, and legal text often does not.
+            .document => |d| if (d.label.len == 0) return error.UntitledDocument,
+            // A copyable's value is the whole point; an empty one is a
+            // control that copies nothing.
+            .copyable => |c| if (c.value.len == 0) return error.EmptyCopyable,
+            // A QR code's label is all assistive tech hears, and its
+            // value is the whole point — neither may be empty. The value
+            // must be text: an embedded NUL would silently truncate the
+            // C encoder's input.
+            .qr => |q| {
+                if (q.label.len == 0) return error.UnlabeledQr;
+                if (q.value.len == 0) return error.EmptyQr;
+                if (std.mem.indexOfScalar(u8, q.value, 0) != null) return error.QrValueNotText;
+            },
+            // A meter's words are all assistive tech hears; a wordless
+            // or out-of-range bar cannot exist.
+            .meter => |m| {
+                if (m.label.len == 0) return error.EmptyMeter;
+                if (m.max <= 0 or m.value < 0 or m.value > m.max) return error.MeterValueOutOfRange;
+            },
+            .picker => |p| {
+                if (p.title.len == 0) return error.UntitledPicker;
+                if (!parent.eql(self.root)) return error.PickerMustBeAtRoot;
+                if (self.rootChild(.picker) != null) return error.MultiplePickers;
+            },
+            .picker_item => {
+                const ok = parent_role == .scroll_region and blk: {
+                    const gp = self.node(parent).?.parent;
+                    break :blk gp.isValid() and self.getConst(gp).?.role() == .picker;
+                };
+                if (!ok) return error.PickerItemOutsidePicker;
+            },
+            .sheet => |s| {
+                if (s.title.len == 0) return error.UntitledSheet;
+                if (!parent.eql(self.root)) return error.SheetMustBeAtRoot;
+                if (self.rootChild(.sheet) != null) return error.MultipleSheets;
+            },
+            .sheet_close => {
+                if (parent_role != .sheet) return error.SheetCloseOutsideSheet;
+                var it = self.children(parent);
+                while (it.next()) |c| {
+                    if (self.getConst(c).?.role() == .sheet_close) return error.MultipleSheetCloses;
+                }
+            },
+            .notice => |n| {
+                if (n.title.len == 0) return error.EmptyNotice;
+                // Two places, and only two: the root, where a notice is
+                // the banner, and the notices pane, where it is a row.
+                // The pane holds its rows in a scroll region, so that
+                // region counts as the pane for this rule.
+                if (!parent.eql(self.root) and !self.inNoticesPane(parent)) return error.NoticeMustBeAtRoot;
+                if (parent.eql(self.root) and self.rootChild(.notice) != null) return error.MultipleNotices;
+            },
+            .notices_pane => {
+                if (!parent.eql(self.root)) return error.NoticesPaneMustBeAtRoot;
+                if (self.rootChild(.notices_pane) != null) return error.MultipleNoticesPanes;
+            },
+            // Chrome only: consumers compose labeled `button`s instead.
+            .icon_button => switch (parent_role) {
+                .notice, .notices_pane => {},
+                else => if (!parent.eql(self.root)) return error.IconButtonOutsideChrome,
+            },
+            else => {},
+        }
+        if (element.ambientTextInk()) |ink| {
+            try color.checkTextPair(ink, self.backgroundBehind(parent));
+        }
+    }
+
+    /// Span construction rules shared by text and heading: content is
+    /// append-derived so it must arrive empty; a span without words is
+    /// dead weight; every run's effective ink faces the same contrast
+    /// gate as plain text — a span may not smuggle in an illegible gray.
+    fn validateSpans(self: *const Tree, parent: NodeId, content: []const u8, spans: []const element_mod.Span, base_ink: color.Gray) !void {
+        if (spans.len == 0) return;
+        if (content.len != 0) return error.ContentAlongsideSpans;
+        const bg = self.backgroundBehind(parent);
+        for (spans) |span| {
+            if (span.text.len == 0) return error.EmptySpan;
+            // A link span is a control, and every control here carries
+            // a non-empty name and exactly one destination.
+            // Whitespace-only words would be an invisible tab stop.
+            if (span.route != null and span.external != null) return error.RouteAndExternal;
+            if (span.route) |route| {
+                if (route.len == 0) return error.EmptySpanRoute;
+                if (std.mem.trim(u8, span.text, " \t\n\r").len == 0) return error.UnlabeledInteractive;
+            }
+            if (span.external) |url| {
+                // open_url's closed scheme set, at construction — the
+                // link element's rule, span-shaped.
+                if (!open_url.schemeAllowed(url)) return error.UnsupportedScheme;
+                if (std.mem.trim(u8, span.text, " \t\n\r").len == 0) return error.UnlabeledInteractive;
+            }
+            if (std.mem.trim(u8, span.text, " \t\n\r").len == 0) continue;
+            try color.checkTextPair(span.ink orelse base_ink, bg);
+        }
+    }
+
+    /// Whether `nav` is currently in its collapsed shape — holding the
+    /// chip that stands in for the whole roster rather than the row.
+    fn navHasCurrent(self: *const Tree, nav: NodeId) bool {
+        var it = self.children(nav);
+        while (it.next()) |c| {
+            if (self.getConst(c).?.role() == .nav_current) return true;
+        }
+        return false;
+    }
+
+    fn navHasHere(self: *const Tree, nav: NodeId) bool {
+        var it = self.children(nav);
+        while (it.next()) |c| {
+            if (self.getConst(c).?.role() == .nav_here) return true;
+        }
+        return false;
+    }
+
+    /// How deep `id` sits in enclosing lists, itself counted: 0 outside
+    /// any list, 1 for a top-level one. `append` caps this at
+    /// `element_mod.max_list_depth`; layout and the renderer read it to
+    /// place markers.
+    pub fn listDepth(self: *const Tree, id: NodeId) usize {
+        var depth: usize = 0;
+        var cur: ?NodeId = id;
+        while (cur) |c| : (cur = self.parentOf(c)) {
+            if (self.getConst(c).?.role() == .list) depth += 1;
+        }
+        return depth;
+    }
+
+    /// The block set a document container (`list_item`, `blockquote`)
+    /// may hold: what Markdown's block grammar produces inside one.
+    /// Headings are excluded — a heading nested in a list or a quote
+    /// would claim an outline position its container cannot own — and
+    /// so are tables: a grid at that depth reads as a mistake, and the
+    /// Markdown parser degrades one to its literal source text rather
+    /// than build it.
+    fn isDocumentBlock(role: element_mod.Role) bool {
+        return switch (role) {
+            .text, .list, .code_block, .blockquote => true,
+            else => false,
+        };
+    }
+
+    /// The fill a child of `id` is drawn on: the nearest ancestor box
+    /// fill (or chrome surface), or paper.
+    pub fn backgroundBehind(self: *const Tree, id: NodeId) color.Gray {
+        var cur = id;
+        while (self.node(cur)) |n| {
+            const el = n.element;
+            if (el == .box) {
+                if (el.box.fill) |f| return f;
+            }
+            if (el == .notice) return .g11;
+            if (el == .sheet or el == .notices_pane or el == .picker) return .paper;
+            if (!n.parent.isValid()) break;
+            cur = n.parent;
+        }
+        return .paper;
+    }
+
+    fn allocNode(self: *Tree, element: Element) !NodeId {
+        if (self.free_list.pop()) |index| {
+            const n = &self.nodes.items[index];
+            const gen = n.gen;
+            n.* = .{ .element = element, .gen = gen, .alive = true };
+            return .{ .index = index, .gen = gen };
+        }
+        // The top index is `invalid`'s sentinel; refusing to hand it out
+        // keeps every real id distinguishable from "no node".
+        if (self.nodes.items.len >= std.math.maxInt(u20)) return error.OutOfMemory;
+        // Release must be infallible — `releaseSubtree` runs mid-teardown,
+        // where an error could only strand slots — so the free list's room
+        // for this slot is bought here, where failure still surfaces to
+        // the caller. Capacity for every slot ever allocated means release
+        // can always append without allocating.
+        try self.free_list.ensureTotalCapacity(self.gpa, self.nodes.items.len + 1);
+        const index: u20 = @intCast(self.nodes.items.len);
+        try self.nodes.append(self.gpa, .{ .element = element, .alive = true });
+        return .{ .index = index, .gen = 0 };
+    }
+
+    fn releaseSubtree(self: *Tree, id: NodeId) void {
+        var child = self.nodePtrUnchecked(id).first_child;
+        while (child.isValid()) {
+            const next = self.nodePtrUnchecked(child).next_sibling;
+            self.releaseSubtree(child);
+            child = next;
+        }
+        const n = self.nodePtrUnchecked(id);
+        n.alive = false;
+        n.gen +%= 1;
+        // Never allocates: `allocNode` reserved free-list capacity for
+        // this slot when it first grew the node table, so a slot cannot
+        // be stranded by an allocation failure during release.
+        self.free_list.appendAssumeCapacity(id.index);
+    }
+
+    fn node(self: *const Tree, id: NodeId) ?*const Node {
+        if (id.index >= self.nodes.items.len) return null;
+        const n = &self.nodes.items[id.index];
+        if (!n.alive or n.gen != id.gen) return null;
+        return n;
+    }
+
+    fn nodePtr(self: *Tree, id: NodeId) ?*Node {
+        if (id.index >= self.nodes.items.len) return null;
+        const n = &self.nodes.items[id.index];
+        if (!n.alive or n.gen != id.gen) return null;
+        return n;
+    }
+
+    fn nodePtrUnchecked(self: *Tree, id: NodeId) *Node {
+        return &self.nodes.items[id.index];
+    }
+
+    fn dupeStrings(self: *Tree, element: Element) !Element {
+        const a = self.arena.allocator();
+        var e = element;
+        switch (e) {
+            .text => |*t| if (t.spans.len == 0) {
+                t.content = try a.dupe(u8, t.content);
+            } else {
+                t.spans = try self.dupeSpans(t.spans, &t.content);
+            },
+            .heading => |*h| if (h.spans.len == 0) {
+                h.content = try a.dupe(u8, h.content);
+            } else {
+                h.spans = try self.dupeSpans(h.spans, &h.content);
+            },
+            .icon => |*i| i.label = try a.dupe(u8, i.label),
+            .code_block => |*c| c.content = try a.dupe(u8, c.content),
+            .document => |*d| {
+                d.label = try a.dupe(u8, d.label);
+                d.source = try a.dupe(u8, d.source);
+            },
+            .badge => |*b| b.label = try a.dupe(u8, b.label),
+            .meter => |*m| m.label = try a.dupe(u8, m.label),
+            .button => |*b| b.label = try a.dupe(u8, b.label),
+            .link => |*l| {
+                l.label = try a.dupe(u8, l.label);
+                l.route = try a.dupe(u8, l.route);
+                if (l.external) |url| l.external = try a.dupe(u8, url);
+            },
+            .toggle => |*t| t.label = try a.dupe(u8, t.label),
+            .checkbox => |*c| c.label = try a.dupe(u8, c.label),
+            .text_input => |*i| {
+                i.label = try a.dupe(u8, i.label);
+                i.value = try a.dupe(u8, i.value);
+                i.placeholder = try a.dupe(u8, i.placeholder);
+                i.composition = try a.dupe(u8, i.composition);
+            },
+            .text_area => |*ta| {
+                ta.label = try a.dupe(u8, ta.label);
+                ta.value = try a.dupe(u8, ta.value);
+                ta.placeholder = try a.dupe(u8, ta.placeholder);
+                ta.composition = try a.dupe(u8, ta.composition);
+            },
+            .segmented => |*s| {
+                s.label = try a.dupe(u8, s.label);
+                s.options = try self.dupeOptions(s.options);
+            },
+            .radio_group => |*rg| {
+                rg.label = try a.dupe(u8, rg.label);
+                rg.options = try self.dupeOptions(rg.options);
+            },
+            .select => |*s| {
+                s.label = try a.dupe(u8, s.label);
+                s.options = try self.dupeOptions(s.options);
+            },
+            .tile_group => |*g| g.description = try a.dupe(u8, g.description),
+            .tile => |*t| {
+                t.label = try a.dupe(u8, t.label);
+                t.detail = try a.dupe(u8, t.detail);
+                t.route = try a.dupe(u8, t.route);
+            },
+            .copyable => |*c| {
+                c.label = try a.dupe(u8, c.label);
+                c.value = try a.dupe(u8, c.value);
+            },
+            .picker => |*p| p.title = try a.dupe(u8, p.title),
+            .picker_item => |*p| p.label = try a.dupe(u8, p.label),
+            .nav_item => |*n| {
+                n.label = try a.dupe(u8, n.label);
+                n.route = try a.dupe(u8, n.route);
+            },
+            .nav_current => |*n| n.section = try a.dupe(u8, n.section),
+            .nav_here => |*n| n.label = try a.dupe(u8, n.label),
+            .sheet => |*s| s.title = try a.dupe(u8, s.title),
+            .notice => |*n| {
+                n.title = try a.dupe(u8, n.title);
+                n.description = try a.dupe(u8, n.description);
+                n.route = try a.dupe(u8, n.route);
+            },
+            .icon_button => |*i| i.label = try a.dupe(u8, i.label),
+            .qr => |*q| {
+                q.label = try a.dupe(u8, q.label);
+                const value = try a.dupeZ(u8, q.value);
+                q.value = value;
+                const encoded = try qr.encode(a, value);
+                q.modules = encoded.modules;
+                q.size = encoded.size;
+            },
+            else => {},
+        }
+        return e;
+    }
+
+    /// The option list of a `segmented`, `radio_group`, or `select`:
+    /// the slice and every string in it, into tree-owned memory.
+    fn dupeOptions(self: *Tree, options: []const []const u8) ![]const []const u8 {
+        const a = self.arena.allocator();
+        const owned = try a.alloc([]const u8, options.len);
+        for (options, owned) |src, *dst| dst.* = try a.dupe(u8, src);
+        return owned;
+    }
+
+    /// Copies spans as slices of one contiguous buffer and hands that
+    /// buffer back as the element's content: the concatenation exists
+    /// once, spans are ranges over it, and byte offsets recovered from
+    /// slice pointers (as layout and the renderer do) are exact.
+    fn dupeSpans(self: *Tree, spans: []const element_mod.Span, content: *[]const u8) ![]const element_mod.Span {
+        const a = self.arena.allocator();
+        var total: usize = 0;
+        for (spans) |span| total += span.text.len;
+        const buf = try a.alloc(u8, total);
+        const owned = try a.alloc(element_mod.Span, spans.len);
+        var off: usize = 0;
+        for (spans, owned) |src, *dst| {
+            @memcpy(buf[off .. off + src.text.len], src.text);
+            dst.* = src;
+            dst.text = buf[off .. off + src.text.len];
+            // A destination is its own string, not a slice of the
+            // concatenation, so it needs its own copy — the tree never
+            // borrows consumer memory.
+            if (src.route) |route| dst.route = try a.dupe(u8, route);
+            if (src.external) |url| dst.external = try a.dupe(u8, url);
+            off += src.text.len;
+        }
+        content.* = buf;
+        return owned;
+    }
+};

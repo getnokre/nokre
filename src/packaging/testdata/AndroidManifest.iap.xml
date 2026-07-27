@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="com.android.vending.BILLING" />
+    <application
+        android:label="Kitchen &amp; Sink"
+        android:icon="@mipmap/ic_launcher"
+        android:theme="@style/NokreTheme"
+        android:allowBackup="false">
+        <activity
+            android:name="dev.nokre.shell.NokreActivity"
+            android:exported="true"
+            android:configChanges="uiMode|orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|density"
+            android:windowSoftInputMode="adjustResize">
+            <meta-data
+                android:name="dev.nokre.lib"
+                android:value="nokre_app" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

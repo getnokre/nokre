@@ -1,0 +1,1345 @@
+const std = @import("std");
+const builtin = @import("builtin");
+const packaging = @import("src/packaging/packaging.zig");
+
+// ---------------------------------------------------------------------------
+// Consumer-facing build API (docs/getting-started.md). A consumer's
+// build.zig imports this file by package name —
+//
+//     const nokre = @import("nokre");
+//
+// — and calls `addApp` to get the full windowed-app wiring for the
+// current target: the nokre module configured for that platform, the
+// Skia shim, the platform shell, AccessKit on desktop, and the
+// generated packaging tree. nokre's own examples are built through the
+// same functions below, so the consumer path is exercised by every
+// `zig build run-…` in this repository.
+// ---------------------------------------------------------------------------
+
+/// App identity — declared once, baked into every platform at comptime
+/// and fed to the packaging emitters (docs/services.md). The struct
+/// lives with the emitters; this is the same declaration both consume.
+pub const PackageDecl = packaging.Decl;
+
+pub const AppOptions = struct {
+    /// Artifact name: the executable on desktop, the wasm module on
+    /// the web (the DOM edition's one artifact), the static library
+    /// the Xcode/Gradle link consumes on mobile.
+    name: []const u8,
+    /// The app's root source file (the one with `pub fn main`, or the
+    /// wasm/mobile entry exports).
+    root_source_file: std.Build.LazyPath,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+    /// Declaring identity is what links the package_info service and
+    /// what makes the packaging tree (`App.pkg`) exist — manifests are
+    /// outputs of this declaration, never hand-written.
+    pkg: ?PackageDecl = null,
+    /// Linking the secure_store service; requires `pkg` — the id is
+    /// the store's namespace (docs/services.md).
+    secure_store: bool = false,
+    /// Linking the deep_link service: the domains the app claims for App
+    /// Links / Universal Links (empty = unlinked). Requires `pkg` — the
+    /// entitlement and assetlinks are keyed to the app's identity — and
+    /// grows the packaging tree with the association artifacts
+    /// (docs/services.md).
+    deep_link_domains: []const []const u8 = &.{},
+    /// Linking the oauth service: the custom URL schemes the app's OAuth
+    /// redirects use (empty = unlinked, unless `oauth_apple` is set).
+    /// Requires `pkg` — the URL-type registration and the intent-filter
+    /// are keyed to the app's identity — and grows the packaging tree
+    /// with those two client-side registrations (docs/services.md).
+    oauth_schemes: []const []const u8 = &.{},
+    /// Sign in with Apple: adds the `com.apple.developer.applesignin`
+    /// entitlement and routes `.provider = .apple` to the native
+    /// controller on macOS and iOS. Links oauth on its own, because
+    /// Apple's native leg needs no redirect scheme at all.
+    oauth_apple: bool = false,
+    /// Linking the iap service. Requires `pkg` — both stores resolve
+    /// products against the app's identity — and derives Android's
+    /// BILLING permission. On Android the Play Billing Library is one
+    /// Gradle coordinate the consumer adds themselves; nokre has no
+    /// dependency manager to add it for them (docs/internals/iap.md).
+    iap: bool = false,
+    /// Web only: the name of the wasm module the packaging tree's
+    /// generated index.html loads, served beside it (with live.js and
+    /// its imports, per docs/internals/dom-edition.md's host contract).
+    web_wasm: []const u8 = "app.wasm",
+};
+
+pub const App = struct {
+    /// The configured nokre module — import it from test modules too,
+    /// so tests exercise the same instance the app links.
+    nokre: *std.Build.Module,
+    /// The app's root module, already importing "nokre".
+    module: *std.Build.Module,
+    /// Desktop: the windowed executable, ready to install and run.
+    /// iOS/Android/web: the static library the platform project links
+    /// (docs/internals/platform-shells.md has each split).
+    artifact: *std.Build.Step.Compile,
+    /// iOS only: the Skia shim static library the Xcode project links
+    /// beside the app library; null elsewhere (desktop links it into
+    /// the executable, Android compiles the shim in the NDK world so
+    /// all C++ shares one toolchain, and the web's DOM edition links
+    /// no Skia at all — docs/internals/dom-edition.md).
+    shim: ?*std.Build.Step.Compile = null,
+    /// The generated packaging tree (Info.plist, AndroidManifest + res,
+    /// web page + manifest + icons) when `pkg` is declared. Install it
+    /// wherever the platform project expects it:
+    ///
+    ///     b.installDirectory(.{ .source_dir = app.pkg.?, .install_dir = .prefix, .install_subdir = "pkg" });
+    pkg: ?std.Build.LazyPath = null,
+};
+
+/// The one consumer entry point: the windowed-app link wiring as a
+/// build step. Dispatches on the target the way nokre's own build
+/// does; artifacts are created on nokre's builder (so its source and
+/// deps/ paths resolve) and are installable from the consumer's.
+///
+/// Native rendering needs the Skia + AccessKit prebuilts in the nokre
+/// checkout's deps/ — run tools/fetch-deps.sh (and the per-platform
+/// tools/build-skia-*.sh) inside the dependency once; a missing dep
+/// fails the app's build step with the command to run.
+pub fn addApp(nokre_dep: *std.Build.Dependency, options: AppOptions) App {
+    return addAppTo(nokre_dep.builder, options);
+}
+
+/// The web target: bare wasm32. There is no C++ archive to match
+/// features with any more — the web's edition is the DOM one, which
+/// links no Skia and no emscripten — so this is the plain query, and
+/// it stays a function so a consumer's build file names nokre's answer
+/// rather than restating it.
+pub fn webTarget(b: *std.Build) std.Build.ResolvedTarget {
+    return b.resolveTargetQuery(.{ .cpu_arch = .wasm32, .os_tag = .freestanding });
+}
+
+fn addAppTo(hb: *std.Build, options: AppOptions) App {
+    const result = options.target.result;
+    if (result.cpu.arch == .wasm32) return addWebApp(hb, options);
+    if (result.os.tag == .ios) return addIosApp(hb, options);
+    if (result.abi.isAndroid()) return addAndroidApp(hb, options);
+    return addDesktopApp(hb, options);
+}
+
+/// The generated packaging tree for a declared app, or null when no
+/// identity is declared — an app without an id has nothing to put in a
+/// manifest, and that absence should be loud at the consumer's install
+/// site, not papered over with placeholder identity.
+fn appPkgTree(hb: *std.Build, options: AppOptions) ?std.Build.LazyPath {
+    const decl = options.pkg orelse return null;
+    const wf = hb.addWriteFiles();
+    addPkgTree(hb, wf, decl, appServices(options), options.web_wasm);
+    return wf.getDirectory();
+}
+
+/// secure_store without an identity cannot link (the id is the store's
+/// namespace); surface the fix on the artifact the consumer will
+/// actually build — hb.default_step belongs to the dependency and a
+/// consumer never depends on it.
+/// Every service that needs a declared package identity, checked as one
+/// group: an artifact either carries the declaration all four can read
+/// or it fails naming the service that wanted it.
+fn checkServicesNeedPkg(hb: *std.Build, options: AppOptions, artifact: *std.Build.Step.Compile) void {
+    checkStoreNeedsPkg(hb, options, artifact);
+    checkDeepLinkNeedsPkg(hb, options, artifact);
+    checkOauthNeedsPkg(hb, options, artifact);
+    checkIapNeedsPkg(hb, options, artifact);
+}
+
+fn checkStoreNeedsPkg(hb: *std.Build, options: AppOptions, artifact: *std.Build.Step.Compile) void {
+    if (options.secure_store and options.pkg == null) {
+        const fail = hb.addFail("secure_store needs the app's identity for its namespace — declare .pkg alongside .secure_store (docs/services.md)");
+        artifact.step.dependOn(&fail.step);
+    }
+}
+
+/// deep_link without an identity cannot derive its entitlement or
+/// assetlinks (both keyed to the app id), so linking it demands `.pkg` —
+/// surfaced on the artifact the consumer builds, like the store's.
+fn checkDeepLinkNeedsPkg(hb: *std.Build, options: AppOptions, artifact: *std.Build.Step.Compile) void {
+    if (options.deep_link_domains.len != 0 and options.pkg == null) {
+        const fail = hb.addFail("deep_link needs the app's identity — its entitlement and assetlinks are keyed to the app id, so declare .pkg alongside .deep_link_domains (docs/services.md)");
+        artifact.step.dependOn(&fail.step);
+    }
+}
+
+/// oauth without an identity cannot derive its URL-type registration or
+/// its intent-filter (both keyed to the app id) — deep_link's rule, on
+/// the artifact the consumer builds.
+fn checkOauthNeedsPkg(hb: *std.Build, options: AppOptions, artifact: *std.Build.Step.Compile) void {
+    if ((options.oauth_schemes.len != 0 or options.oauth_apple) and options.pkg == null) {
+        const fail = hb.addFail("oauth needs the app's identity — its URL-type registration and intent-filter are keyed to the app id, so declare .pkg alongside .oauth_schemes (docs/services.md)");
+        artifact.step.dependOn(&fail.step);
+    }
+}
+
+/// iap without an identity cannot resolve a catalog — both stores look
+/// products up against the app id — so linking it demands `.pkg`, on the
+/// artifact the consumer builds. secure_store's rule, one store over.
+fn checkIapNeedsPkg(hb: *std.Build, options: AppOptions, artifact: *std.Build.Step.Compile) void {
+    if (options.iap and options.pkg == null) {
+        const fail = hb.addFail("iap needs the app's identity — both stores resolve products against the app id, so declare .pkg alongside .iap (docs/services.md)");
+        artifact.step.dependOn(&fail.step);
+    }
+}
+
+fn depMissing(hb: *std.Build, artifact: *std.Build.Step.Compile, comptime probe: []const u8, comptime message: []const u8) bool {
+    hb.build_root.handle.access(hb.graph.io, probe, .{}) catch {
+        const fail = hb.addFail(message ++ " (in the nokre checkout: " ++ probe ++ ")");
+        artifact.step.dependOn(&fail.step);
+        return true;
+    };
+    return false;
+}
+
+/// macOS and Windows: the windowed executable — app + nokre + shell +
+/// Skia shim + AccessKit in one link.
+fn addDesktopApp(hb: *std.Build, options: AppOptions) App {
+    const target = options.target;
+    const os_tag = target.result.os.tag;
+    const is_msvc = target.result.abi == .msvc;
+    // MSVC ABI: the AccessKit Rust static library supplies compiler
+    // intrinsics in place of zig's compiler-rt, and that set lacks the
+    // x87 f128 conversions Debug-mode UBSan's runtime wants — trap mode
+    // keeps C undefined behavior fatal without the runtime.
+    const sanitize_c: ?std.zig.SanitizeC = if (is_msvc) .trap else null;
+
+    const nokre_mod = hb.createModule(.{
+        .root_source_file = hb.path("src/nokre.zig"),
+        .target = target,
+        .optimize = options.optimize,
+        .link_libc = true,
+        .sanitize_c = sanitize_c,
+    });
+    configureNokre(hb, nokre_mod, options.pkg, appServices(options));
+
+    const app_mod = hb.createModule(.{
+        .root_source_file = options.root_source_file,
+        .target = target,
+        .optimize = options.optimize,
+        .sanitize_c = sanitize_c,
+        .imports = &.{.{ .name = "nokre", .module = nokre_mod }},
+    });
+    const exe = hb.addExecutable(.{ .name = options.name, .root_module = app_mod });
+    checkServicesNeedPkg(hb, options, exe);
+    const app: App = .{ .nokre = nokre_mod, .module = app_mod, .artifact = exe, .pkg = appPkgTree(hb, options) };
+
+    if (os_tag == .windows and !is_msvc) {
+        const fail = hb.addFail("Windows builds link the MSVC-ABI Skia prebuilt — build with -Dtarget=x86_64-windows-msvc");
+        exe.step.dependOn(&fail.step);
+        return app;
+    }
+    const accesskit_lib = switch (os_tag) {
+        .macos, .linux => "deps/accesskit/lib/libaccesskit.a",
+        .windows => "deps/accesskit/lib/accesskit.lib",
+        // No shell, no AccessKit prebuilt, and no Skia prebuilt exist
+        // for any other desktop OS, so the app's build step fails
+        // naming the supported set. This used to be `unreachable`,
+        // which panicked the whole build script at graph construction
+        // for e.g. -Dtarget=x86_64-freebsd — before the dep checks
+        // below, so it must run first or a missing deps/skia would
+        // misdiagnose an unsupported OS as an unfetched dependency.
+        else => {
+            const fail = hb.addFail(hb.fmt("no desktop shell for {s} — nokre's desktop targets are macOS, Windows (x86_64-windows-msvc), and Linux (Wayland); iOS, Android, and wasm32 take their own paths (docs/getting-started.md)", .{@tagName(os_tag)}));
+            exe.step.dependOn(&fail.step);
+            return app;
+        },
+    };
+    if (depMissing(hb, exe, skia_probe, "deps/skia not found — run tools/fetch-deps.sh first")) return app;
+    if (depMissing(hb, exe, "deps/accesskit/include/accesskit.h", "deps/accesskit not found — run tools/fetch-deps.sh first")) return app;
+
+    app_mod.linkLibrary(desktopSkiaShim(hb, target, is_msvc));
+    linkSkia(hb, app_mod, os_tag);
+
+    const ak_mod = hb.createModule(.{
+        .target = target,
+        .optimize = .ReleaseFast,
+        .link_libc = true,
+    });
+    const ak = hb.addLibrary(.{
+        .name = "nokre_accesskit",
+        .linkage = .static,
+        .root_module = ak_mod,
+    });
+    ak_mod.addCSourceFile(.{
+        .file = hb.path("shim/nokre_accesskit.c"),
+        .flags = &.{"-std=c11"},
+    });
+    ak_mod.addIncludePath(hb.path("deps/accesskit/include"));
+
+    switch (os_tag) {
+        .macos => {
+            app_mod.addCSourceFile(.{
+                .file = hb.path("src/platform/macos/shell.m"),
+                .flags = &.{"-fobjc-arc"},
+            });
+            app_mod.linkFramework("AppKit", .{});
+            app_mod.linkFramework("QuartzCore", .{});
+            app_mod.linkLibrary(ak);
+            app_mod.addObjectFile(hb.path(accesskit_lib));
+        },
+        .windows => {
+            app_mod.addCSourceFile(.{
+                .file = hb.path("src/platform/windows/shell.c"),
+                .flags = &.{"-std=c11"},
+            });
+            // user32/gdi32/imm32/advapi32/dwmapi are the shell's; the rest
+            // back the AccessKit Rust static library (UIA plus the Rust std
+            // runtime).
+            for ([_][]const u8{ "user32", "gdi32", "imm32", "advapi32", "dwmapi", "uiautomationcore", "oleaut32", "ole32", "ws2_32", "userenv", "bcrypt", "ntdll" }) |lib|
+                app_mod.linkSystemLibrary(lib, .{});
+            app_mod.linkLibrary(ak);
+            app_mod.addObjectFile(hb.path(accesskit_lib));
+            // GUI subsystem (no console window behind the app's own), but
+            // keep the console CRT entry so zig's plain main runs — the
+            // WinMain the GUI entry would demand adds nothing here.
+            exe.subsystem = .Windows;
+            exe.entry = .{ .symbol_name = "mainCRTStartup" };
+            // accesskit.lib (Rust) bundles compiler_builtins — the same
+            // intrinsics as zig's compiler-rt, and lld-link rejects the
+            // duplicates; let the Rust copy serve both.
+            exe.bundle_compiler_rt = false;
+        },
+        .linux => {
+            // The Wayland shell: wayland-scanner turns the system protocol
+            // XML into client glue, compiled with shell.c; xkbcommon does
+            // keyboard, dbus-1 backs appearance detection (the portal
+            // Settings read). The AccessKit Unix adapter (Rust, AT-SPI over
+            // its own zbus socket) needs the Rust std runtime's libc deps.
+            addWaylandShell(hb, app_mod, target);
+            app_mod.linkLibrary(ak);
+            app_mod.addObjectFile(hb.path(accesskit_lib));
+            for ([_][]const u8{ "wayland-client", "xkbcommon", "dbus-1", "m", "dl" }) |lib|
+                app_mod.linkSystemLibrary(lib, .{});
+        },
+        // Truly unreachable: every other desktop OS already
+        // failed-and-returned at the accesskit_lib switch above.
+        else => unreachable,
+    }
+    return app;
+}
+
+/// The Wayland shell's native side: generate xdg-shell and text-input-v3
+/// client glue from the system protocol XML with wayland-scanner (present
+/// on any Wayland dev host, like Windows needs the VS Build Tools), then
+/// compile that glue and shell.c. Committing generated code is the
+/// anti-pattern the qrcodegen/harfbuzz vendoring avoids; the toolchain
+/// regenerates it into a private dir the shell includes.
+fn addWaylandShell(hb: *std.Build, app_mod: *std.Build.Module, target: std.Build.ResolvedTarget) void {
+    _ = target;
+    // Where the protocol XML lives is the wayland-protocols package's
+    // own answer (its .pc exports pkgdatadir), and it varies by distro —
+    // prefix installs and NixOS put it nowhere near /usr/share. The
+    // hardcoded FHS path stays as the fallback for hosts where
+    // pkg-config or the .pc file is missing: it is still correct on the
+    // mainstream distros, and a wrong dir surfaces immediately as
+    // wayland-scanner failing on a nonexistent XML path.
+    const protocols_dir: []const u8 = blk: {
+        var code: u8 = undefined;
+        const out = hb.runAllowFail(
+            &.{ "pkg-config", "--variable=pkgdatadir", "wayland-protocols" },
+            &code,
+            .ignore,
+        ) catch break :blk "/usr/share/wayland-protocols";
+        const trimmed = std.mem.trim(u8, out, " \t\r\n");
+        break :blk if (trimmed.len == 0) "/usr/share/wayland-protocols" else trimmed;
+    };
+    const Proto = struct { xml: []const u8, base: []const u8 };
+    const protocols = [_]Proto{
+        .{ .xml = hb.pathJoin(&.{ protocols_dir, "stable/xdg-shell/xdg-shell.xml" }), .base = "xdg-shell" },
+        .{ .xml = hb.pathJoin(&.{ protocols_dir, "unstable/text-input/text-input-unstable-v3.xml" }), .base = "text-input-unstable-v3" },
+    };
+    // One write-files dir co-locates every generated header so shell.c's
+    // #include "<base>-client-protocol.h" resolves from a single -I.
+    const gen = hb.addWriteFiles();
+    for (protocols) |proto| {
+        const header_cmd = hb.addSystemCommand(&.{ "wayland-scanner", "client-header" });
+        header_cmd.addArg(proto.xml);
+        const header = header_cmd.addOutputFileArg(hb.fmt("{s}-client-protocol.h", .{proto.base}));
+        _ = gen.addCopyFile(header, hb.fmt("{s}-client-protocol.h", .{proto.base}));
+
+        const code_cmd = hb.addSystemCommand(&.{ "wayland-scanner", "private-code" });
+        code_cmd.addArg(proto.xml);
+        const code = code_cmd.addOutputFileArg(hb.fmt("{s}-protocol.c", .{proto.base}));
+        // The generated code is self-contained (only wayland-util); compile
+        // it straight from its cache path.
+        app_mod.addCSourceFile(.{ .file = code, .flags = &.{"-std=c11"} });
+    }
+    app_mod.addIncludePath(gen.getDirectory());
+    app_mod.addCSourceFile(.{
+        .file = hb.path("src/platform/linux/shell.c"),
+        // NOKRE_HAVE_DBUS turns on the xdg-desktop-portal appearance read;
+        // dbus-1 is linked in the caller.
+        .flags = &.{ "-std=c11", "-DNOKRE_HAVE_DBUS" },
+    });
+}
+
+/// iOS produces static libraries, not a runnable artifact: zig owns the
+/// Zig code and the C/C++ it already compiles elsewhere (qrcodegen, the
+/// Skia shim); the consumer's Xcode project compiles the UIKit shell,
+/// links Skia, and signs for the simulator or a device
+/// (examples/kitchen_sink/ios is the template). Cross-compiled C needs
+/// the SDK's libc headers; `-isystem` keeps them behind zig's bundled
+/// libc++ headers.
+fn addIosApp(hb: *std.Build, options: AppOptions) App {
+    const target = options.target;
+
+    const nokre_mod = hb.createModule(.{
+        .root_source_file = hb.path("src/nokre.zig"),
+        .target = target,
+        .optimize = options.optimize,
+        .link_libc = true,
+    });
+    configureNokre(hb, nokre_mod, options.pkg, appServices(options));
+
+    const app_mod = hb.createModule(.{
+        .root_source_file = options.root_source_file,
+        .target = target,
+        .optimize = options.optimize,
+        .imports = &.{.{ .name = "nokre", .module = nokre_mod }},
+    });
+    const lib = hb.addLibrary(.{
+        .name = options.name,
+        .linkage = .static,
+        .root_module = app_mod,
+    });
+    checkServicesNeedPkg(hb, options, lib);
+    var app: App = .{ .nokre = nokre_mod, .module = app_mod, .artifact = lib, .pkg = appPkgTree(hb, options) };
+
+    if (builtin.os.tag != .macos) {
+        const fail = hb.addFail("iOS builds need a macOS host (xcrun locates the SDK)");
+        lib.step.dependOn(&fail.step);
+        return app;
+    }
+    if (depMissing(hb, lib, skia_probe, "deps/skia not found — run tools/fetch-deps.sh and tools/build-skia-ios.sh first")) return app;
+
+    const sdk_name = if (target.result.abi == .simulator) "iphonesimulator" else "iphoneos";
+    const sdk_path = appleSdkPath(hb, sdk_name);
+    const sdk_include: std.Build.LazyPath = .{ .cwd_relative = hb.pathJoin(&.{ sdk_path, "usr", "include" }) };
+    const sdk_frameworks: std.Build.LazyPath = .{ .cwd_relative = hb.pathJoin(&.{ sdk_path, "System", "Library", "Frameworks" }) };
+    nokre_mod.addSystemIncludePath(sdk_include);
+    // The framework path serves the services that link one (a
+    // secure_store app records -framework Security even in a static
+    // archive); the frameworks themselves resolve at the Xcode link.
+    nokre_mod.addSystemFrameworkPath(sdk_frameworks);
+
+    const shim_mod = hb.createModule(.{
+        .target = target,
+        .optimize = .ReleaseFast,
+        .link_libcpp = true,
+    });
+    const shim = hb.addLibrary(.{
+        .name = "nokre_skia",
+        .linkage = .static,
+        .root_module = shim_mod,
+    });
+    shim_mod.addCSourceFiles(.{
+        .files = &.{ "shim/nokre_skia.cpp", "shim/nokre_skia_nocodec_stub.cpp", "shim/nokre_skia_ios_stub.cpp" },
+        .flags = &.{ "-std=c++17", "-fno-exceptions", "-fno-rtti" },
+    });
+    shim_mod.addIncludePath(hb.path(skia_root));
+    addHarfBuzz(hb, shim_mod);
+    shim_mod.addSystemIncludePath(sdk_include);
+    shim_mod.addSystemFrameworkPath(sdk_frameworks);
+    app.shim = shim;
+    return app;
+}
+
+/// Android produces one static library of all the Zig, and nothing
+/// else: the consumer's Gradle project compiles the JNI shell, the Skia
+/// shim, and qrcodegen with the NDK toolchain (one C/C++ toolchain with
+/// the NDK-built Skia) and links the .so
+/// (examples/kitchen_sink/android is the template). No C rides along —
+/// qrcodegen and the shim need bionic headers zig does not bundle.
+/// link_libc marks bionic as the libc so std.heap.c_allocator resolves
+/// to the malloc Skia already uses; with no C compiled and no link step
+/// here, no NDK is needed.
+fn addAndroidApp(hb: *std.Build, options: AppOptions) App {
+    const target = options.target;
+    // pic: the archive's destination is a shared library (the APK's
+    // .so), and without it zig emits local-exec TLS relocations lld
+    // rightly refuses under -shared.
+    const nokre_mod = hb.createModule(.{
+        .root_source_file = hb.path("src/nokre.zig"),
+        .target = target,
+        .optimize = options.optimize,
+        .link_libc = true,
+        .pic = true,
+    });
+    configureServices(hb, nokre_mod, options.pkg, appServices(options));
+
+    const app_mod = hb.createModule(.{
+        .root_source_file = options.root_source_file,
+        .target = target,
+        .optimize = options.optimize,
+        .imports = &.{.{ .name = "nokre", .module = nokre_mod }},
+        .pic = true,
+    });
+    const lib = hb.addLibrary(.{
+        .name = options.name,
+        .linkage = .static,
+        .root_module = app_mod,
+    });
+    checkServicesNeedPkg(hb, options, lib);
+    return .{ .nokre = nokre_mod, .module = app_mod, .artifact = lib, .pkg = appPkgTree(hb, options) };
+}
+
+/// A web app: one wasm module, entry disabled, exports rdynamic. The
+/// browser is already mid-event-loop when it instantiates, so there is
+/// no `main` to run — the app arrives through `nokreWebBuild` and the
+/// DOM edition's live driver drives it
+/// (docs/internals/dom-edition.md).
+fn addWebApp(hb: *std.Build, options: AppOptions) App {
+    const nokre_mod = hb.createModule(.{
+        .root_source_file = hb.path("src/nokre.zig"),
+        .target = options.target,
+        // Layout and the markup walk run on every frame; Debug wasm is
+        // slow enough to read as jank, and Small is what a page pays
+        // for in download.
+        .optimize = .ReleaseSmall,
+    });
+    configureNokre(hb, nokre_mod, options.pkg, appServices(options));
+
+    const app_mod = hb.createModule(.{
+        .root_source_file = options.root_source_file,
+        .target = options.target,
+        .optimize = .ReleaseSmall,
+        // The name section is most of an unstripped wasm and nothing
+        // reads it here.
+        .strip = true,
+        .imports = &.{.{ .name = "nokre", .module = nokre_mod }},
+    });
+    const exe = hb.addExecutable(.{ .name = options.name, .root_module = app_mod });
+    exe.entry = .disabled;
+    exe.rdynamic = true;
+    checkServicesNeedPkg(hb, options, exe);
+    return .{ .nokre = nokre_mod, .module = app_mod, .artifact = exe, .pkg = appPkgTree(hb, options) };
+}
+
+const skia_root = "deps/skia";
+const skia_probe = skia_root ++ "/include/core/SkCanvas.h";
+const harfbuzz_root = "deps/harfbuzz";
+
+/// HarfBuzz rides in the shim, never in Skia: one amalgamated
+/// translation unit compiled alongside nokre_skia.cpp wherever that
+/// file is compiled, so the pinned Skia builds (prebuilt and
+/// source-built alike) stay untouched. HB_NO_MT because the shim is the
+/// only caller and its shared hb objects are immutable after load.
+fn addHarfBuzz(hb: *std.Build, shim_mod: *std.Build.Module) void {
+    shim_mod.addCSourceFile(.{
+        .file = hb.path(harfbuzz_root ++ "/src/harfbuzz.cc"),
+        .flags = &.{ "-std=c++17", "-fno-exceptions", "-fno-rtti", "-DHB_NO_MT" },
+    });
+    shim_mod.addIncludePath(hb.path(harfbuzz_root ++ "/src"));
+}
+
+/// The Skia shim for desktop targets (requires deps/skia from
+/// tools/fetch-deps.sh). MSVC ABI (the Windows prebuilt): C++ headers
+/// and runtime come from the Visual Studio installation via link_libc,
+/// not zig's libc++.
+fn desktopSkiaShim(hb: *std.Build, target: std.Build.ResolvedTarget, is_msvc: bool) *std.Build.Step.Compile {
+    const shim_mod = hb.createModule(.{
+        .target = target,
+        .optimize = .ReleaseFast,
+        .link_libcpp = !is_msvc,
+        .link_libc = is_msvc,
+    });
+    const shim = hb.addLibrary(.{
+        .name = "nokre_skia",
+        .linkage = .static,
+        .root_module = shim_mod,
+    });
+    shim_mod.addCSourceFile(.{
+        .file = hb.path("shim/nokre_skia.cpp"),
+        .flags = &.{ "-std=c++17", "-fno-exceptions", "-fno-rtti" },
+    });
+    if (target.result.os.tag == .windows) {
+        // Plain-named zlib entry points FreeType's gzip path references
+        // but the prebuilt leaves to the consumer; rationale in the file.
+        shim_mod.addCSourceFile(.{
+            .file = hb.path("shim/nokre_skia_zlib_stub.c"),
+            .flags = &.{"-std=c11"},
+        });
+    }
+    shim_mod.addIncludePath(hb.path(skia_root));
+    addHarfBuzz(hb, shim_mod);
+    return shim;
+}
+
+fn linkSkia(hb: *std.Build, mod: *std.Build.Module, os: std.Target.Os.Tag) void {
+    switch (os) {
+        .windows => {
+            // Unlike its filename suggests, skia.lib is the same
+            // everything-bundled archive as macOS's libskia.a
+            // (FreeType, zlib, libpng, skcms objects included); the
+            // sibling .libs the zip ships are for modules nokre
+            // doesn't use.
+            mod.addObjectFile(hb.path(skia_root ++ "/lib/skia.lib"));
+            // The prebuilt compiles with -MT: Visual Studio's static
+            // C++ runtime, not zig's libc++.
+            mod.linkSystemLibrary("libcpmt", .{});
+            mod.link_libc = true;
+        },
+        else => {
+            mod.addObjectFile(hb.path(skia_root ++ "/lib/libskia.a"));
+            mod.linkSystemLibrary("z", .{});
+            if (os == .macos) {
+                mod.linkFramework("CoreFoundation", .{});
+                mod.linkFramework("CoreGraphics", .{});
+                mod.linkFramework("CoreText", .{});
+                mod.linkFramework("CoreServices", .{});
+            }
+            mod.link_libcpp = true;
+        },
+    }
+}
+
+pub fn build(b: *std.Build) void {
+    const enable_skia = b.option(bool, "skia", "Link the Skia shim for real rendering (run tools/fetch-deps.sh first)") orelse false;
+    const enable_golden = b.option(bool, "golden", "Run golden screenshot tests (requires -Dskia)") orelse false;
+    const update_goldens = b.option(bool, "update-goldens", "Create missing goldens and rewrite mismatched ones in place (requires -Dgolden)") orelse false;
+
+    // The Windows Skia prebuilt is MSVC-ABI (clang-cl), so -Dskia builds
+    // must be too; defaulting the ABI here keeps `zig build run-… -Dskia`
+    // working without a -Dtarget, while pure builds keep the native
+    // default and stay free of any MSVC installation.
+    const default_target: std.Target.Query =
+        if (builtin.os.tag == .windows and enable_skia) .{ .abi = .msvc } else .{};
+    const target = b.standardTargetOptions(.{ .default_target = default_target });
+    const optimize = b.standardOptimizeOption(.{});
+    const is_msvc = target.result.abi == .msvc;
+    const sanitize_c: ?std.zig.SanitizeC = if (is_msvc) .trap else null;
+
+    // App identity for the package_info service (docs/services.md):
+    // declared once here by the consumer, baked into every platform at
+    // comptime. Setting pkg_id is what links the service.
+    const pkg_id = b.option([]const u8, "pkg_id", "Link the package_info service: reverse-DNS app id");
+    const pkg_name = b.option([]const u8, "pkg_name", "package_info: human-readable app name (defaults to pkg_id)");
+    const pkg_version = b.option([]const u8, "pkg_version", "package_info: display version (defaults to 0.0.0)");
+    const pkg_build = b.option(u32, "pkg_build", "package_info: monotonic build number (defaults to 0)");
+    const pkg_decl: ?PackageDecl = if (pkg_id) |id| .{
+        .id = id,
+        .name = pkg_name orelse id,
+        .version = pkg_version orelse "0.0.0",
+        .build = pkg_build orelse 0,
+    } else null;
+
+    // Deliberately not http's "always available" shape: linking costs
+    // something real (Security.framework, advapi32, a ~139 KiB wasm
+    // table), and the store is meaningless without an identity to
+    // namespace it — hence the pkg_id requirement (docs/services.md).
+    const secure_store_opt = b.option(bool, "secure_store", "Link the secure_store service (requires pkg_id — the app id is the store's namespace)") orelse false;
+
+    // deep_link: the domains the app claims for App Links / Universal
+    // Links (repeat -Ddeep_link to claim more). Same "linking needs
+    // identity" shape as the store — the entitlement and assetlinks are
+    // keyed to the app id — and the claimed set drives the packaging
+    // association files below (docs/services.md).
+    const deep_link_domains = b.option([]const []const u8, "deep_link", "Link the deep_link service: a claimed domain for App Links / Universal Links (repeat for more; requires pkg_id)") orelse &[_][]const u8{};
+
+    // oauth: the custom URL schemes the app's OAuth redirects land on
+    // (repeat -Doauth to register more), and Sign in with Apple's
+    // entitlement. Same "linking needs identity" shape as the store and
+    // deep_link, and the declared set drives the CFBundleURLTypes entry
+    // and the Android intent-filter below (docs/services.md). This is
+    // the custom-scheme opt-in deep_link deferred: deep_link still
+    // derives only verified https domains.
+    const oauth_schemes = b.option([]const []const u8, "oauth", "Link the oauth service: a custom URL scheme the app's redirect uses (repeat for more; requires pkg_id)") orelse &[_][]const u8{};
+    const oauth_apple = b.option(bool, "oauth_apple", "Link oauth with Sign in with Apple: adds the applesignin entitlement and the native ASAuthorizationController leg (requires pkg_id)") orelse false;
+
+    // iap: the same "linking needs identity" shape again — both stores
+    // resolve products against the app id — deriving Android's BILLING
+    // permission below. The only service with no leg at all on three of
+    // the six targets (docs/internals/iap.md).
+    const iap_opt = b.option(bool, "iap", "Link the iap service: StoreKit on Apple, Play Billing on Android, no store elsewhere (requires pkg_id)") orelse false;
+
+    // The linked-service set the -D options above describe, in the one
+    // shape both the module wiring and the packaging emitters read —
+    // appServices' twin for nokre's own build, stated once so the two
+    // consumers below cannot drift.
+    const services: packaging.Services = .{
+        .secure_store = secure_store_opt,
+        .deep_link_domains = deep_link_domains,
+        .oauth_schemes = oauth_schemes,
+        .oauth_apple = oauth_apple,
+        .iap = iap_opt,
+    };
+
+    // The kitchen sink on iOS: both static libraries plus the pkg tree
+    // on the install prefix the Xcode build phase fills (-p …) — the
+    // project's INFOPLIST_FILE and asset catalog point into it, so
+    // identity and the icon flow from the declaration with no extra
+    // step. The app itself keeps its zero-services contract, so the
+    // manifest tree is added separately from its declaration below.
+    if (target.result.os.tag == .ios) {
+        if (!enable_skia) {
+            const fail = b.addFail("iOS builds require -Dskia (run tools/fetch-deps.sh and tools/build-skia-ios.sh first)");
+            b.default_step.dependOn(&fail.step);
+            return;
+        }
+        const app = addAppTo(b, .{
+            .name = "kitchen-sink",
+            .root_source_file = b.path("examples/kitchen_sink/main.zig"),
+            .target = target,
+            .optimize = optimize,
+        });
+        b.installArtifact(app.artifact);
+        if (app.shim) |shim| b.installArtifact(shim);
+        installKitchenSinkPkg(b, b.getInstallStep());
+        return;
+    }
+
+    // The kitchen sink on Android: one static library of all the Zig
+    // (the Gradle project regenerates the pkg tree itself, at
+    // configuration time).
+    if (target.result.abi.isAndroid()) {
+        const app = addAppTo(b, .{
+            .name = "kitchen-sink",
+            .root_source_file = b.path("examples/kitchen_sink/main.zig"),
+            .target = target,
+            .optimize = optimize,
+        });
+        b.installArtifact(app.artifact);
+        return;
+    }
+
+    const nokre = b.addModule("nokre", .{
+        .root_source_file = b.path("src/nokre.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+        .sanitize_c = sanitize_c,
+    });
+    configureNokre(b, nokre, pkg_decl, services);
+
+    // ---- Pure unit tests: no dependencies, run anywhere. ----
+    const unit_tests = b.addTest(.{ .root_module = nokre });
+    const run_unit_tests = b.addRunArtifact(unit_tests);
+    const test_step = b.step("test", "Run unit tests (pure Zig; add -Dskia -Dgolden for screenshot tests)");
+    test_step.dependOn(&run_unit_tests.step);
+
+    if (update_goldens and !enable_golden) {
+        const fail = b.addFail("-Dupdate-goldens requires -Dgolden: `zig build test -Dskia -Dgolden -Dupdate-goldens`");
+        test_step.dependOn(&fail.step);
+    }
+
+    // ---- Cross-compile check for platform stubs. ----
+    const check_step = b.step("check-targets", "Compile-check the library for all supported targets");
+    const check_targets = [_]std.Target.Query{
+        .{ .cpu_arch = .aarch64, .os_tag = .macos },
+        .{ .cpu_arch = .aarch64, .os_tag = .ios },
+        .{ .cpu_arch = .x86_64, .os_tag = .windows },
+        .{ .cpu_arch = .x86_64, .os_tag = .linux },
+        .{ .cpu_arch = .aarch64, .os_tag = .linux, .abi = .android },
+        .{ .cpu_arch = .wasm32, .os_tag = .freestanding },
+    };
+    const check_decl: PackageDecl = .{ .name = "check", .id = "dev.nokre.check", .version = "0.0.0", .build = 0 };
+    for (check_targets) |query| {
+        // The bare library: nothing linked, so every platform stub and
+        // the comptime dispatch must analyze on their own.
+        addCheckObject(b, check_step, query, optimize, "nokre-check", null, .{});
+
+        // The linked twin: secure_store and deep_link enabled under a
+        // dummy identity so native.zig / web.zig and the comptime
+        // dispatch are semantically analyzed per OS tag (the force blocks
+        // at the end of secure_store.zig / deep_link.zig). Objects
+        // compile but never link, so the extern nokre_ss_* /
+        // nokre_deep_link_install symbols need no definition here — the C
+        // backends and shell hooks compile in where their system headers
+        // exist.
+        addCheckObject(b, check_step, query, optimize, "nokre-check-store", check_decl, .{
+            .secure_store = true,
+            .deep_link_domains = &.{"nokre.dev"},
+        });
+
+        // oauth gets its own object rather than riding the one above: a
+        // compile-only object links nothing, and on COFF zig refuses to
+        // fold two C sources into one — secure_store's windows.c and
+        // oauth's would collide. One service per object also makes a
+        // failure name the leg that broke.
+        addCheckObject(b, check_step, query, optimize, "nokre-check-oauth", check_decl, .{
+            .oauth_schemes = &.{"dev.nokre.check"},
+            .oauth_apple = true,
+        });
+
+        // iap gets its own for oauth's reason, and for a second one this
+        // service alone has: three of these six targets compile the
+        // policy layer with no leg behind it, and "the storeless build
+        // still analyzes" is exactly what would rot unnoticed.
+        addCheckObject(b, check_step, query, optimize, "nokre-check-iap", check_decl, .{ .iap = true });
+    }
+
+    // ---- Web: the kitchen sink as a wasm module. ----
+    // The web's edition is the DOM one (docs/internals/dom-edition.md):
+    // no Skia, no emscripten, no libc — wasm32-freestanding and the
+    // browser's own rasterizer. The artifact is one .wasm plus the
+    // module that drives it, and the directory is servable as it
+    // stands.
+    {
+        // Through the same consumer path an app takes: addAppTo sees a
+        // wasm target and hands back one module, entry disabled.
+        const app = addAppTo(b, .{
+            .name = "kitchen-sink",
+            .root_source_file = b.path("examples/kitchen_sink/main.zig"),
+            .target = webTarget(b),
+            .optimize = optimize, // addWebApp forces ReleaseSmall
+        });
+
+        // The stylesheet is generated from color.zig/text.zig/layout.zig
+        // by the library itself; this runs that on the host and points
+        // the faces at nokre's own bundled binaries.
+        const host_nokre = b.createModule(.{
+            .root_source_file = b.path("src/nokre.zig"),
+            .target = b.graph.host,
+            .optimize = .Debug,
+            .link_libc = true,
+        });
+        configureNokre(b, host_nokre, null, .{});
+        const css_tool = b.addExecutable(.{
+            .name = "emit-css",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("src/render/dom/emit_css.zig"),
+                .target = b.graph.host,
+                .optimize = .Debug,
+                .imports = &.{.{ .name = "nokre", .module = host_nokre }},
+            }),
+        });
+        const css_run = b.addRunArtifact(css_tool);
+        const css_file = css_run.addOutputFileArg("style.css");
+        css_run.addArgs(&.{ "./fonts", ".ttf" });
+
+        const out = b.addWriteFiles();
+        _ = out.addCopyFile(app.artifact.getEmittedBin(), "app.wasm");
+        inline for (.{ "live.js", "live-worker.js", "services.js", "index.html" }) |f| {
+            _ = out.addCopyFile(b.path("src/render/dom/" ++ f), f);
+        }
+        _ = out.addCopyFile(css_file, "style.css");
+        _ = out.addCopyDirectory(b.path("src/assets/fonts"), "fonts", .{ .include_extensions = &.{".ttf"} });
+
+        const web_step = b.step("web", "Build the kitchen sink for the browser (serve zig-out/web/)");
+        web_step.dependOn(&b.addInstallDirectory(.{
+            .source_dir = out.getDirectory(),
+            .install_dir = .prefix,
+            .install_subdir = "web",
+        }).step);
+    }
+
+    // ---- Packaging manifests: build outputs of the declaration
+    // (docs/services.md). `zig build pkg` → zig-out/pkg; the Android
+    // example's Gradle runs it at every configuration. A consumer that declares pkg_* gets the
+    // same tree carrying its own identity as named write-files "pkg"
+    // (consumers using addApp get it as App.pkg instead). ----
+    {
+        const pkg_step = b.step("pkg", "Generate platform packaging manifests into zig-out/pkg");
+        installKitchenSinkPkg(b, pkg_step);
+        // app.wasm is the documented default name for the module the
+        // generated web index loads; regenerate via the packaging API
+        // to rename it.
+        if (pkg_decl) |decl|
+            addPkgTree(b, b.addNamedWriteFiles("pkg"), decl, services, "app.wasm");
+    }
+
+    // The run-* step names exist whatever the flags and dep state say:
+    // registering them only when the examples can actually build turned
+    // `zig build run-hello` into "no step named 'run-hello'" with no
+    // hint, and hid the steps from `zig build -l`. When the examples
+    // cannot build, each name instead carries a failure that says why
+    // (blockedRunSteps below).
+    if (!enable_skia) {
+        if (enable_golden) {
+            const fail = b.addFail("-Dgolden requires -Dskia");
+            test_step.dependOn(&fail.step);
+        }
+        blockedRunSteps(b, b.addFail("the run-* examples require -Dskia: `zig build run-hello -Dskia` (run tools/fetch-deps.sh once first)"));
+        return;
+    }
+
+    b.build_root.handle.access(b.graph.io, skia_probe, .{}) catch {
+        const fail = b.addFail("deps/skia not found — run tools/fetch-deps.sh first");
+        b.default_step.dependOn(&fail.step);
+        blockedRunSteps(b, fail);
+        return;
+    };
+    if (target.result.os.tag == .windows and !is_msvc) {
+        const fail = b.addFail("Windows -Dskia builds link the MSVC-ABI Skia prebuilt — build with -Dtarget=x86_64-windows-msvc (the default when -Dskia is set on a Windows host)");
+        b.default_step.dependOn(&fail.step);
+        blockedRunSteps(b, fail);
+        return;
+    }
+
+    // ---- Examples, through the same consumer path (addAppTo). ----
+    for (examples) |ex| {
+        const app = addAppTo(b, .{
+            .name = ex.name,
+            .root_source_file = b.path(ex.src),
+            .target = target,
+            .optimize = optimize,
+            .pkg = ex.pkg,
+            // Only identity-carrying examples link secure_store —
+            // hello alone today.
+            .secure_store = ex.pkg != null,
+        });
+        b.installArtifact(app.artifact);
+        const run = b.addRunArtifact(app.artifact);
+        const run_step = b.step(
+            b.fmt("run-{s}", .{ex.name}),
+            b.fmt("Run the {s} example", .{ex.name}),
+        );
+        run_step.dependOn(&run.step);
+    }
+
+    // ---- Golden screenshot tests (headless, need Skia for text). ----
+    if (enable_golden) {
+        const golden_mod = b.createModule(.{
+            .root_source_file = b.path("tests/golden.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{.{ .name = "nokre", .module = nokre }},
+        });
+        // Baseline maintenance is explicit: -Dupdate-goldens reaches
+        // expectMatches only through this options module, so CI — which
+        // never passes the flag — can neither mint nor heal a golden.
+        const golden_opts = b.addOptions();
+        golden_opts.addOption(bool, "update_goldens", update_goldens);
+        golden_mod.addOptions("build_options", golden_opts);
+        const golden_tests = b.addTest(.{ .root_module = golden_mod });
+        golden_mod.linkLibrary(desktopSkiaShim(b, target, is_msvc));
+        linkSkia(b, golden_mod, target.result.os.tag);
+        const run_golden = b.addRunArtifact(golden_tests);
+        run_golden.setCwd(b.path("."));
+        test_step.dependOn(&run_golden.step);
+    }
+}
+
+/// The runnable examples, built through the consumer path (addAppTo).
+/// hello links package_info and secure_store, so it gets its own nokre
+/// instance carrying the example's identity; kitchen-sink runs with
+/// zero services linked, per the contract in docs/services.md.
+const Example = struct { name: []const u8, src: []const u8, pkg: ?PackageDecl = null };
+const examples = [_]Example{
+    .{
+        .name = "hello",
+        .src = "examples/hello/main.zig",
+        .pkg = .{ .name = "hello", .id = "dev.nokre.hello", .version = "0.1.0", .build = 1 },
+    },
+    .{ .name = "kitchen-sink", .src = "examples/kitchen_sink/main.zig" },
+};
+
+/// Register every run-<example> step name carrying only `fail`. The
+/// names are registered on every invocation so `zig build -l` always
+/// lists them and a blocked `zig build run-hello` fails with the actual
+/// requirement instead of "no step named 'run-hello'"; the descriptions
+/// match the real steps' so the step listing reads the same either way.
+fn blockedRunSteps(b: *std.Build, fail: *std.Build.Step.Fail) void {
+    for (examples) |ex| {
+        const run_step = b.step(
+            b.fmt("run-{s}", .{ex.name}),
+            b.fmt("Run the {s} example", .{ex.name}),
+        );
+        run_step.dependOn(&fail.step);
+    }
+}
+
+/// The kitchen sink's packaging identity. The app itself keeps its
+/// zero-services contract (docs/internals/contributing.md): packaging
+/// consumes the declaration, never the package_info service, so the
+/// manifests exist while the nokre module links nothing.
+const kitchen_sink_pkg: PackageDecl = .{
+    .name = "nokre — kitchen sink",
+    .id = "dev.nokre.kitchensink",
+    .version = "0.1.0",
+    .build = 1,
+};
+
+fn installKitchenSinkPkg(b: *std.Build, into: *std.Build.Step) void {
+    const wf = b.addWriteFiles();
+    // app.wasm matches the web step's output name, so the pkg tree's
+    // index.html and `zig build web`'s directory agree when merged.
+    addPkgTree(b, wf, kitchen_sink_pkg, .{}, "app.wasm");
+    into.dependOn(&b.addInstallDirectory(.{
+        .source_dir = wf.getDirectory(),
+        .install_dir = .prefix,
+        .install_subdir = "pkg",
+    }).step);
+}
+
+/// Populate a write-files step with the generated packaging tree
+/// (docs/services.md): platform manifests are build outputs of the
+/// declaration, never hand-written or committed. An invalid declaration
+/// attaches a fail step to the tree, so plain builds proceed and
+/// anything consuming the manifests fails with the message.
+fn addPkgTree(b: *std.Build, wf: *std.Build.Step.WriteFile, decl: PackageDecl, services: packaging.Services, web_wasm: []const u8) void {
+    packaging.validate(decl) catch |err| {
+        const fail = b.addFail(switch (err) {
+            error.InvalidId => "pkg_id must be two or more dot-separated [a-z][a-z0-9_]* segments — the intersection of Apple and Android identifier rules (docs/services.md)",
+            error.InvalidBuild => "pkg_build must be >= 1 — Android rejects a versionCode of 0",
+        });
+        wf.step.dependOn(&fail.step);
+        return;
+    };
+    const gpa = b.allocator;
+    // nokre_app is the CMake target the Android shell loads
+    // (examples/kitchen_sink/android/app/src/main/cpp/CMakeLists.txt).
+    _ = wf.add("ios/Info.plist", packaging.iosInfoPlist(gpa, decl, services) catch @panic("OOM"));
+    _ = wf.add("android/AndroidManifest.xml", packaging.androidManifest(gpa, decl, services, "nokre_app") catch @panic("OOM"));
+    _ = wf.add("android/package.properties", packaging.androidProperties(gpa, decl) catch @panic("OOM"));
+    _ = wf.add("web/manifest.webmanifest", packaging.webManifest(gpa, decl) catch @panic("OOM"));
+    _ = wf.add("web/index.html", packaging.webIndexHtml(gpa, decl, web_wasm) catch @panic("OOM"));
+    // The app icon set, derived from the id (src/packaging/icon.zig):
+    // the asset-catalog scaffolding Xcode compiles, the adaptive-icon
+    // resources Gradle merges, and the PNGs themselves.
+    _ = wf.add("ios/Assets.xcassets/Contents.json", packaging.ios_assets_contents_json);
+    _ = wf.add("ios/Assets.xcassets/AppIcon.appiconset/Contents.json", packaging.ios_appicon_contents_json);
+    _ = wf.add("android/res/mipmap-anydpi-v26/ic_launcher.xml", packaging.android_adaptive_icon_xml);
+    _ = wf.add("android/res/values/ic_launcher.xml", packaging.android_icon_values_xml);
+    for (packaging.icon_files) |f|
+        _ = wf.add(f.path, packaging.icon.png(gpa, decl.id, f.size, f.cell) catch @panic("OOM"));
+    // deep_link association files (docs/services.md): the client halves
+    // ride the Info.plist entitlement + the manifest intent-filter above;
+    // these three are emitted only when the service claims domains. The
+    // two server files go under .well-known/ at the tree root — the
+    // developer copies that directory to each domain's web root. null
+    // means unlinked: nothing to add.
+    if (packaging.iosEntitlements(gpa, decl, services) catch @panic("OOM")) |ent|
+        _ = wf.add("ios/App.entitlements", ent);
+    if (packaging.appleAppSiteAssociation(gpa, decl, services) catch @panic("OOM")) |aasa|
+        _ = wf.add(".well-known/apple-app-site-association", aasa);
+    if (packaging.androidAssetLinks(gpa, decl, services) catch @panic("OOM")) |links|
+        _ = wf.add(".well-known/assetlinks.json", links);
+}
+
+/// The linked-service set an `addApp` call implies, in the one shape
+/// both the module wiring and the packaging emitters read.
+fn appServices(options: AppOptions) packaging.Services {
+    return .{
+        .secure_store = options.secure_store,
+        .deep_link_domains = options.deep_link_domains,
+        .oauth_schemes = options.oauth_schemes,
+        .oauth_apple = options.oauth_apple,
+        .iap = options.iap,
+    };
+}
+
+fn configureNokre(b: *std.Build, mod: *std.Build.Module, pkg: ?PackageDecl, services: packaging.Services) void {
+    // The one C dependency in the core module: Nayuki's qrcodegen
+    // (vendored, single file, no heap). Everything else stays pure Zig.
+    mod.addCSourceFile(.{
+        .file = b.path("deps/qrcodegen/qrcodegen.c"),
+        .flags = &.{"-std=c99"},
+    });
+    // A bare wasm target has no libc to supply the three headers that
+    // file includes, and no reason to link one: the DOM edition's live
+    // driver is Zig plus the browser's own rasterizer. Four
+    // declarations and three definitions close the gap
+    // (shim/freestanding/README.md).
+    if (mod.resolved_target) |target| {
+        const t = target.result;
+        if (t.cpu.arch == .wasm32 and t.os.tag == .freestanding) {
+            mod.addIncludePath(b.path("shim/freestanding"));
+            mod.addCSourceFile(.{
+                .file = b.path("shim/freestanding/freestanding.c"),
+                .flags = &.{"-std=c99"},
+            });
+        }
+    }
+    configureServices(b, mod, pkg, services);
+}
+
+/// One compile-check object: the library built for `query` with exactly
+/// `services` linked under `pkg`. Package info stays unlinked whatever
+/// `pkg` says — these objects check that the service legs analyze, not
+/// that a package derives.
+fn addCheckObject(
+    b: *std.Build,
+    step: *std.Build.Step,
+    query: std.Target.Query,
+    optimize: std.builtin.OptimizeMode,
+    name: []const u8,
+    pkg: ?PackageDecl,
+    services: packaging.Services,
+) void {
+    const mod = b.createModule(.{
+        .root_source_file = b.path("src/nokre.zig"),
+        .target = b.resolveTargetQuery(query),
+        .optimize = optimize,
+    });
+    addPackageInfo(b, mod, null);
+    addSecureStore(b, mod, pkg, services.secure_store);
+    addDeepLink(b, mod, pkg, services.deep_link_domains.len != 0);
+    addOauth(b, mod, pkg, services);
+    addIap(b, mod, pkg, services.iap);
+    // An explicit target query is never "native", so zig adds no SDK
+    // paths of its own — macos.m and the -framework args need them wired
+    // by hand, the addIosApp way. Only the linked objects need it, and
+    // only on macOS: Apple SDKs exist nowhere else.
+    if (pkg != null and builtin.os.tag == .macos and (query.os_tag == .macos or query.os_tag == .ios)) {
+        const sdk_name = if (query.os_tag == .ios) "iphoneos" else "macosx";
+        const sdk_path = appleSdkPath(b, sdk_name);
+        mod.addSystemIncludePath(.{ .cwd_relative = b.pathJoin(&.{ sdk_path, "usr", "include" }) });
+        mod.addSystemFrameworkPath(.{ .cwd_relative = b.pathJoin(&.{ sdk_path, "System", "Library", "Frameworks" }) });
+    }
+    const obj = b.addObject(.{ .name = name, .root_module = mod });
+    step.dependOn(&obj.step);
+}
+
+/// `xcrun --show-sdk-path` answers per SDK name and cannot change
+/// mid-invocation, but graph construction was asking up to six times
+/// per `zig build` (three linked check objects × two Apple SDKs, plus
+/// the iOS app path) at a process spawn each — so the answer is
+/// memoized per SDK name. Keys are string literals; nothing needs
+/// freeing.
+var apple_sdk_paths: std.StringHashMapUnmanaged([]const u8) = .empty;
+
+fn appleSdkPath(b: *std.Build, sdk_name: []const u8) []const u8 {
+    const gop = apple_sdk_paths.getOrPut(b.allocator, sdk_name) catch @panic("OOM");
+    if (!gop.found_existing)
+        gop.value_ptr.* = std.mem.trim(u8, b.run(&.{ "xcrun", "--sdk", sdk_name, "--show-sdk-path" }), " \t\r\n");
+    return gop.value_ptr.*;
+}
+
+/// The service half of `configureNokre`, on its own for Android — the
+/// one target whose qrcodegen C arrives from someone else's link: the
+/// consumer's CMake compiles it alongside the Skia shim in the NDK
+/// world. (The web's DOM edition takes configureNokre whole:
+/// wasm32-freestanding compiles qrcodegen against shim/freestanding,
+/// no emscripten involved — docs/internals/dom-edition.md.)
+fn configureServices(b: *std.Build, mod: *std.Build.Module, pkg: ?PackageDecl, services: packaging.Services) void {
+    addPackageInfo(b, mod, pkg);
+    addSecureStore(b, mod, pkg, services.secure_store);
+    addDeepLink(b, mod, pkg, services.deep_link_domains.len != 0);
+    addOauth(b, mod, pkg, services);
+    addIap(b, mod, pkg, services.iap);
+}
+
+// The declaration is always present — an unlinked call site must hit the
+// curated @compileError in package_info.zig, never a missing-module
+// error. The native side is compiled in only when linked.
+fn addPackageInfo(b: *std.Build, mod: *std.Build.Module, decl: ?PackageDecl) void {
+    const opts = b.addOptions();
+    opts.addOption(bool, "linked", decl != null);
+    const d = decl orelse PackageDecl{ .name = "", .id = "", .version = "", .build = 0 };
+    opts.addOption([]const u8, "name", d.name);
+    opts.addOption([]const u8, "id", d.id);
+    opts.addOption([]const u8, "version", d.version);
+    opts.addOption(u32, "build", d.build);
+    mod.addImport("nokre_package_info_options", opts.createModule());
+    if (decl != null and mod.resolved_target.?.result.os.tag == .macos) {
+        mod.addCSourceFile(.{
+            .file = b.path("src/services/package_info/macos.m"),
+            .flags = &.{"-fobjc-arc"},
+        });
+        mod.linkFramework("Foundation", .{});
+    }
+}
+
+// The options module is ALWAYS added — an unlinked call site must hit
+// the curated @compileError in secure_store.zig, never a
+// missing-module error (package_info's rule). Composition is comptime
+// only: the namespace bakes into secure_store's own options module,
+// and at runtime the service never calls package_info.
+fn addSecureStore(b: *std.Build, mod: *std.Build.Module, decl: ?PackageDecl, enabled_in: bool) void {
+    var enabled = enabled_in;
+    if (enabled and decl == null) {
+        const fail = b.addFail("secure_store needs the app's identity for its namespace — set .pkg_id (package_info) alongside .secure_store. docs/services.md");
+        b.default_step.dependOn(&fail.step);
+        // The fail lands either way; meanwhile no module may carry an
+        // empty namespace, so the store stays unlinked for the rest of
+        // this function.
+        enabled = false;
+    }
+    const opts = b.addOptions();
+    opts.addOption(bool, "linked", enabled);
+    opts.addOption([]const u8, "namespace", if (decl) |d| d.id else "");
+    mod.addImport("nokre_secure_store_options", opts.createModule());
+    if (!enabled) return;
+    switch (mod.resolved_target.?.result.os.tag) {
+        .macos, .ios => {
+            // Framework headers exist only on a macOS host. The
+            // check-targets linked objects still analyze native.zig
+            // from any host — a compile-only object leaves the extern
+            // nokre_ss_* undefined — and real Apple builds always run on
+            // macOS, so the gate never bites a shipping app.
+            if (builtin.os.tag == .macos) {
+                mod.addCSourceFile(.{ .file = b.path("src/services/secure_store/macos.m"), .flags = &.{"-fobjc-arc"} });
+                mod.linkFramework("Security", .{});
+                mod.linkFramework("Foundation", .{});
+            }
+        },
+        .windows => {
+            // zig's bundled mingw headers include wincred.h, so this
+            // compiles host-independently, check objects included —
+            // but those headers ride along with libc linkage, which
+            // the compile-only check modules don't otherwise request.
+            mod.link_libc = true;
+            mod.addCSourceFile(.{ .file = b.path("src/services/secure_store/windows.c"), .flags = &.{"-std=c11"} });
+            mod.linkSystemLibrary("advapi32", .{}); // CredRead/Write/Delete/EnumerateW
+        },
+        .linux => {
+            // Android reports os.tag == .linux, but its Keystore-backed
+            // store rides the Gradle/CMake build (android.c → the Java
+            // backend), so build.zig adds no C for it. Desktop Linux uses
+            // the Secret Service via libsecret; those headers exist only on
+            // a Linux host, so a cross-build from elsewhere leaves the
+            // nokre_ss_* externs undefined in the compile-only check object
+            // and resolves them at a real Linux link — the macOS/.m gate.
+            if (!mod.resolved_target.?.result.abi.isAndroid() and builtin.os.tag == .linux) {
+                mod.link_libc = true;
+                mod.addCSourceFile(.{ .file = b.path("src/services/secure_store/linux.c"), .flags = &.{"-std=c11"} });
+                // libsecret-1 Requires glib/gobject; name them so the link
+                // resolves even where pkg-config's transitive deps do not.
+                mod.linkSystemLibrary("libsecret-1", .{});
+                mod.linkSystemLibrary("glib-2.0", .{});
+                mod.linkSystemLibrary("gobject-2.0", .{});
+            }
+        },
+        else => {}, // wasm links nothing (live.js/services.js carry the mirror)
+    }
+}
+
+// The options module is ALWAYS added (package_info's rule): an unlinked
+// call site must hit the curated @compileError in deep_link.zig, never a
+// missing-module error. No C rides along here — the inbound hook
+// (nokre_deep_link_install) is defined by each platform's shell, not by a
+// service-owned native file, and the web leg (web.zig) is Zig compiled
+// into the module on wasm and export-forced only when linked
+// (src/services/deep_link/deep_link.zig). Linking requires the identity:
+// the entitlement and assetlinks are keyed to the app id.
+fn addDeepLink(b: *std.Build, mod: *std.Build.Module, decl: ?PackageDecl, enabled_in: bool) void {
+    var enabled = enabled_in;
+    if (enabled and decl == null) {
+        const fail = b.addFail("deep_link needs the app's identity — its entitlement and assetlinks are keyed to the app id, so set .pkg_id alongside .deep_link. docs/services.md");
+        b.default_step.dependOn(&fail.step);
+        enabled = false;
+    }
+    const opts = b.addOptions();
+    opts.addOption(bool, "linked", enabled);
+    mod.addImport("nokre_deep_link_options", opts.createModule());
+}
+
+// The options module is ALWAYS added (package_info's rule). Unlike
+// deep_link, oauth owns native files of its own: the browser session is
+// a service capability, not something a shell has any business knowing
+// about, so ASWebAuthenticationSession and the two desktop "open a URL"
+// verbs live under src/services/oauth — secure_store's placement, not
+// deep_link's. Android compiles android.c through the consumer's CMake
+// (the Android split), and the web leg is Zig plus services.js.
+fn addOauth(b: *std.Build, mod: *std.Build.Module, decl: ?PackageDecl, services: packaging.Services) void {
+    var enabled = services.oauth_schemes.len != 0 or services.oauth_apple;
+    if (enabled and decl == null) {
+        const fail = b.addFail("oauth needs the app's identity — its URL-type registration and intent-filter are keyed to the app id, so set .pkg_id alongside .oauth. docs/services.md");
+        b.default_step.dependOn(&fail.step);
+        enabled = false;
+    }
+    const opts = b.addOptions();
+    opts.addOption(bool, "linked", enabled);
+    // Not decoration: without the entitlement, ASAuthorizationController
+    // fails at runtime on a real device, so an app that did not declare
+    // Sign in with Apple gets the browser flow for `.provider = .apple`
+    // instead — the outcome that works — and never compiles the native
+    // leg at all (oauth.zig).
+    opts.addOption(bool, "apple", enabled and services.oauth_apple);
+    mod.addImport("nokre_oauth_options", opts.createModule());
+    if (!enabled) return;
+    const target = mod.resolved_target.?.result;
+    switch (target.os.tag) {
+        .macos, .ios => {
+            // AuthenticationServices carries both legs:
+            // ASWebAuthenticationSession and, for Sign in with Apple,
+            // ASAuthorizationController. First-party, in the same class
+            // as the Security.framework secure_store links — not a
+            // vendored SDK, which is the whole reason the browser flow
+            // was chosen over an SDK (docs/internals/oauth.md).
+            mod.linkFramework("AuthenticationServices", .{});
+            mod.linkFramework("Foundation", .{});
+            // iOS compiles apple.m in the consumer's Xcode project,
+            // beside src/platform/ios/shell.m and for the same reason:
+            // AuthenticationServices pulls in UIKit, and UIKit's headers
+            // do not survive zig's clang against a current iOS SDK. The
+            // Apple split already puts UIKit code on Xcode's side of the
+            // line, so this stays consistent rather than special.
+            if (target.os.tag == .macos and builtin.os.tag == .macos) {
+                // Framework headers exist only on a macOS host — the
+                // secure_store gate, for the same reason: the
+                // check-targets objects still analyze the extern surface
+                // from any host, and a real Apple build runs on macOS.
+                mod.addCSourceFile(.{ .file = b.path("src/services/oauth/apple.m"), .flags = &.{"-fobjc-arc"} });
+                mod.linkFramework("AppKit", .{});
+            }
+        },
+        .windows => {
+            // ShellExecuteW only; zig's bundled mingw headers carry
+            // shellapi.h, so this compiles host-independently — but
+            // those headers ride along with libc linkage.
+            mod.link_libc = true;
+            mod.addCSourceFile(.{ .file = b.path("src/services/oauth/windows.c"), .flags = &.{"-std=c11"} });
+            mod.linkSystemLibrary("shell32", .{});
+        },
+        .linux => {
+            // Android's Custom Tab rides the Gradle/CMake build
+            // (android.c → NokreOAuth.java), so build.zig adds no C for
+            // it — secure_store's Android rule. Desktop Linux gets
+            // xdg-open through posix_spawn, which needs only libc, so
+            // unlike libsecret it cross-compiles from any host.
+            if (!target.abi.isAndroid()) {
+                mod.link_libc = true;
+                mod.addCSourceFile(.{ .file = b.path("src/services/oauth/linux.c"), .flags = &.{"-std=c11"} });
+            }
+        },
+        else => {}, // wasm links nothing (services.js carries the popup)
+    }
+}
+
+// The options module is ALWAYS added (package_info's rule). Unlike every
+// other service, three of the six targets have no leg at all — Windows
+// and Linux have no store nokre can reach and the web was committed to
+// "absent on web" by the service checklist — so linking there compiles
+// the policy layer and nothing native, and `available` answers false
+// (docs/internals/iap.md).
+fn addIap(b: *std.Build, mod: *std.Build.Module, decl: ?PackageDecl, linked: bool) void {
+    var enabled = linked;
+    if (enabled and decl == null) {
+        const fail = b.addFail("iap needs the app's identity — both stores resolve products against the app id, so set .pkg_id alongside .iap. docs/services.md");
+        b.default_step.dependOn(&fail.step);
+        enabled = false;
+    }
+    const opts = b.addOptions();
+    opts.addOption(bool, "linked", enabled);
+    // Not decoration: `addOptions` names its generated file by content
+    // hash, so an options module carrying only `linked` is byte-identical
+    // to deep_link's — and zig refuses one file in two modules. Naming
+    // the service is the smallest honest way to differ, and it makes a
+    // generated options file self-identifying when a link goes wrong.
+    opts.addOption([]const u8, "service", "iap");
+    mod.addImport("nokre_iap_options", opts.createModule());
+    if (!enabled) return;
+    switch (mod.resolved_target.?.result.os.tag) {
+        .macos, .ios => {
+            // StoreKit 1, in Objective-C: StoreKit 2 is Swift-only and
+            // zig cannot compile Swift, so taking it would mean two
+            // Apple implementations (docs/internals/iap.md). No
+            // entitlement and no plist key — In-App Purchase is a
+            // capability on the App ID, enabled in Apple's console — so
+            // the whole cost is this framework.
+            mod.linkFramework("StoreKit", .{});
+            mod.linkFramework("Foundation", .{});
+            // iOS compiles storekit.m in the consumer's Xcode project,
+            // beside src/platform/ios/shell.m and oauth's apple.m: the
+            // payment sheet is presented from UIKit, whose headers do
+            // not survive zig's clang against a current iOS SDK. Named
+            // for the framework rather than the vendor because Xcode
+            // names object files by basename, and a second `apple.m` in
+            // one target is a duplicate-output error.
+            if (mod.resolved_target.?.result.os.tag == .macos and builtin.os.tag == .macos) {
+                // Framework headers exist only on a macOS host — the
+                // secure_store gate, for the same reason.
+                mod.addCSourceFile(.{ .file = b.path("src/services/iap/storekit.m"), .flags = &.{"-fobjc-arc"} });
+                mod.linkFramework("AppKit", .{});
+            }
+        },
+        // Android's Billing leg rides the Gradle/CMake build
+        // (android.c → NokreBilling.java), so build.zig adds no C for it —
+        // secure_store's Android rule. Desktop Linux, Windows, and wasm
+        // have no store and therefore no native half to compile.
+        else => {},
+    }
+}

@@ -1,0 +1,96 @@
+plugins {
+    id 'com.android.application'
+}
+
+// The zig-built static library per ABI, mirroring the iOS project's
+// "Build Zig libraries" script phase: outputs land inside this
+// example's build/ so the example stays self-contained. zig is looked
+// up on PATH plus the usual Homebrew bins (IDE-launched Gradle strips
+// the user PATH, the Xcode problem again).
+def zigTargets = ['arm64-v8a': 'aarch64-linux-android', 'x86_64': 'x86_64-linux-android']
+def abis = ['arm64-v8a']
+
+abis.each { abi ->
+    tasks.register("zigBuild-${abi}", Exec) {
+        workingDir rootProject.file('../../..')
+        environment 'PATH', "${System.getenv('PATH')}:/opt/homebrew/bin:/usr/local/bin"
+        commandLine 'zig', 'build',
+                "-Dtarget=${zigTargets[abi]}",
+                '-Doptimize=ReleaseSafe',
+                '-p', file("build/zig-${abi}").absolutePath
+    }
+}
+preBuild.dependsOn abis.collect { "zigBuild-${it}" }
+
+// Identity and the manifest come from the one declaration in build.zig
+// (docs/services.md). Gradle needs applicationId/versionCode/versionName
+// at configuration time — before any task runs — so `zig build pkg` is
+// executed here, during configuration (cheap: it only writes files),
+// and its properties are read straight back. Nothing identity-shaped is
+// hand-written on this side. The reader is UTF-8 explicitly:
+// java.util.Properties streams default to latin-1.
+def pkgDir = file("build/nokre-pkg")
+providers.exec {
+    workingDir rootProject.file('../../..')
+    environment 'PATH', "${System.getenv('PATH')}:/opt/homebrew/bin:/usr/local/bin"
+    commandLine 'zig', 'build', 'pkg', '-p', pkgDir.absolutePath
+}.result.get()
+def pkg = new Properties()
+new File(pkgDir, 'pkg/android/package.properties').withReader('UTF-8') { pkg.load(it) }
+
+android {
+    namespace pkg.getProperty('id')
+    compileSdk 36
+
+    defaultConfig {
+        applicationId pkg.getProperty('id')
+        minSdk 26
+        targetSdk 36
+        versionCode pkg.getProperty('build').toInteger()
+        versionName pkg.getProperty('version')
+        ndk {
+            // arm64 only, like iOS (Apple Silicon emulators run arm64
+            // images); add 'x86_64' here and in `abis` above for
+            // Intel-host emulators, after an
+            // `ABIS="arm64-v8a x86_64" tools/build-skia-android.sh`.
+            abiFilters 'arm64-v8a'
+        }
+        externalNativeBuild {
+            cmake {
+                arguments '-DANDROID_STL=c++_static'
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path 'src/main/cpp/CMakeLists.txt'
+        }
+    }
+
+    sourceSets {
+        main {
+            // The generated manifest (label, derived permissions,
+            // the shell's Activity block) replaces a hand-written one.
+            manifest.srcFile new File(pkgDir, 'pkg/android/AndroidManifest.xml')
+            // The generated res tree carries the derived app icon
+            // (adaptive + legacy mipmaps); the checked-in res/ keeps
+            // only the shell's theme.
+            res.srcDirs += new File(pkgDir, 'pkg/android/res')
+            // The Java half of the shell lives with the shell, not the
+            // example — the src/platform rule every platform follows.
+            java.srcDirs += '../../../../src/platform/android/java'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+}

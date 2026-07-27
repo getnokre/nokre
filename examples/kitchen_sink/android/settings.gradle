@@ -1,0 +1,21 @@
+// Kitchen sink on Android — the Gradle project plays the role the
+// Xcode project plays for iOS: it compiles the JNI shell + Skia shim
+// with the NDK, links the zig-built static library, and packages the
+// APK. Prereqs: tools/fetch-deps.sh (Skia headers) and
+// tools/build-skia-android.sh (the NDK Skia build), then open this
+// directory in Android Studio (or ./gradlew installDebug).
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+dependencyResolutionManagement {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+rootProject.name = 'KitchenSink'
+include ':app'

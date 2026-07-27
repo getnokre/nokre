@@ -1,0 +1,24 @@
+.{
+    .name = .nokre,
+    .version = "0.1.0",
+    .minimum_zig_version = "0.16.0",
+    // Lower 32 bits are the package id and survive the halire -> nokre
+    // rename; only the upper half, a checksum of `.name`, moved.
+    .fingerprint = 0xe7367306a3a646ce,
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "shim",
+        // Vendored: configureNokre compiles deps/qrcodegen/qrcodegen.c
+        // into every consumer, so a package fetch without it cannot
+        // build at all.
+        "deps/qrcodegen",
+        // The dep-missing failures tell consumers to run
+        // tools/fetch-deps.sh (and tools/build-skia-*.sh) inside this
+        // dependency — advice that only works if the scripts ship.
+        "tools",
+        "LICENSE",
+        "README.md",
+    },
+}
