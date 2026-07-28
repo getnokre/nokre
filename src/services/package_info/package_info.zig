@@ -68,15 +68,18 @@ extern fn nokre_pkg_installer() i32;
 
 fn installer() Installer {
     return switch (builtin.os.tag) {
-        .macos => switch (nokre_pkg_installer()) {
+        // One mapping for both Apple legs; iOS's native side never
+        // answers `direct` (ios.m says why), the shared switch just
+        // spells the whole contract once.
+        .macos, .ios => switch (nokre_pkg_installer()) {
             1 => .direct,
             2 => .app_store,
             3 => .testflight,
             else => .dev,
         },
         .freestanding, .emscripten, .wasi => .web,
-        // Stub shells (docs/internals/platform-shells.md): store detection
-        // lands with each shell.
+        // Windows, desktop Linux, Android: store detection lands with
+        // each platform's native leg; until then a query answers `dev`.
         else => .dev,
     };
 }

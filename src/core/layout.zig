@@ -1680,8 +1680,10 @@ const Ctx = struct {
     /// pinned minimize control is skipped, everything else (the Dismiss
     /// all button) flows normally.
     fn layoutTable(self: *Ctx, id: NodeId, x: i32, y: i32, avail_w: i32) i32 {
-        // Column widths: max intrinsic cell width per column.
-        var col_widths: [32]i32 = @splat(0);
+        // Column widths: max intrinsic cell width per column. The array
+        // is the capacity `Tree.append` enforces, so every cell that
+        // can exist has a column here.
+        var col_widths: [element_mod.max_table_columns]i32 = @splat(0);
         var ncols: usize = 0;
         var rows = self.tree.children(id);
         while (rows.next()) |row| {
@@ -1695,9 +1697,13 @@ const Ctx = struct {
             }
         }
 
+        // Never clamped to `avail_w`: the cells below are laid at their
+        // intrinsic column widths, so a clamped rect would claim a fit
+        // while trailing columns render past it — and hit testing,
+        // focus reveal, and the a11y snapshot all read this rect, so
+        // they must be told the truth about where the cells are.
         var table_w: i32 = metrics.border;
         for (col_widths[0..ncols]) |w| table_w += w + metrics.border;
-        table_w = @min(table_w, avail_w);
 
         // The table is an intrinsic-width block, so it snaps to the
         // leading edge and its columns run leading-to-trailing.

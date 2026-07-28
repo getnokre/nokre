@@ -322,6 +322,33 @@ test "layout: table columns align across rows" {
     try testing.expectEqual(tree.rectOf(c11).w, tree.rectOf(c21).w);
 }
 
+test "layout: a table wider than the viewport reports its real width" {
+    var tree = try Tree.init(testing.allocator);
+    defer tree.deinit();
+    const tbl = try tree.append(tree.rootId(), .{ .table = .{} });
+    const row = try tree.append(tbl, .{ .row = .{} });
+    const a = try tree.append(row, .{ .cell = .{} });
+    _ = try tree.append(a, .{ .text = .{ .content = "aaaaaaaaaaaaaaaaaaaaaaaa" } });
+    const b = try tree.append(row, .{ .cell = .{} });
+    _ = try tree.append(b, .{ .text = .{ .content = "bbbbbbbbbbbbbbbbbbbbbbbb" } });
+
+    compute(&tree, text.Measurer.fixed, .{ .w = 200, .h = 480 });
+
+    // The rect tells the truth: cells are laid at their intrinsic
+    // column widths, so a rect clamped to the viewport would claim a
+    // fit while the trailing column rendered past it — and hit testing,
+    // focus reveal, and the a11y snapshot all read this rect.
+    const r = tree.rectOf(tbl);
+    try testing.expect(r.w > 200);
+    try testing.expectEqual(r.w, tree.rectOf(row).w);
+    // The trailing cell stands in its real column, off-screen included.
+    try testing.expectEqual(tree.rectOf(a).right() + metrics.border, tree.rectOf(b).x);
+    try testing.expectEqual(
+        metrics.border + tree.rectOf(a).w + metrics.border + tree.rectOf(b).w + metrics.border,
+        r.w,
+    );
+}
+
 fn appendNav(tree: *Tree) !NodeId {
     const nav = try tree.append(tree.rootId(), .{ .nav = .{} });
     _ = try tree.append(nav, .{ .nav_item = .{ .label = "Home", .route = "home", .icon = .house } });

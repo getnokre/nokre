@@ -126,7 +126,7 @@ const State = struct {
                 try self.list(parent, &lines, allow);
                 continue;
             }
-            if (allow.tables and tableStarts(&lines)) {
+            if (allow.tables and tableStarts(&lines) and tableFits(&lines)) {
                 try self.table(parent, &lines);
                 continue;
             }
@@ -456,6 +456,31 @@ fn tableStarts(lines: *const Lines) bool {
         }
     }
     return true;
+}
+
+/// Whether every row of the table starting here fits the tree's column
+/// cap (`Tree.append` refuses the cell past `max_table_columns`). A
+/// wider one degrades to its literal source text — the standing rule
+/// for what the parser cannot build — rather than surface a
+/// construction error for bytes nobody reviewed.
+fn tableFits(lines: *const Lines) bool {
+    var ahead = lines.*;
+    const header = ahead.next() orelse return true;
+    if (countCells(header) > element_mod.max_table_columns) return false;
+    _ = ahead.next(); // the delimiter row
+    while (ahead.peek()) |line| {
+        if (isBlank(line) or std.mem.indexOfScalar(u8, line, '|') == null) break;
+        _ = ahead.next();
+        if (countCells(line) > element_mod.max_table_columns) return false;
+    }
+    return true;
+}
+
+fn countCells(line: []const u8) usize {
+    var n: usize = 0;
+    var it = tableCells(line);
+    while (it.next()) |_| n += 1;
+    return n;
 }
 
 const CellIterator = struct {

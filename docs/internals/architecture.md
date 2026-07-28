@@ -114,6 +114,15 @@ construction.
   element with layout, rendering, a11y, and audit rules — not a styling
   hook. The checklist is in [contributing.md](contributing.md); the
   argument for closure is in [introduction.md](../introduction.md).
+- **Tree strings are arena'd; the router rebuild is the reclaim point.**
+  Every string handed to the tree is copied into a tree-owned arena
+  (validated on the way in — [tree.zig](../../src/core/tree.zig)'s
+  module doc), and nothing is freed on node removal. Each navigation's
+  rebuild (`Tree.reclaim`) re-copies the surviving chrome's strings
+  into a fresh arena — node identity untouched, so focus and the picker
+  hold — and frees the old one, taking the removed screen's strings and
+  every editing splice and IME copy since the last rebuild with it.
+  Typing accumulates memory only until the next rebuild.
 - **Service state lives on the App.** Every App is constructed with its
   services (`Options.services`; mocks in test builds, enforced at
   compile time) and owns their state — the workers `Runtime`, each

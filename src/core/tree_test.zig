@@ -307,6 +307,27 @@ test "append rejects malformed table structure" {
     try std.testing.expectError(error.CellOutsideRow, tree.append(root, .{ .cell = .{} }));
 }
 
+test "append refuses the cell past the table's column capacity" {
+    var tree = try Tree.init(std.testing.allocator);
+    defer tree.deinit();
+
+    // Layout's per-column bookkeeping is `max_table_columns` wide; the
+    // cell that would open one more column would keep only a stale rect
+    // nothing draws, so it cannot be built.
+    const tbl = try tree.append(tree.rootId(), .{ .table = .{} });
+    const row = try tree.append(tbl, .{ .row = .{} });
+    var i: usize = 0;
+    while (i < element_mod.max_table_columns) : (i += 1) {
+        _ = try tree.append(row, .{ .cell = .{} });
+    }
+    try std.testing.expectError(error.TooManyColumns, tree.append(row, .{ .cell = .{} }));
+    try std.testing.expectEqual(element_mod.max_table_columns, tree.childCount(row));
+
+    // The cap is per row: a second row starts its own count.
+    const row2 = try tree.append(tbl, .{ .row = .{} });
+    _ = try tree.append(row2, .{ .cell = .{} });
+}
+
 test "append rejects malformed nav structure" {
     var tree = try Tree.init(std.testing.allocator);
     defer tree.deinit();
@@ -790,6 +811,90 @@ test "setContent clamps a caret the new value no longer reaches" {
     // A caret the new value still covers keeps its place.
     try tree.setContent(input, "hi there");
     try std.testing.expectEqual(@as(usize, 2), tree.getConst(input).?.text_input.cursor);
+}
+
+test "setContent clamps the caret to a codepoint boundary, not only to length" {
+    var tree = try Tree.init(std.testing.allocator);
+    defer tree.deinit();
+    const input = try tree.append(tree.rootId(), .{ .text_input = .{ .label = "Name", .value = "abcd" } });
+    const area = try tree.append(tree.rootId(), .{ .text_area = .{ .label = "Notes", .value = "abcd" } });
+    tree.get(input).?.text_input.cursor = 2;
+    tree.get(area).?.text_area.cursor = 2;
+
+    // "héllo": h at 0, é spans 1..3 — a caret kept at 2 would sit
+    // mid-codepoint and hand every prefix measurement invalid UTF-8, so
+    // it clamps back to the é's own boundary.
+    try tree.setContent(input, "héllo");
+    try tree.setContent(area, "héllo");
+    try std.testing.expectEqual(@as(usize, 1), tree.getConst(input).?.text_input.cursor);
+    try std.testing.expectEqual(@as(usize, 1), tree.getConst(area).?.text_area.cursor);
+
+    // A caret past the end clamps to the end, which is a boundary.
+    tree.get(input).?.text_input.cursor = 9;
+    try tree.setContent(input, "hé");
+    try std.testing.expectEqual(@as(usize, 3), tree.getConst(input).?.text_input.cursor);
+}
+
+test "setContent faces the append-time contrast gate" {
+    var tree = try Tree.init(std.testing.allocator);
+    defer tree.deinit();
+
+    // Whitespace-only text with illegible ink passes append — no ink is
+    // rendered — so setContent is the first moment that ink could meet
+    // visible words. It runs the same gate, returns the same error, and
+    // a refused pair leaves the element untouched.
+    const dim = try tree.append(tree.rootId(), .{ .text = .{ .content = " ", .style = .{ .ink = .g6 } } });
+    try std.testing.expectError(error.InsufficientTextContrast, tree.setContent(dim, "now visible"));
+    try std.testing.expectEqualStrings(" ", tree.getConst(dim).?.text.content);
+
+    // Whitespace-only new content stays exempt, exactly as at append.
+    try tree.setContent(dim, "\t \n");
+    try std.testing.expectEqualStrings("\t \n", tree.getConst(dim).?.text.content);
+
+    // The background judged is the one behind the element, as at append.
+    const dark_box = try tree.append(tree.rootId(), .{ .box = .{ .fill = .ink } });
+    const pale = try tree.append(dark_box, .{ .text = .{ .content = " ", .style = .{ .ink = .paper } } });
+    try tree.setContent(pale, "legible on ink");
+    const plain = try tree.append(dark_box, .{ .text = .{ .content = " " } });
+    try std.testing.expectError(error.InsufficientTextContrast, tree.setContent(plain, "ink on ink"));
+}
+
+test "the boundary copy validates: invalid UTF-8 is stored as U+FFFD" {
+    var tree = try Tree.init(std.testing.allocator);
+    defer tree.deinit();
+    const root = tree.rootId();
+
+    // An invalid lead byte, a truncated multibyte tail, and a lone
+    // continuation byte — the three shapes fetched bytes actually take.
+    const lead = try tree.append(root, .{ .text = .{ .content = "a\xffb" } });
+    try std.testing.expectEqualStrings("a\u{FFFD}b", tree.getConst(lead).?.text.content);
+    const tail = try tree.append(root, .{ .text = .{ .content = "caf\xc3" } });
+    try std.testing.expectEqualStrings("caf\u{FFFD}", tree.getConst(tail).?.text.content);
+    const cont = try tree.append(root, .{ .text = .{ .content = "\x80x" } });
+    try std.testing.expectEqualStrings("\u{FFFD}x", tree.getConst(cont).?.text.content);
+
+    // A truncated sequence is one replacement, not one per byte —
+    // maximal subparts, so the substitution is deterministic and small.
+    const four = try tree.append(root, .{ .text = .{ .content = "ok \xf0\x9f\x92" } });
+    try std.testing.expectEqualStrings("ok \u{FFFD}", tree.getConst(four).?.text.content);
+
+    // Labels pass the same boundary…
+    const btn = try tree.append(root, .{ .button = .{ .label = "Go\xff" } });
+    try std.testing.expectEqualStrings("Go\u{FFFD}", tree.getConst(btn).?.button.label);
+
+    // …as do spans, whose concatenation is built from sanitized runs so
+    // the stored ranges stay exact…
+    const spanned = try tree.append(root, .{ .text = .{ .spans = &.{
+        .{ .text = "ok " },
+        .{ .text = "\xf0\x9f\x92", .strong = true },
+    } } });
+    const t = tree.getConst(spanned).?.text;
+    try std.testing.expectEqualStrings("ok \u{FFFD}", t.content);
+    try std.testing.expectEqualStrings("\u{FFFD}", t.spans[1].text);
+
+    // …and setContent, the mutation path.
+    try tree.setContent(lead, "x\xffy");
+    try std.testing.expectEqualStrings("x\u{FFFD}y", tree.getConst(lead).?.text.content);
 }
 
 test "a document expands wherever it enters the tree, not only via append" {

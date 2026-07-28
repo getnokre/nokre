@@ -23,8 +23,9 @@ node diff in place of the whole-screen write, and IME.
 
 FreeType on every platform + published artifacts — the last
 cross-platform text-determinism gap. Shaping and bidi are already
-byte-identical (HarfBuzz in the shim, UAX #9 in core); only rasterization
-still differs per scaler. Plan in
+byte-identical (HarfBuzz in the shim, UAX #9 in core); only
+rasterization still differs, a function of each platform's Skia build
+([internals/pixel-model.md](internals/pixel-model.md)). Plan in
 [internals/skia-build.md](internals/skia-build.md). iOS and Android build
 from source already, and the web builds none at all now; remaining:
 macOS and Windows source builds, with macOS/iOS text switched from

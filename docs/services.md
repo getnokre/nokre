@@ -221,7 +221,10 @@ forever; renaming the display name keeps it.
 
 The native side answers only the question the build cannot: installer
 provenance (app store / TestFlight / direct / bare `dev` binary; `web`
-on wasm), as one stateless synchronous query.
+on wasm), as one stateless synchronous query. The query is real on
+macOS and iOS — on iOS `direct` never occurs, because the only
+distribution runs through Apple — and answers `dev` on the platforms
+whose store detection has not landed.
 
 Because one id now serves every platform, its charset is the
 intersection of their rules, checked at build time: two or more
@@ -671,18 +674,12 @@ middle — opening that URL somewhere the user can *trust*, and getting
 the callback URL back — and that is all this service is.
 
 "Somewhere the user can trust" is RFC 8252, not taste: the system
-browser or an in-app browser tab, never an embedded web view, because
-an embedded view can read the password field. That single rule is why
-**no vendor SDK is needed**. Google's native-app flow is system browser
-plus PKCE with a public client; the GoogleSignIn and Play Services SDKs
-are a UX convenience, and skipping them costs exactly one named thing —
-no Android Credential Manager one-tap, the user sees a Custom Tab.
-Apple wants `ASAuthorizationController` on its own platforms, but that
-is `AuthenticationServices.framework`, first-party, the same class of
-dependency as the `Security.framework` `secure_store` already links.
-That matters because nokre has no dependency manager to host a
-vendored SDK — no CocoaPods, no SPM, no Gradle coordinates — and taking
-either SDK would mean inventing one.
+browser or an in-app browser tab, **never an embedded web view**,
+because an embedded view can read the password field. That single rule
+is also why no vendor SDK is needed — the argument, provider by
+provider, is [internals/oauth.md](internals/oauth.md)'s — at exactly
+one named cost: no Android Credential Manager one-tap, the user sees a
+Custom Tab.
 
 Two calls, in this order, once per flow:
 
@@ -865,8 +862,10 @@ formatted — `"$4.99"`, `"4,99 €"`, `"۴۹٬۰۰۰ تومان"` — and it is
 field to draw. nokre performs no currency math and no money formatting:
 that is a function of locale, currency, and the store's own regional
 rounding, all three applied on the other side of the call, and core is
-integer-only with no floats. `price_micros` (an integer) and `currency`
-sit beside it for reporting a number to a backend, so nobody has to parse
+integer-only with no floats — a framework that reformatted the number
+would show a price that disagrees with the one on the payment sheet.
+`price_micros` (an integer) and `currency` sit beside it, never drawn,
+for reporting a number to a backend, so nobody has to parse
 the display string — the failure mode the pair exists to prevent.
 
 **The purchase stream is the only lane**, and it is `deep_link`'s shape
@@ -875,17 +874,22 @@ interrupted purchase redelivered at launch, an Ask-to-Buy approval days
 later, a subscription renewal, every result of `restore`, a purchase made
 on another device — none of those was requested by this launch. A result
 delivered through `purchase`'s own callback would leave all five nowhere
-to land, so there is one handler and an app writes one path.
+to land, so there is one handler and an app writes one path. Like
+`deep_link`'s launch URL, transactions the store had queued before the
+handler existed are buffered and flushed at the first `setHandler`, so
+registering inside `build` is early enough.
 
 **`finish` is the crash-safety mechanism, not bookkeeping.** Until it is
 called, the store redelivers the transaction on every launch — which is
 what makes "the app died between the charge and the delivery" a
 recoverable state instead of a support ticket. The disposition is the one
-place the two stores genuinely differ and cannot be hidden: Apple finishes
-both the same way because it knows the product type; on Play `.consumed`
-is `consumeAsync`, `.kept` is `acknowledgePurchase`, and an unacknowledged
-purchase is **auto-refunded after three days**. The app declared the
-product in the store console, so the app is the one that knows.
+place the two stores genuinely differ and cannot be hidden: Apple
+finishes both dispositions the same way because it knows the product
+type; Play needs a different call for each, and an unacknowledged
+purchase is **auto-refunded after three days**. nokre could only pick
+for the caller by keeping its own catalog of which SKU is consumable — a
+second source of truth for a fact the app declared in the store console
+and already knows — so the app says, in one word.
 
 **Ask for a price before charging.** `purchase` only works for an id that
 came back from a `products` query in this session, because neither store
@@ -900,7 +904,7 @@ is a pure function of the argument checked before any OS call:
 
 | Cap | Value | Why this number |
 | --- | --- | --- |
-| ids per query | 20 | Play's per-query cap, the tighter of the two, enforced on the Zig side everywhere so `TooManyProducts` means one thing on every platform |
+| ids per query | 20 | Play's per-query cap — Apple documents none, so the store with a bound sets it — enforced on the Zig side everywhere so `TooManyProducts` means one thing on every platform |
 | product id | 1–128 bytes of `[a-z0-9._]`, leading `[a-z0-9]` | the intersection of the two consoles' rules (Play's is narrower, and lowercase-only) — an id that is legal on the developer's Apple device and rejected by the Play console should fail on the machine that typed it, which is package_info's argument for the app id |
 
 One sheet and one query at a time per app: a second `purchase` is

@@ -88,12 +88,15 @@ pub fn redirect(buf: *oauth.RedirectBuf) error{RedirectTooLong}![]const u8 {
     return buf[0..redirect_len];
 }
 
-pub fn start(ctx: ?*anyopaque, cb: Callback, url: []const u8, rt: *workers.Runtime) bool {
+/// Cannot fail: `window.open` reports a blocked popup, but services.js
+/// defers that a task and it arrives through `nokre_oauth_receive` as a
+/// status like any other — never synchronously, so there is nothing for
+/// this call to return (the extern's doc above states the arrangement).
+pub fn start(ctx: ?*anyopaque, cb: Callback, url: []const u8, rt: *workers.Runtime) void {
     receiver_ctx = ctx;
     receiver_cb = cb;
     runtime = rt;
     nokre_oauth_js_open(url.ptr, url.len);
-    return true;
 }
 
 pub fn cancel() void {

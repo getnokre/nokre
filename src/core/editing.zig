@@ -101,8 +101,14 @@ fn editKey(app: *App, e: Editable, key: event_mod.Key) !void {
 
 pub fn insertText(app: *App, bytes: []const u8) !void {
     const e = focusedEditable(app) orelse return;
-    try splice(app, e, e.cursor.*, e.cursor.*, bytes);
-    e.cursor.* += bytes.len;
+    // Platform bytes join tree-owned text here without passing the
+    // tree's validating boundary, so the same rule is applied first:
+    // an invalid sequence spliced mid-value would hand every prefix
+    // slice invalid UTF-8. Valid input — every real shell's — costs
+    // one scan and no extra copy.
+    const clean = if (std.unicode.utf8ValidateSlice(bytes)) bytes else try app.tree.ownString(bytes);
+    try splice(app, e, e.cursor.*, e.cursor.*, clean);
+    e.cursor.* += clean.len;
     e.composition.* = "";
     app.needs_frame = true;
     app.layout_dirty = true;

@@ -86,7 +86,7 @@ fn onAuth(ctx: ?*anyopaque, result: nokre.services.oauth.Result) void {
 | Android | Custom Tabs, callback returns as an intent | Reuses the deep_link intake path; the scheme is registered, not a claimed domain. |
 | Windows | Default browser (`ShellExecuteW`) + loopback listener | RFC 8252 §7.3. The listener is Zig, off the UI thread — see the open question below, which this settled. |
 | Linux | `xdg-open` + loopback listener | Same implementation as Windows, byte for byte; the desktop portal has no auth session API worth binding. |
-| Web | Popup on the app's own origin (services.js) | A top-level redirect would tear down the wasm instance mid-flow; the popup lands on the app's own page, which posts its URL to its opener and closes (live.js's first act on boot). |
+| Web | Popup on the app's own origin (services.js) | A top-level redirect would tear down the wasm instance mid-flow; the popup lands on the app's own page, which posts its URL to its opener and closes (live.js's first act on boot). A closed popup is only detectable by polling `closed`, and the poll can see it before the success message dequeues — so a detected close waits ~100ms before reporting cancelled, letting an in-flight callback win. A blocked popup also arrives asynchronously, as a failure status, so `start` has nothing to return. |
 
 **Apple's native leg** is the one addition beyond the primitive: on
 `.macos` and `.ios`, `oauth.start` with `.provider = .apple` routes to
@@ -462,7 +462,11 @@ liability, not a feature.
   would have dragged `nokreWorkers` membership into every consumer that
   signs in. The listener is `loopback.zig`; Windows and Linux share it
   byte for byte, and their whole C surface shrinks to one
-  `nokre_oauth_open_url`.
+  `nokre_oauth_open_url`. Each accepted connection gets a 5-second read
+  deadline: a connection that never sends its request line — a
+  browser's silent preconnect, or any local process squatting the port
+  — would otherwise park the single listener in the read and stall the
+  real redirect behind it, which arrives promptly or not at all.
 - **Is `auth_button` a distinct element or a `button` variant?** A
   variant, and closed. `Button.provider` carries the mark, so the element
   set grew by a field rather than a row, and nothing reopens it — the

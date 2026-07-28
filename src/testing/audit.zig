@@ -34,7 +34,14 @@ pub const Violation = struct {
         /// unreachable by tap, key, or voice — so a duplicate across
         /// that boundary can never be invoked ambiguously, and the
         /// audit re-runs after every action, catching the pair the
-        /// moment the layer closes and both become live.
+        /// moment the layer closes and both become live. One shape of
+        /// duplicate is exempt: two controls that both navigate to the
+        /// same route. "Docs" said twice about one destination is
+        /// repetition, not ambiguity — whichever the user invokes lands
+        /// exactly where the other would. Action-bearing controls never
+        /// qualify: even an identical function pointer closes over a
+        /// different context pointer, so sameness cannot be read off
+        /// the tree.
         duplicate_interactive_label,
         /// A nav needs 2–5 destinations. `App.setNav` enforces this up
         /// front; removal can degrade it afterwards.
@@ -139,7 +146,12 @@ pub fn collect(app: *App, out: *std.ArrayList(Violation)) !void {
     // has laid out yet. Cheap when clean.
     app.performLayout();
     var prev_heading_level: u8 = 0;
-    var seen_labels: std.ArrayList([]const u8) = .empty;
+    // Each first-seen label with its route destination (null for
+    // anything but a pure route navigation) — the destination is what
+    // decides whether a later holder of the same label is a collision
+    // or a second door to the same room.
+    const Seen = struct { label: []const u8, route: ?[]const u8 };
+    var seen_labels: std.ArrayList(Seen) = .empty;
     defer seen_labels.deinit(app.gpa);
     // The duplicate rule's jurisdiction: only labels in the active
     // layer can collide, because only they can be invoked at all.
@@ -149,21 +161,29 @@ pub fn collect(app: *App, out: *std.ArrayList(Violation)) !void {
     while (it.next()) |id| {
         const el = app.tree.getConst(id).?;
         switch (el.*) {
-            .button, .link, .toggle, .checkbox, .text_input, .text_area, .segmented, .radio_group, .select, .copyable, .nav_item, .icon_button, .back, .picker_item => {
+            .button, .link, .toggle, .checkbox, .text_input, .text_area, .segmented, .tile, .radio_group, .select, .copyable, .nav_item, .icon_button, .back, .picker_item => {
                 if (el.label().len == 0) {
                     try out.append(app.gpa, .{ .id = id, .rule = .unlabeled_interactive });
                 } else if (el.isInteractive() and inLayer(app, id, active_layer)) {
+                    const route = routeDestination(el);
                     var duplicate = false;
+                    var exempt = false;
                     for (seen_labels.items) |seen| {
-                        if (std.mem.eql(u8, seen, el.label())) {
+                        if (!std.mem.eql(u8, seen.label, el.label())) continue;
+                        // A shared label is ambiguous unless both
+                        // holders navigate to the same route (see the
+                        // rule's rationale above).
+                        if (route != null and seen.route != null and std.mem.eql(u8, route.?, seen.route.?)) {
+                            exempt = true;
+                        } else {
                             duplicate = true;
                             break;
                         }
                     }
                     if (duplicate) {
                         try out.append(app.gpa, .{ .id = id, .rule = .duplicate_interactive_label });
-                    } else {
-                        try seen_labels.append(app.gpa, el.label());
+                    } else if (!exempt) {
+                        try seen_labels.append(app.gpa, .{ .label = el.label(), .route = route });
                     }
                 }
             },
@@ -334,6 +354,25 @@ pub fn collect(app: *App, out: *std.ArrayList(Violation)) !void {
             }
         }
     }
+}
+
+/// The route a control's activation navigates to, or null when pressing
+/// it does anything else. Only a pure route push qualifies — a
+/// `nav_item`, a routed `link`, a `tile` whose route wins over its
+/// action (`input.zig` activates in exactly this order) — because a
+/// route reference carries its arguments in the string (`note~42`,
+/// docs/routing.md), so byte equality is destination equality. An
+/// `Action` never qualifies (see the rule's rationale), and neither
+/// does a link's external URL: the audit's exemption exists for the
+/// nav-chip-and-tile shape inside one app, not for vouching that two
+/// URLs open the same page.
+fn routeDestination(el: *const element_mod.Element) ?[]const u8 {
+    return switch (el.*) {
+        .link => |l| if (l.external == null and l.route.len > 0) l.route else null,
+        .tile => |t| if (t.route.len > 0) t.route else null,
+        .nav_item => |n| n.route,
+        else => null,
+    };
 }
 
 /// Whether `id` sits inside the active layer rooted at `scope`. With no

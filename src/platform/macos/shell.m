@@ -289,6 +289,31 @@ static void nokre_deep_link_dispatch(NSURL *url);
     return YES;
 }
 
+// Every way out — the close button (via the YES above), Cmd-Q, the Dock
+// menu — funnels through terminate:, which would exit() the process and
+// skip the cleanup nokre_shell_run's caller owns (AccessKit detach,
+// worker joins — shell.h promises the call *returns* when the window
+// closes). So termination is always cancelled and the run loop stopped
+// instead: [app run] unwinds, nokre_shell_run returns, and teardown runs
+// in Zig where it lives.
+- (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication *)sender {
+    [sender stop:nil];
+    // stop: only takes effect after the loop finishes dispatching an
+    // event; a Dock-menu quit arrives as an Apple event, not an NSEvent,
+    // so without this nudge the loop would sleep instead of unwinding.
+    NSEvent *wake = [NSEvent otherEventWithType:NSEventTypeApplicationDefined
+                                       location:NSZeroPoint
+                                  modifierFlags:0
+                                      timestamp:0
+                                   windowNumber:0
+                                        context:nil
+                                        subtype:0
+                                          data1:0
+                                          data2:0];
+    [sender postEvent:wake atStart:NO];
+    return NSTerminateCancel;
+}
+
 - (void)windowDidBecomeKey:(NSNotification *)notification {
     config.on_window_focus(config.ctx, 1);
 }

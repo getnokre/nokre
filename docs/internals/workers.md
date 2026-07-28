@@ -56,30 +56,28 @@ vocabulary and core stays ignorant of threads (`zig build test` on a
 bare toolchain must keep passing). A reply is app data arriving in app
 code — its precedent is `Action`, not `tap`.
 
-## Guarantees
+## What keeps the guarantees
 
-1. **In order, exactly once**, both directions, per worker. No global
-   order across workers.
-2. **One message at a time.** A worker is single-threaded; its state
-   needs no locks.
-3. **Handlers run on the UI thread only**, between input events. App
-   code remains single-threaded, full stop.
-4. **Values, not references.** `send` copies at the call; a delivered
-   message's slices are valid only for the handler call (arena-backed
-   or views into the frame — the consumer obligation is the same). Or
-   ownership moves whole: a transferred `Bytes` is reachable from
-   exactly one side at any moment.
-5. **Causality.** A worker runs only downstream of a message — no
-   timers, no self-wake, no spontaneous replies. Given deterministic
-   worker code, the reply *content* is a pure function of the message
-   stream; the one nondeterminism is *when* replies interleave with
-   input, and the testing story below puts exactly that under test
-   control.
-6. **Failure is a message.** `handle` returning an error drops that
-   message, reports a `Fault` to spawn's optional `on_fault`, and the
-   worker lives on. A dead worker (web OOM or trap; a native panic
-   aborts the process like any other) is `Fault.died` and the handle is
-   retired. No exceptions crossing threads, no poisoned locks.
+The six guarantees a consumer can rely on are stated once, in
+[../services.md](../services.md); this doc owns the machinery that
+keeps each. Ordering and exactly-once, both directions, are the
+per-worker FIFO queues in the transports below — and there is no global
+order across workers because there is no global queue.
+One-message-at-a-time is the worker's own single-threaded loop.
+UI-thread-only delivery is the pump: replies queue until the main
+thread drains them between input events. Values-not-references is the
+codec's copy at `send` — a delivered message's slices are arena-backed
+or views into the frame, the consumer obligation the same either way —
+plus `Bytes`, whose transfer leaves the buffer reachable from exactly
+one side at any moment. Causality is the absence of any wake source but
+a message: given deterministic worker code the reply *content* is a
+pure function of the message stream, the one nondeterminism left is
+*when* replies interleave with input, and the testing story below puts
+exactly that under test control. Failure-as-a-message is the fault
+path: a `handle` error drops that one message and reports a `Fault`; a
+dead worker (web OOM or trap — a native panic aborts the process like
+any other) is `Fault.died` and the handle retires. No exception crosses
+a thread, no lock is left poisoned.
 
 ## Messages
 

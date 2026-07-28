@@ -5,11 +5,11 @@ A deliberately limited GUI library: text, lines, and boxes. Zig + Skia
 
 nokre is roughly as expressive as Markdown, plus actions and navigation.
 Every element is semantic — accessibility is derived automatically from
-the tree you build, never opted into. If two devices have the same
-logical screen size, they render byte-for-byte identical frames within
-each text stack — the CoreText pair (macOS, iOS) and the FreeType trio
-(Windows, Linux, Android) — and across all five once nokre's own Skia
-builds land ([docs/roadmap.md](docs/roadmap.md)).
+the tree you build, never opted into. Two devices on the same platform
+with the same logical screen size render byte-for-byte identical
+frames, run after run and machine after machine. Identity *across*
+platforms — even between two sharing a text stack — lands with nokre's
+own Skia builds ([docs/roadmap.md](docs/roadmap.md)).
 
 The web is the same app and not the same promise: there nokre renders
 the tree as **markup** and lets the browser draw it

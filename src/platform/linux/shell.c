@@ -1437,7 +1437,12 @@ int32_t nokre_shell_run(const nokre_shell_config *config) {
     g.toplevel = xdg_surface_get_toplevel(g.xdg_surface);
     xdg_toplevel_add_listener(g.toplevel, &toplevel_listener, NULL);
     xdg_toplevel_set_title(g.toplevel, config->title);
-    xdg_toplevel_set_app_id(g.toplevel, config->title);
+    // app_id is the desktop-entry basename, not the title: compositors
+    // match it against `<app_id>.desktop` for the icon, task grouping,
+    // and the x-scheme-handler registration deep_link documents above.
+    // Absent an id, set nothing — a wrong id breaks that association
+    // worse than none (shell.h states the contract).
+    if (config->app_id != NULL) xdg_toplevel_set_app_id(g.toplevel, config->app_id);
 
     // Clipboard + IME objects, once the seat exists.
     if (g.ddm != NULL && g.seat != NULL) {

@@ -3650,3 +3650,259 @@ fn buildHomeWithActionRow(_: ?*anyopaque, app: *App) anyerror!void {
 fn buildEmpty(_: ?*anyopaque, app: *App) anyerror!void {
     _ = try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Details" } });
 }
+
+// ---- the UTF-8 boundary, under layout (tree_test.zig owns the
+// per-path substitutions; this is the crash the boundary exists to
+// prevent) ----
+
+test "a fetched document with invalid bytes lays out instead of panicking" {
+    var app = try test_app.init(400, 600);
+    defer app.deinit();
+    // Markdown promises arbitrary bytes never crash; before the
+    // validating copy this parsed fine and panicked at first layout,
+    // when the measurer's UTF-8 iterator met the raw bytes.
+    const doc = try app.tree.append(app.tree.rootId(), .{ .document = .{
+        .label = "Fetched",
+        .source = "# T\xffitle\n\npara \xc3\n\n- item \x80\n",
+    } });
+    app.performLayout();
+
+    var found = false;
+    var it = app.tree.dfsUnder(doc);
+    while (it.next()) |id| {
+        const el = app.tree.getConst(id).?;
+        if (el.* == .heading) {
+            try testing.expectEqualStrings("T\u{FFFD}itle", el.heading.content);
+            found = true;
+        }
+    }
+    try testing.expect(found);
+}
+
+test "typed bytes pass the same boundary as appended ones" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    const input = try app.tree.append(app.tree.rootId(), .{ .text_input = .{ .label = "Name" } });
+    app.focused = .of(input);
+    // A shell should never send these, but a value is measured prefix
+    // by prefix, so one bad splice would poison every later caret move.
+    try app.dispatch(.{ .text = .{ .bytes = "a\xffb" } });
+    try testing.expectEqualStrings("a\u{FFFD}b", app.tree.getConst(input).?.text_input.value);
+    app.performLayout();
+}
+
+// ---- the tail sheet's restatement is state, not words (overflow.zig) ----
+
+test "the tail sheet follows a folded original's state, not only its words" {
+    var counter: PressCounter = .{};
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    const row = try buildOverflowingRow(&app, &counter);
+    app.performLayout();
+    try app.activate(childOfRole(&app, row, .more).?);
+    try testing.expect(app.more_sheet != null);
+
+    // A rebuild disables a folded original in place. The labels still
+    // match, so a words-only staleness check would keep the sheet up —
+    // with its copy still enabled and still pressing.
+    var it = app.tree.children(row);
+    while (it.next()) |c| {
+        const el = app.tree.get(c).?;
+        if (el.* == .button and el.button.folded) el.button.disabled = true;
+    }
+    app.invalidate();
+    app.performLayout();
+    try testing.expect(layout.findSheet(&app.tree) == null);
+    try testing.expect(app.more_sheet == null);
+
+    // Action identity is part of the claim too: the same words wired to
+    // a different ctx/fn pair is a different action.
+    it = app.tree.children(row);
+    while (it.next()) |c| {
+        const el = app.tree.get(c).?;
+        if (el.* == .button and el.button.folded) el.button.disabled = false;
+    }
+    app.invalidate();
+    app.performLayout();
+    try app.activate(childOfRole(&app, row, .more).?);
+    try testing.expect(app.more_sheet != null);
+    var other: PressCounter = .{};
+    it = app.tree.children(row);
+    while (it.next()) |c| {
+        const el = app.tree.get(c).?;
+        if (el.* == .button and el.button.folded) el.button.on_press = .{ .ctx = &other, .call = PressCounter.onPress };
+    }
+    app.invalidate();
+    app.performLayout();
+    try testing.expect(layout.findSheet(&app.tree) == null);
+
+    // An untouched fold keeps its sheet: the check is exact, not jumpy.
+    try app.activate(childOfRole(&app, row, .more).?);
+    try testing.expect(app.more_sheet != null);
+    app.invalidate();
+    app.performLayout();
+    try testing.expect(layout.findSheet(&app.tree) != null);
+}
+
+// ---- the arena reclaim point (tree.zig; router.rebuild) ----
+
+fn buildReclaimScreen(_: ?*anyopaque, app: *App) anyerror!void {
+    _ = try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Notes" } });
+    _ = try app.tree.append(app.tree.rootId(), .{ .text = .{ .content = "A paragraph long enough to cost real bytes every rebuild." } });
+    _ = try app.tree.append(app.tree.rootId(), .{ .text_input = .{ .label = "Title" } });
+}
+
+fn reclaimCycle(app: *App) !void {
+    // Type into the screen's field — every keystroke splices a fresh
+    // copy of the whole value into the arena — then rebuild.
+    var input: ?NodeId = null;
+    var it = app.tree.dfs();
+    while (it.next()) |id| {
+        if (app.tree.getConst(id).?.* == .text_input) input = id;
+    }
+    app.focused = .of(input.?);
+    var n: usize = 0;
+    while (n < 8) : (n += 1) try app.dispatch(.{ .text = .{ .bytes = "abcdefgh" } });
+    try app.router.reload(app);
+}
+
+test "a router rebuild reclaims the tree arena" {
+    var app = try App.init(testing.allocator, .{
+        .viewport = .{ .w = 400, .h = 600 },
+        .routes = &.{.{ .name = "notes", .title = "Notes", .build = buildReclaimScreen }},
+        .services = .mocks(),
+    });
+    defer app.deinit();
+    try app.navigate("notes");
+
+    // Warm up, then hold: every cycle types the same bytes and rebuilds
+    // the same screen, so a reclaiming arena settles at a fixed
+    // capacity — without the reclaim, each cycle's splice copies and
+    // rebuilt strings accumulate and capacity climbs monotonically.
+    var i: usize = 0;
+    while (i < 3) : (i += 1) try reclaimCycle(&app);
+    const settled = app.tree.arena.queryCapacity();
+    try testing.expect(settled > 0);
+    while (i < 24) : (i += 1) try reclaimCycle(&app);
+    try testing.expectEqual(settled, app.tree.arena.queryCapacity());
+}
+
+test "chrome keeps its nodes across the reclaim, strings and all" {
+    var app = try crowdedApp();
+    defer app.deinit();
+    try app.setNav(&crowded_nav);
+    try app.navigate("library");
+    try app.notify("Update ready", "Restart to apply", "settings");
+    app.minimizeNotices();
+
+    const chip = navChip(&app).?;
+    const indicator = layout.findIndicator(&app.tree).?;
+    // Two rebuilds: the chrome nodes survive both (nav.zig's "leave the
+    // node alone" guard), so the reclaim must carry their strings into
+    // each fresh arena rather than leave them dangling in a freed one.
+    try app.router.reload(&app);
+    try app.router.reload(&app);
+    try testing.expect(navChip(&app).?.eql(chip));
+    try testing.expect(layout.findIndicator(&app.tree).?.eql(indicator));
+    try testing.expectEqualStrings("Library", app.tree.getConst(chip).?.nav_current.section);
+    try testing.expectEqualStrings("Show notices", app.tree.getConst(indicator).?.label());
+}
+
+// ---- focus origin: rings for the keyboard, not the finger ----
+
+test "focus rings follow the input that moved focus" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    const a = try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "a" } });
+    const b = try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "b" } });
+    // Programmatic focus (tests, a11y actions) shows itself.
+    try testing.expect(app.focus_visible);
+
+    app.performLayout();
+    try app.tap(app.tree.rectOf(a).center());
+    try testing.expect(app.focused.?.on(a));
+    try testing.expect(!app.focus_visible);
+
+    // Tab after a tap: the keyboard is back, and so is the ring.
+    try app.dispatch(.{ .key_down = .{ .key = .tab } });
+    try testing.expect(app.focused.?.on(b));
+    try testing.expect(app.focus_visible);
+
+    // And a tap after keys hides it again.
+    try app.tap(app.tree.rectOf(a).center());
+    try testing.expect(!app.focus_visible);
+}
+
+test "delivered semantics carry their origin for the ring" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    const btn = try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Go" } });
+
+    // A resolved press is a pointer; a delivered traversal is not.
+    try app.deliver(.{ .press = .of(btn) });
+    try testing.expect(!app.focus_visible);
+    try app.deliver(.{ .focus = .of(btn) });
+    try testing.expect(app.focus_visible);
+}
+
+// ---- tap-out: the gesture that puts the on-screen keyboard away ----
+
+test "a tap on nothing clears an editable's focus, and only an editable's" {
+    var counter: PressCounter = .{};
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    const input = try app.tree.append(app.tree.rootId(), .{ .text_input = .{ .label = "Name" } });
+    const btn = try app.tree.append(app.tree.rootId(), .{ .button = .{
+        .label = "Go",
+        .on_press = .{ .ctx = &counter, .call = PressCounter.onPress },
+    } });
+    app.performLayout();
+
+    // Focused field + tap on dead space: focus clears, and the shell's
+    // `wants_text_input` sync drops the keyboard with it.
+    try app.tap(app.tree.rectOf(input).center());
+    try testing.expect(app.focused.?.on(input));
+    try app.tap(.{ .x = 399, .y = 399 });
+    try testing.expect(app.focused == null);
+
+    // A tap on another control is that control's normal press.
+    try app.tap(app.tree.rectOf(input).center());
+    try app.tap(app.tree.rectOf(btn).center());
+    try testing.expectEqual(@as(u32, 1), counter.count);
+    try testing.expect(app.focused.?.on(btn));
+
+    // A tap on the field itself keeps its focus.
+    try app.tap(app.tree.rectOf(input).center());
+    try app.tap(app.tree.rectOf(input).center());
+    try testing.expect(app.focused.?.on(input));
+
+    // A non-editable's focus is not cleared by a stray tap: there is no
+    // keyboard to put away, only a keyboard user's place to lose.
+    try app.tap(app.tree.rectOf(btn).center());
+    try app.tap(.{ .x = 399, .y = 399 });
+    try testing.expect(app.focused.?.on(btn));
+
+    // A drag that a recognizer turned into a scroll is not a tap-out.
+    try app.tap(app.tree.rectOf(input).center());
+    try app.dispatch(.{ .pointer = .{ .at = .{ .x = 399, .y = 399 }, .phase = .down } });
+    try app.dispatch(.{ .scroll = .{ .at = .{ .x = 399, .y = 399 }, .delta_y = 10, .phase = .begin } });
+    try app.dispatch(.{ .pointer = .{ .at = .{ .x = 399, .y = 380 }, .phase = .up } });
+    try testing.expect(app.focused.?.on(input));
+}
+
+test "a tap on a sheet's empty area clears its field's focus too" {
+    var app = try test_app.init(400, 600);
+    defer app.deinit();
+    const sheet = try app.presentSheet("Filters");
+    const field = try app.tree.append(sheet, .{ .text_input = .{ .label = "Query" } });
+    app.performLayout();
+
+    try app.tap(app.tree.rectOf(field).center());
+    try testing.expect(app.focused.?.on(field));
+
+    // Empty area *inside* the sheet: same dismissal, sheet stays.
+    const sr = app.tree.rectOf(sheet);
+    try app.tap(.{ .x = sr.x + sr.w - 4, .y = sr.y + sr.h - 4 });
+    try testing.expect(app.focused == null);
+    try testing.expect(layout.findSheet(&app.tree) != null);
+}

@@ -158,6 +158,66 @@ test "focused button renders inverted with a focus ring" {
     try testing.expect(found_ring);
 }
 
+test "pointer-origin focus draws no ring; keyboard focus draws it again" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    const btn = try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Go" } });
+    app.performLayout();
+    const r = app.tree.rectOf(btn);
+
+    // A tap focuses the button but stands the drawn ring down: the
+    // finger knows where it pressed (`App.focus_visible`).
+    try app.tap(r.center());
+    try testing.expect(app.focused.?.on(btn));
+    var tapped = frameOf(&app);
+    defer tapped.deinit();
+    try testing.expect(!hasStroke(&tapped, focusRingRect(r)));
+
+    // Tab brings the keyboard back, and the ring with it — focus
+    // semantics never changed, only the indicator.
+    try app.dispatch(.{ .key_down = .{ .key = .tab } });
+    try testing.expect(app.focused.?.on(btn));
+    var keyed = frameOf(&app);
+    defer keyed.deinit();
+    try testing.expect(hasStroke(&keyed, focusRingRect(r)));
+}
+
+test "a tapped text field keeps its caret and focused edge" {
+    // The editable carve-out: an element taking text input shows its
+    // focus whatever moved it there — the thickened edge is where the
+    // caret lives, and a tapped field with no visible focus would be a
+    // field that looks dead while the keyboard is up.
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    const input = try app.tree.append(app.tree.rootId(), .{ .text_input = .{ .label = "Name", .value = "hi" } });
+    app.performLayout();
+    try app.tap(app.tree.rectOf(input).center());
+    try testing.expect(!app.focus_visible);
+
+    var rec = frameOf(&app);
+    defer rec.deinit();
+    var found_edge = false;
+    var strokes = rec.opsOf(.stroke_rect);
+    while (strokes.next()) |s| {
+        if (s.thickness == metrics.focus_stroke and s.gray == Gray.ink) found_edge = true;
+    }
+    try testing.expect(found_edge);
+    var found_caret = false;
+    var lines = rec.opsOf(.line);
+    while (lines.next()) |l| {
+        if (l.from.x == l.to.x and l.gray == Gray.ink) found_caret = true;
+    }
+    try testing.expect(found_caret);
+}
+
+fn hasStroke(rec: *const Recording, r: Rect) bool {
+    var it = rec.opsOf(.stroke_rect);
+    while (it.next()) |s| {
+        if (std.meta.eql(s.rect, r)) return true;
+    }
+    return false;
+}
+
 test "glyph-form button draws the quiet glyph, no pill and no label text" {
     var app = try test_app.init(400, 400);
     defer app.deinit();

@@ -15,6 +15,7 @@ const std = @import("std");
 
 const app_mod = @import("../../core/app.zig");
 const element_mod = @import("../../core/element.zig");
+const overlays = @import("../../core/overlays.zig");
 const semantics = @import("../../a11y/semantics.zig");
 const serialize = @import("serialize.zig");
 const stylesheet = @import("stylesheet.zig");
@@ -678,6 +679,34 @@ test "an open sheet is a modal dialog named by its title" {
     try expectContains(layers, "aria-label=\"Close\"");
 }
 
+test "a picker over a sheet: each layer arrives over a scrim of its own, in paint order" {
+    var app = try test_app.init(500, 700);
+    defer app.deinit();
+    const sheet = try app.presentSheet("Move note");
+    const select = try app.tree.append(sheet, .{ .select = .{
+        .label = "Notebook",
+        .options = &.{ "Inbox", "Archive" },
+    } });
+    try overlays.openPicker(&app, select);
+
+    const layers = try renderChrome(&app);
+    defer testing.allocator.free(layers);
+    // Document order is the stacking: the generated sheet keeps every
+    // modal surface at the scrims' own z-index (its `.scrim` comment
+    // says why), so the emission order here *is* the paint order the
+    // reference draws in (`render`, `drawOverScrim` per layer) — and
+    // the scrim emitted after the sheet, the picker's, is what dims
+    // the sheet.
+    const scrim = "<div class=\"scrim\"></div>";
+    const sheet_at = std.mem.indexOf(u8, layers, "<div class=\"sheet\"").?;
+    const picker_at = std.mem.indexOf(u8, layers, "<div class=\"picker\"").?;
+    const first_scrim = std.mem.indexOf(u8, layers, scrim).?;
+    const second_scrim = std.mem.indexOfPos(u8, layers, sheet_at, scrim).?;
+    try testing.expect(first_scrim < sheet_at);
+    try testing.expect(sheet_at < second_scrim);
+    try testing.expect(second_scrim < picker_at);
+}
+
 // -------------------------------------------------------- stylesheet
 
 test "the stylesheet is generated from the library, not transcribed" {
@@ -710,6 +739,34 @@ test "the stylesheet is generated from the library, not transcribed" {
     // The refusals, kept: no hover rule, and no motion to disable.
     try expectLacks(css.items, ":hover {");
     try expectContains(css.items, "transition: none !important;");
+}
+
+test "the modal surfaces share the scrims' z-index, so document order is the stacking" {
+    var css: std.ArrayList(u8) = .empty;
+    defer css.deinit(testing.allocator);
+    try stylesheet.write(testing.allocator, &css, .{});
+
+    // The per-layer scrims only work if neither half of a pair can be
+    // hoisted over the other: with one z for both, the serializer's
+    // emission order — scrim, then surface, layer by layer — is the
+    // paint order, exactly as the reference's `render` sequences its
+    // `drawOverScrim` calls. Two z levels was the bug this pins: every
+    // scrim sat under every surface, and a picker opened from a sheet
+    // never dimmed it.
+    const zOf = struct {
+        fn zOf(sheet_css: []const u8, selector: []const u8) ![]const u8 {
+            const rule = std.mem.indexOf(u8, sheet_css, selector) orelse return error.SelectorMissing;
+            const close = std.mem.indexOfScalarPos(u8, sheet_css, rule, '}') orelse return error.UnclosedRule;
+            const block = sheet_css[rule..close];
+            const z = std.mem.indexOf(u8, block, "z-index:") orelse return error.NoZIndex;
+            const end = std.mem.indexOfScalarPos(u8, block, z, ';') orelse return error.UnterminatedZ;
+            return std.mem.trim(u8, block[z + "z-index:".len .. end], " ");
+        }
+    }.zOf;
+    try testing.expectEqualStrings(
+        try zOf(css.items, ".scrim {"),
+        try zOf(css.items, ".sheet, .notices-pane, .picker {"),
+    );
 }
 
 test "the appearance is core's, and the system query only stands in for it" {

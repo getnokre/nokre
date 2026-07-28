@@ -104,7 +104,19 @@ the element that opened
 it. The focus indicator — one 2px `ink` stroke, either standing 2px
 clear of the element or taking over the outline the element already
 draws, never both at once — comes from the renderer, identically on
-every platform. There is exactly one focus model to test.
+every platform. The focus *position* always exists and is always
+announced; the drawn indicator is keyboard-origin only — it appears
+when focus last moved by keyboard and not when a pointer or touch took
+it, because a pointer user knows where they pressed, and a ring there
+is redundant noise. Two carve-outs, and only these: a text field
+(`text_input`, `text_area`) shows its thickened edge and caret however
+focus arrived — keyboard input is about to land there, the same
+carve-out every browser's `:focus-visible` ships — and a picker's row
+highlight follows focus whichever input moved it, because it marks the
+row about to be chosen, not how focus got there. The DOM edition gets
+the rule from
+`:focus-visible`; the Skia edition tracks the origin in core, so the
+two agree by construction. There is exactly one focus model to test.
 
 **No gesture is ever the only way to anything.** nokre has one gesture
 at all — the edge pan that goes back ([routing.md](routing.md)) — and
@@ -132,7 +144,7 @@ after the fact would mean the bad state existed:
 - interactive elements (button/link/toggle/input/segmented/nav item)
   with an empty label — `error.UnlabeledInteractive`
 - non-row children of tables, non-cell children of rows, rows outside
-  tables, cells outside rows
+  tables, cells outside rows, a row past 32 cells
 - a nav off the root, a second nav, non-item children of a nav, nav items
   outside a nav, or a nav mixing its two shapes — the row of destinations
   and the collapsed chip cannot both stand, or the same section would be
@@ -154,6 +166,21 @@ after the fact would mean the bad state existed:
 - text that would be a glare source: the same pair must also stay at or
   below 16:1. True ink on true paper is 21:1, which is past the point
   where contrast buys legibility — `error.ExcessiveTextContrast`
+
+Structure is refused; encoding is repaired. Every string entering
+tree-owned memory — append fields and spans, choice options,
+`setContent`, an IME update, typed text — is validated during the copy
+the tree already makes, each invalid sequence becoming one U+FFFD
+(maximal subparts, deterministically). The tree holds only well-formed
+UTF-8, so a fetched document carrying arbitrary bytes renders as text
+and every scan downstream trusts sequence lengths instead of
+re-checking them.
+
+Mutation faces the same gates: `setContent` on a `text` element re-runs
+the append contrast check once the new content has visible words
+(`error.InsufficientTextContrast`, the element untouched on refusal),
+and on a field it clamps a stale caret to a codepoint boundary rather
+than leave it dangling mid-sequence.
 
 `App.setNav` additionally rejects fewer than 2 or more than 5 destinations
 (`error.NavItemCount`), a destination the route table does not have

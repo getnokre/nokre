@@ -348,6 +348,15 @@ pub const Router = struct {
         const entry = self.stack.items[self.stack.items.len - 1];
         const def = self.routes[entry.idx];
         try clearContent(app);
+        // The arena reclaim point (tree.zig's module doc): the removed
+        // screen's strings — with every editing splice copy, IME
+        // update, and resynced chrome label since the last rebuild — go
+        // with the old arena; the chrome that survives has its strings
+        // re-copied, keeping the node ids focus and the picker hold. A
+        // failed reclaim only postpones — the tree is untouched and the
+        // next rebuild tries again — which beats failing a navigation
+        // over memory that was only waiting to be freed.
+        app.tree.reclaim() catch {};
         // Focus starts over even when the scroll position does not: the
         // node it named is gone, and putting a screen reader's cursor
         // back by ordinal would land it on whatever took that place.

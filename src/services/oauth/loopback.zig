@@ -81,6 +81,18 @@ fn releaseIo() void {
 /// following our redirect.
 const max_request_line = 8 * 1024;
 
+/// Per-connection read deadline. A connection that never sends its
+/// request line would otherwise park the single listener in the read —
+/// browsers open speculative preconnects they hold silently, and any
+/// local process can connect and squat — stalling the real redirect
+/// behind it. A preconnect can never produce the code, and the redirect
+/// arrives promptly or not at all: the browser issues its GET the
+/// instant it follows the 302. So a squatter is closed after a few
+/// seconds and the listener re-accepts; the flow it was blocking
+/// proceeds. On the awake clock, like http's watchdog — a laptop shut
+/// mid-sign-in is not a squatter.
+const read_deadline_seconds = 5;
+
 /// What the browser lands on. Plain text and self-explanatory: the user
 /// is looking at it, and the app has already been told.
 const page =
@@ -206,8 +218,7 @@ fn serve(self: *Listener) void {
         }
 
         var read_buf: [max_request_line]u8 = undefined;
-        var reader = stream.reader(io, &read_buf);
-        const line = reader.interface.takeDelimiterExclusive('\n') catch {
+        const line = readRequestLine(&stream, &read_buf) orelse {
             stream.close(io);
             continue;
         };
@@ -237,6 +248,30 @@ fn serve(self: *Listener) void {
         deliver(self, .{ .callback = url });
         return;
     }
+}
+
+/// The request line, read under `read_deadline_seconds`. One deadline
+/// for the whole line, not per receive, so a squatter cannot stay
+/// resident by trickling a byte at a time. Null — timeout, orderly
+/// close, over-cap, any transport error — means "not the redirect";
+/// the caller closes and re-accepts. Timed receives instead of the
+/// stream reader because the reader's read has no deadline form.
+fn readRequestLine(stream: *net.Stream, buf: *[max_request_line]u8) ?[]const u8 {
+    const deadline: std.Io.Timeout = .{ .deadline = .fromNow(io, .{
+        .clock = .awake,
+        .raw = .fromSeconds(read_deadline_seconds),
+    }) };
+    var len: usize = 0;
+    while (len < buf.len) {
+        const msg = stream.socket.receiveTimeout(io, buf[len..], deadline) catch return null;
+        if (msg.data.len == 0) return null; // peer closed without a line
+        const scan_from = len;
+        len += msg.data.len;
+        if (std.mem.indexOfScalar(u8, buf[scan_from..len], '\n')) |i| {
+            return buf[0 .. scan_from + i];
+        }
+    }
+    return null;
 }
 
 /// Whether the request target's path — the bytes before any query or

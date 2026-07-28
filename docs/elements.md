@@ -56,8 +56,10 @@ aren't only whitespace.
 A link that wraps — or that a bidi line splits into separate visual
 runs — occupies several rectangles, and every one of them underlines,
 rings when focused, and takes taps; the prose between them does none of
-those. Drawing, hit testing, and the focus ring all read the same
-geometry walk, so what you see underlined is exactly what you can tap.
+those. Drawing, hit testing, and the focus ring (drawn on
+keyboard-origin focus only — [accessibility.md](accessibility.md#focus))
+all read the same geometry walk, so what you see underlined is exactly
+what you can tap.
 
 ### `heading`
 `h1` through `h6`, mapped to fixed sizes on the type scale. Headings are
@@ -210,8 +212,10 @@ and not a lint: `tree.append` refuses to construct an interactive element
 with an empty label — an inaccessible control cannot exist.
 
 ### `button`
-`label`, `on_press`, `disabled`, `in_progress`. Focused buttons render
-inverted (ink fill, paper text). Activated by tap, Enter, or Space.
+`label`, `on_press`, `disabled`, `in_progress`. A filled pill — ink
+fill, paper text — ringed on keyboard-origin focus
+([accessibility.md](accessibility.md#focus)). Activated by tap, Enter,
+or Space.
 
 `secondary` is the one emphasis knob: an outlined pill — ambient
 background, 1px `.g6` border (the segmented/toggle WCAG 1.4.11
@@ -430,7 +434,7 @@ Details worth knowing:
 - **Your nodes survive.** The actions stay in the tree with their ids and
   their state; a wider viewport puts them straight back. Mutating a
   folded button (`in_progress`, `disabled`) is fine and shows up when it
-  returns — or immediately, in the sheet, which restates each one whole.
+  returns.
 - **Focus follows the shape.** If the action you were on folds away,
   focus lands on the control that now holds it; when the row grows back,
   focus moves off the departing control to the row's trailing end
@@ -442,10 +446,13 @@ Details worth knowing:
   inside one has nowhere to fold to; it keeps every action it was given
   and clips like any other over-wide content. A sheet is a handful of
   controls, not a toolbar.
-- **The sheet closes if the fold moves under it.** The window grew and
-  the actions are back on the row, or it folded deeper and the open list
-  no longer names everything hidden: either way the sheet is dismissed
-  rather than left saying something untrue.
+- **The sheet closes if what it lists stops being true.** The window
+  grew and the actions are back on the row; it folded deeper and the
+  open list no longer names everything hidden; or a folded original
+  changed *state* — its words, `disabled`, `in_progress`, progress,
+  emphasis, icon or provider mark, a link's destination, or the action
+  itself. The sheet restates each action whole, so on any of these it
+  is dismissed rather than left saying something untrue.
 - **In tests**, a folded action is not addressable by its words:
   `getByLabel` reports it as folded, and `tap` on a node id you kept
   fails with `error.Folded`. Reach it the way a user does — `tapLabel("More")`,
@@ -514,6 +521,12 @@ scale). `value`, `placeholder`, `cursor` (byte offset), `on_change`,
 with an underline; IME is live on every shell
 ([internals/platform-shells.md](internals/platform-shells.md) has the
 per-shell contract).
+
+While the field holds focus, a pointer release that lands on nothing
+interactive clears it, and on-screen keyboards follow focus down. That
+is dismissal without spending a pixel of chrome — no Done bar, no
+tap-catching scrim — the least intrusive answer, the same restraint
+that keeps content from scrolling itself.
 
 `obscured` makes it a password field: every codepoint (composition
 included) renders as a bullet at a fixed advance, and the value is
@@ -726,9 +739,14 @@ read out, not navigated line by line.
 
 ### `table` / `row` / `cell`
 `table` children must be `row`s; row children must be `cell`s — `append`
-rejects anything else at construction. Column widths are per-column
+rejects anything else at construction. A row refuses more than 32 cells
+at `append` (`error.TooManyColumns` on the cell that would open a 33rd
+column) — the construction refusal every other malformed structure
+gets. Column widths are per-column
 intrinsic maxima; the grid is
-drawn with 1px lines. Mark header rows with `.header = true`.
+drawn with 1px lines, and a table's rect reports its true width: one
+wider than its parent overflows honestly rather than clamping silently.
+Mark header rows with `.header = true`.
 
 ### `document`
 Markdown source in, ordinary elements out — `append` expands it into

@@ -153,6 +153,66 @@ test "audit flags duplicate interactive labels" {
     try testing.expectEqual(Violation.Rule.duplicate_interactive_label, violations.items[0].rule);
 }
 
+test "two tiles naming different destinations may not share a label" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    const group = try app.tree.append(app.tree.rootId(), .{ .tile_group = .{} });
+    _ = try app.tree.append(group, .{ .tile = .{ .label = "Docs", .route = "docs" } });
+    _ = try app.tree.append(group, .{ .tile = .{ .label = "Docs", .route = "roadmap" } });
+
+    var violations: std.ArrayList(Violation) = .empty;
+    defer violations.deinit(testing.allocator);
+    try collect(&app, &violations);
+    try testing.expectEqual(@as(usize, 1), violations.items.len);
+    try testing.expectEqual(Violation.Rule.duplicate_interactive_label, violations.items[0].rule);
+}
+
+test "two doors to the same route are repetition, not ambiguity" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    // The site's own shape: a routed link and a tile both saying "Docs"
+    // about the docs route. Whichever is invoked lands the same place,
+    // so no ambiguity exists to flag — across element kinds included.
+    _ = try app.tree.append(app.tree.rootId(), .{ .link = .{ .label = "Docs", .route = "docs" } });
+    const group = try app.tree.append(app.tree.rootId(), .{ .tile_group = .{} });
+    _ = try app.tree.append(group, .{ .tile = .{ .label = "Docs", .route = "docs" } });
+    _ = try app.tree.append(group, .{ .tile = .{ .label = "Docs", .route = "docs" } });
+    try audit(&app);
+}
+
+fn noopPress(_: ?*anyopaque) void {}
+
+test "duplicate labels over actions stay flagged, same function or not" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    const group = try app.tree.append(app.tree.rootId(), .{ .tile_group = .{} });
+    // One function pointer, but each tile closes over its own context —
+    // sameness cannot be read off the tree, so the exemption never
+    // applies to actions.
+    _ = try app.tree.append(group, .{ .tile = .{ .label = "Reset", .on_press = .{ .call = noopPress } } });
+    _ = try app.tree.append(group, .{ .tile = .{ .label = "Reset", .on_press = .{ .call = noopPress } } });
+
+    var violations: std.ArrayList(Violation) = .empty;
+    defer violations.deinit(testing.allocator);
+    try collect(&app, &violations);
+    try testing.expectEqual(@as(usize, 1), violations.items.len);
+    try testing.expectEqual(Violation.Rule.duplicate_interactive_label, violations.items[0].rule);
+}
+
+test "audit flags a tile label emptied after construction" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    const group = try app.tree.append(app.tree.rootId(), .{ .tile_group = .{} });
+    const tile = try app.tree.append(group, .{ .tile = .{ .label = "Docs", .route = "docs" } });
+    app.tree.get(tile).?.tile.label = "";
+
+    var violations: std.ArrayList(Violation) = .empty;
+    defer violations.deinit(testing.allocator);
+    try collect(&app, &violations);
+    try testing.expectEqual(@as(usize, 1), violations.items.len);
+    try testing.expectEqual(Violation.Rule.unlabeled_interactive, violations.items[0].rule);
+}
+
 test "a duplicate behind an open sheet is inert, not ambiguous" {
     var app = try test_app.init(400, 600);
     defer app.deinit();

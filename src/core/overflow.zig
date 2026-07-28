@@ -95,7 +95,13 @@ fn dismissStaleTailSheet(app: *App) bool {
 }
 
 /// Whether the sheet still lists the row's folded actions, in order and
-/// no others — the one thing it claims by being open.
+/// no others — each restated *whole*, which is the claim being checked:
+/// `presentMoreSheet` copies the element, so the sheet promises the
+/// same action, the same destination, and the same disabled or
+/// in-progress state, not merely the same words. A rebuild that
+/// disables a folded original or rewires its action in place must take
+/// the stale copy down with it, or the copy keeps running state the
+/// row no longer has.
 fn listsExactly(app: *const App, open: app_mod.App.MoreSheet) bool {
     var folded = app.tree.children(open.row);
     var listed = app.tree.children(open.sheet);
@@ -104,24 +110,64 @@ fn listsExactly(app: *const App, open: app_mod.App.MoreSheet) bool {
         const got = nextListed(app, &listed);
         if (want == null and got == null) return true;
         if (want == null or got == null) return false;
-        if (!std.mem.eql(u8, want.?, got.?)) return false;
+        if (!restatesExactly(want.?.*, got.?.*)) return false;
     }
 }
 
-fn nextFolded(app: *const App, it: *tree_mod.Tree.ChildIterator) ?[]const u8 {
+fn nextFolded(app: *const App, it: *tree_mod.Tree.ChildIterator) ?*const element_mod.Element {
     while (it.next()) |c| {
         const el = app.tree.getConst(c).?;
-        if (el.isFolded()) return el.label();
+        if (el.isFolded()) return el;
     }
     return null;
 }
 
-fn nextListed(app: *const App, it: *tree_mod.Tree.ChildIterator) ?[]const u8 {
+fn nextListed(app: *const App, it: *tree_mod.Tree.ChildIterator) ?*const element_mod.Element {
     while (it.next()) |c| {
         const el = app.tree.getConst(c).?;
-        if (el.foldable()) return el.label();
+        if (el.foldable()) return el;
     }
     return null;
+}
+
+/// Whether `listed` is still `presentMoreSheet`'s restatement of
+/// `orig`: the same element with only `folded` cleared. Field by field
+/// rather than a byte compare, because the strings are tree-owned
+/// copies — equal bytes at different addresses — and action identity
+/// is the ctx/fn pair, the only identity an `Action` has.
+fn restatesExactly(orig: element_mod.Element, listed: element_mod.Element) bool {
+    switch (orig) {
+        .button => |b| {
+            if (listed != .button) return false;
+            const l = listed.button;
+            return std.mem.eql(u8, b.label, l.label) and
+                b.disabled == l.disabled and
+                b.in_progress == l.in_progress and
+                std.meta.eql(b.progress_percent, l.progress_percent) and
+                b.secondary == l.secondary and
+                std.meta.eql(b.icon, l.icon) and
+                b.icon_only == l.icon_only and
+                std.meta.eql(b.provider, l.provider) and
+                b.on_press.ctx == l.on_press.ctx and
+                b.on_press.call == l.on_press.call;
+        },
+        .link => |k| {
+            if (listed != .link) return false;
+            const l = listed.link;
+            return std.mem.eql(u8, k.label, l.label) and
+                std.mem.eql(u8, k.route, l.route) and
+                sameOptionalString(k.external, l.external);
+        },
+        // `foldable` admits only buttons and links, so anything else
+        // was never a restatement.
+        else => return false,
+    }
+}
+
+fn sameOptionalString(a: ?[]const u8, b: ?[]const u8) bool {
+    const av = a orelse return b == null;
+    const bv = b orelse return false;
+    return std.mem.eql(u8, av, bv);
 }
 
 /// A `more` whose row no longer folds anything: the viewport grew, or

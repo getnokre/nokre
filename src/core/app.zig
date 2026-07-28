@@ -74,6 +74,15 @@ pub const App = struct {
     /// it (see focus.zig). Typed as a pair so no path can move focus
     /// and leave a stale span index behind.
     focused: ?focus.Focus = null,
+    /// Whether the focus indicator is drawn — the `:focus-visible`
+    /// split every platform ships. Keyboard input sets it and pointer
+    /// or touch focus clears it (input.zig): a ring after a tap points
+    /// at what the finger just pressed, which is noise, while keyboard
+    /// focus with no ring is invisible (WCAG 2.4.7). Focus itself — the
+    /// stop, activation, the a11y snapshot — never depends on this;
+    /// only the renderer's drawn indicator reads it. Starts true so
+    /// programmatic focus (tests, assistive-tech actions) shows itself.
+    focus_visible: bool = true,
     ctx: ?*anyopaque = null,
     scheme: color.Scheme = .auto,
     system_appearance: color.Appearance = .light,
@@ -451,6 +460,10 @@ pub const App = struct {
         const held = self.ack;
         switch (event) {
             .press => |stop| {
+                // A resolved press is pointer-origin by definition, so
+                // the drawn focus indicator stands down exactly as it
+                // does for the pointer path (`focus_visible`).
+                self.focus_visible = false;
                 if (self.tree.getConst(stop.node)) |el| {
                     // An inline link is a focus stop on a node that is
                     // not itself focusable — the paragraph carrying the
@@ -461,6 +474,10 @@ pub const App = struct {
                 try input.activateStop(self, stop);
             },
             .focus => |f| {
+                // A traversal the backend handled — keyboard or
+                // assistive tech — is exactly the focus that must be
+                // seen to be followed.
+                self.focus_visible = true;
                 self.focused = f;
                 self.needs_frame = true;
             },

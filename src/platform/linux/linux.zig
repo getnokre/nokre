@@ -20,9 +20,14 @@ pub fn run(app: *App, options: platform.RunOptions) !void {
 
     const title_z = try app.gpa.dupeZ(u8, options.title);
     defer app.gpa.free(title_z);
+    // The one shell that consumes RunOptions.app_id (shell.h documents
+    // the contract); null stays null — the shell then sets no app_id.
+    const app_id_z: ?[:0]const u8 = if (options.app_id) |id| try app.gpa.dupeZ(u8, id) else null;
+    defer if (app_id_z) |z| app.gpa.free(z);
 
     try skia_frame.install(&state);
-    const config = c_shell.config(&state, title_z, onReady, onWindowFocus);
+    var config = c_shell.config(&state, title_z, onReady, onWindowFocus);
+    if (app_id_z) |z| config.app_id = z.ptr;
     const rc = c_shell.nokre_shell_run(&config);
     if (state.a11y_handle) |h| (accesskit.Unix{ .handle = h }).detach();
     state.deinit();

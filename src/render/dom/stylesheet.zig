@@ -1028,8 +1028,29 @@ const sheet =
     \\  place-content: center;
     \\}
     \\/* The mark is drawn at the body size, like every other glyph that
-    \\   sits beside words rather than standing alone. */
-    \\input.check::after { font-family: icons; font-size: var(--px-body); line-height: 1; color: var(--paper); visibility: hidden; }
+    \\   sits beside words rather than standing alone.
+    \\
+    \\   It centres by *text* metrics — centred alignment on a line as
+    \\   tall as the box's inside — not by the grid alignment above:
+    \\   engines lay an <input>'s pseudo-element out with the control's
+    \\   own inner layout, and Chrome stretches it across the box and
+    \\   starts its line at the inline edge, which put the check visibly
+    \\   left of centre. The glyph's ink is centred in its advance (per
+    \\   the outline points — the glyf bboxes are wrong, the note on
+    \\   `inkCenterBaseline` in renderer.zig), so centring the advance
+    \\   centres the mark, exactly as `drawCheckbox` centres the
+    \\   measured advance. Both rules hold in an engine that *does* run
+    \\   the grid: there the item is already the advance wide and the
+    \\   line already fills the track, and both declarations are
+    \\   no-ops. */
+    \\input.check::after {
+    \\  font-family: icons;
+    \\  font-size: var(--px-body);
+    \\  line-height: calc(var(--checkbox) - 2 * var(--border));
+    \\  text-align: center;
+    \\  color: var(--paper);
+    \\  visibility: hidden;
+    \\}
     \\input.check:checked { background: var(--ink); border-color: var(--ink); }
     \\input.check:checked::after { visibility: visible; }
     \\
@@ -1287,6 +1308,17 @@ const sheet =
     \\/* One 2px stroke in ink, in one of two placements, and never a
     \\   second line beside an existing one.
     \\
+    \\   `:focus-visible` throughout, never bare `:focus`. Whether a
+    \\   *pointer* press shows the ring is a modality question, and the
+    \\   browser's own heuristic is this platform's answer: keyboard
+    \\   focus draws the ring, a tap or a click does not — while a text
+    \\   field, which keyboard input is about to land in, draws it
+    \\   however focus arrived. That is the same rule the reference
+    \\   states with `App.focus_visible` (`drawNode`'s `ring`, and the
+    \\   text fields kept on ungated `focused`); here the browser
+    \\   already tracks the origin, so nothing crosses the driver to
+    \\   restate it.
+    \\
     \\   Held two pixels clear of the rect, by default. The clear is
     \\   structural rather than decorative: two anti-aliased arcs sharing
     \\   a boundary do not sum to full coverage, and the shortfall reads
@@ -1299,7 +1331,13 @@ const sheet =
     \\   gave two strokes in two tones two pixels apart, which reads as a
     \\   seam, not a state. */
     \\:focus-visible { outline: var(--focus) solid var(--ink); outline-offset: var(--focus-clear); }
-    \\.field-box:focus-within,
+    \\/* `:has(:focus-visible)`, not `:focus-within`: the box carries the
+    \\   ring for the control inside it, so it must carry it under the
+    \\   same modality rule — `:focus-within` lit a mouse-pressed select
+    \\   while every other button stayed quiet. A text input or textarea
+    \\   matches `:focus-visible` however it was focused, so the typing
+    \\   fields keep their ring either way. */
+    \\.field-box:has(:focus-visible),
     \\.tile:focus-visible,
     \\.picker-item:focus-visible,
     \\.chip:focus-visible,
@@ -1307,7 +1345,7 @@ const sheet =
     \\  outline: var(--focus) solid var(--ink);
     \\  outline-offset: calc(-1 * var(--focus));
     \\}
-    \\.field-box:focus-within { border-color: var(--ink); }
+    \\.field-box:has(:focus-visible) { border-color: var(--ink); }
     \\.btn.secondary:focus-visible, .chip:focus-visible { border-color: transparent; }
     \\
     \\/* Where the row is the control, the row is what carries the
@@ -1454,7 +1492,17 @@ const sheet =
     \\   — `canvas.dither(viewport, .paper)` — not a black wash: no
     \\   alpha, so no off-palette gray can appear, and it mutes the
     \\   inert layer by half-covering it rather than by tinting it. A
-    \\   2px repeating conic gradient is the same checkerboard. */
+    \\   2px repeating conic gradient is the same checkerboard.
+    \\
+    \\   One z-index for the scrims *and* the surfaces they sit under,
+    \\   on purpose: equal z resolves by document order, and the
+    \\   serializer emits each layer's scrim immediately before its
+    \\   surface, in the order the reference paints them (`render`:
+    \\   notices pane, sheet, picker — `drawOverScrim` each). That is
+    \\   what makes the layers stack per layer: a picker opened from a
+    \\   sheet arrives over a scrim of its own, which dims the sheet
+    \\   too. Splitting the pair across two z levels put every scrim
+    \\   under every surface, and the sheet was never muted. */
     \\.scrim {
     \\  position: fixed;
     \\  inset: 0;
@@ -1478,7 +1526,9 @@ const sheet =
     \\.sheet, .notices-pane, .picker {
     \\  --pad: 0px;
     \\  position: fixed;
-    \\  z-index: 4;
+    \\  /* The scrims' own z, not one above it — the note on `.scrim`
+    \\     says why document order is the stacking here. */
+    \\  z-index: 3;
     \\  display: flex;
     \\  flex-direction: column;
     \\  gap: var(--control-gap);

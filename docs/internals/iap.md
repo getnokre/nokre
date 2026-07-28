@@ -61,19 +61,11 @@ try nokre.services.iap.restore(app);
 
 ### Money is a string the store hands over
 
-`Product.price` is the store's own formatted string — `"$4.99"`, `"4,99 €"`,
-`"۴۹٬۰۰۰ تومان"` — and it is the only thing an app draws. nokre performs no
-currency math and no money formatting, and the refusal is not squeamishness:
-formatting a price is a function of locale *and* currency *and* the store's own
-regional rounding, the store has already applied all three, and core is
-integer-only with no floats ([contributing.md](contributing.md)). A framework
-that reformatted the number would produce a price that disagrees with the one
-the payment sheet is about to show.
-
-`price_micros` (an integer, so nothing about it is a float) and `currency` exist
-beside it for exactly one purpose: reporting a number to the app's backend
-without parsing the display string, which is the failure mode this pair prevents.
-They are never drawn.
+`Product.price` arrives formatted and is drawn verbatim; the refusal to
+reformat it, and the `price_micros` + `currency` pair beside it, are
+consumer contract, argued once in [../services.md](../services.md).
+Nothing about it is wiring — no leg formats, converts, or reads the
+value.
 
 ### `pending` is first class
 
@@ -86,44 +78,28 @@ for the customers least able to work around it.
 
 ### Why the purchase result is a stream, not `purchase`'s callback
 
-`deep_link`'s argument verbatim. The store pushes unsolicited, and every one of
-these paths is normal operation rather than an edge case:
-
-- an interrupted purchase from a previous launch, redelivered at startup
-- an Ask-to-Buy approval that lands days after the child tapped Buy
-- a subscription renewal
-- every result of `restore`
-- a purchase made on another device on the same account
-
-If a purchase came back through `purchase`'s own callback, all of those would
-have nowhere to land, and the app would need two code paths for one event. One
-handler, one lane. Like `deep_link`'s launch URL, transactions the store had
-queued before the handler existed are buffered and flushed at the first
-`setHandler` — StoreKit delivers unfinished transactions the moment an observer
-is added, which is *before* the app has finished booting if the install order is
-wrong.
+`deep_link`'s argument verbatim: the store pushes unsolicited, and the
+five arrival paths that make one handler the only workable shape are
+stated with the contract in [../services.md](../services.md). The
+wiring the shape demands is the buffer behind the flush guarantee:
+StoreKit delivers unfinished transactions the moment an observer is
+added, which is *before* the app has finished booting if the install
+order is wrong.
 
 ### `finish` is the crash-safety mechanism, and it is not symmetric
 
-Until `finish`, the store redelivers the transaction on every launch. That is the
-design and the reason `finish` is a separate verb instead of something the
-service does on the app's behalf: only the app knows when the goods are durably
-delivered — usually when its backend has verified the token and written the
-entitlement.
-
-The disposition argument is where the two stores genuinely differ, and the split
-cannot be hidden:
+Redelivery-until-finished, the one-word disposition, Play's three-day
+auto-refund, and why the word is the caller's to say are consumer
+contract, argued in [../services.md](../services.md). The wiring is one
+mapping:
 
 | | `.consumed` | `.kept` |
 | --- | --- | --- |
 | Apple | `finishTransaction` | `finishTransaction` |
 | Play | `consumeAsync` | `acknowledgePurchase` |
 
-Apple decides consumable-versus-not from the product type it already knows; Play
-does not, and an unacknowledged Play purchase is **auto-refunded after three
-days**. nokre could only pick for the caller by keeping its own catalog of which
-SKU is consumable — a second source of truth for a fact the app declared in the
-store console and already knows. So the caller says, in one word.
+Apple collapses the pair because it decides consumable-versus-not from
+the product type it already knows; Play does not.
 
 ## Where the service stops
 
@@ -318,21 +294,15 @@ The native halves split by how far this host can actually take them:
 Four things the plan above left open or got wrong, recorded where the next
 reader meets them:
 
-- **The caps are 20 ids and 128 bytes**, both enforced in Zig on every platform.
-  20 is Play's per-query cap and Apple documents none, so the tighter bound is
-  the service's — `secure_store`'s rule for a value cap, applied to a query. The
-  id charset came with it: `[a-z0-9._]` with a leading `[a-z0-9]`, the
-  intersection of the two consoles' rules, because an id that is legal on the
-  developer's Apple device and rejected by the Play console should fail on the
-  machine that typed it.
-- **A purchase must be priced first**, and this was not foreseen. Neither store
-  takes a product id: `SKPayment` is built from an `SKProduct` and
-  `launchBillingFlow` from a `ProductDetails`, both of which come only from a
-  catalog query. So each native leg keeps the rows its last query returned — the
+- **The caps are 20 ids and 128 bytes of `[a-z0-9._]`**, both enforced in Zig
+  on every platform — `secure_store`'s rule for a value cap, applied to a
+  query. The values and the argument for each are the contract table in
+  [../services.md](../services.md).
+- **A purchase must be priced first**, and this was not foreseen — the
+  contract and its argument are [../services.md](../services.md)'s. What it
+  forced here: each native leg keeps the rows its last query returned — the
   one piece of native state this service has, made explicit in `iap.h` rather
-  than hidden in a static — and an unpriced id is the failure `"UnknownProduct"`.
-  It reads as a constraint and is really a description: an app that has not
-  shown a price has no business charging.
+  than hidden in a static.
 - **On Play the transaction id is the purchase token.** `getOrderId()` is absent
   for pending and test purchases, and Google's Developer API is keyed by token,
   so the token is what the backend verifies with, what it deduplicates on, and

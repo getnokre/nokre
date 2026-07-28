@@ -411,6 +411,23 @@ test "a heading or a table inside a list or a quote degrades to text" {
     , got);
 }
 
+test "a table wider than the column cap degrades to its source text" {
+    // `Tree.append` refuses the cell past `element.max_table_columns`,
+    // and remote bytes must never surface a construction error — so a
+    // wider table is one more thing the parser cannot build, degraded
+    // whole like a nested one: every byte survives as prose.
+    const header = "|" ++ ("a|" ** 33);
+    const delim = "|" ++ ("-|" ** 33);
+    const got = try outline(testing.allocator, header ++ "\n" ++ delim);
+    defer testing.allocator.free(got);
+    try testing.expectEqualStrings("text \"" ++ header ++ " " ++ delim ++ "\"\n", got);
+
+    // At the cap it is still a table.
+    const wide_ok = try outline(testing.allocator, "|" ++ ("a|" ** 32) ++ "\n|" ++ ("-|" ** 32));
+    defer testing.allocator.free(wide_ok);
+    try testing.expect(std.mem.startsWith(u8, wide_ok, "table\n"));
+}
+
 test "hard breaks survive as newlines; soft breaks become spaces" {
     const got = try outline(testing.allocator,
         \\line one  

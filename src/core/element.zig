@@ -458,6 +458,16 @@ pub const ListItem = struct {
 /// failing, the way it rebases heading levels.
 pub const max_list_depth = 3;
 
+/// The widest table layout can place: its per-column width table is
+/// sized by this. A construction rule like `max_list_depth`, not a
+/// rendering truncation — the cell that would open a 33rd column is
+/// refused at append (`error.TooManyColumns`), because past layout's
+/// bookkeeping a cell keeps only a stale rect, which hit testing and
+/// assistive tech would go on reading while nothing draws it. The
+/// Markdown parser degrades a wider table to its literal source text
+/// rather than fail, as it does a nested one (markdown.zig).
+pub const max_table_columns = 32;
+
 /// The unordered marker, at every depth. A per-depth glyph ladder
 /// (circle, square) would need codepoints the bundled families do not
 /// all draw, and the indent already carries the depth.

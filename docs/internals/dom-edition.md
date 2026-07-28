@@ -241,7 +241,11 @@ Four things follow from the browser owning the page:
   it, the page behind a scrim is inert) and a browser tabbing on its
   own would walk straight out of a modal layer. Where focus lands
   crosses back into wasm either way, so core's own focus state stays
-  true.
+  true. The drawn *ring* is the one focus decision left to the
+  browser: `:focus-visible` throughout, the same keyboard-origin rule
+  the skia edition states with `App.focus_visible`
+  ([../accessibility.md](../accessibility.md#focus)) — a platform
+  answers the modality question, the tree never carries it.
 - **Scrolling is the browser's.** The content is real, so a
   `scroll_region` is a real scroll container. No offset round-trips,
   and that element's `offset` simply goes unread here.
@@ -251,7 +255,14 @@ Four things follow from the browser owning the page:
   edition reads no rects, so `chrome` has to make that branch itself;
   without it a screen showed two bottom bars stacked on each other.
   The same applies inside a row: a notice's leading control is emitted
-  *before* its words because there is no rect to place it by.
+  *before* its words because there is no rect to place it by. Modal
+  layering holds to the rule as well: scrims and surfaces share one
+  z-index, so equal z resolves by document order, and `chrome` emits
+  each layer's scrim immediately before its surface in the order the
+  reference paints them (`render`'s `drawOverScrim` sequence: notices
+  pane, sheet, picker) — which is what stacks the layers *per layer*,
+  a picker opened from a sheet arriving over a scrim of its own that
+  dims the sheet too.
 
 - **Focus and the caret are the tree's.** `focus.zig` moves one and
   `editing.zig` the other, so after a re-render the glue puts both back
@@ -345,7 +356,12 @@ try dom.chrome(&em);    // notice, nav, sheet, picker
   to a file has nobody to tell and leaves it off, *unless* that file is
   going to be booted over: identity across frames is what makes the boot
   a patch instead of a replacement, and a replacement throws away the
-  scroll position the reader arrived at.
+  scroll position the reader arrived at. The match is tag plus
+  `data-n` — two nodes are the same node when they are the same kind
+  of thing carrying the same id — and the live driver's first frame
+  diffs the static page by exactly that rule, which is what carries
+  the reader's scroll, focus, and caret through the handover. The ids
+  are a hydration contract, not decoration.
 - **`Refs`.** How a route reference becomes an `href`, as a `ctx` +
   function pointer like every other action in nokre. The default writes
   the fragment the web shell already mirrors routes into (`#note~42`),

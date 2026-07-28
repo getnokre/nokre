@@ -83,6 +83,15 @@ typedef struct nokre_shell_config {
     int32_t logical_w;
     int32_t logical_h;
     const char *title; // NUL-terminated UTF-8
+    // The desktop-entry basename (the reverse-DNS packaging id), or NULL
+    // when the app declared no identity. Consumed only by the Linux
+    // shell, as the Wayland xdg_toplevel app_id — the key compositors
+    // match against `<app_id>.desktop` for the icon, grouping, and the
+    // deep-link handler registration. NULL means set no app_id at all: a
+    // wrong id breaks the association worse than none. Other shells
+    // ignore it — their platforms take identity from the bundle or
+    // package, never from the window.
+    const char *app_id; // NUL-terminated UTF-8, or NULL
     void *ctx;
 
     // Asks Zig for the current frame at the view's current logical size.

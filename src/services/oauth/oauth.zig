@@ -438,10 +438,11 @@ const PlatformState = struct {
                 // The runtime rides along because the web result's
                 // delivery has no shell loop to pump it — the receive
                 // export pumps inline (web.zig states the arrangement).
-                if (web.start(self, resultC, opts.url, self.ticket.?.runtime))
-                    self.session = web.sentinel()
-                else
-                    self.failNow("PopupBlocked");
+                // No failure arm: a blocked popup arrives asynchronously
+                // as a "PopupBlocked" status through the same receive
+                // export, so `start` has nothing to report.
+                web.start(self, resultC, opts.url, self.ticket.?.runtime);
+                self.session = web.sentinel();
             },
             // `.none` is the mock (tests) or an unlinked build, and
             // neither reaches `launch` — `start` is the only caller and

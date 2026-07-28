@@ -117,6 +117,13 @@ var booted = false;
 /// out a stable pointer, and so the glue can skip a DOM write when the
 /// bytes did not move.
 var markup: std.ArrayList(u8) = .empty;
+/// The frame under construction. `render` serializes into this and
+/// swaps it with `markup` only when the walk completes: a serializer
+/// error mid-emit — OOM, on this allocator — must leave the shown
+/// document the previous *complete* frame, never a truncated one that
+/// ends mid-element. Two buffers that trade places, so the steady
+/// state allocates nothing.
+var building: std.ArrayList(u8) = .empty;
 /// How much of that frame is chrome. The two halves are written into
 /// one buffer by one walk, and a host document that placed them in two
 /// places of its own splits there — `serialize.chrome` and
@@ -258,29 +265,44 @@ fn render(wrap: i32) callconv(.c) [*]const u8 {
     // and a narrow window quietly lost its actions instead of folding
     // them.
     app.performLayout();
-    markup.clearRetainingCapacity();
+    building.clearRetainingCapacity();
     var em: serialize.Emitter = .{
         .gpa = gpa,
         .app = app,
-        .out = &markup,
+        .out = &building,
         .options = .{ .node_ids = true, .refs = refs orelse .{} },
     };
     defer em.deinit();
-    serialize.chrome(&em) catch {};
-    chrome_bytes = markup.items.len;
+    if (buildFrame(&em, wrap)) |frame| {
+        std.mem.swap(std.ArrayList(u8), &markup, &building);
+        chrome_bytes = frame.chrome_bytes;
+        reserve = frame.reserve;
+        // Only on success: a frame that failed to build is still owed,
+        // and the one showing is the previous one.
+        app.needs_frame = false;
+    } else |_| {}
+    return markup.items.ptr;
+}
+
+/// One whole frame into `em.out`, or an error and a buffer of no
+/// further interest — `render` shows nothing that did not come out of
+/// the success arm, which is the entire point of building off to the
+/// side.
+fn buildFrame(em: *serialize.Emitter, wrap: i32) !struct { chrome_bytes: usize, reserve: bool } {
+    try serialize.chrome(em);
+    const chrome_len = em.out.items.len;
     // The bottom reserve is `trailingSpace`'s question, asked the way
     // that function asks it: a screen with no chrome under it keeps the
     // stack's own padding, and only one that has some owes the clear
     // space a control needs. Reserving it unconditionally left every
     // plain screen ending in 96px of nothing.
-    reserve = layout.findNotice(&app.tree) != null or
+    const chromed_screen = layout.findNotice(&app.tree) != null or
         layout.findNav(&app.tree) != null or
         layout.findIndicator(&app.tree) != null;
-    if (wrap != 0) em.raw(if (reserve) "<main class=\"nokre has-chrome\">" else "<main class=\"nokre\">") catch {};
-    serialize.content(&em) catch {};
-    if (wrap != 0) em.raw("</main>") catch {};
-    app.needs_frame = false;
-    return markup.items.ptr;
+    if (wrap != 0) try em.raw(if (chromed_screen) "<main class=\"nokre has-chrome\">" else "<main class=\"nokre\">");
+    try serialize.content(em);
+    if (wrap != 0) try em.raw("</main>");
+    return .{ .chrome_bytes = chrome_len, .reserve = chromed_screen };
 }
 
 fn renderLen() callconv(.c) usize {

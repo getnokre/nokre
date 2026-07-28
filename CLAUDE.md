@@ -20,8 +20,8 @@ fact has one home; complement, never duplicate. Start with
   change — a missing golden fails otherwise)
 - `zig build run-hello -Dskia` / `run-kitchen-sink` — examples (macOS /
   Windows / Linux; Windows needs VS C++ Build Tools; goldens stay
-  CoreText-generated, so `-Dgolden` mismatches on the FreeType pair —
-  Windows and Linux — by design; Linux is
+  CoreText-generated and byte-identity is per-platform, so `-Dgolden`
+  mismatches on Windows and Linux by design; Linux is
   Wayland and needs `wayland-protocols` + the `wayland-client` (>= 1.21
   for `.axis_value120` — Ubuntu 22.04+), `libxkbcommon`, `dbus-1`, and
   `libsecret-1` dev packages)

@@ -227,6 +227,15 @@ fn drawNode(app: *App, canvas: Painter, id: NodeId) void {
     const el = app.tree.getConst(id) orelse return;
     const r = app.tree.rectOf(id);
     const focused = if (app.focused) |f| f.on(id) else false;
+    // The drawn indicator is origin-gated (`App.focus_visible`):
+    // keyboard focus shows it, a tap's does not. `focused` itself is
+    // not gated — the caret, the engaged scroll bar, and the picker
+    // row's under-finger highlight are focus *state*, wanted whichever
+    // input put it there. Text fields keep their whole indicator on
+    // `focused` too: an element taking text input shows its focus
+    // regardless of origin (the :focus-visible carve-out every UA
+    // ships), and its thickened edge is where the caret lives.
+    const ring = focused and app.focus_visible;
 
     switch (el.*) {
         .text, .heading => {
@@ -273,7 +282,7 @@ fn drawNode(app: *App, canvas: Painter, id: NodeId) void {
         },
         // A folded action is not on the row any more (see
         // `Button.folded`): the `more` beside it is what stands there.
-        .button => |b| if (!b.folded) drawButton(app, canvas, r, b, focused),
+        .button => |b| if (!b.folded) drawButton(app, canvas, r, b, ring),
         // Drawn *as* one of the buttons it stands among — the same
         // outlined pill, the same geometry — so the row keeps reading as
         // one row. Quiet emphasis on purpose: it is the way to the
@@ -282,32 +291,32 @@ fn drawNode(app: *App, canvas: Painter, id: NodeId) void {
             .label = element_mod.more_label,
             .icon = .ellipsis,
             .secondary = true,
-        }, focused),
+        }, ring),
         .link => |l| if (!l.folded) {
             canvas.drawText(r.x, r.y + text.Scale.body.baseline(), .prose, text.Scale.body.px(), l.label, .ink);
             const uy = r.bottom() - 1;
             canvas.line(.{ .x = r.x, .y = uy }, .{ .x = r.right(), .y = uy }, 1, .ink);
-            if (focused) drawFocusRing(canvas, r, metrics.radius);
+            if (ring) drawFocusRing(canvas, r, metrics.radius);
         },
-        .toggle => |t| drawToggle(app, canvas, r, t, focused),
-        .checkbox => |c| drawCheckbox(app, canvas, r, c, focused),
+        .toggle => |t| drawToggle(app, canvas, r, t, ring),
+        .checkbox => |c| drawCheckbox(app, canvas, r, c, ring),
         .text_input => |inp| drawTextInput(app, canvas, r, inp, focused),
         .text_area => |area| drawTextArea(app, canvas, r, area, focused),
-        .select => |sel| drawSelect(app, canvas, r, sel, focused),
-        .copyable => |c| drawCopyable(app, canvas, r, id, c, focused),
+        .select => |sel| drawSelect(app, canvas, r, sel, ring),
+        .copyable => |c| drawCopyable(app, canvas, r, id, c, ring),
         .table => drawTable(app, canvas, id, r),
         .code_block => |cb| {
             drawCodeBlock(app, canvas, r, cb, focused or scrollEngaged(app, id));
-            if (focused) drawFocusRing(canvas, r, metrics.radius);
+            if (ring) drawFocusRing(canvas, r, metrics.radius);
         },
         .row, .cell => drawChildren(app, canvas, id),
         .segmented => |s| {
             drawSegmented(app, canvas, r, s, focused or scrollEngaged(app, id));
-            if (focused) drawFocusRing(canvas, r, metrics.radius);
+            if (ring) drawFocusRing(canvas, r, metrics.radius);
         },
         .tile_group => |tg| drawTileGroup(app, canvas, id, r, tg),
-        .tile => |t| drawTile(app, canvas, id, r, t, focused),
-        .radio_group => |rg| drawRadioGroup(app, canvas, r, rg, focused),
+        .tile => |t| drawTile(app, canvas, id, r, t, ring),
+        .radio_group => |rg| drawRadioGroup(app, canvas, r, rg, ring),
         .picker => |p| if (p.above_nav) drawNavMenu(app, canvas, id, r) else {
             canvas.pushClip(paneClipRect(app, r));
             drawModalSurface(app, canvas, r, p.title, 0);
@@ -320,8 +329,8 @@ fn drawNode(app: *App, canvas: Painter, id: NodeId) void {
         // nothing else. What used to be a pane is now only the box they
         // are arranged in — the page runs on behind and between them.
         .nav => drawChildren(app, canvas, id),
-        .nav_item => |n| drawNavItem(app, canvas, r, n, focused),
-        .nav_current => |n| drawNavCurrent(app, canvas, r, n, focused),
+        .nav_item => |n| drawNavItem(app, canvas, r, n, ring),
+        .nav_current => |n| drawNavCurrent(app, canvas, r, n, ring),
         .nav_here => |n| drawNavHere(app, canvas, r, n),
         .sheet => |s| {
             canvas.pushClip(paneClipRect(app, r));
@@ -332,10 +341,10 @@ fn drawNode(app: *App, canvas: Painter, id: NodeId) void {
         },
         .sheet_close => {
             drawGlyph(app, canvas, r, element_mod.Glyph.dismiss.utf8(), .ink);
-            if (focused) drawFocusRing(canvas, r, metrics.radius);
+            if (ring) drawFocusRing(canvas, r, metrics.radius);
         },
-        .back => drawBack(app, canvas, r, focused),
-        .icon_button => |ib| drawIconButton(app, canvas, id, r, ib, focused),
+        .back => drawBack(app, canvas, r, ring),
+        .icon_button => |ib| drawIconButton(app, canvas, id, r, ib, ring),
         .notice => |n| drawNotice(app, canvas, id, r, n),
         .notices_pane => {
             canvas.pushClip(paneClipRect(app, r));
@@ -349,7 +358,7 @@ fn drawNode(app: *App, canvas: Painter, id: NodeId) void {
             drawChildren(app, canvas, id);
             canvas.popClip();
             drawScrollIndicator(canvas, r, sr.offset, sr.content_height, focused or scrollEngaged(app, id), mirrored(app));
-            if (focused) drawFocusRing(canvas, r, metrics.radius);
+            if (ring) drawFocusRing(canvas, r, metrics.radius);
         },
     }
 }
@@ -578,6 +587,8 @@ fn drawFieldChrome(app: *App, canvas: Painter, r: Rect, label: []const u8, focus
 /// gets a ring: one box drawn around their union would enclose the
 /// unrelated prose between them and claim to be the link.
 fn drawLinkFocusRing(app: *App, canvas: Painter, id: NodeId) void {
+    // Origin-gated like every other drawn indicator (`App.focus_visible`).
+    if (!app.focus_visible) return;
     const stop = app.focused orelse return;
     if (!stop.node.eql(id)) return;
     const span_index = stop.span orelse return;
@@ -737,7 +748,9 @@ fn drawTileSeparators(app: *App, canvas: Painter, group: NodeId) void {
     var it = app.tree.children(group);
     while (it.next()) |row| {
         const rr = app.tree.rectOf(row);
-        const row_focused = if (app.focused) |f| f.on(row) else false;
+        // Gated exactly as the row's own stroke is: a separator must
+        // be skipped only where a stroke is actually drawn.
+        const row_focused = app.focus_visible and (if (app.focused) |f| f.on(row) else false);
         if (!prev_focused and !row_focused) {
             hairline(canvas, rr.x, rr.right(), rr.y - metrics.border);
         }

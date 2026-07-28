@@ -434,7 +434,15 @@ export function appHooks({ nk, memory, workerUrl, wasmUrl, onWork, onMetrics }) 
       // version of Android watching for a resume. 400ms is well under
       // human patience and costs nothing at rest.
       authPoll = setInterval(() => {
-        if (authPopup && authPopup.closed) endAuth(1, "");
+        if (authPopup && authPopup.closed) {
+          clearInterval(authPoll);
+          // The popup posts its URL and then closes itself, and the
+          // poll can see `closed` before the message is dequeued — so
+          // give the message one beat to win before calling it a
+          // cancel. Parked in authPoll so close/end also cancel it
+          // (timer ids share one pool).
+          authPoll = setTimeout(() => endAuth(1, ""), 100);
+        }
       }, 400);
     },
     nokre_oauth_js_close: () => closeAuthPopup(),

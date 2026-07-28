@@ -307,7 +307,7 @@ each a builder; navigation is a stack. Replace the single-route setup:
 ```zig
 pub const routes = [_]h.RouteDef{
     .{ .name = "notes", .title = "Notes", .build = buildNotes },
-    .{ .name = "note", .title = "Note", .build = buildNote }, // pushed detail — Part 9
+    .{ .name = "note", .title = "Note", .args = 1, .build = buildNote }, // pushed detail — Part 9
     .{ .name = "settings", .title = "Settings", .build = buildSettings }, // Part 10
 };
 
@@ -348,7 +348,7 @@ framework-enforced:
   labels its destinations from it, and it also covers the screens that
   are *not* destinations. The title is declared, never derived — your
   builder's `h1` is content and may say something else entirely.
-- `app.navigate("note")` pushes a screen, and a pushed screen
+- `app.navigate("note~42")` pushes a screen, and a pushed screen
   automatically gets a Back control (accessible name "Back") — you
   cannot build a screen with no way back. `link` elements and
   route-carrying `tile`s navigate the same way declaratively.
@@ -366,7 +366,8 @@ framework-enforced:
 - A screen that is about *something* says so in the route:
   `app.navigate("note~42")`, read back inside the builder as
   `app.routeArg(0)`. The argument belongs to the stack entry, so two
-  notes pushed in turn stay two notes when you pop.
+  notes pushed in turn stay two notes when you pop. The route declared
+  `.args = 1`, so a bare `note` is refused rather than built blank.
 - On the web the URL fragment is that reference — `#notes`, `#note~42` —
   mirrored both ways with nothing to wire: navigating writes it, and a
   typed or shared one puts the app there. See [routing.md](routing.md).
@@ -739,7 +740,6 @@ and the new `State` fields:
     notes: [max_notes]Note = @splat(.{}),
     note_count: usize = 0,
     refs: [max_notes]NoteRef = undefined,
-    selected: usize = 0,
     newest_first: bool = true,
     status: []const u8 = "Ready.",
     offline: bool = false,
@@ -1149,12 +1149,19 @@ test root you add.
 ## Part 9 — The note screen: copyable, qr, delete
 
 The pushed detail screen pairs the clipboard path with the camera path —
-same value, two ways out — and closes the loop on deletion:
+same value, two ways out — and closes the loop on deletion. Which note
+it shows rides in the reference — `note~2`, formatted where the tile is
+wired and read back with `routeArg` — never in a `selected` field on
+state, which would remember the depth and forget which note it was
+([routing.md](routing.md#references) is the argument):
 
 ```zig
 pub fn buildNote(ctx: ?*anyopaque, app: *h.App) !void {
     const state: *State = @ptrCast(@alignCast(ctx.?));
-    const note = &state.notes[state.selected];
+    const arg = app.routeArg(0) orelse return; // arity is declared, so it is there
+    const index = std.fmt.parseInt(usize, arg, 10) catch return;
+    if (index >= state.note_count) return;
+    const note = &state.notes[index];
     const root = app.tree.rootId();
     // The framework's Back control shares this heading's line — a pushed
     // screen without a way back cannot exist.
@@ -1172,13 +1179,18 @@ pub fn buildNote(ctx: ?*anyopaque, app: *h.App) !void {
 
 fn onOpenNote(ctx: ?*anyopaque) void {
     const ref: *NoteRef = @ptrCast(@alignCast(ctx.?));
-    ref.state.selected = ref.index;
-    ref.state.app.navigate("note") catch {};
+    // A stack buffer is enough: the entry copies the reference.
+    var buf: [32]u8 = undefined;
+    const dest = std.fmt.bufPrint(&buf, "note~{d}", .{ref.index}) catch return;
+    ref.state.app.navigate(dest) catch {};
 }
 
 fn onDeleteNote(ctx: ?*anyopaque) void {
     const state: *State = @ptrCast(@alignCast(ctx.?));
-    var i = state.selected;
+    // The action runs on the note screen, so the entry's argument is
+    // still the one to read.
+    const arg = state.app.routeArg(0) orelse return;
+    var i = std.fmt.parseInt(usize, arg, 10) catch return;
     while (i + 1 < state.note_count) : (i += 1) {
         state.notes[i] = state.notes[i + 1];
     }
@@ -1624,10 +1636,9 @@ drifted. On a mismatch the runner writes `<name>.actual.pgm` next to
 the golden for eyeball diffing; if the change was intended, rerun with
 `-Dupdate-goldens` to rewrite the golden in place and review the diff.
 CI runs without `-Dupdate-goldens`, so a lost baseline fails instead of
-silently re-minting — and it must run on the text stack that created
-the goldens: they reflect their platform's scaler (CoreText or
-FreeType), so a CI box on the other stack fails by design until
-nokre-owned Skia builds land
+silently re-minting — and it must run on the platform that created the
+goldens: byte-identity is per-platform today, so a CI box on any other
+platform fails by design until nokre-owned Skia builds land
 ([internals/skia-build.md](internals/skia-build.md)).
 
 ## Part 13 — Every platform
@@ -1782,9 +1793,9 @@ is the recipe). Everything carries over: keyboard, scrolling, the
 software keyboard, dark mode from the OS, and an accessibility tree
 that is not mirrored anywhere, because it is the page.
 
-Text on Windows and Android rasterizes through FreeType, so pixels
-match each other but differ slightly from macOS/iOS — your goldens
-reflect the platform that created them
+Text on Windows and Android rasterizes through FreeType rather than
+CoreText, and byte-identity today is per-platform, not across
+platforms — your goldens reflect the platform that created them
 ([internals/skia-build.md](internals/skia-build.md)); the web has its
 own answer, which is that its pixels are the browser's. The `worker`
 and `http` services need no porting anywhere: the same app code runs on

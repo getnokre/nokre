@@ -441,6 +441,15 @@ and one backend per platform is the charter. Its twists:
   `text-input-unstable-v3` client glue is produced by `wayland-scanner`
   at build time (build.zig), never committed — the qrcodegen/harfbuzz
   vendoring rule.
+- **Window identity.** `RunOptions.app_id` is set as the
+  `xdg_toplevel` app_id — the key compositors match against
+  `<app_id>.desktop` for the icon, task grouping, and deep-link handler
+  registration. It defaults to the packaging declaration's id, so it
+  cannot drift from the `.desktop` file `zig build pkg` names; null (no
+  declared identity) sets none at all, because a wrong id breaks the
+  association worse than none. This is the one shell that consumes the
+  field — every other platform derives identity from the bundle or
+  package, not the window.
 - **On demand.** The loop blocks in `poll()` over the display fd, a
   worker/a11y wake `eventfd`, a keyboard-repeat `timerfd`, the
   single-instance socket, and the D-Bus fd; it renders only when the
@@ -599,7 +608,8 @@ path, so an omission is an unresolved symbol rather than a missing
 feature (the contract, including the fire-before-you-return clause, is
 above). Then run the kitchen-sink example and the golden suite; if
 goldens pass, the platform renders byte-identically and the job is done
-— with today's caveat that the committed goldens are CoreText-generated,
-so a FreeType-stack shell validates against its own regenerated set
-until nokre-owned Skia builds collapse the two
+— with today's caveat that byte-identity is per-platform
+([pixel-model.md](pixel-model.md)): the committed goldens are
+macOS-generated, so a new shell validates against its own regenerated
+set until nokre-owned Skia builds close the gap
 ([../roadmap.md](../roadmap.md)).

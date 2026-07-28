@@ -123,6 +123,10 @@ fn pressDown(app: *App, at: Point) !void {
     const stop = hitTest(app, at) orelse return;
     app.press.?.stop = stop;
     app.focused = stop;
+    // Pointer-origin focus: the finger knows where it pressed, so the
+    // drawn indicator stands down until the keyboard moves focus again
+    // (`App.focus_visible`).
+    app.focus_visible = false;
     app.needs_frame = true;
     // The one control that acts on the press rather than the release,
     // and it is not activation: the menu opens under the finger so the
@@ -150,6 +154,10 @@ fn pressMove(app: *App, at: Point) void {
         if (f.eql(stop)) return; // already there; no frame to ask for
     }
     app.focused = stop;
+    // Still the finger: the row under it draws its focus state (the
+    // menu highlight is focus, not a ring), but the origin stays
+    // pointer for whatever is focused when the menu closes.
+    app.focus_visible = false;
     app.needs_frame = true;
     revealFocused(app);
 }
@@ -167,7 +175,19 @@ fn pressUp(app: *App, at: Point) !void {
         return;
     }
     if (press.opened_nav_picker) return navRelease(app, press, at);
-    const stop = press.stop orelse return;
+    const stop = press.stop orelse {
+        // Tap-out: the press began on nothing and the release still
+        // lands on nothing. If an editable held focus this clears it —
+        // the one gesture a touch user has to put the on-screen
+        // keyboard away, since the shell drops it through the existing
+        // `wants_text_input` sync the moment no editable is focused.
+        // Only an editable: clearing a button's focus for a stray tap
+        // would throw a keyboard user's place away for nothing. A
+        // scroll that claimed the finger never gets here (the press is
+        // cleared at scroll `.begin`), so a drag is not a tap-out.
+        if (hitTest(app, at) == null) blurEditable(app);
+        return;
+    };
     const now = hitTest(app, at) orelse return;
     if (!now.eql(stop)) return;
     app.needs_frame = true;
@@ -208,6 +228,21 @@ fn navRelease(app: *App, press: Press, at: Point) void {
     }
     // Anywhere else: the same "never mind" a release off a button is.
     overlays.closePicker(app, null);
+}
+
+/// Clears focus from a focused `text_input` or `text_area` — the
+/// tap-out above, and nothing else. Core clears the state; shells learn
+/// only that `wants_text_input` went false, which is what dismisses the
+/// on-screen keyboard without any shell knowing why.
+fn blurEditable(app: *App) void {
+    const stop = app.focused orelse return;
+    const el = app.tree.getConst(stop.node) orelse return;
+    switch (el.*) {
+        .text_input, .text_area => {},
+        else => return,
+    }
+    app.focused = null;
+    app.needs_frame = true;
 }
 
 /// Whether `p` falls outside the open modal layer — on the scrim, where
@@ -495,6 +530,12 @@ fn selectRadioAt(app: *App, id: NodeId, py: i32) void {
 
 pub fn handleKey(app: *App, key: event_mod.Key, mods: event_mod.Modifiers) !void {
     app.needs_frame = true;
+    // Keyboard interaction reveals the focus indicator — for the focus
+    // a key moves directly (Tab, arrows) and for wherever a key-driven
+    // activation lands it (Enter opening a picker, choosing a section).
+    // Set once here rather than at each of those, so no key path can
+    // leave keyboard focus invisible (`App.focus_visible`).
+    app.focus_visible = true;
     switch (key) {
         .tab => {
             const scope = app.focusScope();

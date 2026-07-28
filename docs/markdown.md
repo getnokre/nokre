@@ -113,12 +113,15 @@ on semantics — the table is the whole of it:
 - **Marked-up link labels** (`[**Terms**](terms)`). See below: one link
   is one focus stop, and that is the constraint, not an omission.
 
-Two more things degrade rather than fail, because content nokre does
+Three more things degrade rather than fail, because content nokre does
 not control must never be able to raise:
 
 - **A heading or a table inside a list item or a blockquote.** Both are
   outside the document block set `Tree.append` enforces (see
   [elements.md](elements.md)), so they come through as literal text.
+- **A table wider than 32 columns.** `Tree.append` refuses the cell
+  that would open a 33rd ([elements.md](elements.md)), so the whole
+  table comes through as literal text.
 - **List nesting past three levels.** The fourth level's items join the
   third level's item rather than opening a list `append` would refuse.
 
@@ -192,4 +195,8 @@ and per-heading budgets whose overflow merges rather than truncating.
 The contract is `!void` and only `!void`: the input is remote bytes, so
 the fuzz target in
 [markdown_test.zig](../src/core/markdown_test.zig) exists to keep it
-that way.
+that way. Encoding is the tree's boundary, not the parser's: every
+string entering the tree is validated during the copy, invalid
+sequences becoming U+FFFD
+([accessibility.md](accessibility.md#invalid-trees-cannot-be-built)),
+so arbitrary bytes render as text, never crash.

@@ -22,6 +22,10 @@ pub const ShellConfig = extern struct {
     logical_w: i32,
     logical_h: i32,
     title: [*:0]const u8,
+    /// shell.h's app_id: the Wayland desktop-entry basename, null when
+    /// the app declared no packaging identity. Defaulted null by
+    /// `config`; the Linux platform file fills it (the one consumer).
+    app_id: ?[*:0]const u8,
     ctx: ?*anyopaque,
     on_frame: *const fn (ctx: ?*anyopaque, logical_w: i32, logical_h: i32, safe_bottom: i32, scale: i32, out_w: *i32, out_h: *i32) callconv(.c) ?[*]const u8,
     on_pointer: *const fn (ctx: ?*anyopaque, x: i32, y: i32, phase: i32) callconv(.c) void,
@@ -176,6 +180,7 @@ pub fn config(
         .logical_w = state.app.viewport.w,
         .logical_h = state.app.viewport.h,
         .title = title,
+        .app_id = null,
         .ctx = state,
         .on_frame = onFrame,
         .on_pointer = onPointer,

@@ -6,9 +6,14 @@
 //! 4096 times — the generation counter then wraps and an id that old
 //! could alias a live node (see `NodeId` for why the widths are what
 //! they are). All strings passed in are duplicated
-//! into a tree-owned arena — the tree never borrows consumer memory.
-//! Arena memory is reclaimed on `deinit`, not on node removal; rebuild the
-//! tree (router navigation does this) rather than churning nodes in place.
+//! into a tree-owned arena — the tree never borrows consumer memory —
+//! and the copy validates: the tree stores only well-formed UTF-8, with
+//! invalid sequences replaced by U+FFFD (`dupeValid`), so every scan
+//! downstream (wrapping, bidi, cursor motion) may trust sequence
+//! lengths instead of re-checking them.
+//! Arena memory is reclaimed on `reclaim` (a router rebuild does this)
+//! or `deinit`, not on node removal; rebuild the tree rather than
+//! churning nodes in place.
 
 const std = @import("std");
 const element_mod = @import("element.zig");
@@ -173,7 +178,7 @@ pub const Tree = struct {
     fn createDetached(self: *Tree, parent: NodeId, element: Element) !NodeId {
         if (self.node(parent) == null) return error.InvalidNode;
         try self.validateAppend(parent, element);
-        const owned = try self.dupeStrings(element);
+        const owned = try dupeStringsInto(self.arena.allocator(), element);
         const id = try self.allocNode(owned);
         self.nodePtrUnchecked(id).parent = parent;
         return id;
@@ -246,11 +251,19 @@ pub const Tree = struct {
     /// Replaces a text-bearing element's content, copying `content`.
     pub fn setContent(self: *Tree, id: NodeId, content: []const u8) !void {
         const el = self.get(id) orelse return error.InvalidNode;
-        const owned = try self.arena.allocator().dupe(u8, content);
+        const owned = try dupeValid(self.arena.allocator(), content);
         switch (el.*) {
             // New content replaces the whole text, so stale spans (ranges
             // over the old bytes) are dropped rather than dangling.
             .text => |*t| {
+                // The append-time contrast gate, re-run: append accepts
+                // whitespace-only text with any ink because no ink is
+                // rendered (`ambientTextInk`), so this is the first
+                // moment an illegible ink could meet visible words —
+                // same check, same error, and a refused pair leaves the
+                // element untouched, exactly as append would have.
+                if (std.mem.trim(u8, owned, " \t\n\r").len != 0)
+                    try color.checkTextPair(t.style.ink, self.backgroundBehind(self.node(id).?.parent));
                 t.content = owned;
                 t.spans = &.{};
             },
@@ -260,23 +273,55 @@ pub const Tree = struct {
             },
             // Same rule for the caret: a position past the new value's
             // end is stale state, dropped (clamped) rather than dangling
-            // into bytes that no longer exist.
+            // into bytes that no longer exist — and clamped to a
+            // codepoint boundary, not merely to length, or a caret kept
+            // mid-codepoint would hand every prefix slice invalid UTF-8.
             .text_input => |*i| {
                 i.value = owned;
-                i.cursor = @min(i.cursor, owned.len);
+                i.cursor = codepointFloor(owned, i.cursor);
             },
             .text_area => |*ta| {
                 ta.value = owned;
-                ta.cursor = @min(ta.cursor, owned.len);
+                ta.cursor = codepointFloor(owned, ta.cursor);
             },
             else => return error.NotTextBearing,
         }
     }
 
-    /// Copies `s` into tree-owned memory. Used by event handling for
-    /// text-input edits.
+    /// Copies `s` into tree-owned memory, validating like every other
+    /// copy at this boundary. Used by event handling for text-input
+    /// edits.
     pub fn ownString(self: *Tree, s: []const u8) ![]const u8 {
-        return self.arena.allocator().dupe(u8, s);
+        return dupeValid(self.arena.allocator(), s);
+    }
+
+    /// The arena reclaim point the module doc promises. Every string
+    /// owned by a *surviving* node is re-copied into a fresh arena and
+    /// the old one — holding every removed screen's strings, every
+    /// editing splice copy, every resynced chrome label since the last
+    /// reclaim — is freed. Node identity is untouched: chrome that
+    /// deliberately survives a router rebuild (the nav's shape, the
+    /// collapsed chip) keeps the ids that focus and tests hold.
+    ///
+    /// Two phases so failure cannot half-poison the tree: everything
+    /// fallible lands in the fresh arena and a gpa-side list first, and
+    /// only then does an infallible swap rewrite the nodes and drop the
+    /// old memory. On error the tree is exactly as it was.
+    pub fn reclaim(self: *Tree) !void {
+        var fresh = std.heap.ArenaAllocator.init(self.gpa);
+        errdefer fresh.deinit();
+        var ids: std.ArrayList(NodeId) = .empty;
+        defer ids.deinit(self.gpa);
+        var copies: std.ArrayList(Element) = .empty;
+        defer copies.deinit(self.gpa);
+        var it = self.dfs();
+        while (it.next()) |id| {
+            try ids.append(self.gpa, id);
+            try copies.append(self.gpa, try dupeStringsInto(fresh.allocator(), self.node(id).?.element));
+        }
+        for (ids.items, copies.items) |id, el| self.nodePtrUnchecked(id).element = el;
+        self.arena.deinit();
+        self.arena = fresh;
     }
 
     pub const ChildIterator = struct {
@@ -472,7 +517,17 @@ pub const Tree = struct {
             .stack => |s| if (s.padding < 0 or s.gap < 0) return error.NegativeSpacing,
             .box => |bx| if (bx.padding < 0) return error.NegativeSpacing,
             .row => if (parent_role != .table) return error.RowOutsideTable,
-            .cell => if (parent_role != .row) return error.CellOutsideRow,
+            .cell => {
+                if (parent_role != .row) return error.CellOutsideRow;
+                // Layout can place `max_table_columns` columns and not
+                // one more (layoutTable's per-column width table is
+                // sized by it), so the cell that would open a wider
+                // column cannot be built: past the cap a cell would
+                // keep only a stale rect, which hit testing and
+                // assistive tech would go on reading while nothing
+                // draws it.
+                if (self.childCount(parent) >= element_mod.max_table_columns) return error.TooManyColumns;
+            },
             .tile => if (parent_role != .tile_group) return error.TileOutsideTileGroup,
             .list_item => if (parent_role != .list) return error.ListItemOutsideList,
             // The depth cap is a construction rule, not a rendering
@@ -756,88 +811,91 @@ pub const Tree = struct {
         return &self.nodes.items[id.index];
     }
 
-    fn dupeStrings(self: *Tree, element: Element) !Element {
-        const a = self.arena.allocator();
+    /// Copies every string an element carries into `a` — the arena on
+    /// append, a fresh arena on `reclaim` — through the validating copy
+    /// (`dupeValid`), so the stored tree holds only well-formed UTF-8
+    /// wherever the bytes came from.
+    fn dupeStringsInto(a: std.mem.Allocator, element: Element) !Element {
         var e = element;
         switch (e) {
             .text => |*t| if (t.spans.len == 0) {
-                t.content = try a.dupe(u8, t.content);
+                t.content = try dupeValid(a, t.content);
             } else {
-                t.spans = try self.dupeSpans(t.spans, &t.content);
+                t.spans = try dupeSpans(a, t.spans, &t.content);
             },
             .heading => |*h| if (h.spans.len == 0) {
-                h.content = try a.dupe(u8, h.content);
+                h.content = try dupeValid(a, h.content);
             } else {
-                h.spans = try self.dupeSpans(h.spans, &h.content);
+                h.spans = try dupeSpans(a, h.spans, &h.content);
             },
-            .icon => |*i| i.label = try a.dupe(u8, i.label),
-            .code_block => |*c| c.content = try a.dupe(u8, c.content),
+            .icon => |*i| i.label = try dupeValid(a, i.label),
+            .code_block => |*c| c.content = try dupeValid(a, c.content),
             .document => |*d| {
-                d.label = try a.dupe(u8, d.label);
-                d.source = try a.dupe(u8, d.source);
+                d.label = try dupeValid(a, d.label);
+                d.source = try dupeValid(a, d.source);
             },
-            .badge => |*b| b.label = try a.dupe(u8, b.label),
-            .meter => |*m| m.label = try a.dupe(u8, m.label),
-            .button => |*b| b.label = try a.dupe(u8, b.label),
+            .badge => |*b| b.label = try dupeValid(a, b.label),
+            .meter => |*m| m.label = try dupeValid(a, m.label),
+            .button => |*b| b.label = try dupeValid(a, b.label),
             .link => |*l| {
-                l.label = try a.dupe(u8, l.label);
-                l.route = try a.dupe(u8, l.route);
-                if (l.external) |url| l.external = try a.dupe(u8, url);
+                l.label = try dupeValid(a, l.label);
+                l.route = try dupeValid(a, l.route);
+                if (l.external) |url| l.external = try dupeValid(a, url);
             },
-            .toggle => |*t| t.label = try a.dupe(u8, t.label),
-            .checkbox => |*c| c.label = try a.dupe(u8, c.label),
+            .toggle => |*t| t.label = try dupeValid(a, t.label),
+            .checkbox => |*c| c.label = try dupeValid(a, c.label),
             .text_input => |*i| {
-                i.label = try a.dupe(u8, i.label);
-                i.value = try a.dupe(u8, i.value);
-                i.placeholder = try a.dupe(u8, i.placeholder);
-                i.composition = try a.dupe(u8, i.composition);
+                i.label = try dupeValid(a, i.label);
+                i.value = try dupeValid(a, i.value);
+                i.placeholder = try dupeValid(a, i.placeholder);
+                i.composition = try dupeValid(a, i.composition);
             },
             .text_area => |*ta| {
-                ta.label = try a.dupe(u8, ta.label);
-                ta.value = try a.dupe(u8, ta.value);
-                ta.placeholder = try a.dupe(u8, ta.placeholder);
-                ta.composition = try a.dupe(u8, ta.composition);
+                ta.label = try dupeValid(a, ta.label);
+                ta.value = try dupeValid(a, ta.value);
+                ta.placeholder = try dupeValid(a, ta.placeholder);
+                ta.composition = try dupeValid(a, ta.composition);
             },
             .segmented => |*s| {
-                s.label = try a.dupe(u8, s.label);
-                s.options = try self.dupeOptions(s.options);
+                s.label = try dupeValid(a, s.label);
+                s.options = try dupeOptions(a, s.options);
             },
             .radio_group => |*rg| {
-                rg.label = try a.dupe(u8, rg.label);
-                rg.options = try self.dupeOptions(rg.options);
+                rg.label = try dupeValid(a, rg.label);
+                rg.options = try dupeOptions(a, rg.options);
             },
             .select => |*s| {
-                s.label = try a.dupe(u8, s.label);
-                s.options = try self.dupeOptions(s.options);
+                s.label = try dupeValid(a, s.label);
+                s.options = try dupeOptions(a, s.options);
             },
-            .tile_group => |*g| g.description = try a.dupe(u8, g.description),
+            .tile_group => |*g| g.description = try dupeValid(a, g.description),
             .tile => |*t| {
-                t.label = try a.dupe(u8, t.label);
-                t.detail = try a.dupe(u8, t.detail);
-                t.route = try a.dupe(u8, t.route);
+                t.label = try dupeValid(a, t.label);
+                t.detail = try dupeValid(a, t.detail);
+                t.route = try dupeValid(a, t.route);
             },
             .copyable => |*c| {
-                c.label = try a.dupe(u8, c.label);
-                c.value = try a.dupe(u8, c.value);
+                c.label = try dupeValid(a, c.label);
+                c.value = try dupeValid(a, c.value);
             },
-            .picker => |*p| p.title = try a.dupe(u8, p.title),
-            .picker_item => |*p| p.label = try a.dupe(u8, p.label),
+            .picker => |*p| p.title = try dupeValid(a, p.title),
+            .picker_item => |*p| p.label = try dupeValid(a, p.label),
             .nav_item => |*n| {
-                n.label = try a.dupe(u8, n.label);
-                n.route = try a.dupe(u8, n.route);
+                n.label = try dupeValid(a, n.label);
+                n.route = try dupeValid(a, n.route);
             },
-            .nav_current => |*n| n.section = try a.dupe(u8, n.section),
-            .nav_here => |*n| n.label = try a.dupe(u8, n.label),
-            .sheet => |*s| s.title = try a.dupe(u8, s.title),
+            .nav_current => |*n| n.section = try dupeValid(a, n.section),
+            .nav_here => |*n| n.label = try dupeValid(a, n.label),
+            .sheet => |*s| s.title = try dupeValid(a, s.title),
             .notice => |*n| {
-                n.title = try a.dupe(u8, n.title);
-                n.description = try a.dupe(u8, n.description);
-                n.route = try a.dupe(u8, n.route);
+                n.title = try dupeValid(a, n.title);
+                n.description = try dupeValid(a, n.description);
+                n.route = try dupeValid(a, n.route);
             },
-            .icon_button => |*i| i.label = try a.dupe(u8, i.label),
+            .icon_button => |*i| i.label = try dupeValid(a, i.label),
             .qr => |*q| {
-                q.label = try a.dupe(u8, q.label);
-                const value = try a.dupeZ(u8, q.value);
+                q.label = try dupeValid(a, q.label);
+                const value = try dupeValidZ(a, q.value);
                 q.value = value;
                 const encoded = try qr.encode(a, value);
                 q.modules = encoded.modules;
@@ -850,36 +908,110 @@ pub const Tree = struct {
 
     /// The option list of a `segmented`, `radio_group`, or `select`:
     /// the slice and every string in it, into tree-owned memory.
-    fn dupeOptions(self: *Tree, options: []const []const u8) ![]const []const u8 {
-        const a = self.arena.allocator();
+    fn dupeOptions(a: std.mem.Allocator, options: []const []const u8) ![]const []const u8 {
         const owned = try a.alloc([]const u8, options.len);
-        for (options, owned) |src, *dst| dst.* = try a.dupe(u8, src);
+        for (options, owned) |src, *dst| dst.* = try dupeValid(a, src);
         return owned;
     }
 
     /// Copies spans as slices of one contiguous buffer and hands that
     /// buffer back as the element's content: the concatenation exists
     /// once, spans are ranges over it, and byte offsets recovered from
-    /// slice pointers (as layout and the renderer do) are exact.
-    fn dupeSpans(self: *Tree, spans: []const element_mod.Span, content: *[]const u8) ![]const element_mod.Span {
-        const a = self.arena.allocator();
+    /// slice pointers (as layout and the renderer do) are exact. The
+    /// copy validates like every other at this boundary, so a span's
+    /// stored length is its sanitized length.
+    fn dupeSpans(a: std.mem.Allocator, spans: []const element_mod.Span, content: *[]const u8) ![]const element_mod.Span {
         var total: usize = 0;
-        for (spans) |span| total += span.text.len;
+        for (spans) |span| total += sanitizedLen(span.text);
         const buf = try a.alloc(u8, total);
         const owned = try a.alloc(element_mod.Span, spans.len);
         var off: usize = 0;
         for (spans, owned) |src, *dst| {
-            @memcpy(buf[off .. off + src.text.len], src.text);
+            const len = sanitizedLen(src.text);
+            writeSanitized(buf[off .. off + len], src.text);
             dst.* = src;
-            dst.text = buf[off .. off + src.text.len];
+            dst.text = buf[off .. off + len];
             // A destination is its own string, not a slice of the
             // concatenation, so it needs its own copy — the tree never
             // borrows consumer memory.
-            if (src.route) |route| dst.route = try a.dupe(u8, route);
-            if (src.external) |url| dst.external = try a.dupe(u8, url);
-            off += src.text.len;
+            if (src.route) |route| dst.route = try dupeValid(a, route);
+            if (src.external) |url| dst.external = try dupeValid(a, url);
+            off += len;
         }
         content.* = buf;
         return owned;
     }
+
+    /// The nearest codepoint boundary at or before `pos`. The stored
+    /// value is valid UTF-8 by construction, so scanning back over
+    /// continuation bytes always lands on a lead byte or the start.
+    fn codepointFloor(bytes: []const u8, pos: usize) usize {
+        var i = @min(pos, bytes.len);
+        while (i > 0 and i < bytes.len and bytes[i] & 0xC0 == 0x80) i -= 1;
+        return i;
+    }
 };
+
+/// U+FFFD REPLACEMENT CHARACTER, what every invalid sequence becomes.
+const replacement = "\u{FFFD}";
+
+/// The validating copy at the tree's byte boundary. Consumer and
+/// fetched bytes are copied into the arena anyway, so validation rides
+/// the copy that already happens: invalid sequences come out as U+FFFD
+/// and everything downstream can trust `utf8ByteSequenceLength` instead
+/// of guarding every scan. Valid input — the overwhelmingly common case
+/// — takes one scan and a plain copy.
+fn dupeValid(a: std.mem.Allocator, s: []const u8) ![]u8 {
+    if (std.unicode.utf8ValidateSlice(s)) return a.dupe(u8, s);
+    const out = try a.alloc(u8, sanitizedLen(s));
+    writeSanitized(out, s);
+    return out;
+}
+
+/// `dupeValid` with the NUL sentinel the QR encoder's C API needs.
+fn dupeValidZ(a: std.mem.Allocator, s: []const u8) ![:0]u8 {
+    if (std.unicode.utf8ValidateSlice(s)) return a.dupeZ(u8, s);
+    const out = try a.allocSentinel(u8, sanitizedLen(s), 0);
+    writeSanitized(out, s);
+    return out;
+}
+
+fn sanitizedLen(s: []const u8) usize {
+    var n: usize = 0;
+    var i: usize = 0;
+    while (i < s.len) {
+        const seq = sequenceAt(s, i);
+        n += if (seq.valid) seq.len else replacement.len;
+        i += seq.len;
+    }
+    return n;
+}
+
+/// Writes the sanitized form of `s` into `out`, which is exactly
+/// `sanitizedLen(s)` long.
+fn writeSanitized(out: []u8, s: []const u8) void {
+    var o: usize = 0;
+    var i: usize = 0;
+    while (i < s.len) {
+        const seq = sequenceAt(s, i);
+        const bytes = if (seq.valid) s[i .. i + seq.len] else replacement;
+        @memcpy(out[o .. o + bytes.len], bytes);
+        o += bytes.len;
+        i += seq.len;
+    }
+}
+
+const Sequence = struct { len: usize, valid: bool };
+
+/// One UTF-8 sequence at `i`, or the maximal subpart of an invalid one
+/// (Unicode's substitution recommendation): a bad lead — or a bare
+/// continuation — plus the continuation bytes that followed it, all
+/// standing behind a single U+FFFD, so a truncated tail is one
+/// replacement rather than one per byte.
+fn sequenceAt(s: []const u8, i: usize) Sequence {
+    const n = std.unicode.utf8ByteSequenceLength(s[i]) catch return .{ .len = 1, .valid = false };
+    if (i + n <= s.len and std.unicode.utf8ValidateSlice(s[i .. i + n])) return .{ .len = n, .valid = true };
+    var j = i + 1;
+    while (j < s.len and j - i < n and s[j] & 0xC0 == 0x80) j += 1;
+    return .{ .len = j - i, .valid = false };
+}

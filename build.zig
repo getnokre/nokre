@@ -1123,12 +1123,29 @@ fn addPackageInfo(b: *std.Build, mod: *std.Build.Module, decl: ?PackageDecl) voi
     opts.addOption([]const u8, "version", d.version);
     opts.addOption(u32, "build", d.build);
     mod.addImport("nokre_package_info_options", opts.createModule());
-    if (decl != null and mod.resolved_target.?.result.os.tag == .macos) {
-        mod.addCSourceFile(.{
-            .file = b.path("src/services/package_info/macos.m"),
-            .flags = &.{"-fobjc-arc"},
-        });
-        mod.linkFramework("Foundation", .{});
+    if (decl == null) return;
+    switch (mod.resolved_target.?.result.os.tag) {
+        .macos => {
+            mod.addCSourceFile(.{
+                .file = b.path("src/services/package_info/macos.m"),
+                .flags = &.{"-fobjc-arc"},
+            });
+            mod.linkFramework("Foundation", .{});
+        },
+        .ios => {
+            // Framework headers exist only on a macOS host — the
+            // secure_store gate: check-targets' compile-only objects
+            // analyze the extern from any host, and a real iOS build
+            // always runs on macOS.
+            if (builtin.os.tag == .macos) {
+                mod.addCSourceFile(.{
+                    .file = b.path("src/services/package_info/ios.m"),
+                    .flags = &.{"-fobjc-arc"},
+                });
+                mod.linkFramework("Foundation", .{});
+            }
+        },
+        else => {},
     }
 }
 
