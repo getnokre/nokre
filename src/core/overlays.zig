@@ -31,6 +31,9 @@ pub fn presentSheet(app: *App, title: []const u8) !NodeId {
     // `overflow.presentMoreSheet` says so itself, afterwards.
     app.more_sheet = null;
     const sheet = try app.tree.append(app.tree.rootId(), .{ .sheet = .{ .title = title } });
+    // A sheet without its close control is inescapable chrome; if the
+    // control cannot be built, neither is the sheet.
+    errdefer app.tree.remove(sheet) catch {};
     _ = try app.tree.append(sheet, .{ .sheet_close = .{} });
     app.sheet_return_focus = app.focused;
     app.focused = focus.firstFocusable(&app.tree, sheet);
@@ -125,7 +128,10 @@ fn onPickerFilter(ctx: ?*anyopaque, value: []const u8) void {
 fn refilterPicker(app: *App, filter: []const u8) !void {
     const picker = layout.findPicker(&app.tree) orelse return;
     const owner = app.picker_owner orelse return;
-    const sel = app.tree.getConst(owner).?.select;
+    // The tree can rebuild under an open picker; a stale owner filters
+    // nothing rather than dereferencing a dead generation, the same
+    // tolerance `closePicker` keeps.
+    const sel = (app.tree.getConst(owner) orelse return).select;
     var region: ?NodeId = null;
     var it = app.tree.children(picker);
     while (it.next()) |c| {

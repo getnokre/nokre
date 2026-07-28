@@ -43,7 +43,7 @@ fn buildHome(_: ?*anyopaque, app: *nok.App) !void {
 
 That's a valid, keyboard-navigable, screen-reader-complete screen — and a
 button without a label would have refused to construct. The element set is
-closed and small: some two dozen semantic elements from `Text` to `Table`
+closed and small: some thirty semantic elements from `Text` to `Table`
 to `Nav`, every one specified in [docs/elements.md](docs/elements.md).
 
 nokre also ships its own headless e2e framework: synthetic input through

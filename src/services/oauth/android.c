@@ -61,12 +61,26 @@ static int oauth_init(JNIEnv *env) {
         (*env)->ExceptionClear(env);
         return 0;
     }
-    g_cls = (*env)->NewGlobalRef(env, cls);
+    jclass gcls = (*env)->NewGlobalRef(env, cls);
     (*env)->DeleteLocalRef(env, cls);
-    if (g_cls == NULL) return 0;
-    g_start = (*env)->GetStaticMethodID(env, g_cls, "start", "(Ljava/lang/String;)Z");
-    g_forget = (*env)->GetStaticMethodID(env, g_cls, "forget", "()V");
-    return g_start != NULL && g_forget != NULL;
+    if (gcls == NULL) {
+        (*env)->ExceptionClear(env);
+        return 0;
+    }
+    jmethodID start = (*env)->GetStaticMethodID(env, gcls, "start", "(Ljava/lang/String;)Z");
+    jmethodID forget = (*env)->GetStaticMethodID(env, gcls, "forget", "()V");
+    if (start == NULL || forget == NULL) {
+        // All-or-nothing: g_cls is the cache flag, so a half-resolved
+        // class must not be published — a later call would invoke NULL
+        // method ids with a NoSuchMethodError still pending.
+        (*env)->ExceptionClear(env);
+        (*env)->DeleteGlobalRef(env, gcls);
+        return 0;
+    }
+    g_start = start;
+    g_forget = forget;
+    g_cls = gcls;
+    return 1;
 }
 
 void *nokre_oauth_start(void *ctx, nokre_oauth_cb cb,

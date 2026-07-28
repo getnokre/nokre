@@ -730,6 +730,13 @@ rejects anything else at construction. Column widths are per-column
 intrinsic maxima; the grid is
 drawn with 1px lines. Mark header rows with `.header = true`.
 
+### `document`
+Markdown source in, ordinary elements out — `append` expands it into
+the elements above, so nothing after construction knows a document was
+involved. The subset it parses, the rule that everything else degrades
+to literal source text, and how links resolve are all
+[markdown.md](markdown.md)'s — its one home.
+
 ### `segmented`
 An exclusive choice among 2+ fixed options — radiogroup semantics, not
 tabs. `label` (the group's accessible name), `options`, `selected`,
@@ -742,29 +749,34 @@ repeatedly in place — views, filters, content sections. A choice made
 once and gathered by a form reads better as `radio_group` or `select`.
 
 A track wider than its parent scrolls horizontally. This is framework
-behavior with no API. Margins in nokre are advice, not walls (see
-`stack`), and an overflowing track is the element that must decline
-them: it bleeds through the surrounding padding to the nearest drawn
-edge — the screen at the root; a box's border stops it — squaring the
-track's corners where it reaches one. Resting chips keep the content
-alignment (the declined margin becomes a content inset), so the scroll
-positions are exactly the unbled track's; what changes is where chips
-clip: mid-chip at the screen edge, not mid-page (the static "more is
-there" affordance — nokre has no animation to hint with), scrolling
-through the margin band on their way there. A 2px indicator bar in the
-`scroll_region` pattern — both tones included, quiet at rest and
-emphasized while the track is engaged — rides the bottom of the track,
-within the content span. It stands in a strip the track grows for it
-rather than in the chips' own padding, so a scrolling track is deeper
-than the same track when it fits — deeper above the chips as well as
-below, or the band would read as chips pushed against its top edge. The offset is scroll state like `scroll_region`'s —
-consumers never write it. Horizontal wheel/trackpad input over the
-track scrolls it freely without touching the selection; a selection
-change scrolls minimally to bring its chip fully into view: ←/→ walk it
-a chip at a time (committing each step, as radiogroup semantics say
-they must), and tapping a chip clipped at the edge selects it and
-reveals the next. Assistive tech is unaffected — every option is
-announced whether or not it is on screen.
+behavior with no API.
+
+- **The bleed.** Margins in nokre are advice, not walls (see `stack`),
+  and an overflowing track is the element that must decline them: it
+  bleeds through the surrounding padding to the nearest drawn edge —
+  the screen at the root; a box's border stops it — squaring the
+  track's corners where it reaches one. Resting chips keep the content
+  alignment (the declined margin becomes a content inset), so the
+  scroll positions are exactly the unbled track's; what changes is
+  where chips clip: mid-chip at the screen edge, not mid-page — the
+  static "more is there" affordance, nokre having no animation to hint
+  with — scrolling through the margin band on their way there.
+- **The indicator.** A 2px bar in the `scroll_region` pattern — both
+  tones included, quiet at rest and emphasized while the track is
+  engaged — rides the bottom of the track, within the content span. It
+  stands in a strip the track grows for it rather than in the chips'
+  own padding, so a scrolling track is deeper than the same track when
+  it fits — deeper above the chips as well as below, or the band would
+  read as chips pushed against its top edge.
+- **Input.** The offset is scroll state like `scroll_region`'s —
+  consumers never write it. Horizontal wheel/trackpad input over the
+  track scrolls it freely without touching the selection; a selection
+  change scrolls minimally to bring its chip fully into view: ←/→ walk
+  it a chip at a time (committing each step, as radiogroup semantics
+  say they must), and tapping a chip clipped at the edge selects it
+  and reveals the next.
+- **Assistive tech is unaffected** — every option is announced whether
+  or not it is on screen.
 
 There is deliberately no tablist element: nokre rebuilds subtrees
 instantly, so co-existing tab panels never exist and tablist semantics
@@ -871,21 +883,24 @@ edge, and the other destinations move behind a picker that opens above
 it — carrying their glyphs into the list, so a mark means the same
 thing in both shapes.
 
-The threshold is measured, not a breakpoint: the row fits when its
-pills, the gaps between them, the bar's insets, and the indicator's
-reserved square fit the **viewport** — a longer word costs the row that
-word and nothing more, and the reserve is counted whether or not an
-indicator is showing, so the nav never changes shape because a notice
-arrived. The viewport, not the 560px pane: that cap is a line-length
-argument, governing the bottom chrome that holds prose — the banner,
-the notices pane, the sheet, a select's picker — and nothing in the bar
-is prose, so the row grows past the cap to exactly the width its items
-need and no further. Icons cost width, so they push rosters into the
-chip sooner; a set that fits in landscape and not in portrait reshapes
-as the device turns, one too wide for a laptop reopens the moment the
-window reaches the width it asked for, and translations change the
-answer — the same app can be a row in English and a chip in German,
-which is the point of measuring.
+The threshold is measured, not a breakpoint:
+
+- **What "fits" means.** The row fits when its pills, the gaps between
+  them, the bar's insets, and the indicator's reserved square fit the
+  **viewport** — a longer word costs the row that word and nothing
+  more, and the reserve is counted whether or not an indicator is
+  showing, so the nav never changes shape because a notice arrived.
+- **The viewport, not the 560px pane.** That cap is a line-length
+  argument, governing the bottom chrome that holds prose — the banner,
+  the notices pane, the sheet, a select's picker — and nothing in the
+  bar is prose, so the row grows past the cap to exactly the width its
+  items need and no further.
+- **What moves the answer.** Icons cost width, so they push rosters
+  into the chip sooner; a set that fits in landscape and not in
+  portrait reshapes as the device turns, one too wide for a laptop
+  reopens the moment the window reaches the width it asked for, and
+  translations change it too — the same app can be a row in English
+  and a chip in German, which is the point of measuring.
 
 The collapsed chip does not grow at all: it is one control, and a
 control that widened to hold one word would be its own kind of wrong.

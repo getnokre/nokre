@@ -51,7 +51,7 @@ else. `input.zig`'s `handleEdgePan` decides:
 | | |
 | --- | --- |
 | eligible | stack depth > 1, no modal open, and the edge is the *leading* one — the left in LTR, the right in RTL, mirrored with the chrome like the Back chevron itself |
-| threshold | `viewport.w / 4`, floored at 64px (`layout.metrics.back_gesture_*`) — "most of the way across this screen" is a different pixel count on a phone and in a desktop window |
+| threshold | the numbers are the consumer contract's ([../routing.md](../routing.md#the-back-gesture)); in code, `layout.metrics.back_gesture_*`. A ratio with a floor, because "most of the way across this screen" is a different pixel count on a phone and in a desktop window |
 | hysteresis | 8px. Arming takes the full distance; giving it up takes a retreat past the band, so a hand holding still at the boundary settles instead of rattling the taptic engine at the touch stream's sample rate |
 | release | past the threshold, `navigateBack()`; short of it, nothing |
 | cancel | never commits, and never knocks — the system took the gesture away, and the user did not undo anything |

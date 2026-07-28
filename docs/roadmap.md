@@ -2,7 +2,7 @@
 
 The foundation is done and tested: the core model, layout, events, focus,
 router, renderer, a11y derivation, testing framework, the five platform
-shells and the web's editionless browser build, packaging, deep links, and IME on every shell — the support matrix
+shells and the web's shell-less browser build, packaging, deep links, and IME on every shell — the support matrix
 is in the [README](../README.md), the per-shell contract in
 [internals/platform-shells.md](internals/platform-shells.md). What follows
 is what remains, ordered by leverage.

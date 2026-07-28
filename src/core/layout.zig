@@ -727,7 +727,7 @@ fn layoutNoticesPane(tree: *Tree, measurer: text.Measurer, pane: NodeId, viewpor
 
     var ctx: Ctx = .{ .tree = tree, .measurer = measurer, .bottom = viewport.h - pane_edge, .scroll = 0, .rtl = rtl };
     const title_w = inner_w - metrics.touch_target - metrics.icon_gap;
-    const title_h = ctx.wrappedHeight(.prose, .h2, "Notices", &.{}, title_w);
+    const title_h = ctx.wrappedHeight(.prose, .h2, element_mod.notices_label, &.{}, title_w);
     const header_h = pane_edge + title_h + 8;
 
     var dismiss_all: ?NodeId = null;
@@ -2107,9 +2107,9 @@ pub const LinePiece = struct {
     w: i32,
 };
 
-/// Budget for one line's decomposition; past it the tail merges into
-/// the last piece, the same deterministic truncation `bidi`'s own line
-/// budgets take, and far past what a rendered line of UI text needs.
+/// Budget for one line's decomposition; past it the tail is dropped,
+/// the same deterministic truncation `bidi`'s own line budgets take,
+/// and far past what a rendered line of UI text needs.
 pub const max_line_pieces = 192;
 
 /// Fills `out` with the drawn pieces of `content[line_start..line_end)`

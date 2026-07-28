@@ -548,24 +548,20 @@ is a *different*, underived manifest declaration (`CFBundleURLTypes` / a
 **On Windows** the custom scheme is the only inbound leg — the roster's
 "custom-scheme only" — because a verified https link for an unpackaged
 Win32 app does not exist: that is MSIX's `windows.appUriHandler`, a
-different packaging model. What nokre does: a protocol activation
-launches a fresh process with the URL on the command line, and the shell
-reads it off argv (the first argument carrying `://`). If the same app is
-already running — matched by window class *and* title, so another nokre
-app is never mistaken for it — the URL is forwarded to that instance over
-`WM_COPYDATA` and the fresh process exits, surfacing the one window
-instead of stacking a duplicate (Android's singleTask/onNewIntent
-bargain, done with the tools an unpackaged Win32 app has). Otherwise the
-fresh process *is* the instance, and the URL is buffered as the launch
-link until the app's first build wires `setHandler`, so it is never
-dropped. What nokre does not do: register the scheme. The registration —
-`HKCU\Software\Classes\<scheme>` with `URL Protocol` and a
-`shell\open\command` naming the exe — is the app's or its installer's,
-and packaging deliberately derives none of it, for the reason the
-paragraph above states: nokre derives only *verified* links, and a
-registry key any installed app can also write is precisely not one. The
-runtime side stays scheme-agnostic — the handler receives whatever URL
-the OS delivers.
+different packaging model. The contract is otherwise the one above:
+one instance surfaces (a link tapped while the app runs reaches the
+running window rather than stacking a duplicate), a launch link is
+buffered until the first build wires `setHandler` so it is never
+dropped, and the handler receives whatever URL the OS delivers — the
+process hand-off behind that is
+[internals/platform-shells.md](internals/platform-shells.md)'s to
+explain. What nokre does not do: register the scheme. The
+registration — `HKCU\Software\Classes\<scheme>` with `URL Protocol` and
+a `shell\open\command` naming the exe — is the app's or its
+installer's, and packaging deliberately derives none of it, for the
+reason the paragraph above states: nokre derives only *verified* links,
+and a registry key any installed app can also write is precisely not
+one.
 
 **On the web** the deep link is the URL fragment: a `hashchange` is a
 runtime link, and a fragment present at load is the launch URL, delivered
@@ -770,7 +766,7 @@ down the wasm instance mid-flow and take the verifier with it.
 
 Linking needs identity, like `secure_store` and `deep_link`: the URL-type
 registration and the intent-filter are keyed to the app id. Declaring
-`.oauth_schemes` derives a `CFBundleURLTypes` entry on Apple and a VIEW
+`.oauth` derives a `CFBundleURLTypes` entry on Apple and a VIEW
 intent-filter on Android; `.oauth_apple` derives the
 `com.apple.developer.applesignin` entitlement. Windows, Linux, and the
 web derive nothing — a loopback listener registers nothing, and the
@@ -807,10 +803,9 @@ moves until the test says what the user did (`completeAuth`,
 
 ### iap: the stores, and the money nokre never formats
 
-Four verbs, one query, one stream. The roster's last row, and the only
-service that genuinely needs a per-platform SDK — which is why it was
-built last and why its Android leg asks for the one dependency nokre has
-ever asked a consumer to add.
+Four verbs, one query, one stream. The only service that genuinely
+needs a per-platform SDK — which is why its Android leg asks for the
+one dependency nokre has ever asked a consumer to add.
 
 ```zig
 // Boot, inside build: is there a store here at all? Cached at App.init

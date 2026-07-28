@@ -69,8 +69,8 @@ have already told you so.
   tool for asserting absence (or use `expectAbsent`).
 - `focusedLabel()` names the focused node — or, when an inline link
   holds focus, the link's own words.
-- `queryLink(words)` finds an inline link (a span with a `route`, see
-  [markdown.md](markdown.md)). Link spans are controls without nodes of
+- `queryLink(words)` finds an inline link (a span with a destination,
+  see [markdown.md](markdown.md)). Link spans are controls without nodes of
   their own, so they come back as focus stops rather than `NodeId`s;
   the `get*` diagnostics list them alongside everything else, so a link
   never goes missing from a failure message.

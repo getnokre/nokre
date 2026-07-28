@@ -501,8 +501,21 @@ const PlatformState = struct {
     /// reordered: the store will redeliver an unfinished purchase at the
     /// next launch, which is exactly the situation `finish` exists for.
     fn postUpdate(self: *PlatformState, update: Update) void {
-        const ticket = workers.openOneShotOn(Update, self.runtime, self, dispatchUpdate) catch return;
-        workers.deliverOneShot(Update, ticket, self.gpa, update) catch workers.cancelOneShot(ticket);
+        // A dropped sheet-level update must still release the one-sheet
+        // guard dispatchUpdate would have cleared, or `buying` refuses
+        // every purchase for the rest of the run.
+        const from_sheet = switch (update) {
+            .purchase => |p| p.state != .restored,
+            .cancelled, .failure => true,
+        };
+        const ticket = workers.openOneShotOn(Update, self.runtime, self, dispatchUpdate) catch {
+            if (from_sheet) self.buying = false;
+            return;
+        };
+        workers.deliverOneShot(Update, ticket, self.gpa, update) catch {
+            workers.cancelOneShot(ticket);
+            if (from_sheet) self.buying = false;
+        };
     }
 
     fn deliverCatalog(self: *PlatformState, catalog: Catalog) void {

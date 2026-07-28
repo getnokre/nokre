@@ -332,6 +332,19 @@ pub const Runtime = struct {
             return; // dropped delivery, not a crash
         };
         node.* = .{ .index = index, .gen = gen, .bytes = frame.bytes, .attachments = frame.attachments };
+        self.enqueueDeliveryPrepared(node);
+    }
+
+    /// Queue a node whose storage was claimed up front — the one-shot
+    /// retirement, which must not be droppable for OOM: once the reply
+    /// ahead of it has moved, a dropped retired frame would strand the
+    /// slot live forever.
+    fn enqueueDeliveryPrepared(self: *Runtime, node: *Delivery) void {
+        if (self.down.load(.acquire)) {
+            (Frame{ .bytes = node.bytes, .attachments = node.attachments }).free(self.gpa);
+            self.gpa.destroy(node);
+            return; // dropped delivery: the app is gone
+        }
         var head = self.delivery_head.load(.monotonic);
         while (true) {
             node.next = head;
@@ -740,9 +753,19 @@ pub fn openOneShotOn(
 /// frees the slot once the callback has run — push order is FIFO
 /// order, per producer, by the queue's contract.
 pub fn deliverOneShot(comptime Reply: type, ticket: Ticket, g: std.mem.Allocator, reply: Reply) codec.EncodeError!void {
+    const rt = ticket.runtime;
+    // The retirement's storage is claimed before the reply moves: an
+    // OOM after that would have to drop the retired frame — stranding
+    // the slot live forever — where failing here keeps the
+    // nothing-moved-on-error contract intact.
+    const node = try rt.gpa.create(Delivery);
+    errdefer rt.gpa.destroy(node);
+    const bytes = try rt.gpa.dupe(u8, &[1]u8{retired_frame});
+    errdefer rt.gpa.free(bytes);
     const frame = try encodeReplyFrame(Reply, g, reply);
-    ticket.runtime.enqueueDeliveryOwned(ticket.index, ticket.gen, frame);
-    ticket.runtime.enqueueDelivery(ticket.index, ticket.gen, &[1]u8{retired_frame});
+    rt.enqueueDeliveryOwned(ticket.index, ticket.gen, frame);
+    node.* = .{ .index = ticket.index, .gen = ticket.gen, .bytes = bytes };
+    rt.enqueueDeliveryPrepared(node);
 }
 
 /// The callback will never run after this: the slot finalizes now and

@@ -452,7 +452,11 @@ pub const App = struct {
         switch (event) {
             .press => |stop| {
                 if (self.tree.getConst(stop.node)) |el| {
-                    if (el.isFocusable()) self.focused = stop;
+                    // An inline link is a focus stop on a node that is
+                    // not itself focusable — the paragraph carrying the
+                    // span — so a span hit takes focus the way the
+                    // pointer path's `pressDown` does for every stop.
+                    if (el.isFocusable() or stop.span != null) self.focused = stop;
                 }
                 try input.activateStop(self, stop);
             },

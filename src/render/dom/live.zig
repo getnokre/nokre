@@ -306,6 +306,7 @@ fn chromed() callconv(.c) i32 {
 /// to be wrong.
 fn href(len: usize) callconv(.c) [*]const u8 {
     href_out.clearRetainingCapacity();
+    if (!booted) return href_out.items.ptr;
     var em: serialize.Emitter = .{ .gpa = gpa, .app = app, .out = &href_out };
     defer em.deinit();
     const r: serialize.Refs = refs orelse .{};
@@ -399,6 +400,7 @@ fn resize(w: i32, h: i32) callconv(.c) void {
 /// `Scheme.auto` resolves through, and core owns the resolution here as
 /// it does everywhere else.
 fn systemAppearance(dark: i32) callconv(.c) void {
+    if (!booted) return;
     app.setSystemAppearance(if (dark != 0) .dark else .light);
 }
 
@@ -409,6 +411,7 @@ fn systemAppearance(dark: i32) callconv(.c) void {
 /// the generated sheet, which is written in logical properties
 /// throughout for exactly this.
 fn direction() callconv(.c) i32 {
+    if (!booted) return 0;
     return @intFromBool(app.direction == .rtl);
 }
 
@@ -418,6 +421,7 @@ fn direction() callconv(.c) i32 {
 /// media query cannot ask this question, because half of it is the
 /// app's own `scheme`.
 fn appearance() callconv(.c) i32 {
+    if (!booted) return 0;
     return @intFromBool(app.appearance() == .dark);
 }
 
@@ -432,6 +436,7 @@ fn routeMotion() callconv(.c) u32 {
 }
 
 fn currentRef() []const u8 {
+    if (!booted) return "";
     return app.router.currentRef() orelse "";
 }
 
@@ -444,11 +449,13 @@ fn routeLen() callconv(.c) usize {
 }
 
 fn focusedNode() callconv(.c) u32 {
+    if (!booted) return @bitCast(NodeId.invalid);
     const f = app.focused orelse return @bitCast(NodeId.invalid);
     return @bitCast(f.node);
 }
 
 fn focusedSpan() callconv(.c) i32 {
+    if (!booted) return -1;
     const f = app.focused orelse return -1;
     return if (f.span) |s| @intCast(s) else -1;
 }
@@ -458,6 +465,7 @@ fn focusedSpan() callconv(.c) i32 {
 /// restores it after a re-render rather than letting the DOM keep its
 /// own idea.
 fn caret() callconv(.c) i32 {
+    if (!booted) return -1;
     const f = app.focused orelse return -1;
     const el = app.tree.getConst(f.node) orelse return -1;
     return switch (el.*) {

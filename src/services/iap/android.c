@@ -71,18 +71,36 @@ static int iap_init(JNIEnv *env) {
         (*env)->ExceptionClear(env);
         return 0;
     }
-    g_cls = (*env)->NewGlobalRef(env, cls);
+    jclass gcls = (*env)->NewGlobalRef(env, cls);
     (*env)->DeleteLocalRef(env, cls);
-    if (g_cls == NULL) return 0;
-    g_available = (*env)->GetStaticMethodID(env, g_cls, "available", "()Z");
-    g_install = (*env)->GetStaticMethodID(env, g_cls, "install", "()V");
-    g_query = (*env)->GetStaticMethodID(env, g_cls, "queryProducts", "([Ljava/lang/String;)V");
-    g_purchase = (*env)->GetStaticMethodID(env, g_cls, "purchase",
-                                           "(Ljava/lang/String;Ljava/lang/String;)I");
-    g_finish = (*env)->GetStaticMethodID(env, g_cls, "finish", "(Ljava/lang/String;Z)V");
-    g_restore = (*env)->GetStaticMethodID(env, g_cls, "restore", "()V");
-    return g_available != NULL && g_install != NULL && g_query != NULL && g_purchase != NULL &&
-           g_finish != NULL && g_restore != NULL;
+    if (gcls == NULL) {
+        (*env)->ExceptionClear(env);
+        return 0;
+    }
+    jmethodID available = (*env)->GetStaticMethodID(env, gcls, "available", "()Z");
+    jmethodID install = (*env)->GetStaticMethodID(env, gcls, "install", "()V");
+    jmethodID query = (*env)->GetStaticMethodID(env, gcls, "queryProducts", "([Ljava/lang/String;)V");
+    jmethodID purchase = (*env)->GetStaticMethodID(env, gcls, "purchase",
+                                                   "(Ljava/lang/String;Ljava/lang/String;)I");
+    jmethodID finish = (*env)->GetStaticMethodID(env, gcls, "finish", "(Ljava/lang/String;Z)V");
+    jmethodID restore = (*env)->GetStaticMethodID(env, gcls, "restore", "()V");
+    if (available == NULL || install == NULL || query == NULL || purchase == NULL ||
+        finish == NULL || restore == NULL) {
+        // All-or-nothing: g_cls is the cache flag, so a half-resolved
+        // class must not be published — a later call would invoke NULL
+        // method ids with a NoSuchMethodError still pending.
+        (*env)->ExceptionClear(env);
+        (*env)->DeleteGlobalRef(env, gcls);
+        return 0;
+    }
+    g_available = available;
+    g_install = install;
+    g_query = query;
+    g_purchase = purchase;
+    g_finish = finish;
+    g_restore = restore;
+    g_cls = gcls;
+    return 1;
 }
 
 /// A jstring as a freshly allocated UTF-8 copy. The caller frees; NULL in

@@ -533,6 +533,29 @@ test "keyboard scrolls the window when nothing consumes the keys" {
     try testing.expectEqual(@as(i32, 0), app.root_scroll);
 }
 
+test "keyboard does not scroll the window under an open picker" {
+    var app = try test_app.init(400, 100);
+    defer app.deinit();
+    const sel = try app.tree.append(app.tree.rootId(), .{ .select = .{
+        .label = "View",
+        .options = &.{ "List", "Grid" },
+    } });
+    var i: usize = 0;
+    while (i < 20) : (i += 1) {
+        _ = try app.tree.append(app.tree.rootId(), .{ .text = .{ .content = "line" } });
+    }
+    app.performLayout();
+    try app.tap(app.tree.rectOf(sel).center());
+    try testing.expect(layout.findPicker(&app.tree) != null);
+
+    // The pointer path keeps everything under the scrim still
+    // (`modalOpen`); the key path must agree even when nothing has
+    // focus to consume the key first.
+    app.focused = null;
+    try app.dispatch(.{ .key_down = .{ .key = .page_down, .mods = .{} } });
+    try testing.expectEqual(@as(i32, 0), app.root_scroll);
+}
+
 test "tab scrolls the focused element into view" {
     var app = try test_app.init(400, 100);
     defer app.deinit();

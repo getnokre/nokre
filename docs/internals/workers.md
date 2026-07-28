@@ -17,8 +17,10 @@ sink's "Workers" section is the live demo on every platform.
 
 ## The problem
 
-App code runs entirely inside the UI thread's loop: an `Action` that
-takes 200ms freezes taps, keys, and paint for 200ms. "An app at rest
+App code runs entirely inside the UI thread's loop, so a slow `Action`
+stalls taps, keys, and paint for exactly as long as it runs
+([../services.md](../services.md) opens with the consumer-facing
+statement of that rule). "An app at rest
 costs zero CPU" has a sibling under load: the UI thread does nothing but
 dispatch and paint. Indexing, search, parsing, media crunching — any
 heavy synchronous work — needs another thread, and on the web another

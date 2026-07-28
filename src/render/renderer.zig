@@ -1330,7 +1330,10 @@ fn drawMeter(app: *App, canvas: Painter, r: Rect, m: element_mod.Meter) void {
     strokeStateEdge(canvas, track, round);
     if (m.max <= 0 or m.value <= 0) return;
     const inner_w = track.w - 2 * metrics.border;
-    const fill_w = @divTrunc(inner_w * @min(m.value, m.max), m.max);
+    // Widened before the multiply, as `serialize.zig`'s meter is: value
+    // and max are arbitrary i32, so the product can overflow i32 while
+    // the quotient — at most `inner_w` — always fits.
+    const fill_w: i32 = @intCast(@divTrunc(@as(i64, inner_w) * @min(m.value, m.max), m.max));
     if (fill_w > 0) canvas.fillRect(.{
         .x = startX(app, track.x + metrics.border, inner_w, fill_w),
         .y = track.y + metrics.border,

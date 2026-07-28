@@ -62,18 +62,34 @@ static int ss_init(JNIEnv *env) {
         (*env)->ExceptionClear(env);
         return 0;
     }
-    g_cls = (*env)->NewGlobalRef(env, cls);
+    jclass gcls = (*env)->NewGlobalRef(env, cls);
     (*env)->DeleteLocalRef(env, cls);
-    if (g_cls == NULL) return 0;
-    g_get = (*env)->GetStaticMethodID(env, g_cls, "get",
-                                      "(Ljava/lang/String;Ljava/lang/String;)[B");
-    g_set = (*env)->GetStaticMethodID(env, g_cls, "set",
-                                      "(Ljava/lang/String;Ljava/lang/String;[B)Z");
-    g_delete = (*env)->GetStaticMethodID(env, g_cls, "delete",
-                                         "(Ljava/lang/String;Ljava/lang/String;)Z");
-    g_list = (*env)->GetStaticMethodID(env, g_cls, "list",
-                                       "(Ljava/lang/String;)[Ljava/lang/String;");
-    return g_get != NULL && g_set != NULL && g_delete != NULL && g_list != NULL;
+    if (gcls == NULL) {
+        (*env)->ExceptionClear(env);
+        return 0;
+    }
+    jmethodID get = (*env)->GetStaticMethodID(env, gcls, "get",
+                                              "(Ljava/lang/String;Ljava/lang/String;)[B");
+    jmethodID set = (*env)->GetStaticMethodID(env, gcls, "set",
+                                              "(Ljava/lang/String;Ljava/lang/String;[B)Z");
+    jmethodID delete = (*env)->GetStaticMethodID(env, gcls, "delete",
+                                                 "(Ljava/lang/String;Ljava/lang/String;)Z");
+    jmethodID list = (*env)->GetStaticMethodID(env, gcls, "list",
+                                               "(Ljava/lang/String;)[Ljava/lang/String;");
+    if (get == NULL || set == NULL || delete == NULL || list == NULL) {
+        // All-or-nothing: g_cls is the cache flag, so a half-resolved
+        // class must not be published — a later call would invoke NULL
+        // method ids with a NoSuchMethodError still pending.
+        (*env)->ExceptionClear(env);
+        (*env)->DeleteGlobalRef(env, gcls);
+        return 0;
+    }
+    g_get = get;
+    g_set = set;
+    g_delete = delete;
+    g_list = list;
+    g_cls = gcls;
+    return 1;
 }
 
 // ns and key are ptr+len ASCII (never NUL-terminated); NewStringUTF

@@ -476,6 +476,10 @@ pub fn node(em: *Emitter, id: NodeId) anyerror!void {
             try em.raw("\"");
             try em.stop(id);
             try em.raw(">");
+            // The HTML parser drops one newline immediately after the
+            // <textarea> tag, so a value that starts with one needs a
+            // sacrificial extra or it round-trips shorter than it is.
+            if (std.mem.startsWith(u8, t.value, "\n")) try em.raw("\n");
             try em.text(t.value);
             try em.raw("</textarea></span></label>");
         },
@@ -574,7 +578,11 @@ pub fn node(em: *Emitter, id: NodeId) anyerror!void {
             }
             try em.raw("</span>");
             if (navigates) {
-                try icon(em, .chevron_right, "", .ink, .body, .mark);
+                // The chevron points where navigation goes, so a
+                // mirrored chrome flips it — the reference's
+                // `tile_chevron` / `tile_chevron_rtl` pair.
+                const mark: IconName = if (em.app.direction == .rtl) .chevron_left else .chevron_right;
+                try icon(em, mark, "", .ink, .body, .mark);
                 try em.raw("</a>");
             } else {
                 try em.raw("</button>");
@@ -652,7 +660,11 @@ pub fn node(em: *Emitter, id: NodeId) anyerror!void {
             try em.raw("<button type=\"button\" class=\"icon-button back\" aria-label=\"Back\"");
             try em.stop(id);
             try em.raw(">");
-            try icon(em, .chevron_left, "", .ink, .body, .mark);
+            // Back points along the reading direction, so a mirrored
+            // chrome flips it — the reference's `back_chevron` /
+            // `back_chevron_rtl` pair.
+            const mark: IconName = if (em.app.direction == .rtl) .chevron_right else .chevron_left;
+            try icon(em, mark, "", .ink, .body, .mark);
             try em.raw("</button>");
         },
 

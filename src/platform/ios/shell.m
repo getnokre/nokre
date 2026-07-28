@@ -712,6 +712,18 @@ int32_t nokre_key_from_press(UIPress *press) {
     return markedText.length > 0 ? [NokreTextRange range:NSMakeRange(0, markedText.length)] : nil;
 }
 
+// The shell contract's caret is a UTF-8 byte offset into the marked
+// text (docs/internals/platform-shells.md), but Apple reports UTF-16
+// code units — convert, as the Windows shell does. A location inside a
+// surrogate pair cannot convert (the length comes back 0), so the
+// caret clamps to the end rather than jump to the start.
+static size_t nokre_caret_utf8(NSString *s, NSUInteger loc, size_t utf8_len) {
+    if (loc >= s.length) return utf8_len;
+    NSUInteger bytes = [[s substringToIndex:loc] lengthOfBytesUsingEncoding:NSUTF8StringEncoding];
+    if (bytes == 0 && loc > 0) return utf8_len;
+    return bytes < utf8_len ? (size_t)bytes : utf8_len;
+}
+
 - (void)setMarkedText:(NSString *)text selectedRange:(NSRange)range {
     NSString *s = text ?: @"";
     if (s.length == 0 && markedText.length > 0) {
@@ -722,14 +734,15 @@ int32_t nokre_key_from_press(UIPress *press) {
         [markedText setString:s];
         selectedRange = NSIntersectionRange(range, NSMakeRange(0, s.length));
         const char *utf8 = s.UTF8String;
-        config.on_ime_update(config.ctx, utf8, strlen(utf8), (size_t)range.location);
+        size_t len = strlen(utf8);
+        config.on_ime_update(config.ctx, utf8, len, nokre_caret_utf8(s, range.location, len));
     }
     [self inputChanged];
 }
 
 - (void)unmarkText {
-    // UITextInput semantics: unmark commits (unlike AppKit, where the
-    // macOS shell treats it as cancel).
+    // UITextInput semantics: unmark commits — the macOS shell's
+    // unmarkText follows the same rule under NSTextInputClient.
     if (markedText.length > 0) {
         const char *utf8 = markedText.UTF8String;
         config.on_ime_commit(config.ctx, utf8, strlen(utf8));

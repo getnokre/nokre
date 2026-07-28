@@ -93,9 +93,11 @@ problems, because the library cannot express them.
   palette you can prove.
 - **No system fonts.** Four bundled families — one mono, one
   proportional, one icon face, and one Arabic-script companion every
-  family falls back to for Persian and Arabic — each text family with
-  real bold, italic, and bold-italic faces from the same upstream
-  build, and nothing else can ever be rendered. No synthetic
+  family falls back to for Persian and Arabic — every variant a real
+  drawn face from the same upstream build (bold, italic, and
+  bold-italic for the two text families; the companion has no italic,
+  because the script has none), and app text can reach nothing else.
+  No synthetic
   emboldening or shearing either: faked variants are
   rasterizer-dependent, which is the variance the bundling exists to
   close. The moment the OS font stack participates, byte-identity

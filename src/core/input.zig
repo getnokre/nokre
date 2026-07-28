@@ -361,9 +361,21 @@ pub fn activate(app: *App, id: NodeId) !void {
             // came from, which is what a visitor who crossed by mistake
             // reaches for. Standing on it already is the one no-op.
             if (!nav_mod.isCurrent(app, n.route)) try app.router.push(app, n.route);
-            // The nav node survives the rebuild; keyboard users keep
-            // their place in the chrome.
-            app.focused = .of(id);
+            // The row usually survives the rebuild, but crossing the
+            // on/off-roster boundary resyncs the chrome and `id` names
+            // a dead generation — so the keyboard user's place is
+            // re-found in the row standing there now, the same move
+            // `overlays.closePicker` makes for the chip. The pressed
+            // destination is current after the push, which is how its
+            // row is recognized without the old node's strings.
+            app.focused = if (layout.findNav(&app.tree)) |nav| blk: {
+                var it = app.tree.children(nav);
+                while (it.next()) |c| {
+                    const item = app.tree.getConst(c).?;
+                    if (item.* == .nav_item and nav_mod.isCurrent(app, item.nav_item.route)) break :blk .of(c);
+                }
+                break :blk null;
+            } else null;
         },
         .text_input => |*i| {
             i.cursor = i.value.len;
@@ -806,8 +818,7 @@ fn revealSegSelected(app: *App, id: NodeId) void {
 }
 
 fn handleRootScrollKey(app: *App, key: event_mod.Key) void {
-    if (layout.findSheet(&app.tree) != null) return; // background is inert
-    if (layout.findNoticesPane(&app.tree) != null) return;
+    if (modalOpen(app)) return; // background is inert
     const line = text.Scale.body.lineHeight();
     const page = layout.contentArea(&app.tree, app.viewport, app.safe_bottom).h;
     switch (key) {

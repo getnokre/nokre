@@ -777,6 +777,11 @@ pub const Notice = struct {
     height: i32 = 0,
 };
 
+/// The pane's accessible name and drawn header title. One declaration,
+/// because layout measures the header from the same bytes `label()`
+/// announces — a second literal could drift and mis-measure.
+pub const notices_label = "Notices";
+
 /// Modal list of every pending notice, opened from the banner's expand
 /// control or the nav pane's indicator. Children are `notice` rows plus
 /// the pane's own controls; Esc, the scrim, or its minimize control
@@ -1115,7 +1120,7 @@ pub const Element = union(Role) {
             // route's title is its value (`NavHere`).
             .nav_here => "Current screen",
             .notice => |n| n.title,
-            .notices_pane => "Notices",
+            .notices_pane => notices_label,
             .icon_button => |i| i.label,
             .picker => |p| p.title,
             .picker_item => |p| p.label,

@@ -73,6 +73,8 @@ pub export fn nokre_locale_seed(len: usize) void {
 /// browser saying it no longer knows.
 pub export fn nokre_locale_receive(t: [*]const u8, len: usize) void {
     tag_len = if (len > tag_buf.len) 0 else len;
-    if (tag_len != 0) @memcpy(tag_buf[0..tag_len], t[0..tag_len]);
+    // live.js writes through nokre_locale_scratch, so `t` is usually
+    // tag_buf itself — and an exactly-overlapping @memcpy is illegal.
+    if (tag_len != 0 and t != @as([*]const u8, &tag_buf)) @memcpy(tag_buf[0..tag_len], t[0..tag_len]);
     if (receiver_cb) |cb| cb(receiver_ctx, &tag_buf, tag_len);
 }

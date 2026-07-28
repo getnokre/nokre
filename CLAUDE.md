@@ -22,8 +22,9 @@ fact has one home; complement, never duplicate. Start with
   Windows / Linux; Windows needs VS C++ Build Tools; goldens stay
   CoreText-generated, so `-Dgolden` mismatches on the FreeType pair —
   Windows and Linux — by design; Linux is
-  Wayland and needs `wayland-protocols` + the `wayland-client`,
-  `libxkbcommon`, `dbus-1`, and `libsecret-1` dev packages)
+  Wayland and needs `wayland-protocols` + the `wayland-client` (>= 1.21
+  for `.axis_value120` — Ubuntu 22.04+), `libxkbcommon`, `dbus-1`, and
+  `libsecret-1` dev packages)
 - `tools/build-skia-ios.sh` once, then `open examples/kitchen_sink/ios/KitchenSink.xcodeproj` —
   kitchen sink on the iOS Simulator / an iPhone (Apple Silicon only —
   the simulator slice is arm64, so the script refuses Intel Macs)

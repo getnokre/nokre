@@ -83,7 +83,7 @@ does, and it is the arrangement the two drivers were split for.
 
 ### What the live driver costs
 
-`zig build web` produces the kitchen sink as **one 208 KB `.wasm`**,
+`zig build web` produces the kitchen sink as **one ~200 KB `.wasm`**,
 35 KB of glue in three modules, and the generated stylesheet. No Skia, no
 emscripten, no libc: `wasm32-freestanding` and `std.heap.wasm_allocator`
 are the whole platform requirement, because the rasterizer this edition

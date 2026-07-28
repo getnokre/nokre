@@ -47,11 +47,10 @@ daemon's own unlock prompt, which blocks the same way.
 
 ## The caps, derived
 
-- **2048-byte values.** Windows is the tightest native bound:
-  `CRED_MAX_CREDENTIAL_BLOB_SIZE` is 2560, and 2048 is the largest
-  power of two under it. Every platform enforces 2048 on the Zig side
-  (http's `BodyTooLarge` precedent: the cap is ours, so the name is
-  ours), so `ValueTooLarge` means one thing everywhere.
+- **2048-byte values.** Why this number is the consumer table's row
+  ([../services.md](../services.md)); what internals adds is the
+  naming: http's `BodyTooLarge` precedent — the cap is ours, so the
+  name is ours.
 - **128-byte keys, 64 entries.** Together they bound every buffer to a
   stack array: `ListBuf` is ~9 KiB, the wasm table 64 × (128 + 2048)
   ≈ 139 KiB, the base64 sessionStorage mirror ≈ 186 KiB worst case —

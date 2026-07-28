@@ -6,9 +6,8 @@ actually settled ([oauth.md](oauth.md)'s method). The roster row in
 [../services.md](../services.md) is the status of record and carries the
 consumer contract.
 
-`iap` landed last of the app-reachable services, and last for a reason the
-other nine did
-not have: it is the only service that genuinely requires a per-platform SDK.
+`iap` is alone on the roster for a reason the other rows do not share:
+it is the only service that genuinely requires a per-platform SDK.
 [oauth.md](oauth.md) opened by disputing the then-roadmap's grouping of
 OAuth with IAP as "both drag in per-platform SDKs" — the correction was that
 OAuth needs none. This one does, and most of what follows is what that costs and

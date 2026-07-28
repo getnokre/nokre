@@ -150,10 +150,15 @@ const State = struct {
     /// response is the common case, and it reads fine as code.
     fn fencedCode(self: *State, parent: NodeId, lines: *Lines, fence: Fence) !void {
         var body: std.ArrayList(u8) = .empty;
+        // The separator keys on "a line came before", not on bytes
+        // accumulated: a leading blank line is verbatim content, and
+        // keying on length would swallow it.
+        var any = false;
         while (lines.next()) |line| {
             if (closesFence(line, fence)) break;
-            if (body.items.len > 0) try body.append(self.a, '\n');
+            if (any) try body.append(self.a, '\n');
             try body.appendSlice(self.a, line);
+            any = true;
         }
         // An empty block cannot be appended, and there is nothing
         // verbatim in it to show anyway.

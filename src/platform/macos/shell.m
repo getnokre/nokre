@@ -200,20 +200,38 @@ static int32_t keyFromEvent(NSEvent *event) {
     [self maybeRepaint];
 }
 
+// The shell contract's caret is a UTF-8 byte offset into the marked
+// text (docs/internals/platform-shells.md), but Apple reports UTF-16
+// code units — convert, as the Windows shell does. A location inside a
+// surrogate pair cannot convert (the length comes back 0), so the
+// caret clamps to the end rather than jump to the start.
+static size_t nokre_caret_utf8(NSString *s, NSUInteger loc, size_t utf8_len) {
+    if (loc >= s.length) return utf8_len;
+    NSUInteger bytes = [[s substringToIndex:loc] lengthOfBytesUsingEncoding:NSUTF8StringEncoding];
+    if (bytes == 0 && loc > 0) return utf8_len;
+    return bytes < utf8_len ? (size_t)bytes : utf8_len;
+}
+
 - (void)setMarkedText:(id)string
         selectedRange:(NSRange)selectedRange
      replacementRange:(NSRange)replacementRange {
     NSString *text = [string isKindOfClass:[NSAttributedString class]] ? [string string] : string;
     [markedText replaceCharactersInRange:NSMakeRange(0, markedText.length) withString:text];
     const char *utf8 = text.UTF8String;
-    config.on_ime_update(config.ctx, utf8, strlen(utf8), (size_t)selectedRange.location);
+    size_t len = strlen(utf8);
+    config.on_ime_update(config.ctx, utf8, len,
+                         nokre_caret_utf8(text, selectedRange.location, len));
     [self maybeRepaint];
 }
 
 - (void)unmarkText {
+    // NSTextInputClient semantics: unmark accepts the composition as
+    // input — a commit, not a cancel (the iOS shell's UITextInput
+    // unmark is the same rule).
     if (markedText.length > 0) {
+        const char *utf8 = markedText.string.UTF8String;
+        config.on_ime_commit(config.ctx, utf8, strlen(utf8));
         [markedText deleteCharactersInRange:NSMakeRange(0, markedText.length)];
-        config.on_ime_cancel(config.ctx);
         [self maybeRepaint];
     }
 }
@@ -316,6 +334,11 @@ static void nokre_deep_link_dispatch(NSURL *url);
 static void *g_deep_link_ctx = NULL;
 static nokre_deep_link_cb g_deep_link_cb = NULL;
 static NSString *g_deep_link_pending = nil;
+// The one view, held for every inbound service hook — not deep_link's
+// alone, hence the neutral name. Weak and file-scope like the iOS
+// shell's: [NSApp mainWindow] is nil while the app is inactive, which
+// is exactly when a launch URL or locale change can arrive.
+static __weak NokreView *g_main_view = nil;
 
 static void nokre_deep_link_dispatch(NSURL *url) {
     if (url == nil) return;
@@ -328,7 +351,7 @@ static void nokre_deep_link_dispatch(NSURL *url) {
     g_deep_link_cb(g_deep_link_ctx, bytes, strlen(bytes));
     // The handler routed and invalidated like any action; mark the view
     // dirty so the on-demand loop paints the result (worker-pump rule).
-    [NSApp mainWindow].contentView.needsDisplay = YES;
+    g_main_view.needsDisplay = YES;
 }
 
 void nokre_deep_link_install(void *ctx, nokre_deep_link_cb cb) {
@@ -409,8 +432,8 @@ void nokre_locale_install(void *ctx, nokre_locale_cb cb) {
                   // The handler re-resolved its bundle like any action;
                   // mark the view dirty so the on-demand loop paints it.
                   // Change fires only — at install time there is no
-                  // window yet and mainWindow is nil.
-                  [NSApp mainWindow].contentView.needsDisplay = YES;
+                  // window yet and the view reference is nil.
+                  g_main_view.needsDisplay = YES;
                 }];
 }
 
@@ -473,6 +496,7 @@ int32_t nokre_shell_run(const nokre_shell_config *config) {
         [window makeKeyAndOrderFront:nil];
         [app activateIgnoringOtherApps:YES];
 
+        g_main_view = view;
         config->on_ready(config->ctx, (__bridge void *)view, "NokreWindow");
         config->on_window_focus(config->ctx, window.isKeyWindow ? 1 : 0);
 

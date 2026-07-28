@@ -179,7 +179,10 @@ pub const MeasureRunIterator = struct {
         }
         const c = classOf(cp);
         return switch (c) {
-            .L, .R => .base,
+            // AL outside the `isArabicScript` blocks (Syriac, Thaana)
+            // is still a strong anchor — absorbed, it would ride into
+            // a neighboring run and measure under the wrong face.
+            .L, .R, .AL => .base,
             .EN, .AN => if (self.split_numbers) .number else .base,
             else => null,
         };
@@ -343,18 +346,29 @@ pub fn resolve(s: *Scratch, bytes: []const u8, dir: Direction) Paragraph {
 fn matchIsolates(classes: []const Class, out: *[max_iso_matches]IsoMatch) []const IsoMatch {
     var stack: [max_depth + 1]u16 = undefined;
     var depth: usize = 0;
+    var skipped: usize = 0;
     var count: usize = 0;
     for (classes, 0..) |c, i| {
         if (isIsolateInitiator(c)) {
             if (depth < stack.len) {
                 stack[depth] = @intCast(i);
                 depth += 1;
+            } else {
+                skipped += 1;
             }
-        } else if (c == .PDI and depth > 0) {
-            depth -= 1;
-            if (count < max_iso_matches) {
-                out[count] = .{ .initiator = stack[depth], .pdi = @intCast(i) };
-                count += 1;
+        } else if (c == .PDI) {
+            // A PDI closes the nearest open initiator (BD9), and past
+            // the stack budget the nearest ones are the skipped ones —
+            // their PDIs must be consumed here, or each would pop an
+            // ancestor and mispair the whole nest.
+            if (skipped > 0) {
+                skipped -= 1;
+            } else if (depth > 0) {
+                depth -= 1;
+                if (count < max_iso_matches) {
+                    out[count] = .{ .initiator = stack[depth], .pdi = @intCast(i) };
+                    count += 1;
+                }
             }
         }
     }
@@ -1085,6 +1099,18 @@ fn cpIndexOf(p: *const Paragraph, byte_offset: usize) usize {
         }
     }
     return lo;
+}
+
+test "BD9: isolate nesting past the stack budget resolves without mispairing panic" {
+    const scratch = try std.testing.allocator.create(Scratch);
+    defer std.testing.allocator.destroy(scratch);
+    // 130 nested LRIs overflow the initiator stack; the innermost go
+    // unmatched, and their PDIs must be consumed rather than spent
+    // popping ancestors.
+    const text = "س" ++ "\u{2066}" ** 130 ++ "a" ++ "\u{2069}" ** 130 ++ "ب";
+    const para = resolve(scratch, text, paragraphDirection(text));
+    try std.testing.expect(!para.degraded);
+    try std.testing.expectEqual(Direction.rtl, para.direction());
 }
 
 test "N0: sequential bracket pairs past the pair budget resolve without panic" {

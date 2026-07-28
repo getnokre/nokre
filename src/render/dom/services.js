@@ -248,6 +248,10 @@ export function appHooks({ nk, memory, workerUrl, wasmUrl, onWork, onMetrics }) 
     if (e.origin !== location.origin) return;
     if (!e.data || e.data.t !== "nokre.oauth") return;
     if (!authPopup) return;
+    // Same-origin is not enough: any frame on this origin could post a
+    // forged callback, and the message carries an authorization code —
+    // only the window this flow opened may end it.
+    if (e.source !== authPopup) return;
     endAuth(0, e.data.href);
   });
 
@@ -383,7 +387,12 @@ export function appHooks({ nk, memory, workerUrl, wasmUrl, onWork, onMetrics }) 
           // One scratch, two spans: [headers][body], with the split
           // point handed over rather than searched for.
           const ptr = nk().nokre_http_scratch(hb.length + body.length);
-          if (!ptr) return;
+          if (!ptr) {
+            // A response too big for the wasm heap still has to end the
+            // request; the short failure name fits the retained scratch.
+            httpFail(index, gen, "OutOfMemory");
+            return;
+          }
           memory().set(hb, ptr);
           memory().set(body, ptr + hb.length);
           nk().nokre_http_deliver(index, gen, res.status, hb.length, body.length);

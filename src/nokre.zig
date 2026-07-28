@@ -141,7 +141,7 @@ test {
     _ = testing;
     _ = testing.queries;
     _ = testing.driver;
-    _ = testing.audit_mod;
+    _ = testing.audit;
     _ = testing.golden;
     _ = testing.trace;
     // Test suites for the larger modules live in sibling *_test.zig files.

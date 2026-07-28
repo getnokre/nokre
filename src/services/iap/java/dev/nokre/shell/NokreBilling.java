@@ -77,9 +77,6 @@ public final class NokreBilling {
     /** The rows the last query returned. Unavoidable: launchBillingFlow
      *  takes a ProductDetails object, never an id (iap.h). */
     private static final Map<String, ProductDetails> priced = new HashMap<>();
-    /** True while a restore is running, so its results report as
-     *  RESTORED rather than as fresh purchases. */
-    private static boolean restoring;
 
     // ---- C -> Java (src/services/iap/android.c) ----
 
@@ -153,6 +150,7 @@ public final class NokreBilling {
         // One shared latch for the two type queries; Play answers on the
         // main thread, so a plain int needs no synchronization.
         final int[] outstanding = {2};
+        final int[] emitted = {0};
         final String[] failure = {null};
         for (String type : new String[] {
                 BillingClient.ProductType.INAPP, BillingClient.ProductType.SUBS }) {
@@ -167,7 +165,7 @@ public final class NokreBilling {
                     QueryProductDetailsParams.newBuilder().setProductList(want).build(),
                     (result, details) -> {
                         if (result.getResponseCode() == BillingClient.BillingResponseCode.OK) {
-                            emitRows(details);
+                            emitted[0] += emitRows(details);
                         } else if (failure[0] == null) {
                             failure[0] = responseName(result);
                         }
@@ -175,10 +173,11 @@ public final class NokreBilling {
                             // A type that simply has none of these ids
                             // answers OK with an empty list, so a failure
                             // here is a real one — but only if *neither*
-                            // type answered, which is what the null check
-                            // on rows below means: an id found as INAPP
-                            // must not be lost to a SUBS error.
-                            nativeProductsDone(failure[0] != null && priced.isEmpty()
+                            // type produced a row for THIS query (`priced`
+                            // outlives queries, so it cannot answer that):
+                            // an id found as INAPP must not be lost to a
+                            // SUBS error.
+                            nativeProductsDone(failure[0] != null && emitted[0] == 0
                                     ? failure[0]
                                     : "");
                         }
@@ -186,8 +185,9 @@ public final class NokreBilling {
         }
     }
 
-    private static void emitRows(List<ProductDetails> details) {
-        if (details == null) return;
+    private static int emitRows(List<ProductDetails> details) {
+        if (details == null) return 0;
+        int rows = 0;
         for (ProductDetails d : details) {
             priced.put(d.getProductId(), d);
             String price = "";
@@ -224,7 +224,9 @@ public final class NokreBilling {
             }
             nativeProductRow(d.getProductId(), d.getTitle(), d.getDescription(), price, currency,
                     offer, micros, kind);
+            rows++;
         }
+        return rows;
     }
 
     static int purchase(String product, String offer) {
@@ -262,7 +264,6 @@ public final class NokreBilling {
     }
 
     static void restore() {
-        restoring = true;
         replayUnfinished();
     }
 
@@ -281,7 +282,6 @@ public final class NokreBilling {
                         for (Purchase p : purchases) report(p, RESTORED);
                     });
         }
-        restoring = false;
     }
 
     // ---- Java -> C ----
@@ -299,14 +299,11 @@ public final class NokreBilling {
         for (Purchase p : purchases) report(p, PURCHASED);
     }
 
-    private static void report(Purchase p, int fresh) {
-        int status = fresh;
+    private static void report(Purchase p, int status) {
         if (p.getPurchaseState() == Purchase.PurchaseState.PENDING) {
             // Pending outranks restored: the money has not moved, and
             // that is what the app must act on.
             status = PENDING;
-        } else if (restoring || fresh == RESTORED) {
-            status = RESTORED;
         }
         String token = p.getPurchaseToken();
         List<String> products = p.getProducts();

@@ -38,7 +38,7 @@ pub const Knock = haptic.Knock;
 pub const diag = @import("diag.zig");
 pub const queries = @import("queries.zig");
 pub const driver = @import("driver.zig");
-pub const audit_mod = @import("audit.zig");
+pub const audit = @import("audit.zig");
 pub const golden = @import("golden.zig");
 pub const trace = @import("trace.zig");
 
@@ -106,7 +106,7 @@ pub const Harness = struct {
             if (opts.nav.len != 0) try self.app.setNav(opts.nav);
             try self.app.navigate(opts.initial_route);
         }
-        try audit_mod.audit(&self.app);
+        try self.audit();
         return self;
     }
 
@@ -231,7 +231,7 @@ pub const Harness = struct {
     /// the screen the action produced.
     fn afterStep(self: *Harness, comptime fmt: []const u8, args: anytype) !void {
         try self.observe(fmt, args);
-        try audit_mod.audit(&self.app);
+        try self.audit();
     }
 
     fn labelOf(self: *const Harness, id: NodeId) []const u8 {
@@ -284,6 +284,11 @@ pub const Harness = struct {
     pub fn scroll(self: *Harness, id: NodeId, delta_y: i32) !void {
         try driver.scroll(&self.app, id, delta_y);
         try self.afterStep("scroll {d}", .{delta_y});
+    }
+
+    pub fn scrollX(self: *Harness, id: NodeId, delta_x: i32) !void {
+        try driver.scrollX(&self.app, id, delta_x);
+        try self.afterStep("scroll x {d}", .{delta_x});
     }
 
     /// Drag in from the leading edge, past the threshold, and let go —
@@ -635,7 +640,9 @@ pub const Harness = struct {
     /// every action; call it directly only after mutating the tree by
     /// hand.
     pub fn audit(self: *Harness) !void {
-        try audit_mod.audit(&self.app);
+        // This verb shadows the module export inside `Harness`, so the
+        // one call that must reach the module names its file.
+        try @import("audit.zig").audit(&self.app);
     }
 
     pub fn a11ySnapshot(self: *Harness, gpa: std.mem.Allocator) !semantics.Snapshot {

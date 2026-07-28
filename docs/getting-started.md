@@ -6,8 +6,9 @@ new-note sheet, sync over http, a background worker, settings, a second
 language — and you test every part as you go, ending with an inline
 tree snapshot, a step trace, and a byte-exact golden screenshot. The last part builds the same
 code for macOS, Windows, Linux, iOS, Android, and the web. Finish it and you
-have used every consumer-facing feature nokre has; each part links the
-document that owns the full contract.
+have used the core of nokre's consumer surface; each part links the
+document that owns the full contract, and the last part points at what
+the course deliberately skipped.
 
 Read [introduction.md](introduction.md) first if you haven't — nokre
 makes more sense once you know what it refuses to do.
@@ -1451,10 +1452,12 @@ untranslated text is made of.
 
 Things worth noticing, because they generalize:
 
-- **The English bytes didn't change.** The template's messages are
-  byte-identical to Part 6's literals, so every test so far still
-  passes — this part refactored, it didn't change behavior. That is
-  what makes localization safe to do late.
+- **The English bytes barely changed.** The heading, empty state, and
+  capacity label are byte-identical to Part 6's literals, so the tests
+  that read them still pass; only `noteCount` changed behavior, because
+  going plural-aware was the point of moving it. A pure refactor would
+  have changed nothing — that is what makes localization safe to do
+  late.
 - **The checks run before the app does.** Key parity in both
   directions, placeholder names and types at every `fmt` call site, and
   plural forms against each locale's own CLDR categories — Persian's
@@ -1789,7 +1792,7 @@ a `std.Thread` or a Web Worker, `std.http.Client` or `fetch`.
 
 ## Part 14 — Where you are now
 
-You have used the whole consumer surface: the element vocabulary and
+You have used the core consumer surface: the element vocabulary and
 its commit contracts, the tree's append-time correctness, routes and
 the framework's navigation chrome, the sheet and notices, six of the
 services (`secure_store`, `package_info`, `clipboard` through

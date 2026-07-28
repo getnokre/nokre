@@ -61,7 +61,9 @@ pub fn readPgm(io: Io, dir: Io.Dir, gpa: std.mem.Allocator, sub_path: []const u8
     if (maxval != 255) return error.BadPgm;
 
     const header_end = it.index + 1; // single whitespace byte after maxval
-    if (raw.len - header_end != w * h) return error.BadPgm;
+    if (header_end > raw.len) return error.BadPgm;
+    const size = std.math.mul(usize, w, h) catch return error.BadPgm;
+    if (raw.len - header_end != size) return error.BadPgm;
     return .{ .w = w, .h = h, .pixels = raw[header_end..], .raw = raw };
 }
 
@@ -120,6 +122,29 @@ test "pgm round-trips" {
     try testing.expectEqual(@as(usize, 3), back.w);
     try testing.expectEqual(@as(usize, 2), back.h);
     try testing.expectEqualSlices(u8, &pixels, back.pixels);
+}
+
+test "readPgm rejects truncated and overflowing headers" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    // Ends right at the maxval token — not even the header's own
+    // terminating whitespace byte, let alone pixels.
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "t.pgm", .data = "P5\n3 2\n255" });
+    try testing.expectError(
+        error.BadPgm,
+        readPgm(testing.io, tmp.dir, testing.allocator, "t.pgm"),
+    );
+
+    // Dimensions that each fit usize but whose product does not.
+    try tmp.dir.writeFile(testing.io, .{
+        .sub_path = "o.pgm",
+        .data = "P5\n9223372036854775807 9223372036854775807\n255\n",
+    });
+    try testing.expectError(
+        error.BadPgm,
+        readPgm(testing.io, tmp.dir, testing.allocator, "o.pgm"),
+    );
 }
 
 test "expectMatches creates only under update, then verifies and detects change" {

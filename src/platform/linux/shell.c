@@ -339,6 +339,15 @@ static void pointer_leave(void *data, struct wl_pointer *pointer, uint32_t seria
     (void)pointer;
     (void)serial;
     (void)surface;
+    // The compositor took the pointer away mid-press (an Alt+Tab, a
+    // grab): the press is over and it activates nothing — Windows's
+    // WM_CAPTURECHANGED posture. Left armed, re-entry would emit MOVE
+    // with no button held, which shell.h forbids.
+    if (g.ptr_down) {
+        g.ptr_down = 0;
+        g.config.on_pointer(g.config.ctx, g.ptr_x, g.ptr_y, NOKRE_POINTER_CANCEL);
+        maybe_repaint();
+    }
 }
 static void pointer_motion(void *data, struct wl_pointer *pointer, uint32_t time,
                            wl_fixed_t sx, wl_fixed_t sy) {
@@ -685,6 +694,13 @@ static void ti_leave(void *data, struct zwp_text_input_v3 *ti,
         zwp_text_input_v3_commit(ti);
         g.ti_enabled = 0;
         g.ti_serial++;
+        // The IME is gone, so a composition it left behind would render
+        // forever — the same cancel the disable path below performs.
+        if (g.ti_composing) {
+            g.config.on_ime_cancel(g.config.ctx);
+            g.ti_composing = 0;
+            maybe_repaint();
+        }
     }
 }
 static void ti_preedit(void *data, struct zwp_text_input_v3 *ti, const char *text,

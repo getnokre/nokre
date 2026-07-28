@@ -4,8 +4,9 @@ One contract, five shells — the web has none, because the browser is
 one and nokre's edition there renders into it
 ([dom-edition.md](dom-edition.md)). (That is the count of record, the
 one other docs point at: six platforms, five shells — the web is a
-platform without a shell.) Per-platform status lives in
-[roadmap.md](../roadmap.md); this is the contract a shell implements.
+platform without a shell.) Per-platform status lives in the
+[README](../../README.md)'s support matrix; this is the
+contract a shell implements.
 A shell's complete job description:
 
 1. Create a window/surface and report its logical size and integer scale.
@@ -283,7 +284,7 @@ of the same contract — plain C, message loop, no framework. Its twists:
   both, and the choice belongs to the press, not to the echo.
 - **IME.** IMM32: `WM_IME_COMPOSITION` streams `GCS_COMPSTR` as
   `on_ime_update` (caret converted from UTF-16 units to the UTF-8 byte
-  offset core renders), `GCS_RESULTSTR` as `on_ime_commit`, and an end
+  offset the contract asks for), `GCS_RESULTSTR` as `on_ime_commit`, and an end
   without a result cancels. The IME's own composition window is
   suppressed — core renders the composition inline — while the
   candidate list stays.
@@ -428,8 +429,8 @@ shell.m. Its twists:
 
 [linux/shell.c](../../src/platform/linux/shell.c) is a Wayland port of
 the same contract — plain C against libwayland, one poll loop, no
-framework. X11 is deliberately absent: Wayland is the modern default and
-one backend is the charter (docs/roadmap.md). Its twists:
+framework. X11 is deliberately absent: Wayland is the modern default,
+and one backend per platform is the charter. Its twists:
 
 - **Blit.** `wl_shm`: the shell expands gray8 to XRGB8888 into a
   double-buffered memfd pool and commits the free buffer, tracking
@@ -458,7 +459,9 @@ one backend is the charter (docs/roadmap.md). Its twists:
   makes it a character like any other. The compositor delegates
   key repeat, so the shell drives one `timerfd` for the held key.
 - **IME.** `zwp_text_input_v3`: `preedit_string` streams `on_ime_update`
-  (the caret is a UTF-8 byte offset core renders), `commit_string` lands
+  (the caret is a UTF-8 byte offset by contract — core currently draws
+  the caret at the composition's end and holds the offset for the day
+  it renders it), `commit_string` lands
   as `on_ime_commit`, and the batch applies on `done` — the enable/disable
   follows `wants_text_input` after every event, which is what raises an
   on-screen keyboard where the compositor offers one.
@@ -595,4 +598,8 @@ above, which no golden can catch for you — blit gray8. Add
 path, so an omission is an unresolved symbol rather than a missing
 feature (the contract, including the fire-before-you-return clause, is
 above). Then run the kitchen-sink example and the golden suite; if
-goldens pass, the platform renders byte-identically and the job is done.
+goldens pass, the platform renders byte-identically and the job is done
+— with today's caveat that the committed goldens are CoreText-generated,
+so a FreeType-stack shell validates against its own regenerated set
+until nokre-owned Skia builds collapse the two
+([../roadmap.md](../roadmap.md)).

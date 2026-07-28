@@ -118,6 +118,27 @@ test "non-ASCII headings keep their words in the slug" {
     try expectLacks(html, "id=\"section\"");
 }
 
+test "a spanned heading slugs its words, not \"section\"" {
+    // A formatted heading arrives with its words in `spans` —
+    // consumers leave `content` empty and `append` writes the
+    // concatenation — so the anchor must come from those words, the
+    // same id GitHub gives the unformatted heading.
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    _ = try app.tree.append(app.tree.rootId(), .{ .heading = .{
+        .level = .h2,
+        .spans = &.{
+            .{ .text = "Fast " },
+            .{ .text = "and correct", .emphasis = true },
+        },
+    } });
+
+    const html = try render(&app);
+    defer testing.allocator.free(html);
+    try expectContains(html, "<h2 id=\"fast-and-correct\">");
+    try expectLacks(html, "id=\"section\"");
+}
+
 test "two same-labeled choice groups get distinct radio names" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
@@ -374,6 +395,40 @@ test "an obscured field is a password field, and its value is not the label" {
     defer testing.allocator.free(html);
     try expectContains(html, "<input type=\"password\"");
     try expectContains(html, "<span class=\"field-label\">Passphrase</span>");
+}
+
+test "a text area value that starts with a newline keeps it" {
+    // The HTML parser drops one newline immediately after the
+    // <textarea> tag, so the serializer emits a sacrificial extra — a
+    // value must round-trip through the page byte-for-byte.
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    _ = try app.tree.append(app.tree.rootId(), .{ .text_area = .{
+        .label = "Notes",
+        .value = "\nfirst line",
+    } });
+
+    const html = try render(&app);
+    defer testing.allocator.free(html);
+    try expectContains(html, ">\n\nfirst line</textarea>");
+}
+
+test "rtl: the back and tile chevrons mirror with the chrome" {
+    // The reference flips both marks under a mirrored chrome
+    // (`back_chevron_rtl`, `tile_chevron_rtl`); this edition points
+    // them the same way. Each mark is read next to its closing tag —
+    // the two swap glyphs, so containment alone could not tell the
+    // mirrored page from the unmirrored one.
+    var app = try test_app.mirrored(400, 400);
+    defer app.deinit();
+    _ = try app.tree.append(app.tree.rootId(), .{ .back = .{} });
+    const group = try app.tree.append(app.tree.rootId(), .{ .tile_group = .{} });
+    _ = try app.tree.append(group, .{ .tile = .{ .label = "تنظیمات", .route = "settings" } });
+
+    const html = try render(&app);
+    defer testing.allocator.free(html);
+    try expectContains(html, "&#xE06F;</span></button>"); // back: chevron-right
+    try expectContains(html, "&#xE06E;</span></a>"); // tile: chevron-left
 }
 
 test "a folded action is not on the row; the more control stands there" {

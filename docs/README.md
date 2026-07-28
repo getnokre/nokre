@@ -54,8 +54,8 @@ you need them.
   screenshots.
 - [services.md](services.md) — optional OS capabilities beyond the window
   (secure storage, clipboard, http, deep links, identity, device locale,
-  workers, sign-in, purchases): the roster and each service's consumer
-  contract.
+  workers, sign-in, purchases, external URLs): the roster and each
+  service's consumer contract.
 
 **Project**
 

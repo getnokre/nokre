@@ -104,7 +104,7 @@ pub fn noMatch(tree: *const Tree, what: []const u8, needle: []const u8) error{No
         // listing that omitted them would send the reader hunting for a
         // link that is right there.
         for (focus.spansOf(el.*)) |span| {
-            if (span.route == null) continue;
+            if (!span.isLink()) continue;
             diag.print("  link (inline) \"{s}\"\n", .{span.text});
             any = true;
         }

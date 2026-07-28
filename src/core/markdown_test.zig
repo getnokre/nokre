@@ -438,6 +438,21 @@ test "an unterminated fence still reads as code" {
     , got);
 }
 
+test "a fence's leading blank line is verbatim, not swallowed" {
+    const got = try outline(testing.allocator,
+        \\```
+        \\
+        \\const x = 1;
+        \\```
+    );
+    defer testing.allocator.free(got);
+    try testing.expectEqualStrings(
+        \\code_block "
+        \\const x = 1;"
+        \\
+    , got);
+}
+
 test "the parser never panics on arbitrary bytes" {
     // The input is remote bytes, so the contract is `!void` and only
     // `!void`: no index may run off an end, whatever the markers do.

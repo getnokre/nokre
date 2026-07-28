@@ -351,7 +351,7 @@ fn checkLinked() void {
     // build that skipped linking still cannot ship: the curated error
     // names the one-line fix — secure_store's rule.
     comptime if (!options.linked and !builtin.is_test) @compileError(
-        \\the oauth service is not linked. Pass .oauth_schemes with the app's
+        \\the oauth service is not linked. Pass .oauth with the app's
         \\redirect scheme (plus .pkg_id — the URL-type registration and the
         \\intent-filter are keyed to the app's identity) to the nokre
         \\dependency in build.zig. docs/services.md.
@@ -424,7 +424,15 @@ const PlatformState = struct {
                 // beat the accept would be a connection refused, and the
                 // user would see a broken page for a flow that worked.
                 loopback_leg.run(listener, self.ticket.?) catch return self.failNow("ListenFailed");
-                if (!native_open.openUrl(opts.url)) self.failNow("BrowserUnavailable");
+                if (!native_open.openUrl(opts.url)) {
+                    // The thread is already blocked in accept and no
+                    // redirect can ever arrive: wake and drop it now —
+                    // the settle path's non-cancelling release would
+                    // leave it parked on the port for the life of the
+                    // process.
+                    self.releaseSession(true);
+                    self.failNow("BrowserUnavailable");
+                }
             },
             .web => {
                 // The runtime rides along because the web result's
