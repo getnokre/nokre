@@ -160,6 +160,9 @@ comptime {
         @export(&selectOption, .{ .name = "nokre_dom_select" });
         @export(&keyDown, .{ .name = "nokre_dom_key" });
         @export(&text, .{ .name = "nokre_dom_text" });
+        @export(&imeUpdate, .{ .name = "nokre_dom_ime_update" });
+        @export(&imeCommit, .{ .name = "nokre_dom_ime_commit" });
+        @export(&imeCancel, .{ .name = "nokre_dom_ime_cancel" });
         @export(&navigate, .{ .name = "nokre_dom_navigate" });
         @export(&back, .{ .name = "nokre_dom_back" });
         @export(&resize, .{ .name = "nokre_dom_resize" });
@@ -236,12 +239,15 @@ fn seedBytes(len: usize) callconv(.c) void {
 /// The screen and its chrome, as one document fragment. Returns the
 /// pointer; `nokre_dom_render_len` is its length.
 ///
-/// Whole-screen, not a node diff. nokre rebuilds subtrees instantly and
-/// has no animation to preserve, so "build it again" is the model
-/// rather than a shortcut — and the glue compares the bytes and does
-/// nothing when they match, which is the case a frame usually is. What
-/// a diff would buy is a smaller write on the frames that do change;
-/// that is the next thing to build here, not a correctness gap.
+/// Whole-screen serialize, per-node write. nokre rebuilds subtrees
+/// instantly and has no animation to preserve, so "build it again" is
+/// the model rather than a shortcut — and the glue holds the last
+/// frame's bytes and does nothing when the new one matches, which is
+/// the case a frame usually is. A frame that differs is not swapped in
+/// wholesale either: the glue patches the shown document against this
+/// markup node by node, under the same identity rule the hydration
+/// handover uses — same tag, same `data-n`, same node — so the write is
+/// proportional to what changed even though the serialization never is.
 ///
 /// `wrap` asks for the driver's own `<main>` around the screen. A page
 /// that has one already — a generated file keeping its id, its class
@@ -393,6 +399,27 @@ fn keyDown(key: u32, mods: u8) callconv(.c) void {
 fn text(len: usize) callconv(.c) void {
     if (!booted) return;
     app.dispatch(.{ .text = .{ .bytes = scratch.items[0..len] } }) catch {};
+}
+
+// The composition protocol, on the three legs every shell sends
+// (docs/internals/platform-shells.md): the preedit streams as updates,
+// and the session resolves as a commit or a cancel. No start leg — no
+// shell sends one, because the first update opens the composition and
+// `handleIme` treats them alike.
+
+fn imeUpdate(len: usize, cursor: usize) callconv(.c) void {
+    if (!booted) return;
+    app.dispatch(.{ .ime = .{ .update = .{ .composition = scratch.items[0..len], .cursor = cursor } } }) catch {};
+}
+
+fn imeCommit(len: usize) callconv(.c) void {
+    if (!booted) return;
+    app.dispatch(.{ .ime = .{ .commit = .{ .text = scratch.items[0..len] } } }) catch {};
+}
+
+fn imeCancel() callconv(.c) void {
+    if (!booted) return;
+    app.dispatch(.{ .ime = .cancel }) catch {};
 }
 
 /// An inbound reference: a link the glue intercepted, or an address bar

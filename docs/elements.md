@@ -518,7 +518,7 @@ Single-line. `label` is mandatory and rendered above the field (small
 scale). `value`, `placeholder`, `cursor` (byte offset), `on_change`,
 `on_submit` (Enter). Editing is UTF-8 codepoint-aware (backspace/delete,
 ←/→, Home/End). `composition` holds in-progress IME text, rendered dark
-with an underline; IME is live on every shell
+with an underline; IME is live on every platform, the web included
 ([internals/platform-shells.md](internals/platform-shells.md) has the
 per-shell contract).
 

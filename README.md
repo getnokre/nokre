@@ -98,8 +98,7 @@ is [docs/internals/platform-shells.md](docs/internals/platform-shells.md).
 | Android | JNI + SurfaceView | FreeType | TalkBack via AccessibilityNodeProvider |
 | Web | wasm32, no shell | the browser's | the DOM itself — nothing to mirror |
 
-What's next — the web edition's remainder (a node diff, IME),
-nokre-owned Skia builds, tooling — is
+What's next — nokre-owned Skia builds, tooling — is
 [docs/roadmap.md](docs/roadmap.md).
 
 MIT licensed.

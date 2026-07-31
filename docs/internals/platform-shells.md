@@ -550,9 +550,11 @@ The IME protocol (start/update/commit/cancel) is part of core
 renders identically everywhere. Shell-side IME is implemented on macOS
 (NSTextInputClient), iOS (UITextInput), Windows (IMM32), Android
 (InputConnection), and Linux (text-input-v3) — every shell. The web's
-fields are real DOM inputs, so composition is the browser's; the live
-driver does not forward it into core yet
-([dom-edition.md](dom-edition.md)).
+fields are real DOM inputs, so the preedit is composed *in the field*
+by the browser itself; the live driver forwards the same
+update/commit/cancel legs into core off the composition events, and
+what an open session owns on that platform is
+[dom-edition.md](dom-edition.md)'s to say.
 
 ## The accessibility bridge
 

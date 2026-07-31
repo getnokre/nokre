@@ -43,6 +43,17 @@ const KEY_BY_CODE = {
   Home: 10, End: 11, PageUp: 12, PageDown: 13,
 };
 
+// The inputTypes a composition session emits: the first pair during it
+// (every engine), the second at its edges (WebKit). None are this
+// driver's to forward — the composition events are the one lane — but
+// the WebKit pair *is* cancelable and must be refused, because core
+// applies the commit itself and the browser inserting it too would
+// type it twice. preventDefault on the non-cancelable pair is inert.
+const COMPOSITION_INPUTS = new Set([
+  "insertCompositionText", "deleteCompositionText",
+  "insertFromComposition", "deleteByComposition",
+]);
+
 export async function mount({ wasm, into, worker, content, route, seed, addressing }) {
   // The oauth popup lands on the app's own page (services.js states
   // the design): a popup carrying an auth response reports its URL to
@@ -239,8 +250,13 @@ export async function mount({ wasm, into, worker, content, route, seed, addressi
       if (a.getAttribute(attr.name) !== attr.value) a.setAttribute(attr.name, attr.value);
     }
     // Attributes are the markup's idea of a field; the property is the
-    // browser's, and only the second one shows. The tree owns both.
-    if (a.nodeName === "INPUT" || a.nodeName === "TEXTAREA") {
+    // browser's, and only the second one shows. The tree owns both —
+    // except mid-composition, when the focused field is the IME's:
+    // the preedit lives in its value, the markup carries the value
+    // *without* it, and writing that out from under an open session
+    // aborts it in every engine. The frame after the session resolves
+    // puts the tree's answer back.
+    if ((a.nodeName === "INPUT" || a.nodeName === "TEXTAREA") && !(composing && a === document.activeElement)) {
       const value = a.nodeName === "INPUT" ? (b.getAttribute("value") ?? "") : b.textContent;
       if (a.type !== "checkbox" && a.type !== "radio" && a.value !== value) a.value = value;
       // Assigned every time, not only when it looks wrong: the tree's
@@ -288,6 +304,11 @@ export async function mount({ wasm, into, worker, content, route, seed, addressi
     // puts the DOM's own back at one end — so the frame after a
     // keystroke would leave it there, which is a cursor that jumps to
     // the start of what you are typing.
+    //
+    // Not mid-composition, though: the caret is the IME's then — core's
+    // own points before the preedit — and poking a field's selection
+    // under an open session aborts it, the patchNode rule.
+    if (composing) return;
     const caret = nk.nokre_dom_caret();
     if (caret < 0 || !el.setSelectionRange) return;
     // The cursor is a byte offset; a field's own is in UTF-16 units.
@@ -412,6 +433,11 @@ export async function mount({ wasm, into, worker, content, route, seed, addressi
   // skip the nav while a banner owns the bottom pane. A browser knows
   // neither, and would tab straight out of a modal layer.
   listen("keydown", (e) => {
+    // Mid-composition every key is the IME's — Enter takes a candidate,
+    // Escape dismisses the preedit — and forwarding one would run it
+    // twice, once in the IME and once in core. The old canvas glue kept
+    // this same silence.
+    if (composing || e.isComposing) return;
     const key = KEY_BY_CODE[e.key];
     if (key === undefined) return;
     const editable = e.target.matches("input[type=text], input[type=password], textarea");
@@ -430,6 +456,13 @@ export async function mount({ wasm, into, worker, content, route, seed, addressi
   // core decided on.
   listen("beforeinput", (e) => {
     if (!e.target.matches("input, textarea")) return;
+    // A composition's own edits ride the IME lane below, never this
+    // one. COMPOSITION_INPUTS says why the refusal still applies.
+    if (COMPOSITION_INPUTS.has(e.inputType)) {
+      e.preventDefault();
+      return;
+    }
+    if (composing || e.isComposing) return;
     e.preventDefault();
     if (e.inputType === "insertText" && e.data) {
       nk.nokre_dom_text(put(e.data));
@@ -449,12 +482,53 @@ export async function mount({ wasm, into, worker, content, route, seed, addressi
     } else if (e.inputType === "deleteContentForward") {
       nk.nokre_dom_key(KEY_BY_CODE.Delete, 0);
     } else {
-      // Deliberately unhandled: composition goes through the IME lane,
-      // history undo/redo has no tree-side meaning (the tree is the
-      // history), and formatting inputs cannot apply to a plain field.
-      // preventDefault above has already refused the DOM's own edit.
+      // Deliberately unhandled: history undo/redo has no tree-side
+      // meaning (the tree is the history), and formatting inputs cannot
+      // apply to a plain field. preventDefault above has already
+      // refused the DOM's own edit.
       return;
     }
+    frame();
+  });
+
+  // ---- IME --------------------------------------------------------
+
+  // Composition is the browser's while it lasts and the tree's when it
+  // resolves. The preedit lives in the real field — the native IME a
+  // real field buys is on the list of what this edition traded pixel
+  // goldens for — so an open session owns that field outright: its keys
+  // are not forwarded, its edits are not refused, and a frame that
+  // lands mid-session leaves its value and caret alone (the patchNode
+  // and restoreFocus guards). What crosses into core is the same three
+  // legs every shell sends: the preedit streams as updates so the
+  // tree's `composition` is true on this platform too, and the session
+  // ends as a commit or — empty, the reading every shell gives the
+  // same silence — a cancel.
+  let composing = false;
+
+  listen("compositionstart", (e) => {
+    if (!e.target.matches("input, textarea")) return;
+    composing = true;
+  });
+
+  listen("compositionupdate", (e) => {
+    if (!composing) return;
+    // The cursor rides at the preedit's end: no engine says where the
+    // IME's own caret sits, and the end is where every one shows it.
+    const len = put(e.data || "");
+    nk.nokre_dom_ime_update(len, len);
+    // The frame is nearly free — the markup carries the value without
+    // the preedit, so its bytes usually have not moved — and it keeps
+    // the invariant that every event lands one.
+    frame();
+  });
+
+  listen("compositionend", (e) => {
+    if (!composing) return;
+    composing = false;
+    const text = e.data || "";
+    if (text) nk.nokre_dom_ime_commit(put(text));
+    else nk.nokre_dom_ime_cancel();
     frame();
   });
 

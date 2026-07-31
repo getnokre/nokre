@@ -320,16 +320,34 @@ somewhere else, a row of actions that never folded its tail because it
 had room to spare, a track that fitted in a column it overflows. The
 height stays the window's, which is what "how much is visible" means.
 
-### What the live driver has not taken over
+### The write is a diff; the frame never is
 
-- **Whole-screen re-render.** nokre rebuilds subtrees instantly and has
-  no animation to preserve, so "build it again" is the model rather
-  than a shortcut — and the glue compares the bytes and does nothing
-  when they match, which is what most frames are. A node diff would
-  buy a smaller write on the frames that do change. It is the next
-  thing to build, not a correctness gap.
-- **IME** is unhandled. Composition needs the `ime` events the canvas
-  shell already sends, and this driver sends none yet.
+A frame is still built whole: nokre rebuilds subtrees instantly and
+has no animation to preserve, so "build it again" is the model rather
+than a shortcut. The *write* is not. The glue keeps the last frame's
+bytes and does nothing when the new frame matches, which is what most
+frames are; a frame that differs is parsed off-document and patched in
+node by node, under the identity rule the node-ids seam states below —
+same tag, same `data-n`, same node. So the write is proportional to
+what changed, and everything the browser keeps beside the document —
+scroll offsets, text selection, an open IME session — survives the
+frames that did not touch it.
+
+### IME
+
+Composition is the browser's while it lasts and the tree's when it
+resolves. The preedit lives in the real field — the native IME a real
+field buys is on the list of what this edition traded pixel goldens
+for — so an open session owns that field outright: the driver forwards
+none of its keys (Enter takes a candidate, Escape dismisses), refuses
+none of its edits, and a frame that lands mid-session leaves the
+field's value and caret alone. What crosses into core is the same
+three legs every shell sends
+([platform-shells.md](platform-shells.md#ime)): the preedit streams as
+`update`, so the tree's `composition` — and the a11y and test traces
+built from it — is true here too, and the session ends as `commit` or,
+empty, `cancel`. The frame after resolution shows what core decided,
+as it does after every other input.
 
 ## The seams
 
