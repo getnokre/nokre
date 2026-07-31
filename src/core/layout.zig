@@ -176,6 +176,15 @@ pub const metrics = struct {
     /// Minimum clear space above an open sheet; also its height cap.
     pub const sheet_min_top = 48;
     pub const sheet_pad = 16;
+    /// A modal pane's *horizontal* inset splits the vertical one in
+    /// half: `sheet_margin` outside the pane, `sheet_pad_h` inside it.
+    /// The sum stays `sheet_pad`, so the content column sits exactly
+    /// where a flush pane put it — the pane stands off the viewport
+    /// sides without costing the words a pixel. Vertical keeps the
+    /// whole 16: the pane meets the bottom edge, so there is no outer
+    /// half to give it to, and halving it would only cramp the header.
+    pub const sheet_pad_h = 8;
+    pub const sheet_margin = sheet_pad - sheet_pad_h;
     pub const notice_pad = 16;
     pub const icon_gap = 8;
     /// The ink a bare glyph control draws: Lucide's own 24px design
@@ -229,6 +238,18 @@ pub fn paneX(viewport: Size) i32 {
     return @divTrunc(viewport.w - paneWidth(viewport), 2);
 }
 
+/// A *modal* pane's width: like `paneWidth`, but never touching the
+/// viewport sides — `sheet_margin` stands between them. The banner
+/// stays on `paneWidth`: it is a band like the bar, not a layer over
+/// one, and a band meets the edges it belongs to.
+pub fn modalPaneWidth(viewport: Size) i32 {
+    return @min(viewport.w - 2 * metrics.sheet_margin, metrics.sheet_max_w);
+}
+
+pub fn modalPaneX(viewport: Size) i32 {
+    return @divTrunc(viewport.w - modalPaneWidth(viewport), 2);
+}
+
 /// Where a group of the bar's own width sits: centered on the viewport,
 /// which is the bar's frame on every platform — never the pane's width
 /// (`metrics.sheet_max_w` says why). The one place that centering is
@@ -250,8 +271,11 @@ pub fn navContentWidth(viewport: Size) i32 {
 
 /// The inset from a modal pane's rect to its content: the pane's own
 /// padding plus the border that padding sits inside. Layout and the
-/// renderer both measure the header and the body from this.
+/// renderer both measure the header and the body from this. Vertical
+/// only — the sides use `pane_edge_h`, whose other half stands outside
+/// the pane (`metrics.sheet_margin`).
 pub const pane_edge = metrics.sheet_pad + metrics.border;
+pub const pane_edge_h = metrics.sheet_pad_h + metrics.border;
 
 pub fn navItemHeight() i32 {
     return text.Scale.body.lineHeight() + 2 * metrics.nav_item_pad_v;
@@ -720,24 +744,24 @@ fn layoutNoticeChrome(tree: *Tree, measurer: text.Measurer, notice: NodeId, view
 /// reason `layoutSheet` needs two: what the rows come to decides the
 /// pane's height, and the pane's height decides where the rows go.
 fn layoutNoticesPane(tree: *Tree, measurer: text.Measurer, pane: NodeId, viewport: Size, rtl: bool) void {
-    const w = paneWidth(viewport);
-    const x = paneX(viewport);
-    const inner_w = w - 2 * pane_edge;
+    const w = modalPaneWidth(viewport);
+    const x = modalPaneX(viewport);
+    const inner_w = w - 2 * pane_edge_h;
     const max_h = viewport.h - metrics.sheet_min_top;
 
     var ctx: Ctx = .{ .tree = tree, .measurer = measurer, .bottom = viewport.h - pane_edge, .scroll = 0, .rtl = rtl };
-    const title_w = inner_w - metrics.touch_target - metrics.icon_gap;
+    // Two pinned corner controls — dismiss-all and minimize — narrow
+    // the title; they pack flush like a notice row's trailing pair, so
+    // only the group as a whole is held off the words.
+    const title_w = inner_w - 2 * metrics.touch_target - metrics.icon_gap;
     const title_h = ctx.wrappedHeight(.prose, .h2, element_mod.notices_label, &.{}, title_w);
     const header_h = pane_edge + title_h + 8;
 
-    var dismiss_all: ?NodeId = null;
     var region: ?NodeId = null;
     var it = tree.children(pane);
-    while (it.next()) |c| switch (tree.getConst(c).?.role()) {
-        .button => dismiss_all = c,
-        .scroll_region => region = c,
-        else => {},
-    };
+    while (it.next()) |c| {
+        if (tree.getConst(c).?.role() == .scroll_region) region = c;
+    }
     const reg = region orelse {
         const bare = header_h + pane_edge;
         tree.setRect(pane, .{ .x = x, .y = viewport.h - bare, .w = w, .h = bare });
@@ -746,24 +770,22 @@ fn layoutNoticesPane(tree: *Tree, measurer: text.Measurer, pane: NodeId, viewpor
         return;
     };
 
-    // Both measured before the pane has a place to be: neither depends on
-    // where it lands, and its height depends on both. The rows are flowed
-    // through `flowChildren` rather than through the region itself, whose
-    // own branch would clamp a reader's scroll offset to a height this
-    // pass has not decided yet.
-    const button_block: i32 = if (dismiss_all) |d| ctx.layoutBlock(d, x + pane_edge, 0, inner_w) + 8 else 0;
-    const content_h = ctx.flowChildren(reg, x + pane_edge, 0, inner_w, metrics.control_gap, 0);
+    // Measured before the pane has a place to be: the rows' height
+    // decides the pane's, and the pane's decides where the rows go. The
+    // rows are flowed through `flowChildren` rather than through the
+    // region itself, whose own branch would clamp a reader's scroll
+    // offset to a height this pass has not decided yet.
+    const content_h = ctx.flowChildren(reg, x + pane_edge_h, 0, inner_w, metrics.control_gap, 0);
 
-    const room = max_h - header_h - button_block - pane_edge;
+    const room = max_h - header_h - pane_edge;
     const region_h = @min(content_h, @max(0, room));
     if (tree.get(reg)) |el| el.scroll_region.height = region_h;
-    const h = header_h + button_block + region_h + pane_edge;
+    const h = header_h + region_h + pane_edge;
     const top = viewport.h - h;
     tree.setRect(pane, .{ .x = x, .y = top, .w = w, .h = h });
     if (tree.get(pane)) |el| el.notices_pane.height = h;
     ctx.bottom = top + h - pane_edge;
-    if (dismiss_all) |d| _ = ctx.layoutBlock(d, x + pane_edge, top + header_h, inner_w);
-    _ = ctx.layoutBlock(reg, x + pane_edge, top + header_h + button_block, inner_w);
+    _ = ctx.layoutBlock(reg, x + pane_edge_h, top + header_h, inner_w);
 
     pinHeaderControl(tree, pane, .icon_button, rtl);
 }
@@ -775,9 +797,9 @@ fn layoutNoticesPane(tree: *Tree, measurer: text.Measurer, pane: NodeId, viewpor
 fn layoutPicker(tree: *Tree, measurer: text.Measurer, picker: NodeId, viewport: Size, safe_bottom: i32, rtl: bool) void {
     if (tree.getConst(picker).?.picker.above_nav)
         return layoutNavMenu(tree, measurer, picker, viewport, safe_bottom, rtl);
-    const w = paneWidth(viewport);
-    const x = paneX(viewport);
-    const inner_w = w - 2 * pane_edge;
+    const w = modalPaneWidth(viewport);
+    const x = modalPaneX(viewport);
+    const inner_w = w - 2 * pane_edge_h;
     const bottom = viewport.h;
     const max_h = bottom - metrics.sheet_min_top;
 
@@ -815,8 +837,8 @@ fn layoutPicker(tree: *Tree, measurer: text.Measurer, picker: NodeId, viewport: 
     const top = bottom - h;
     tree.setRect(picker, .{ .x = x, .y = top, .w = w, .h = h });
     ctx.bottom = top + h - pane_edge;
-    if (filter) |f| _ = ctx.layoutBlock(f, x + pane_edge, top + header_h, inner_w);
-    _ = ctx.layoutBlock(reg, x + pane_edge, top + header_h + filter_block, inner_w);
+    if (filter) |f| _ = ctx.layoutBlock(f, x + pane_edge_h, top + header_h, inner_w);
+    _ = ctx.layoutBlock(reg, x + pane_edge_h, top + header_h + filter_block, inner_w);
 }
 
 /// The collapsed nav's section list: a card of rows hanging off the chip
@@ -944,6 +966,8 @@ pub fn noticeTextRegion(tree: *const Tree, notice: NodeId, rtl: bool) Band {
         switch (el.icon_button.glyph) {
             .open, .expand => lead = true,
             .minimize, .dismiss => trail += 1,
+            // Header chrome, never a row's control.
+            .dismiss_all => {},
         }
     }
     const has_icon = tree.getConst(notice).?.notice.icon != null;
@@ -969,22 +993,36 @@ fn noticeTextBand(r: Rect, lead: bool, trail: i32, icon: bool, rtl: bool) Band {
     };
 }
 
-/// The control pinned in a modal header's trailing corner — the sheet's
-/// close, the notices pane's minimize. Centered on the title's first
-/// line; the target is wider than that line, so it grows symmetrically
-/// into the header's pad. Called once the pane's own rect is stored.
+/// The controls pinned in a modal header's trailing corner — the
+/// sheet's close, the notices pane's dismiss-all and minimize. Centered
+/// on the title's first line; the targets are wider than that line, so
+/// they grow symmetrically into the header's pad. More than one packs
+/// flush from the corner inward, outermost-last in document order, the
+/// same stacking a notice row's trailing pair keeps. Called once the
+/// pane's own rect is stored.
 fn pinHeaderControl(tree: *Tree, pane: NodeId, role: element_mod.Role, rtl: bool) void {
     const r = tree.rectOf(pane);
-    const y = r.y + pane_edge + @divTrunc(text.Scale.h2.lineHeight() - metrics.touch_target, 2);
+    const t = metrics.touch_target;
+    const y = r.y + pane_edge + @divTrunc(text.Scale.h2.lineHeight() - t, 2);
+    var count: i32 = 0;
+    var census = tree.children(pane);
+    while (census.next()) |child| {
+        if (tree.getConst(child).?.role() == role) count += 1;
+    }
+    var i: i32 = 0;
     var it = tree.children(pane);
     while (it.next()) |child| {
         if (tree.getConst(child).?.role() != role) continue;
         tree.setRect(child, .{
-            .x = if (rtl) r.x + pane_edge else r.right() - pane_edge - metrics.touch_target,
+            .x = if (rtl)
+                r.x + pane_edge_h + (count - 1 - i) * t
+            else
+                r.right() - pane_edge_h - (count - i) * t,
             .y = y,
-            .w = metrics.touch_target,
-            .h = metrics.touch_target,
+            .w = t,
+            .h = t,
         });
+        i += 1;
     }
 }
 
@@ -993,9 +1031,9 @@ fn pinHeaderControl(tree: *Tree, pane: NodeId, role: element_mod.Role, rtl: bool
 /// the real one — a fill scroll region therefore makes the sheet take
 /// its maximum height, which is the stable fixed point.
 fn layoutSheet(tree: *Tree, measurer: text.Measurer, sheet: NodeId, viewport: Size, rtl: bool) void {
-    const w = paneWidth(viewport);
-    const x = paneX(viewport);
-    const inner_w = w - 2 * pane_edge;
+    const w = modalPaneWidth(viewport);
+    const x = modalPaneX(viewport);
+    const inner_w = w - 2 * pane_edge_h;
     const max_h = viewport.h - metrics.sheet_min_top;
 
     var ctx: Ctx = .{ .tree = tree, .measurer = measurer, .bottom = viewport.h - pane_edge, .scroll = 0, .rtl = rtl };
@@ -1004,11 +1042,11 @@ fn layoutSheet(tree: *Tree, measurer: text.Measurer, sheet: NodeId, viewport: Si
     const title_w = inner_w - metrics.touch_target - 8;
     const title_h = ctx.wrappedHeight(.prose, .h2, title, &.{}, title_w);
     const header_h = pane_edge + title_h + 8;
-    const content_h = ctx.flowChildren(sheet, x + pane_edge, (viewport.h - max_h) + header_h, inner_w, 8, 0);
+    const content_h = ctx.flowChildren(sheet, x + pane_edge_h, (viewport.h - max_h) + header_h, inner_w, 8, 0);
     const h = @min(header_h + content_h + pane_edge, max_h);
     const top = viewport.h - h;
     tree.setRect(sheet, .{ .x = x, .y = top, .w = w, .h = h });
-    _ = ctx.flowChildren(sheet, x + pane_edge, top + header_h, inner_w, 8, 0);
+    _ = ctx.flowChildren(sheet, x + pane_edge_h, top + header_h, inner_w, 8, 0);
 
     pinHeaderControl(tree, sheet, .sheet_close, rtl);
 }
@@ -1633,6 +1671,8 @@ const Ctx = struct {
                 .open, .expand => left = c,
                 .minimize => minimize = c,
                 .dismiss => dismiss = c,
+                // Header chrome, never a row's control.
+                .dismiss_all => {},
             }
         }
 

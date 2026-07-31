@@ -1095,7 +1095,10 @@ states, all living in the bottom pane:
   (opens the notices pane) when there are more. Trailing controls:
   *minimize* and *dismiss*.
 - **Notices pane** — a modal, sheet-like panel listing every pending
-  notice with per-row open/dismiss controls and a "Dismiss all" button.
+  notice with per-row open/dismiss controls, plus a dismiss-all control
+  (the trash glyph) beside the minimize control in its header. Minimize
+  keeps the trailing corner — the slot where a modal closes — so the
+  reflex press parks the notices rather than destroying them.
   Important notices lead the list, and when both kinds are pending each
   group sits under a small label ("Important" / "Other") — plain text,
   not headings, so two words of chrome never enter a screen reader's
@@ -1105,8 +1108,8 @@ states, all living in the bottom pane:
   scroll region inside it, so a list longer than the cap allows — which a
   landscape phone reaches after very few notices — scrolls by wheel,
   drag, or keyboard rather than being clipped at the pane's edge. The
-  header and "Dismiss all" stay put: the control that empties the list
-  should not scroll away as the list grows.
+  header stays put, dismiss-all with it: the control that empties the
+  list should not scroll away as the list grows.
 - **Minimized** — an indicator glyph that reopens the pane. It belongs to
   the bar rather than to the pane: it rides at the trailing end of
   whatever the bar is centering — the row of destinations, or the

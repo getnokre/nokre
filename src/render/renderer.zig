@@ -349,7 +349,7 @@ fn drawNode(app: *App, canvas: Painter, id: NodeId) void {
         .notices_pane => {
             canvas.pushClip(paneClipRect(app, r));
             // The header corner is reserved for the minimize control.
-            drawModalSurface(app, canvas, r, "Notices", metrics.touch_target + metrics.icon_gap);
+            drawModalSurface(app, canvas, r, "Notices", 2 * metrics.touch_target + metrics.icon_gap);
             drawChildren(app, canvas, id);
             canvas.popClip();
         },
@@ -544,10 +544,10 @@ fn drawModalSurface(app: *App, canvas: Painter, r: Rect, title: []const u8, titl
     const body: Rect = .{ .x = r.x, .y = r.y, .w = r.w, .h = r.h + app.safe_bottom + metrics.radius_card };
     canvas.fillRect(body, metrics.radius_card, .paper);
     canvas.strokeRect(body, metrics.radius_card, metrics.border, .g6);
-    const title_w = r.w - 2 * layout.pane_edge - title_reserve;
-    // The pinned corner control mirrors with the chrome, so the title's
+    const title_w = r.w - 2 * layout.pane_edge_h - title_reserve;
+    // The pinned corner controls mirror with the chrome, so the title's
     // box steps aside on the matching side.
-    const title_x = if (mirrored(app)) r.x + layout.pane_edge + title_reserve else r.x + layout.pane_edge;
+    const title_x = if (mirrored(app)) r.x + layout.pane_edge_h + title_reserve else r.x + layout.pane_edge_h;
     drawWrapped(app, canvas, .{ .x = title_x, .y = r.y + layout.pane_edge, .w = title_w, .h = r.h }, .prose, .h2, title, .ink);
 }
 

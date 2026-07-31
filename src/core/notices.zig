@@ -182,23 +182,25 @@ fn installBanner(app: *App) !void {
 
 fn installPane(app: *App) !void {
     const pane = try installChromeRoot(app, .{ .notices_pane = .{} });
+    // Both header controls pin to the trailing corner, dismiss-all
+    // inward and minimize outermost-last (`pinHeaderControl`), so
+    // document order is the visual order. Minimize keeps the corner
+    // itself: that slot is where a modal closes (the sheet's close),
+    // and the reflex press it collects must park the notices, not
+    // destroy them.
+    _ = try app.tree.append(pane, .{ .icon_button = .{ .glyph = .dismiss_all, .label = "Dismiss all notices" } });
     _ = try app.tree.append(pane, .{ .icon_button = .{ .glyph = .minimize, .label = "Minimize notices" } });
-    _ = try app.tree.append(pane, .{ .button = .{
-        .label = "Dismiss all",
-        .on_press = .{ .ctx = app, .call = dismissAllAction },
-    } });
-    // The rows scroll; the header and "Dismiss all" do not. A pane is
-    // capped at `sheet_min_top` from the top edge, and enough notices —
-    // or few of them on a landscape phone, where that cap is most of a
-    // short viewport — come to more than the cap allows. Flowed straight
+    // The rows scroll; the header does not. A pane is capped at
+    // `sheet_min_top` from the top edge, and enough notices — or few of
+    // them on a landscape phone, where that cap is most of a short
+    // viewport — come to more than the cap allows. Flowed straight
     // into the pane they were simply clipped at its edge, with no way to
     // reach the rest by wheel, drag or keyboard. `scroll_region` is the
     // library's answer to exactly that and it is focusable for the same
     // reason (WCAG 2.1.1), so the hidden rows gain a keyboard route too.
-    //
-    // "Dismiss all" stays outside it, like the select picker's filter
-    // field: the action that empties the list should not be the thing
-    // that scrolls away as the list grows.
+    // Dismiss-all lives in the header for the same reason the picker's
+    // filter stays outside its region: the control that empties the
+    // list must not scroll away as the list grows.
     const region = try app.tree.append(pane, .{ .scroll_region = .{ .height = 0 } });
     // Important notices lead the list (notify keeps them in front), and
     // when both kinds are pending a label heads each group. Framework
@@ -257,11 +259,6 @@ fn installChromeRoot(app: *App, el: Element) !NodeId {
 
 fn chromeLabel(app: *App, comptime fmt: []const u8, arg: []const u8) ![]const u8 {
     return std.fmt.allocPrint(app.tree.arena.allocator(), fmt, .{arg});
-}
-
-fn dismissAllAction(ctx: ?*anyopaque) void {
-    const app: *App = @ptrCast(@alignCast(ctx.?));
-    dismissAllNotices(app);
 }
 
 fn inNoticeChrome(app: *const App, id: NodeId) bool {

@@ -1138,7 +1138,7 @@ test "notices pane paints over a scrim with a row per notice" {
     };
     try testing.expect(dither_index.? < pane_fill_index.?);
     try testing.expect(rec.containsText("Notices"));
-    try testing.expect(rec.containsText("Dismiss all"));
+    try testing.expect(rec.containsText(element_mod.Glyph.dismiss_all.utf8()));
     try testing.expect(rec.containsText("Saved"));
     try testing.expect(rec.containsText("Sync failed"));
     // Mixed importance: each group under its label.

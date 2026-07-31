@@ -2491,7 +2491,7 @@ test "rtl: the sheet close control pins to the left corner" {
     const close = while (it.next()) |c| {
         if (app.tree.getConst(c).?.role() == .sheet_close) break c;
     } else unreachable;
-    try testing.expectEqual(layout.paneX(app.viewport) + layout.pane_edge, app.tree.rectOf(close).x);
+    try testing.expectEqual(layout.modalPaneX(app.viewport) + layout.pane_edge_h, app.tree.rectOf(close).x);
 }
 
 test "rtl: a lone minimized-notices indicator centers, having no edge to swap" {
@@ -3119,7 +3119,15 @@ test "the pane's dismiss controls remove one notice or all" {
     try testing.expectEqualStrings("Sync failed", app.notices.items[0].title);
     try testing.expect(layout.findNoticesPane(&app.tree) != null);
 
-    app.dismissAllNotices();
+    // The header's dismiss-all control empties the rest.
+    const pane2 = layout.findNoticesPane(&app.tree).?;
+    var all: ?NodeId = null;
+    var headers = app.tree.children(pane2);
+    while (headers.next()) |c| {
+        const el = app.tree.getConst(c).?;
+        if (el.* == .icon_button and el.icon_button.glyph == .dismiss_all) all = c;
+    }
+    try app.activate(all.?);
     try testing.expectEqual(App.NoticeState.none, app.notice_state);
     try testing.expect(layout.findNoticesPane(&app.tree) == null);
     try testing.expect(layout.findIndicator(&app.tree) == null);

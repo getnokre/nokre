@@ -680,6 +680,10 @@ pub const Glyph = enum {
     minimize,
     /// square-x: dismiss one notice.
     dismiss,
+    /// trash-2: dismiss every pending notice, from the pane's header.
+    /// The one glyph outside the square family — emptying the list is
+    /// not one more way to file it, and the bin says so.
+    dismiss_all,
 
     pub fn utf8(self: Glyph) []const u8 {
         return switch (self) {
@@ -687,6 +691,7 @@ pub const Glyph = enum {
             .expand => "\u{e42a}",
             .minimize => "\u{e3cf}",
             .dismiss => "\u{e175}",
+            .dismiss_all => "\u{e18e}",
         };
     }
 };

@@ -140,6 +140,10 @@ pub fn write(gpa: std.mem.Allocator, out: *std.ArrayList(u8), options: Options) 
         .{ "radio-glyph", metrics.radio_glyph },
         .{ "radio-dot-inset", metrics.radio_dot_inset },
         .{ "sheet-pad", metrics.sheet_pad },
+        // The horizontal split: half the pad inside the pane, the
+        // other half outside it (`metrics.sheet_pad_h`'s rationale).
+        .{ "sheet-pad-h", metrics.sheet_pad_h },
+        .{ "sheet-margin", metrics.sheet_margin },
         .{ "sheet-min-top", metrics.sheet_min_top },
         .{ "notice-pad", metrics.notice_pad },
         .{ "nav-item-pad-h", metrics.nav_item_pad_h },
@@ -1540,7 +1544,10 @@ const sheet =
     \\.sheet, .notices-pane, .picker:not(.above-nav) {
     \\  inset-inline: 0;
     \\  bottom: 0;
-    \\  width: min(100%, var(--pane));
+    \\  /* Never flush with the viewport sides: `sheet_margin` stands
+    \\     outside the pane, and the pad it was carved from shrinks by
+    \\     the same amount, so the content column has not moved. */
+    \\  width: min(100% - 2 * var(--sheet-margin), var(--pane));
     \\  margin-inline: auto;
     \\  /* Dynamic units, because a phone's viewport is not a constant:
     \\     the URL bar comes and goes, and a pane measured against the
@@ -1549,7 +1556,7 @@ const sheet =
     \\  max-height: calc(100dvh - var(--sheet-min-top));
     \\  /* `pane_edge` is the pad plus the border it sits inside, and
     \\     `border-box` has already spent the border. */
-    \\  padding: var(--sheet-pad);
+    \\  padding: var(--sheet-pad) var(--sheet-pad-h);
     \\  padding-bottom: calc(var(--sheet-pad) + var(--safe-b));
     \\  /* The body extends past the bottom and the clip squares it off;
     \\     here the same thing is said by rounding only the top. */
@@ -1561,18 +1568,27 @@ const sheet =
     \\   draws it with the plain prose face, and every heading level
     \\   drawing bold is a rule about headings. */
     \\.pane-title { font-size: var(--px-h2); line-height: var(--lh-h2); font-weight: 400; }
-    \\/* Only the two panes that pin a control to the header corner
-    \\   narrow their title for one. A select's picker has none, so its
-    \\   title takes the full width. */
-    \\.sheet > .pane-title, .notices-pane > .pane-title {
-    \\  padding-inline-end: calc(var(--touch) + var(--icon-gap));
-    \\}
+    \\/* Only the two panes that pin controls to the header corner narrow
+    \\   their title for them. A select's picker has none, so its title
+    \\   takes the full width; the notices pane pins two, so it steps
+    \\   twice as far aside. */
+    \\.sheet > .pane-title { padding-inline-end: calc(var(--touch) + var(--icon-gap)); }
+    \\.notices-pane > .pane-title { padding-inline-end: calc(2 * var(--touch) + var(--icon-gap)); }
     \\/* Centred on the title's first line; the target is wider than that
     \\   line, so it grows symmetrically into the header's pad. */
     \\.sheet > .icon-button.sheet-close, .notices-pane > .icon-button {
     \\  position: absolute;
-    \\  inset-inline-end: var(--sheet-pad);
+    \\  inset-inline-end: var(--sheet-pad-h);
     \\  top: calc(var(--sheet-pad) + (var(--lh-h2) - var(--touch)) / 2);
+    \\}
+    \\/* The notices pane pins a pair — dismiss-all, then minimize
+    \\   outermost-last in document order, packing flush from the corner
+    \\   inward exactly as a notice row's trailing pair does. Minimize
+    \\   keeps the corner: that slot is where a modal closes, and the
+    \\   reflex press it collects must park the notices, not destroy
+    \\   them. */
+    \\.notices-pane > .icon-button:first-of-type {
+    \\  inset-inline-end: calc(var(--sheet-pad-h) + var(--touch));
     \\}
     \\
     \\/* A select's picker is a bottom-anchored pane because its owner is
@@ -1588,8 +1604,8 @@ const sheet =
     \\     surface is the scroller. */
     \\  overflow: hidden;
     \\}
-    \\/* The region takes the height the header and "Dismiss all" leave,
-    \\   and `min-height: 0` is what lets it be shorter than its rows —
+    \\/* The region takes the height the header leaves, and
+    \\   `min-height: 0` is what lets it be shorter than its rows —
     \\   without it a flex item floors at its content and the pane grows
     \\   past its own cap instead of scrolling. */
     \\.picker > .scroll, .notices-pane > .scroll { flex: 1; min-height: 0; }

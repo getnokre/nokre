@@ -443,6 +443,7 @@ fn activateIcon(app: *App, id: NodeId, glyph: element_mod.Glyph) !void {
             const idx = notices.noticeIndexOf(app, id) orelse return;
             notices.dismissNoticeAt(app, idx);
         },
+        .dismiss_all => notices.dismissAllNotices(app),
     }
 }
 
