@@ -924,7 +924,12 @@ fn onSyncResult(ctx: ?*anyopaque, result: h.services.http.Result) void {
             _ = f;
             state.offline = true;
             state.status = "Offline — showing local notes.";
-            state.app.notify("Sync failed", "Your notes are unchanged on this device.", "notes") catch {};
+            state.app.notify(.{
+                .title = "Sync failed",
+                .description = "Your notes are unchanged on this device.",
+                .route = "notes",
+                .important = true,
+            }) catch {};
             refreshNotesIfIdle(state);
         },
     }
@@ -944,10 +949,12 @@ Two things here outlive this app. `refreshNotesIfIdle` is the guard
 every asynchronous reply needs: results arrive on the UI thread between
 events, but the user may have navigated or opened a sheet since the
 request left — state is updated unconditionally, the *rebuild* is
-polite. And the failure leg raises a **notice** — `app.notify(title,
-description, route)` — nokre's persistent, never-timing-out surface
-that survives navigation and deep-links back; its three states (banner,
-pane, minimized) are specified in [elements.md](elements.md).
+polite. And the failure leg raises a **notice** — `app.notify(.{ ... })`
+— nokre's persistent, never-timing-out surface that survives navigation
+and deep-links back. It is `important` because a failed sync is worth
+interrupting for; a quiet notice (the default) would wait behind the
+indicator instead. The three states (banner, pane, minimized) are
+specified in [elements.md](elements.md).
 
 The tests own time. Park, inspect, answer — or refuse:
 

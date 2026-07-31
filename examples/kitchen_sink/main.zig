@@ -210,7 +210,14 @@ fn setCountProgress(state: *State, pct: u8) void {
 fn notifyDone(state: *State, title: []const u8, comptime fmt: []const u8, args: anytype) void {
     var buf: [160]u8 = undefined;
     const desc = std.fmt.bufPrint(&buf, fmt, args) catch return;
-    state.app.notify(title, desc, "home") catch {};
+    // Quiet: finished work is news to collect, not an interruption —
+    // the presser already left the button behind.
+    state.app.notify(.{
+        .title = title,
+        .description = desc,
+        .route = "home",
+        .icon = .circle_check,
+    }) catch {};
 }
 
 fn onSave(ctx: ?*anyopaque) void {
@@ -285,12 +292,25 @@ fn onOpenSheet(ctx: ?*anyopaque) void {
 
 fn onNotifySaved(ctx: ?*anyopaque) void {
     const state: *State = @ptrCast(@alignCast(ctx.?));
-    state.app.notify("Settings saved", "This notice stays until dismissed or minimized.", "home") catch return;
+    // Quiet: it joins the inbox behind the nav pane's indicator.
+    state.app.notify(.{
+        .title = "Settings saved",
+        .description = "This notice stays until dismissed or minimized.",
+        .route = "home",
+        .icon = .circle_check,
+    }) catch return;
 }
 
 fn onNotifySync(ctx: ?*anyopaque) void {
     const state: *State = @ptrCast(@alignCast(ctx.?));
-    state.app.notify("Sync failed", "Changes are kept locally. Open to review them.", "details") catch return;
+    // Important: it interrupts as the banner.
+    state.app.notify(.{
+        .title = "Sync failed",
+        .description = "Changes are kept locally. Open to review them.",
+        .route = "details",
+        .icon = .cloud_off,
+        .important = true,
+    }) catch return;
 }
 
 fn onCountPrimes(ctx: ?*anyopaque) void {
@@ -664,8 +684,8 @@ fn buildHome(ctx: ?*anyopaque, app: *h.App) !void {
     _ = try tree.append(root, .{ .heading = .{ .content = "Layers", .level = .h2 } });
     const layer_stack = try tree.append(root, .{ .stack = .{ .axis = .horizontal } });
     _ = try tree.append(layer_stack, .{ .button = .{ .label = "Open sheet", .on_press = .{ .ctx = state, .call = onOpenSheet } } });
-    _ = try tree.append(layer_stack, .{ .button = .{ .label = "Notify", .on_press = .{ .ctx = state, .call = onNotifySaved } } });
-    _ = try tree.append(layer_stack, .{ .button = .{ .label = "Notify again", .on_press = .{ .ctx = state, .call = onNotifySync } } });
+    _ = try tree.append(layer_stack, .{ .button = .{ .label = "Notify quietly", .on_press = .{ .ctx = state, .call = onNotifySaved } } });
+    _ = try tree.append(layer_stack, .{ .button = .{ .label = "Notify important", .on_press = .{ .ctx = state, .call = onNotifySync } } });
 
     _ = try tree.append(root, .{ .heading = .{ .content = "Workers", .level = .h2 } });
     _ = try tree.append(root, .{ .text = .{ .content = "Heavy synchronous compute runs on a worker: messages out, replies back on the UI thread. Press, then keep scrolling — nothing freezes, and a notice carries the result in case you wandered off. Two jobs, two worker roles, two report lines: press both and they run side by side, neither waiting on nor cancelling the other. The count reports a percentage, so its button fills as it goes; the hash reports none, so its button says `…` and nothing it cannot know.", .style = .{ .scale = .small, .ink = .dark } } });

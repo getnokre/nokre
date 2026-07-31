@@ -783,6 +783,13 @@ pub const Notice = struct {
     description: []const u8 = "",
     /// Route reference the notice deep-links to via its open control.
     route: []const u8,
+    /// Leading mark on the words' side of the row, decorative: the
+    /// title stays the accessible name (`notify`'s rationale). A field,
+    /// not a child node — it takes no focus and answers no press, so it
+    /// must not exist where focus and hit testing look. Sized as the
+    /// `icon` element is, a `lineHeight` square, so layout needs no
+    /// measurer to know what the words' column loses to it.
+    icon: ?IconName = null,
     /// Written by layout; consumers read, never write.
     height: i32 = 0,
 };

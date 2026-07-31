@@ -813,7 +813,7 @@ test "golden: the crowded roster reopens as a row once the window can hold it" {
 test "golden: the collapsed chip stops short of the notices indicator" {
     var harness = try h.testing.Harness.initWithNav(std.testing.allocator, .{ .w = 375, .h = 300 }, &crowded_nav_routes, &crowded_nav_items, null, "explore");
     defer harness.deinit();
-    try harness.app.notify("Sync failed", "Changes are kept locally.", "library");
+    try harness.app.notify(.{ .title = "Sync failed", .description = "Changes are kept locally.", .route = "library" });
     harness.app.minimizeNotices();
     // The chip is as wide as what it holds, so the bar between it and
     // the indicator is page — not a stretched control with a button
@@ -940,7 +940,7 @@ fn buildNoticeScreen(_: ?*anyopaque, app: *h.App) !void {
     const root = tree.rootId();
     _ = try tree.append(root, .{ .heading = .{ .content = "Content", .level = .h1 } });
     _ = try tree.append(root, .{ .text = .{ .content = "Flows above the banner, never under it." } });
-    try app.notify("Sync failed", "Changes are kept locally.", "library");
+    try app.notify(.{ .title = "Sync failed", .description = "Changes are kept locally.", .route = "library", .icon = .cloud_off, .important = true });
 }
 
 test "golden: notice banner in the bottom pane" {
@@ -954,8 +954,8 @@ fn buildNoticesPaneScreen(_: ?*anyopaque, app: *h.App) !void {
     const root = tree.rootId();
     _ = try tree.append(root, .{ .heading = .{ .content = "Content", .level = .h1 } });
     _ = try tree.append(root, .{ .text = .{ .content = "Muted under the scrim while the pane is open." } });
-    try app.notify("Sync failed", "Changes are kept locally.", "library");
-    try app.notify("Update ready", "Restart to apply.", "library");
+    try app.notify(.{ .title = "Sync failed", .description = "Changes are kept locally.", .route = "library", .icon = .cloud_off, .important = true });
+    try app.notify(.{ .title = "Update ready", .description = "Restart to apply.", .route = "library" });
     try app.openNoticesPane();
 }
 
@@ -975,7 +975,7 @@ fn buildCrowdedNoticesPaneScreen(_: ?*anyopaque, app: *h.App) !void {
         .{ "Primes counted", "1270607 primes below 20000000." },
         .{ "Payload hashed", "Digest written beside the archive." },
         .{ "Export ready", "The file is in your downloads." },
-    }) |n| try app.notify(n[0], n[1], "library");
+    }) |n| try app.notify(.{ .title = n[0], .description = n[1], .route = "library" });
     try app.openNoticesPane();
 }
 
@@ -995,7 +995,7 @@ fn buildIndicatorScreen(_: ?*anyopaque, app: *h.App) !void {
     const root = tree.rootId();
     _ = try tree.append(root, .{ .heading = .{ .content = "Content", .level = .h1 } });
     _ = try tree.append(root, .{ .text = .{ .content = "Minimized notices wait behind the indicator." } });
-    try app.notify("Sync failed", "Changes are kept locally.", "library");
+    try app.notify(.{ .title = "Sync failed", .description = "Changes are kept locally.", .route = "library" });
     app.minimizeNotices();
 }
 
@@ -1008,7 +1008,7 @@ test "golden: minimized notices leave only the indicator" {
 test "golden: the indicator rides at the end of the destinations' row" {
     var harness = try h.testing.Harness.initWithNav(std.testing.allocator, .{ .w = 500, .h = 300 }, &nav_routes, &nav_items, null, "library");
     defer harness.deinit();
-    try harness.app.notify("Sync failed", "Changes are kept locally.", "library");
+    try harness.app.notify(.{ .title = "Sync failed", .description = "Changes are kept locally.", .route = "library" });
     harness.app.minimizeNotices();
     // The row is a centered group of its own width, so the indicator
     // travels with it rather than sitting in the corner of a pane

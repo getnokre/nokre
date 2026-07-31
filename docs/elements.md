@@ -1069,11 +1069,23 @@ nokre has no animation to begin with).
 A persistent notice, raised through the app:
 
 ```zig
-try app.notify("Sync failed", "Changes are kept locally.", "sync");
+try app.notify(.{
+    .title = "Sync failed",
+    .description = "Changes are kept locally.",
+    .route = "sync",
+    .icon = .cloud_off,
+    .important = true,
+});
 ```
 
-A notice is a title, an optional description, and the route its open
-control deep-links to. Pending notices surface in exactly one of three
+A notice is a title, an optional description, the route its open
+control deep-links to, an optional leading icon (decorative — the title
+stays the accessible name), and an importance. The importance is
+behavioral, not visual: an **important** notice interrupts as the
+banner and re-surfaces minimized ones; a **quiet** one (the default)
+joins the pending list behind the indicator without taking the screen.
+Quiet is the default because interrupting is the thing a notice should
+have to ask for. Pending notices surface in exactly one of three
 states, all living in the bottom pane:
 
 - **Banner** — the front notice as a row anchored to the viewport
@@ -1084,6 +1096,10 @@ states, all living in the bottom pane:
   *minimize* and *dismiss*.
 - **Notices pane** — a modal, sheet-like panel listing every pending
   notice with per-row open/dismiss controls and a "Dismiss all" button.
+  Important notices lead the list, and when both kinds are pending each
+  group sits under a small label ("Important" / "Other") — plain text,
+  not headings, so two words of chrome never enter a screen reader's
+  heading navigation ahead of the page.
   Esc or a tap on the scrim minimizes it. It keeps the sheet's height cap
   (`metrics.sheet_min_top` clear of the top edge), and the rows sit in a
   scroll region inside it, so a list longer than the cap allows — which a
@@ -1099,7 +1115,10 @@ states, all living in the bottom pane:
 All controls are Lucide glyphs on 44px targets with accessible names.
 Notices never steal focus and **never time out** (WCAG 2.2.1 — there is
 no auto-dismiss API to misuse). Duplicates (by title) are dropped; a new
-notice re-surfaces minimized ones as the banner; an open sheet takes the
+important notice re-surfaces minimized ones as the banner, and the
+banner is always an important notice while any is pending — dismissing
+the last important one collapses to the indicator rather than promoting
+a quiet notice that never asked to interrupt. An open sheet takes the
 bottom pane, parking notices behind the indicator until it closes.
 Notices survive navigation. Screen readers announce the banner politely
 as a status live region.

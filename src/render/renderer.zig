@@ -504,6 +504,14 @@ fn drawNotice(app: *App, canvas: Painter, id: NodeId, r: Rect, n: element_mod.No
     if (in_pane) canvas.fillRect(r, metrics.radius, .g11) else drawPaneChrome(app, canvas, r, .g11);
 
     const col = layout.noticeTextRegion(&app.tree, id, mirrored(app));
+    if (n.icon) |name| {
+        // The words' column already gave the icon its slot
+        // (`noticeTextBand`): a `lineHeight` square on the leading side,
+        // sharing the title's first line box so the two center together.
+        const box = text.Scale.body.lineHeight();
+        const ix = if (mirrored(app)) col.x + col.w + metrics.icon_gap else col.x - metrics.icon_gap - box;
+        drawIcon(app, canvas, .{ .x = ix, .y = r.y + metrics.notice_pad, .w = box, .h = box }, .{ .name = name });
+    }
     const size = text.Scale.body.px();
     var y = r.y + metrics.notice_pad;
     var lines = layout.wrap(app.measurer, .prose, size, n.title, col.w);

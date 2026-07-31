@@ -2497,7 +2497,7 @@ test "rtl: the sheet close control pins to the left corner" {
 test "rtl: a lone minimized-notices indicator centers, having no edge to swap" {
     var app = try test_app.mirrored(400, 600);
     defer app.deinit();
-    try app.notify("Saved", "", "home");
+    try app.notify(.{ .title = "Saved", .route = "home" });
     app.minimizeNotices();
     app.performLayout();
     const ind = layout.findIndicator(&app.tree).?;
@@ -2513,7 +2513,7 @@ test "rtl: a lone minimized-notices indicator centers, having no edge to swap" {
 
     var ltr = try test_app.init(400, 600);
     defer ltr.deinit();
-    try ltr.notify("Saved", "", "home");
+    try ltr.notify(.{ .title = "Saved", .route = "home" });
     ltr.minimizeNotices();
     ltr.performLayout();
     try testing.expectEqual(
@@ -2951,9 +2951,9 @@ test "notify shows the front notice as a banner and dedups by title" {
     var app = try test_app.init(400, 600);
     defer app.deinit();
 
-    try app.notify("Saved", "", "home");
-    try app.notify("Sync failed", "Changes kept locally.", "details");
-    try app.notify("Saved", "", "home"); // duplicate: dropped
+    try app.notify(.{ .title = "Saved", .route = "home", .important = true });
+    try app.notify(.{ .title = "Sync failed", .description = "Changes kept locally.", .route = "details", .important = true });
+    try app.notify(.{ .title = "Saved", .route = "home", .important = true }); // duplicate: dropped
     try testing.expectEqual(@as(usize, 2), app.notices.items.len);
     try testing.expectEqual(App.NoticeState.banner, app.notice_state);
 
@@ -2977,7 +2977,7 @@ test "the banner reserves its band at the viewport bottom" {
     app.performLayout();
     const before = app.tree.rectOf(btn).y;
 
-    try app.notify("Saved", "", "home");
+    try app.notify(.{ .title = "Saved", .route = "home", .important = true });
     app.performLayout();
     const banner = app.tree.rectOf(layout.findNotice(&app.tree).?);
     try testing.expect(banner.h > 0);
@@ -2992,7 +2992,7 @@ test "notice never steals focus and dismissal keeps focus sane" {
     const btn = try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Go" } });
     app.focused = .of(btn);
 
-    try app.notify("Saved", "", "home");
+    try app.notify(.{ .title = "Saved", .route = "home", .important = true });
     try testing.expect(app.focused.?.on(btn));
 
     // Focus a banner control, then dismiss: focus must not dangle.
@@ -3005,8 +3005,8 @@ test "notice never steals focus and dismissal keeps focus sane" {
 test "notices expand to the pane, minimize to the indicator, and reopen" {
     var app = try test_app.init(400, 600);
     defer app.deinit();
-    try app.notify("Saved", "", "home");
-    try app.notify("Sync failed", "", "details");
+    try app.notify(.{ .title = "Saved", .route = "home", .important = true });
+    try app.notify(.{ .title = "Sync failed", .route = "details", .important = true });
 
     // With several pending, the banner leads with the expand control.
     const banner = layout.findNotice(&app.tree).?;
@@ -3045,7 +3045,7 @@ test "the notices pane keeps its rows reachable on a landscape viewport" {
     var app = try test_app.init(844, 390);
     defer app.deinit();
     for ([_][]const u8{ "Settings saved", "Sync failed", "Primes counted", "Payload hashed", "Export ready" }) |t| {
-        try app.notify(t, "This notice stays until dismissed or minimized.", "home");
+        try app.notify(.{ .title = t, .description = "This notice stays until dismissed or minimized.", .route = "home" });
     }
     try app.openNoticesPane();
     app.performLayout();
@@ -3083,7 +3083,7 @@ test "the notices pane keeps its rows reachable on a landscape viewport" {
 test "a notices pane that fits takes only the height it needs" {
     var app = try test_app.init(400, 800);
     defer app.deinit();
-    try app.notify("Saved", "", "home");
+    try app.notify(.{ .title = "Saved", .route = "home" });
     try app.openNoticesPane();
     app.performLayout();
 
@@ -3100,8 +3100,8 @@ test "a notices pane that fits takes only the height it needs" {
 test "the pane's dismiss controls remove one notice or all" {
     var app = try test_app.init(400, 600);
     defer app.deinit();
-    try app.notify("Saved", "", "home");
-    try app.notify("Sync failed", "", "details");
+    try app.notify(.{ .title = "Saved", .route = "home" });
+    try app.notify(.{ .title = "Sync failed", .route = "details" });
     try app.openNoticesPane();
 
     const pane = layout.findNoticesPane(&app.tree).?;
@@ -3125,23 +3125,108 @@ test "the pane's dismiss controls remove one notice or all" {
     try testing.expect(layout.findIndicator(&app.tree) == null);
 }
 
-test "a new notice re-surfaces minimized ones as the banner" {
+test "a new important notice re-surfaces minimized ones as the banner" {
     var app = try test_app.init(400, 600);
     defer app.deinit();
-    try app.notify("Saved", "", "home");
+    try app.notify(.{ .title = "Saved", .route = "home", .important = true });
     app.minimizeNotices();
     try testing.expect(layout.findIndicator(&app.tree) != null);
 
-    try app.notify("Sync failed", "", "details");
+    try app.notify(.{ .title = "Sync failed", .route = "details", .important = true });
     try testing.expectEqual(App.NoticeState.banner, app.notice_state);
     try testing.expect(layout.findNotice(&app.tree) != null);
     try testing.expect(layout.findIndicator(&app.tree) == null);
 }
 
+test "a quiet notice lands behind the indicator without a banner" {
+    var app = try test_app.init(400, 600);
+    defer app.deinit();
+    try app.notify(.{ .title = "Export ready", .route = "exports" });
+    try testing.expectEqual(App.NoticeState.minimized, app.notice_state);
+    try testing.expect(layout.findNotice(&app.tree) == null);
+    try testing.expect(layout.findIndicator(&app.tree) != null);
+
+    // A second quiet one accumulates; a banner already up stays on its
+    // own notice; a pane already open lists the newcomer — no state
+    // changes hands either way.
+    try app.notify(.{ .title = "Backup done", .route = "home" });
+    try testing.expectEqual(App.NoticeState.minimized, app.notice_state);
+    try testing.expectEqual(@as(usize, 2), app.notices.items.len);
+}
+
+test "important notices stand in front of quiet ones" {
+    var app = try test_app.init(400, 600);
+    defer app.deinit();
+    try app.notify(.{ .title = "Export ready", .route = "exports" });
+    try app.notify(.{ .title = "Sync failed", .route = "details", .important = true });
+
+    // The important arrival claims the banner even though it came last.
+    try testing.expectEqual(App.NoticeState.banner, app.notice_state);
+    try testing.expectEqualStrings("Sync failed", app.notices.items[0].title);
+    const banner = layout.findNotice(&app.tree).?;
+    try testing.expectEqualStrings("Sync failed", app.tree.getConst(banner).?.notice.title);
+}
+
+test "dismissing the last important collapses the banner to the indicator" {
+    var app = try test_app.init(400, 600);
+    defer app.deinit();
+    try app.notify(.{ .title = "Export ready", .route = "exports" });
+    try app.notify(.{ .title = "Sync failed", .route = "details", .important = true });
+
+    // Quiet notices never claim the banner — not even by succession.
+    app.dismissNotice();
+    try testing.expectEqual(App.NoticeState.minimized, app.notice_state);
+    try testing.expect(layout.findNotice(&app.tree) == null);
+    try testing.expect(layout.findIndicator(&app.tree) != null);
+    try testing.expectEqual(@as(usize, 1), app.notices.items.len);
+}
+
+test "the pane groups important and quiet notices under labels" {
+    var app = try test_app.init(400, 600);
+    defer app.deinit();
+    try app.notify(.{ .title = "Export ready", .route = "exports" });
+    try app.notify(.{ .title = "Sync failed", .route = "details", .important = true });
+    try app.openNoticesPane();
+
+    // Important leads, and each group takes its label.
+    const reg = noticesRegion(&app).?;
+    var it = app.tree.children(reg);
+    try testing.expectEqualStrings("Important", app.tree.getConst(it.next().?).?.text.content);
+    try testing.expectEqualStrings("Sync failed", app.tree.getConst(it.next().?).?.notice.title);
+    try testing.expectEqualStrings("Other", app.tree.getConst(it.next().?).?.text.content);
+    try testing.expectEqualStrings("Export ready", app.tree.getConst(it.next().?).?.notice.title);
+    try testing.expect(it.next() == null);
+    app.minimizeNotices();
+
+    // One kind pending — nothing to tell apart, so no labels.
+    app.dismissNoticeAt(1);
+    try app.openNoticesPane();
+    var rows = app.tree.children(noticesRegion(&app).?);
+    try testing.expectEqualStrings("Sync failed", app.tree.getConst(rows.next().?).?.notice.title);
+    try testing.expect(rows.next() == null);
+}
+
+test "a notice's icon narrows the words' column by its square and gap" {
+    var app = try test_app.init(400, 600);
+    defer app.deinit();
+    try app.notify(.{ .title = "Saved", .route = "home", .important = true });
+    app.performLayout();
+    const bare = layout.noticeTextRegion(&app.tree, layout.findNotice(&app.tree).?, false);
+
+    app.dismissAllNotices();
+    try app.notify(.{ .title = "Saved", .route = "home", .icon = .circle_check, .important = true });
+    app.performLayout();
+    const marked = layout.noticeTextRegion(&app.tree, layout.findNotice(&app.tree).?, false);
+
+    const slot = text.Scale.body.lineHeight() + layout.metrics.icon_gap;
+    try testing.expectEqual(bare.w - slot, marked.w);
+    try testing.expectEqual(bare.x + slot, marked.x);
+}
+
 test "a sheet suppresses notice chrome to the indicator until dismissed" {
     var app = try test_app.init(400, 600);
     defer app.deinit();
-    try app.notify("Saved", "", "home");
+    try app.notify(.{ .title = "Saved", .route = "home", .important = true });
 
     _ = try app.presentSheet("Options");
     try testing.expect(layout.findNotice(&app.tree) == null);
@@ -3168,7 +3253,7 @@ test "the banner hides the nav from pointer and keyboard alike" {
         .{ .route = "away", .icon = .circle },
     });
     try app.navigate("home");
-    try app.notify("Saved", "", "home");
+    try app.notify(.{ .title = "Saved", .route = "home", .important = true });
     app.performLayout();
 
     const nav = layout.findNav(&app.tree).?;
@@ -3792,7 +3877,7 @@ test "chrome keeps its nodes across the reclaim, strings and all" {
     defer app.deinit();
     try app.setNav(&crowded_nav);
     try app.navigate("library");
-    try app.notify("Update ready", "Restart to apply", "settings");
+    try app.notify(.{ .title = "Update ready", .description = "Restart to apply", .route = "settings" });
     app.minimizeNotices();
 
     const chip = navChip(&app).?;

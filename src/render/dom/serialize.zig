@@ -696,6 +696,11 @@ pub fn node(em: *Emitter, id: NodeId) anyerror!void {
             // visual order here, so a control emitted after the words
             // is a control drawn after them.
             try noticeControls(em, id, .lead);
+            // A `square` box like the standalone icon element's, not a
+            // mark: layout charged the words' column a `lineHeight` box
+            // plus a gap (`noticeTextBand`), and the flex gap is that
+            // gap. Decorative — the title is the accessible name.
+            if (n.icon) |name| try icon(em, name, "", .ink, .body, .square);
             try em.raw("<div class=\"notice-words\"><p class=\"notice-title\">");
             try em.text(n.title);
             try em.raw("</p>");

@@ -369,7 +369,7 @@ test "audit passes a framework-built sheet and notice" {
     var app = try test_app.init(400, 600);
     defer app.deinit();
     _ = try app.presentSheet("Options");
-    try app.notify("Saved", "", "home");
+    try app.notify(.{ .title = "Saved", .route = "home", .important = true });
 
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(testing.allocator);
@@ -380,8 +380,8 @@ test "audit passes a framework-built sheet and notice" {
 test "audit passes the framework-built notices pane" {
     var app = try test_app.init(400, 600);
     defer app.deinit();
-    try app.notify("Saved", "", "home");
-    try app.notify("Sync failed", "", "home");
+    try app.notify(.{ .title = "Saved", .route = "home" });
+    try app.notify(.{ .title = "Sync failed", .route = "home", .important = true });
     try app.openNoticesPane();
 
     var violations: std.ArrayList(Violation) = .empty;
@@ -484,7 +484,7 @@ test "audit flags a badge label emptied after construction" {
 test "audit flags a notice title emptied after construction" {
     var app = try test_app.init(400, 600);
     defer app.deinit();
-    try app.notify("Saved", "", "home");
+    try app.notify(.{ .title = "Saved", .route = "home", .important = true });
     const notice = layout.findNotice(&app.tree).?;
     app.tree.get(notice).?.notice.title = "";
 

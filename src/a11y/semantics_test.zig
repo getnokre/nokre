@@ -799,7 +799,7 @@ test "the click action is Element.isInteractive, for every element kind" {
         var app = try test_app.init(400, 600);
         defer app.deinit();
         _ = try app.presentSheet("Options");
-        try app.notify("Sync failed", "", "home");
+        try app.notify(.{ .title = "Sync failed", .route = "home", .important = true });
         try expectClickTracksInteractive(&app, &seen);
         app.dismissSheet();
         try app.openNoticesPane();
@@ -828,7 +828,7 @@ test "sheet and notices pane map to modal dialogs; notices are status" {
     }
 
     app.dismissSheet();
-    try app.notify("Sync failed", "", "home");
+    try app.notify(.{ .title = "Sync failed", .route = "home", .important = true });
     {
         var snap = try snapshot(testing.allocator, &app);
         defer snap.deinit();

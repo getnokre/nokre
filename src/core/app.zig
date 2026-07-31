@@ -156,8 +156,8 @@ pub const App = struct {
     /// when there is no nav; borrows every string it holds, and so frees
     /// none of them (`nav.RosterItem`).
     nav_items: std.ArrayList(nav_mod.RosterItem) = .empty,
-    /// Every pending notice, in arrival order; the front one is the
-    /// banner (see `notify`).
+    /// Every pending notice: important ones in front, arrival order
+    /// within each group; the front one is the banner (see `notify`).
     notices: std.ArrayList(notices_mod.OwnedNotice) = .empty,
     /// How the pending notices surface; `.none` iff there are none.
     notice_state: NoticeState = .none,
@@ -221,6 +221,7 @@ pub const App = struct {
     pub const dismissSheet = overlays.dismissSheet;
     pub const notify = notices_mod.notify;
     pub const dismissNotice = notices_mod.dismissNotice;
+    pub const dismissNoticeAt = notices_mod.dismissNoticeAt;
     pub const openNoticesPane = notices_mod.openNoticesPane;
     pub const minimizeNotices = notices_mod.minimizeNotices;
     pub const dismissAllNotices = notices_mod.dismissAllNotices;

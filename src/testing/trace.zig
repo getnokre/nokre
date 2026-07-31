@@ -304,7 +304,7 @@ test "dump serializes roles, rects, state, and focus" {
 test "dump serializes sheets and notices" {
     var app = try test_app.init(200, 200);
     defer app.deinit();
-    try app.notify("Sync failed", "Changes kept locally.", "details");
+    try app.notify(.{ .title = "Sync failed", .description = "Changes kept locally.", .route = "details", .important = true });
     _ = try app.tree.append(app.tree.rootId(), .{ .sheet = .{ .title = "Options" } });
 
     var out: std.ArrayList(u8) = .empty;

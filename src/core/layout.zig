@@ -946,22 +946,26 @@ pub fn noticeTextRegion(tree: *const Tree, notice: NodeId, rtl: bool) Band {
             .minimize, .dismiss => trail += 1,
         }
     }
-    return noticeTextBand(tree.rectOf(notice), lead, trail, rtl);
+    const has_icon = tree.getConst(notice).?.notice.icon != null;
+    return noticeTextBand(tree.rectOf(notice), lead, trail, has_icon, rtl);
 }
 
 /// The same column, from a row's geometry and its control census rather
 /// than from the tree — what `layoutNoticeRow` needs before the rect it
 /// is computing exists. The trailing controls pack flush against each
 /// other (see `touch_target`); only the group as a whole is held off
-/// the words.
-fn noticeTextBand(r: Rect, lead: bool, trail: i32, rtl: bool) Band {
+/// the words. The notice's own icon stands between the leading control
+/// and the words, a `lineHeight` square plus `icon_gap` — a fixed box
+/// rather than a measured advance, so this stays free of the measurer.
+fn noticeTextBand(r: Rect, lead: bool, trail: i32, icon: bool, rtl: bool) Band {
     const pad = metrics.notice_pad;
     const t = metrics.touch_target;
     const lead_w: i32 = if (lead) t + metrics.icon_gap else 0;
     const trail_w: i32 = if (trail > 0) trail * t + metrics.icon_gap else 0;
+    const icon_w: i32 = if (icon) text.Scale.body.lineHeight() + metrics.icon_gap else 0;
     return .{
-        .x = r.x + pad + (if (rtl) trail_w else lead_w),
-        .w = r.w - 2 * pad - lead_w - trail_w,
+        .x = r.x + pad + (if (rtl) trail_w else lead_w + icon_w),
+        .w = r.w - 2 * pad - lead_w - trail_w - icon_w,
     };
 }
 
@@ -1636,7 +1640,7 @@ const Ctx = struct {
         var trail: i32 = 0;
         if (minimize != null) trail += 1;
         if (dismiss != null) trail += 1;
-        const text_w = noticeTextBand(.{ .x = x, .y = y, .w = w, .h = 0 }, left != null, trail, self.rtl).w;
+        const text_w = noticeTextBand(.{ .x = x, .y = y, .w = w, .h = 0 }, left != null, trail, n.icon != null, self.rtl).w;
         const title_h = self.wrappedHeight(.prose, .body, n.title, &.{}, text_w);
         const desc_h: i32 = if (n.description.len > 0) self.wrappedHeight(.prose, .small, n.description, &.{}, text_w) else 0;
         // The icons stay centered on the title's first line, so a target

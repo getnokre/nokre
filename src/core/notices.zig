@@ -18,6 +18,8 @@ pub const OwnedNotice = struct {
     title: []u8,
     description: []u8,
     route: []u8,
+    icon: ?element_mod.IconName,
+    important: bool,
 
     pub fn deinit(self: OwnedNotice, gpa: std.mem.Allocator) void {
         gpa.free(self.title);
@@ -26,25 +28,62 @@ pub const OwnedNotice = struct {
     }
 };
 
-/// Raises a persistent notice: a title, a description, and the route
-/// its open control deep-links to. The front notice shows as a
-/// banner in the bottom pane; duplicates (by title) are dropped. A
-/// new notice re-surfaces minimized ones. Notices never steal focus
-/// (WCAG 3.2.1) and never time out (WCAG 2.2.1) — there is
+/// What `notify` raises. Quiet by default: interrupting is the thing a
+/// notice has to ask for, not the thing it has to remember to decline.
+pub const Notify = struct {
+    title: []const u8,
+    description: []const u8 = "",
+    /// Route reference the notice deep-links to via its open control.
+    route: []const u8 = "",
+    /// Leading mark, decorative: the title stays the accessible name,
+    /// so the icon adds recognition without carrying information the
+    /// words don't state.
+    icon: ?element_mod.IconName = null,
+    /// An important notice claims the banner and re-surfaces minimized
+    /// notices; a quiet one only joins the pending list behind the nav
+    /// pane's indicator. The split is behavioral, not visual — it
+    /// decides who interrupts, and the pane groups by it.
+    important: bool = false,
+};
+
+/// Raises a persistent notice. The front notice shows as a banner in
+/// the bottom pane; duplicates (by title) are dropped. Notices never
+/// steal focus (WCAG 3.2.1) and never time out (WCAG 2.2.1) — there is
 /// deliberately no auto-dismiss to offer.
-pub fn notify(app: *App, title: []const u8, description: []const u8, route: []const u8) !void {
-    if (title.len == 0) return error.EmptyNotice;
+///
+/// Important notices interrupt: the banner appears (unless the pane is
+/// already open, which shows everything). Quiet ones don't: they
+/// accumulate behind the indicator, which appears if no chrome is up.
+/// Important notices stand in front of quiet ones, arrival order
+/// within each group, so the banner is always an important notice
+/// while any is pending.
+pub fn notify(app: *App, opts: Notify) !void {
+    if (opts.title.len == 0) return error.EmptyNotice;
     for (app.notices.items) |n| {
-        if (std.mem.eql(u8, n.title, title)) return;
+        if (std.mem.eql(u8, n.title, opts.title)) return;
     }
-    const t = try app.gpa.dupe(u8, title);
+    const t = try app.gpa.dupe(u8, opts.title);
     errdefer app.gpa.free(t);
-    const d = try app.gpa.dupe(u8, description);
+    const d = try app.gpa.dupe(u8, opts.description);
     errdefer app.gpa.free(d);
-    const r = try app.gpa.dupe(u8, route);
+    const r = try app.gpa.dupe(u8, opts.route);
     errdefer app.gpa.free(r);
-    try app.notices.append(app.gpa, .{ .title = t, .description = d, .route = r });
-    if (app.notice_state != .pane) app.notice_state = .banner;
+    const owned: OwnedNotice = .{
+        .title = t,
+        .description = d,
+        .route = r,
+        .icon = opts.icon,
+        .important = opts.important,
+    };
+    if (opts.important) {
+        var i: usize = 0;
+        while (i < app.notices.items.len and app.notices.items[i].important) i += 1;
+        try app.notices.insert(app.gpa, i, owned);
+        if (app.notice_state != .pane) app.notice_state = .banner;
+    } else {
+        try app.notices.append(app.gpa, owned);
+        if (app.notice_state == .none) app.notice_state = .minimized;
+    }
     try syncNoticeChrome(app);
 }
 
@@ -79,7 +118,14 @@ pub fn dismissNoticeAt(app: *App, index: usize) void {
     if (index >= app.notices.items.len) return;
     const removed = app.notices.orderedRemove(index);
     removed.deinit(app.gpa);
-    if (app.notices.items.len == 0) app.notice_state = .none;
+    if (app.notices.items.len == 0) {
+        app.notice_state = .none;
+    } else if (app.notice_state == .banner and !app.notices.items[0].important) {
+        // Important notices stand in front, so a quiet front means none
+        // remain. The banner was the important ones' surface; quiet
+        // notices never claim it — not even by succession.
+        app.notice_state = .minimized;
+    }
     syncNoticeChrome(app) catch {};
 }
 
@@ -117,6 +163,7 @@ fn installBanner(app: *App) !void {
         .title = front.title,
         .description = front.description,
         .route = front.route,
+        .icon = front.icon,
     } });
     if (app.notices.items.len == 1) {
         _ = try app.tree.append(notice, .{ .icon_button = .{
@@ -153,11 +200,25 @@ fn installPane(app: *App) !void {
     // field: the action that empties the list should not be the thing
     // that scrolls away as the list grows.
     const region = try app.tree.append(pane, .{ .scroll_region = .{ .height = 0 } });
-    for (app.notices.items) |n| {
+    // Important notices lead the list (notify keeps them in front), and
+    // when both kinds are pending a label heads each group. Framework
+    // English like "Close" and "Back": no consumer named these groups.
+    // Plain text, not headings — two words of chrome should not enter a
+    // screen reader's heading navigation ahead of the consumer's page.
+    const split = blk: {
+        var i: usize = 0;
+        while (i < app.notices.items.len and app.notices.items[i].important) i += 1;
+        break :blk i;
+    };
+    const grouped = split > 0 and split < app.notices.items.len;
+    for (app.notices.items, 0..) |n, i| {
+        if (grouped and i == 0) _ = try app.tree.append(region, group_label_important);
+        if (grouped and i == split) _ = try app.tree.append(region, group_label_other);
         const row = try app.tree.append(region, .{ .notice = .{
             .title = n.title,
             .description = n.description,
             .route = n.route,
+            .icon = n.icon,
         } });
         _ = try app.tree.append(row, .{ .icon_button = .{
             .glyph = .open,
@@ -169,6 +230,17 @@ fn installPane(app: *App) !void {
         } });
     }
 }
+
+/// The pane's group labels: small and dark like a notice's description
+/// — a caption over the rows, not a rival to their titles.
+const group_label_important: Element = .{ .text = .{
+    .content = "Important",
+    .style = .{ .scale = .small, .ink = .dark },
+} };
+const group_label_other: Element = .{ .text = .{
+    .content = "Other",
+    .style = .{ .scale = .small, .ink = .dark },
+} };
 
 fn installIndicator(app: *App) !void {
     _ = try installChromeRoot(app, .{ .icon_button = .{ .glyph = .expand, .label = "Show notices" } });

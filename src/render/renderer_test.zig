@@ -1083,7 +1083,7 @@ test "sheet paints last over a paper dither scrim" {
 test "notice banner: pane chrome at the bottom carrying its controls" {
     var app = try test_app.init(400, 600);
     defer app.deinit();
-    try app.notify("Saved", "Synced to disk.", "home");
+    try app.notify(.{ .title = "Saved", .description = "Synced to disk.", .route = "home", .icon = .circle_check, .important = true });
 
     var rec = frameOf(&app);
     defer rec.deinit();
@@ -1107,6 +1107,7 @@ test "notice banner: pane chrome at the bottom carrying its controls" {
     try testing.expect(outlined);
     try testing.expect(rec.containsText("Saved"));
     try testing.expect(rec.containsText("Synced to disk."));
+    try testing.expect(rec.containsText(element_mod.IconName.circle_check.utf8()));
     try testing.expect(rec.containsText(element_mod.Glyph.open.utf8()));
     try testing.expect(rec.containsText(element_mod.Glyph.minimize.utf8()));
     try testing.expect(rec.containsText(element_mod.Glyph.dismiss.utf8()));
@@ -1115,8 +1116,8 @@ test "notice banner: pane chrome at the bottom carrying its controls" {
 test "notices pane paints over a scrim with a row per notice" {
     var app = try test_app.init(400, 600);
     defer app.deinit();
-    try app.notify("Saved", "", "home");
-    try app.notify("Sync failed", "", "home");
+    try app.notify(.{ .title = "Saved", .route = "home" });
+    try app.notify(.{ .title = "Sync failed", .route = "home", .important = true });
     try app.openNoticesPane();
 
     var rec = frameOf(&app);
@@ -1140,12 +1141,15 @@ test "notices pane paints over a scrim with a row per notice" {
     try testing.expect(rec.containsText("Dismiss all"));
     try testing.expect(rec.containsText("Saved"));
     try testing.expect(rec.containsText("Sync failed"));
+    // Mixed importance: each group under its label.
+    try testing.expect(rec.containsText("Important"));
+    try testing.expect(rec.containsText("Other"));
 }
 
 test "the minimized indicator paints its glyph in the pane band" {
     var app = try test_app.init(400, 600);
     defer app.deinit();
-    try app.notify("Saved", "", "home");
+    try app.notify(.{ .title = "Saved", .route = "home" });
     app.minimizeNotices();
 
     var rec = frameOf(&app);

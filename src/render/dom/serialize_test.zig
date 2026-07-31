@@ -595,7 +595,7 @@ test "the notices indicator stands in the nav's row, not beside it" {
         .{ .route = "settings", .icon = .settings },
     });
     try app.navigate("library");
-    try app.notify("Saved", "", "library");
+    try app.notify(.{ .title = "Saved", .route = "library" });
     app.minimizeNotices();
 
     const bar = try renderChrome(&app);
@@ -615,11 +615,41 @@ test "the notices indicator stands in the nav's row, not beside it" {
     // asked once and answered for both editions.
     var bare_app = try test_app.init(400, 600);
     defer bare_app.deinit();
-    try bare_app.notify("Saved", "", "");
+    try bare_app.notify(.{ .title = "Saved" });
     bare_app.minimizeNotices();
     const bare = try renderChrome(&bare_app);
     defer testing.allocator.free(bare);
     try expectContains(bare, "<div class=\"nav-indicator\">");
+}
+
+test "a notice's icon is a decorative square between the controls and the words" {
+    var app = try test_app.init(400, 600);
+    defer app.deinit();
+    try app.notify(.{
+        .title = "Sync failed",
+        .description = "Changes are kept locally.",
+        .route = "home",
+        .icon = .cloud_off,
+        .important = true,
+    });
+
+    const banner = try renderChrome(&app);
+    defer testing.allocator.free(banner);
+    // Decorative (`aria-hidden`): the title stays the accessible name.
+    // A `square` box, matching the `lineHeight` slot layout charged the
+    // words' column (`noticeTextBand`) — a mark's measured advance would
+    // be a different number than the one core laid out with.
+    try expectContains(banner, "<span class=\"icon square\" aria-hidden=\"true\">&#xE08D;</span><div class=\"notice-words\">");
+
+    // Mixed importance groups the pane, each group under its label.
+    try app.notify(.{ .title = "Export ready", .route = "home" });
+    try app.openNoticesPane();
+    const pane = try renderChrome(&app);
+    defer testing.allocator.free(pane);
+    try expectContains(pane, "Important");
+    try expectContains(pane, "Sync failed");
+    try expectContains(pane, "Other");
+    try expectContains(pane, "Export ready");
 }
 
 test "an off-roster screen names itself, and the marker is not a link" {
