@@ -78,6 +78,7 @@ nokre is a strict layer cake. Each layer knows only the layer below it.
 | [src/services/haptic/haptic.zig](../../src/services/haptic/haptic.zig) | the back gesture's threshold knock — injected like every service, callable by no app ([haptics.md](haptics.md)) |
 | [src/services/iap/iap.zig](../../src/services/iap/iap.zig) | the platform stores: catalog, payment sheet, purchase stream, finish, restore — and `available` where there is no store ([iap.md](iap.md)) |
 | [src/services/open_url/open_url.zig](../../src/services/open_url/open_url.zig) | one verb: hand a URL to the system browser, behind a closed scheme allowlist; external link activation lands here ([services.md](../services.md)) |
+| [src/services/share/share.zig](../../src/services/share/share.zig) | one verb: put the OS share sheet up with UTF-8 text on it — and `available` where there is no sheet ([services.md](../services.md)) |
 | [shim/nokre_skia.cpp](../../shim/nokre_skia.cpp) | the entire C surface over Skia |
 
 ## Data flow

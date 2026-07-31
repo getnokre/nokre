@@ -108,13 +108,15 @@ The authoring rules that keep the shell/service split honest:
   links something (secure_store's Keychain, deep_link's URL
   registration) gates on its `nokre_*_options.linked` and is a curated
   comptime error at the call site when unlinked. A service that links
-  *nothing* — clipboard, locale, open_url — has no unlinked state to error on, so
+  *nothing* — clipboard, locale, open_url, share — has no unlinked state to error on, so
   it gets no options module and no build flag: adding one would be
   ceremony over a decision the app never makes. For those, "optional"
   means costing nothing where the platform has no hook (a comptime
   `has_shell_hook` switch, so stub targets never name the extern) and
   having an honest answer where it does — the empty value, never an
-  invented one. Either way core and the shells never depend on a
+  invented one (share's honest answer is `available` false, because a
+  missing share sheet is a fact the app draws around, not an empty
+  value it can render). Either way core and the shells never depend on a
   service, and the kitchen-sink example runs with zero services linked
   and must keep running that way.
 - **Web parity is part of the contract.** Each service defines its web

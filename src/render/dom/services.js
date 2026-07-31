@@ -21,6 +21,10 @@ export function silentHooks() {
     nokre_shell_request_frame: () => {},
     nokre_shell_write_clipboard: () => {},
     nokre_open_url_open: () => {},
+    nokre_share_show: () => {},
+    // A compute instance has no sheet to show, so its boot probe says
+    // none — only the page's instance asks the real navigator.
+    nokre_share_available: () => 0,
     nokre_shell_write_route: () => {},
     nokre_worker_js_spawn: () => {},
     nokre_worker_js_send: () => {},
@@ -298,6 +302,24 @@ export function appHooks({ nk, memory, workerUrl, wasmUrl, onWork, onMetrics }) 
     nokre_open_url_open: (ptr, len) => {
       const url = utf8.decode(memory().subarray(ptr, ptr + len));
       window.open(url, "_blank", "noopener");
+    },
+
+    // ---- share (docs/services.md) ----
+    // The boot probe App.init calls once: `navigator.share` exists on
+    // secure contexts in the browsers that have a sheet to offer, and
+    // its absence is the honest "no sheet here" — iap's runtime answer,
+    // with the browser as the store. Synchronous, so the cached
+    // `available` is warm before the first build.
+    nokre_share_available: () => (navigator.share ? 1 : 0),
+    // Fire-and-forget: AbortError is the user closing the sheet, which
+    // is their business (share.h), and NotAllowedError is a call that
+    // outlived its user activation — the browser refuses a sheet nobody
+    // asked for, and so does the contract, so both vanish into the same
+    // silence. The activation window is why a share belongs in the
+    // action that the tap or key ran, never in an async callback.
+    nokre_share_show: (ptr, len) => {
+      const text = utf8.decode(memory().subarray(ptr, ptr + len));
+      navigator.share?.({ text }).catch(() => {});
     },
 
     // ---- workers (docs/internals/workers.md) ----

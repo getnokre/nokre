@@ -111,7 +111,20 @@ oauth's double-fork `xdg-open` on the Wayland shell; the web has no C
 shell — services.js implements the import as
 `window.open(…, "_blank", "noopener")`, reached only by keyboard
 activation, since the live driver leaves pointer clicks on external
-anchors to the browser). deep_link's `nokre_deep_link_install` is the inbound
+anchors to the browser). share's `nokre_share_show`
+([src/services/share/share.h](../../src/services/share/share.h)) is the
+same shape with one asymmetry: the Wayland shell does not export it —
+the Linux desktop has no share sheet, and the service answers
+`available` false there instead of the shell faking one. Where it
+exists, each shell hosts its own sheet (`NSSharingServicePicker`
+anchored to the view's center on macOS, `UIActivityViewController` from
+the topmost controller — centered arrowless popover on iPad — on iOS,
+an ACTION_SEND chooser via `NokreView.showShare` on Android, the WinRT
+share pane through `IDataTransferManagerInterop` on Windows — combase
+bound at first use, the interfaces declared against the SDK IDL in
+shell.c since mingw ships neither — and `navigator.share` on the web,
+where the same services.js instance answers the boot-time
+`nokre_share_available` probe). deep_link's `nokre_deep_link_install` is the inbound
 twin: the OS hands the app a URL (iOS `scene:openURLContexts` /
 `continueUserActivity`, Android `onNewIntent`, macOS
 `application:openURLs:`), and the shell forwards it on the main thread to

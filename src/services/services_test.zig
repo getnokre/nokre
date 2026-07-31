@@ -18,16 +18,20 @@ const workers = @import("../workers/workers.zig");
 const http = @import("http/http.zig");
 const open_url = @import("open_url/open_url.zig");
 const secure_store = @import("secure_store/secure_store.zig");
+const share = @import("share/share.zig");
 
 const App = app_mod.App;
 
 // package_info and open_url keep their design-proof tests inline (both
 // are small modules); referencing them here is what makes the test
 // build compile them at all — the carve-outs being provable is the
-// point.
+// point. share is small too, but its proofs all need an App (the caps
+// and the availability gate are observed through the journal), so they
+// live below instead.
 test {
     _ = @import("package_info/package_info.zig");
     _ = @import("open_url/open_url.zig");
+    _ = @import("share/share.zig");
 }
 
 const Doubler = struct {
@@ -155,6 +159,49 @@ test "open_url: opens journal in request order; a scheme off the allowlist error
     try std.testing.expectEqual(2, requested.len);
     try std.testing.expectEqualStrings("https://example.com/terms", requested[0]);
     try std.testing.expectEqualStrings("mailto:help@example.com", requested[1]);
+}
+
+test "share: shares journal in request order; empty and over-cap refuse before the OS is asked" {
+    var app = try App.init(std.testing.allocator, .{
+        .viewport = .{ .w = 320, .h = 240 },
+        .services = .mocks(),
+    });
+    defer app.deinit();
+
+    try std.testing.expect(share.available(&app));
+    try share.show(&app, "Look at this: https://example.com/n/42");
+    try share.show(&app, "a second share");
+    // The refusals are uniform and pre-OS: the journal — the mock's
+    // whole observable effect — must show the sheet was never asked
+    // for. open_url's rejected-scheme rule.
+    try std.testing.expectError(error.EmptyText, share.show(&app, ""));
+    const over = [_]u8{'x'} ** (share.max_text_bytes + 1);
+    try std.testing.expectError(error.TextTooLarge, share.show(&app, &over));
+    // Exactly at the cap is legal — the cap is a bound, not a fence.
+    const at = [_]u8{'y'} ** share.max_text_bytes;
+    try share.show(&app, &at);
+
+    const shown = app.services.share.shares();
+    try std.testing.expectEqual(3, shown.len);
+    try std.testing.expectEqualStrings("Look at this: https://example.com/n/42", shown[0]);
+    try std.testing.expectEqualStrings("a second share", shown[1]);
+    try std.testing.expectEqual(share.max_text_bytes, shown[2].len);
+}
+
+test "share: a sheetless boot answers available false, show is Unavailable, and nothing journals" {
+    var app = try App.init(std.testing.allocator, .{
+        .viewport = .{ .w = 320, .h = 240 },
+        // The Linux desktop, or a browser without navigator.share.
+        .services = .{ .share = .mock(.{ .available = false }) },
+    });
+    defer app.deinit();
+
+    try std.testing.expect(!share.available(&app));
+    try std.testing.expectError(error.Unavailable, share.show(&app, "nowhere to go"));
+    // The pure checks still run first, identically — EmptyText on a
+    // sheetless target too, so the error means one thing everywhere.
+    try std.testing.expectError(error.EmptyText, share.show(&app, ""));
+    try std.testing.expectEqual(0, app.services.share.shares().len);
 }
 
 test "capstone: two apps, two threads, interleaved service traffic, disjoint by construction" {

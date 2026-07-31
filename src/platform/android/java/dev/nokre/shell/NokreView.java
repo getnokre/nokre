@@ -613,6 +613,24 @@ public final class NokreView extends SurfaceView implements SurfaceHolder.Callba
         }
     }
 
+    // ---- share (called from shell.c's nokre_share_show) ----
+
+    void showShare(byte[] utf8) {
+        // ACTION_SEND behind the system chooser, so the user picks from
+        // everything installed rather than whatever won the last
+        // "always" — the sheet is the user's (share.h). The caps
+        // already ran on the Zig side; a device with no send handler at
+        // all still shows an (empty) chooser, and fire-and-forget has
+        // no error lane, so the catch mirrors openUrl's.
+        Intent send = new Intent(Intent.ACTION_SEND)
+                .setType("text/plain")
+                .putExtra(Intent.EXTRA_TEXT, new String(utf8, StandardCharsets.UTF_8));
+        try {
+            getContext().startActivity(Intent.createChooser(send, null));
+        } catch (ActivityNotFoundException ignored) {
+        }
+    }
+
     // ---- accessibility (semantic snapshot → AccessibilityNodeInfo) ----
 
     private static final class A11yNode {

@@ -27,6 +27,7 @@ const secure_store = @import("../services/secure_store/secure_store.zig");
 const locale = @import("../services/locale/locale.zig");
 const oauth = @import("../services/oauth/oauth.zig");
 const iap = @import("../services/iap/iap.zig");
+const share = @import("../services/share/share.zig");
 
 /// The two ends of the back gesture's threshold, for asserting against
 /// `knocks()`. Re-exported here and nowhere else: the haptic service has
@@ -64,6 +65,7 @@ pub const InitOptions = struct {
     locale: locale.Mock.Config = .{}, // the device tag at boot; "" is "the platform said nothing"
     oauth: oauth.Mock.Config = .{}, // the PKCE seeds, and optionally what the browser does
     iap: iap.Mock.Config = .{}, // the store's shelf, and whether there is a store at all
+    share: share.Mock.Config = .{}, // whether this boot has a share sheet at all
 };
 
 pub const Harness = struct {
@@ -94,6 +96,7 @@ pub const Harness = struct {
                     .locale = .mock(opts.locale),
                     .oauth = .mock(opts.oauth),
                     .iap = .mock(opts.iap),
+                    .share = .mock(opts.share),
                 },
             }),
             .store = undefined,
@@ -409,6 +412,15 @@ pub const Harness = struct {
     /// deliver — the journal is the whole observable effect.
     pub fn urlsOpened(self: *const Harness) []const []u8 {
         return self.app.services.open_url.opens();
+    }
+
+    /// Every text the app put on the OS share sheet, in order — direct
+    /// `share.show` calls from actions. Reads the journaling mock
+    /// directly, like `urlsOpened()`: the handoff is fire-and-forget
+    /// and the destination is deliberately unobservable, so the
+    /// journal is the whole observable effect.
+    pub fn sharesShown(self: *const Harness) []const []u8 {
+        return self.app.services.share.shares();
     }
 
     // ---- deep links ----

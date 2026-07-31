@@ -16,6 +16,7 @@
 #include "../../services/deep_link/deep_link.h"
 #include "../../services/locale/locale.h"
 #include "../../services/open_url/open_url.h"
+#include "../../services/share/share.h"
 #include "../../../shim/nokre_accesskit.h"
 #include <string.h>
 
@@ -1240,6 +1241,34 @@ void nokre_open_url_open(const char *url, size_t len) {
     // user comes back through their own multitasking. Fire-and-forget
     // by contract, so the completion handler is nil.
     [UIApplication.sharedApplication openURL:target options:@{} completionHandler:nil];
+}
+
+void nokre_share_show(const char *text, size_t len) {
+    NSString *str = [[NSString alloc] initWithBytes:text
+                                             length:len
+                                           encoding:NSUTF8StringEncoding];
+    NokreView *view = g_main_view;
+    UIViewController *vc = view == nil ? nil : view.window.rootViewController;
+    if (str == nil || vc == nil) return;
+    // Present from whatever is topmost, not the root: the share can be
+    // asked for while a system sheet the shell cannot see is already up,
+    // and presenting from a covered controller is a silent no-op.
+    while (vc.presentedViewController != nil) vc = vc.presentedViewController;
+    UIActivityViewController *avc =
+        [[UIActivityViewController alloc] initWithActivityItems:@[ str ]
+                                          applicationActivities:nil];
+    // iPad shows this as a popover and requires an anchor; the service
+    // API carries no geometry (share.h), so center it on the app's one
+    // view, arrowless — app-level, not element-anchored. iPhone ignores
+    // the popover controller and presents the sheet.
+    UIPopoverPresentationController *pop = avc.popoverPresentationController;
+    if (pop != nil) {
+        pop.sourceView = vc.view;
+        pop.sourceRect = CGRectMake(CGRectGetMidX(vc.view.bounds),
+                                    CGRectGetMidY(vc.view.bounds), 1, 1);
+        pop.permittedArrowDirections = 0;
+    }
+    [vc presentViewController:avc animated:YES completion:nil];
 }
 
 void nokre_shell_haptic(int32_t kind) {

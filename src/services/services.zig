@@ -24,6 +24,7 @@ const locale = @import("locale/locale.zig");
 const oauth = @import("oauth/oauth.zig");
 const open_url = @import("open_url/open_url.zig");
 const secure_store = @import("secure_store/secure_store.zig");
+const share = @import("share/share.zig");
 const workers = @import("../workers/workers.zig");
 
 /// The release half of a service that keeps nothing: the platform call
@@ -79,6 +80,13 @@ pub const Services = struct {
     /// to derive (the VIEW *filters* oauth and deep_link derive are for
     /// URLs coming in, not going out).
     open_url: open_url.Service = .{},
+    /// Packaging footprint: nothing, anywhere — stated rather than
+    /// implied. The sheet is an outbound handoff wherever it exists
+    /// (ACTION_SEND names no permission, UIActivityViewController no
+    /// entitlement, the WinRT share pane no manifest entry), and the
+    /// platform without one — the Linux desktop — answers `available`
+    /// false at runtime rather than deriving anything.
+    share: share.Service = .{},
 
     /// The bare-test one-liner: every service as its default mock.
     /// Test builds only — in a release build the same `.{}` silently
@@ -110,6 +118,8 @@ pub const Services = struct {
         errdefer self.open_url.deinit();
         try self.oauth.init(gpa);
         errdefer self.oauth.deinit();
+        try self.share.init(gpa);
+        errdefer self.share.deinit();
         // Takes the runtime, like http: the purchase stream delivers
         // updates nobody requested, so it opens delivery slots with no
         // `*App` in hand (docs/internals/iap.md).
@@ -130,6 +140,7 @@ pub const Services = struct {
         self.haptic.deinit();
         self.open_url.deinit();
         self.oauth.deinit();
+        self.share.deinit();
         self.iap.deinit();
         self.locale.deinit();
     }

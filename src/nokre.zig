@@ -80,12 +80,14 @@ comptime {
 // is pure std, so tests may reference it freely. secure_store binds
 // externs when linked, but its test path is the per-app fake — the
 // only path compiled under `zig test` — so tests may reference it too.
-// locale and open_url are the other exceptions: they link nothing at
-// all — no framework, no entitlement, no identity — so neither has an
-// options module or an unlinked error to raise; each rides whatever
-// shell is there (clipboard's posture), and open_url's one refusal —
-// the scheme allowlist — is a pure function of the argument, checked
-// before any OS call.
+// locale, open_url, and share are the other exceptions: they link
+// nothing at all — no framework, no entitlement, no identity — so none
+// has an options module or an unlinked error to raise; each rides
+// whatever shell is there (clipboard's posture). open_url's one
+// refusal — the scheme allowlist — and share's caps are pure functions
+// of the argument, checked before any OS call; share's platform gap
+// (no sheet on the Linux desktop) is a runtime `available`, iap's
+// shape, not a link-time one.
 pub const services = struct {
     pub const package_info = @import("services/package_info/package_info.zig");
     pub const http = @import("services/http/http.zig");
@@ -94,6 +96,7 @@ pub const services = struct {
     pub const locale = @import("services/locale/locale.zig");
     pub const oauth = @import("services/oauth/oauth.zig");
     pub const open_url = @import("services/open_url/open_url.zig");
+    pub const share = @import("services/share/share.zig");
     pub const iap = @import("services/iap/iap.zig");
 };
 

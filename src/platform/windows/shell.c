@@ -17,6 +17,7 @@
 #include "../../services/deep_link/deep_link.h"
 #include "../../services/locale/locale.h"
 #include "../../services/open_url/open_url.h"
+#include "../../services/share/share.h"
 
 // Marks the view dirty from any thread (WPARAM/LPARAM unused).
 #define NOKRE_WM_REQUEST_FRAME (WM_APP + 0)
@@ -506,6 +507,296 @@ void nokre_open_url_open(const char *url, size_t len) {
     wide[wide_len] = L'\0';
     ShellExecuteW(NULL, L"open", wide, NULL, NULL, SW_SHOWNORMAL);
     free(wide);
+}
+
+// ---- share service outbound hook ----
+// (docs/services.md; src/services/share/share.h). The share pane is
+// WinRT UI, reachable from Win32 through IDataTransferManagerInterop —
+// the OS's own bridge for exactly this HWND-hosted case, no packaging
+// identity required (unlike the store, which is why iap answers false
+// here and share does not). Two costs follow, both taken in the open:
+//
+// - mingw ships no Windows.ApplicationModel.DataTransfer header and no
+//   combase import library, so the four combase entry points are bound
+//   at first use and the five interfaces are declared here, answering
+//   to the SDK IDL (Windows.ApplicationModel.datatransfer.idl) — the
+//   uuids are copied digit-for-digit, and the one GUID the IDL cannot
+//   state, the parameterized TypedEventHandler<DataTransferManager,
+//   DataRequestedEventArgs>, is the RFC 4122 v5 hash the WinRT
+//   pinterface rules define (namespace 11f47ad5-7b73-42c0-abae-
+//   878b1e16adee over the pinterface signature). A machine without
+//   combase.dll simply never shows the pane — fire-and-forget's line.
+// - the pane pulls: ShowShareUI raises DataRequested and the handler
+//   fills the package then, after this hook returned. So the text is
+//   copied into one pending slot the static handler serves — in-flight
+//   call data at file scope, the deep_link-pending shape, replaced at
+//   the next share and never read by anything else.
+
+typedef void *NokreHstring; // HSTRING: an opaque handle, per hstring.h
+typedef struct {
+    __int64 value;
+} NokreEventToken;
+
+static const GUID nokre_iid_iunknown = {
+    0x00000000, 0x0000, 0x0000, {0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46}};
+static const GUID nokre_iid_agile_object = {
+    0x94EA2B94, 0xE9CC, 0x49E0, {0xC0, 0xFF, 0xEE, 0x64, 0xCA, 0x8F, 0x5B, 0x90}};
+static const GUID nokre_iid_dtm_interop = {
+    0x3A3DCD6C, 0x3EAB, 0x43DC, {0xBC, 0xDE, 0x45, 0x67, 0x1C, 0xE8, 0x00, 0xC8}};
+static const GUID nokre_iid_dtm = {
+    0xA5CAEE9B, 0x8708, 0x49D1, {0x8D, 0x36, 0x67, 0xD2, 0x5A, 0x8D, 0xA0, 0x0C}};
+static const GUID nokre_iid_data_requested_handler = {
+    0xEC6F9CC8, 0x46D0, 0x5E0E, {0xB4, 0xD2, 0x7D, 0x77, 0x73, 0xAE, 0x37, 0xA0}};
+
+// Only the slots this leg calls are typed; the rest are position-holding
+// void pointers, because a vtable is an array and the array's shape is
+// the whole contract.
+typedef struct NokreShareInterop NokreShareInterop;
+typedef struct {
+    HRESULT(STDMETHODCALLTYPE *QueryInterface)(NokreShareInterop *, const GUID *, void **);
+    ULONG(STDMETHODCALLTYPE *AddRef)(NokreShareInterop *);
+    ULONG(STDMETHODCALLTYPE *Release)(NokreShareInterop *);
+    HRESULT(STDMETHODCALLTYPE *GetForWindow)(NokreShareInterop *, HWND, const GUID *, void **);
+    HRESULT(STDMETHODCALLTYPE *ShowShareUIForWindow)(NokreShareInterop *, HWND);
+} NokreShareInteropVtbl;
+struct NokreShareInterop {
+    const NokreShareInteropVtbl *vtbl;
+};
+
+typedef struct NokreShareDtm NokreShareDtm;
+typedef struct {
+    HRESULT(STDMETHODCALLTYPE *QueryInterface)(NokreShareDtm *, const GUID *, void **);
+    ULONG(STDMETHODCALLTYPE *AddRef)(NokreShareDtm *);
+    ULONG(STDMETHODCALLTYPE *Release)(NokreShareDtm *);
+    void *GetIids, *GetRuntimeClassName, *GetTrustLevel; // IInspectable
+    HRESULT(STDMETHODCALLTYPE *add_DataRequested)(NokreShareDtm *, void *, NokreEventToken *);
+    HRESULT(STDMETHODCALLTYPE *remove_DataRequested)(NokreShareDtm *, NokreEventToken);
+    void *add_TargetApplicationChosen, *remove_TargetApplicationChosen;
+} NokreShareDtmVtbl;
+struct NokreShareDtm {
+    const NokreShareDtmVtbl *vtbl;
+};
+
+typedef struct NokreShareArgs NokreShareArgs;
+typedef struct NokreShareRequest NokreShareRequest;
+typedef struct NokreSharePackage NokreSharePackage;
+typedef struct NokreShareProps NokreShareProps;
+
+typedef struct {
+    HRESULT(STDMETHODCALLTYPE *QueryInterface)(NokreShareArgs *, const GUID *, void **);
+    ULONG(STDMETHODCALLTYPE *AddRef)(NokreShareArgs *);
+    ULONG(STDMETHODCALLTYPE *Release)(NokreShareArgs *);
+    void *GetIids, *GetRuntimeClassName, *GetTrustLevel; // IInspectable
+    HRESULT(STDMETHODCALLTYPE *get_Request)(NokreShareArgs *, NokreShareRequest **);
+} NokreShareArgsVtbl;
+struct NokreShareArgs {
+    const NokreShareArgsVtbl *vtbl;
+};
+
+typedef struct {
+    HRESULT(STDMETHODCALLTYPE *QueryInterface)(NokreShareRequest *, const GUID *, void **);
+    ULONG(STDMETHODCALLTYPE *AddRef)(NokreShareRequest *);
+    ULONG(STDMETHODCALLTYPE *Release)(NokreShareRequest *);
+    void *GetIids, *GetRuntimeClassName, *GetTrustLevel; // IInspectable
+    HRESULT(STDMETHODCALLTYPE *get_Data)(NokreShareRequest *, NokreSharePackage **);
+    void *put_Data, *get_Deadline, *FailWithDisplayText, *GetDeferral;
+} NokreShareRequestVtbl;
+struct NokreShareRequest {
+    const NokreShareRequestVtbl *vtbl;
+};
+
+typedef struct {
+    HRESULT(STDMETHODCALLTYPE *QueryInterface)(NokreSharePackage *, const GUID *, void **);
+    ULONG(STDMETHODCALLTYPE *AddRef)(NokreSharePackage *);
+    ULONG(STDMETHODCALLTYPE *Release)(NokreSharePackage *);
+    void *GetIids, *GetRuntimeClassName, *GetTrustLevel; // IInspectable
+    void *GetView;
+    HRESULT(STDMETHODCALLTYPE *get_Properties)(NokreSharePackage *, NokreShareProps **);
+    void *get_RequestedOperation, *put_RequestedOperation;
+    void *add_OperationCompleted, *remove_OperationCompleted;
+    void *add_Destroyed, *remove_Destroyed;
+    void *SetData, *SetDataProvider;
+    HRESULT(STDMETHODCALLTYPE *SetText)(NokreSharePackage *, NokreHstring);
+    void *SetUri, *SetHtmlFormat, *get_ResourceMap, *SetRtf, *SetBitmap;
+    void *SetStorageItemsReadOnly, *SetStorageItems;
+} NokreSharePackageVtbl;
+struct NokreSharePackage {
+    const NokreSharePackageVtbl *vtbl;
+};
+
+typedef struct {
+    HRESULT(STDMETHODCALLTYPE *QueryInterface)(NokreShareProps *, const GUID *, void **);
+    ULONG(STDMETHODCALLTYPE *AddRef)(NokreShareProps *);
+    ULONG(STDMETHODCALLTYPE *Release)(NokreShareProps *);
+    void *GetIids, *GetRuntimeClassName, *GetTrustLevel; // IInspectable
+    void *get_Title;
+    HRESULT(STDMETHODCALLTYPE *put_Title)(NokreShareProps *, NokreHstring);
+    void *get_Description, *put_Description, *get_Thumbnail, *put_Thumbnail;
+    void *get_FileTypes, *get_ApplicationName, *put_ApplicationName;
+    void *get_ApplicationListingUri, *put_ApplicationListingUri;
+} NokreSharePropsVtbl;
+struct NokreShareProps {
+    const NokreSharePropsVtbl *vtbl;
+};
+
+// The DataRequested delegate: a static singleton, so AddRef/Release are
+// bookkeeping-free constants — the object's lifetime is the process's,
+// the macOS leg's picker posture.
+typedef struct NokreShareHandler {
+    const struct NokreShareHandlerVtbl *vtbl;
+} NokreShareHandler;
+typedef struct NokreShareHandlerVtbl {
+    HRESULT(STDMETHODCALLTYPE *QueryInterface)(NokreShareHandler *, const GUID *, void **);
+    ULONG(STDMETHODCALLTYPE *AddRef)(NokreShareHandler *);
+    ULONG(STDMETHODCALLTYPE *Release)(NokreShareHandler *);
+    HRESULT(STDMETHODCALLTYPE *Invoke)(NokreShareHandler *, NokreShareDtm *, NokreShareArgs *);
+} NokreShareHandlerVtbl;
+
+static struct {
+    int tried; // combase bind attempted (success or not)
+    HRESULT(WINAPI *ro_initialize)(int);
+    HRESULT(WINAPI *ro_get_activation_factory)(NokreHstring, const GUID *, void **);
+    HRESULT(WINAPI *windows_create_string)(const WCHAR *, UINT32, NokreHstring *);
+    HRESULT(WINAPI *windows_delete_string)(NokreHstring);
+    NokreShareDtm *dtm;   // GetForWindow'd once, handler attached for good
+    WCHAR *pending;       // what the next DataRequested serves; NUL-terminated
+    UINT32 pending_len;   // in WCHARs, excluding the NUL
+} g_share;
+
+static HRESULT STDMETHODCALLTYPE share_handler_qi(NokreShareHandler *self, const GUID *iid,
+                                                  void **out) {
+    if (out == NULL) return E_POINTER;
+    // IAgileObject honestly: everything here happens on the UI thread's
+    // STA, and declaring agility is what keeps COM from trying to
+    // marshal a static object with no proxy.
+    if (IsEqualGUID(iid, &nokre_iid_iunknown) || IsEqualGUID(iid, &nokre_iid_agile_object) ||
+        IsEqualGUID(iid, &nokre_iid_data_requested_handler)) {
+        *out = self;
+        return S_OK;
+    }
+    *out = NULL;
+    return E_NOINTERFACE;
+}
+
+static ULONG STDMETHODCALLTYPE share_handler_addref(NokreShareHandler *self) {
+    (void)self;
+    return 2;
+}
+
+static ULONG STDMETHODCALLTYPE share_handler_release(NokreShareHandler *self) {
+    (void)self;
+    return 1;
+}
+
+static HRESULT STDMETHODCALLTYPE share_handler_invoke(NokreShareHandler *self, NokreShareDtm *dtm,
+                                                      NokreShareArgs *args) {
+    (void)self;
+    (void)dtm;
+    if (args == NULL || g_share.pending == NULL) return S_OK;
+    NokreShareRequest *request = NULL;
+    if (FAILED(args->vtbl->get_Request(args, &request)) || request == NULL) return S_OK;
+    NokreSharePackage *package = NULL;
+    if (SUCCEEDED(request->vtbl->get_Data(request, &package)) && package != NULL) {
+        // The pane refuses a package without a title; the window text is
+        // the app's own declared name, not an invented string.
+        NokreShareProps *props = NULL;
+        if (SUCCEEDED(package->vtbl->get_Properties(package, &props)) && props != NULL) {
+            WCHAR title[256];
+            int title_len = GetWindowTextW(g.hwnd, title, 256);
+            NokreHstring title_h = NULL;
+            if (SUCCEEDED(g_share.windows_create_string(title, (UINT32)(title_len < 0 ? 0 : title_len),
+                                                        &title_h))) {
+                props->vtbl->put_Title(props, title_h);
+                g_share.windows_delete_string(title_h);
+            }
+            props->vtbl->Release(props);
+        }
+        NokreHstring text_h = NULL;
+        if (SUCCEEDED(g_share.windows_create_string(g_share.pending, g_share.pending_len, &text_h))) {
+            package->vtbl->SetText(package, text_h);
+            g_share.windows_delete_string(text_h);
+        }
+        package->vtbl->Release(package);
+    }
+    request->vtbl->Release(request);
+    return S_OK;
+}
+
+static const NokreShareHandlerVtbl g_share_handler_vtbl = {
+    share_handler_qi, share_handler_addref, share_handler_release, share_handler_invoke};
+static NokreShareHandler g_share_handler = {&g_share_handler_vtbl};
+
+// One-time setup: bind combase, init WinRT, GetForWindow, attach the
+// handler. NULL dtm afterwards means some step refused and the pane
+// stays silent forever — this session has no share host, xdg-open's
+// failure signal.
+static NokreShareDtm *share_dtm(void) {
+    if (g_share.tried) return g_share.dtm;
+    g_share.tried = 1;
+    HMODULE combase = LoadLibraryW(L"combase.dll");
+    if (combase == NULL) return NULL;
+    g_share.ro_initialize = (HRESULT(WINAPI *)(int))(void *)GetProcAddress(combase, "RoInitialize");
+    g_share.ro_get_activation_factory =
+        (HRESULT(WINAPI *)(NokreHstring, const GUID *, void **))(void *)GetProcAddress(
+            combase, "RoGetActivationFactory");
+    g_share.windows_create_string = (HRESULT(WINAPI *)(const WCHAR *, UINT32, NokreHstring *))(
+        void *)GetProcAddress(combase, "WindowsCreateString");
+    g_share.windows_delete_string =
+        (HRESULT(WINAPI *)(NokreHstring))(void *)GetProcAddress(combase, "WindowsDeleteString");
+    if (!g_share.ro_initialize || !g_share.ro_get_activation_factory ||
+        !g_share.windows_create_string || !g_share.windows_delete_string)
+        return NULL;
+    // S_FALSE (already initialized) and RPC_E_CHANGED_MODE (the thread
+    // is COM-initialized in another mode) both leave activation working.
+    HRESULT hr = g_share.ro_initialize(0 /* RO_INIT_SINGLETHREADED */);
+    if (FAILED(hr) && hr != RPC_E_CHANGED_MODE) return NULL;
+    static const WCHAR class_name[] = L"Windows.ApplicationModel.DataTransfer.DataTransferManager";
+    NokreHstring class_h = NULL;
+    if (FAILED(g_share.windows_create_string(class_name, (UINT32)(wcslen(class_name)), &class_h)))
+        return NULL;
+    NokreShareInterop *interop = NULL;
+    hr = g_share.ro_get_activation_factory(class_h, &nokre_iid_dtm_interop, (void **)&interop);
+    g_share.windows_delete_string(class_h);
+    if (FAILED(hr) || interop == NULL) return NULL;
+    NokreShareDtm *dtm = NULL;
+    if (SUCCEEDED(interop->vtbl->GetForWindow(interop, g.hwnd, &nokre_iid_dtm, (void **)&dtm)) &&
+        dtm != NULL) {
+        NokreEventToken token = {0};
+        if (FAILED(dtm->vtbl->add_DataRequested(dtm, &g_share_handler, &token))) {
+            dtm->vtbl->Release(dtm);
+            dtm = NULL;
+        }
+    }
+    interop->vtbl->Release(interop);
+    g_share.dtm = dtm;
+    return dtm;
+}
+
+void nokre_share_show(const char *text, size_t len) {
+    if (len == 0 || len > INT_MAX || g.hwnd == NULL) return;
+    NokreShareDtm *dtm = share_dtm();
+    if (dtm == NULL) return;
+    int wide_len = MultiByteToWideChar(CP_UTF8, 0, text, (int)len, NULL, 0);
+    if (wide_len <= 0) return;
+    WCHAR *wide = (WCHAR *)calloc((size_t)wide_len + 1, sizeof(WCHAR));
+    if (wide == NULL) return;
+    MultiByteToWideChar(CP_UTF8, 0, text, (int)len, wide, wide_len);
+    wide[wide_len] = L'\0';
+    free(g_share.pending);
+    g_share.pending = wide;
+    g_share.pending_len = (UINT32)wide_len;
+    // The pane raises DataRequested — usually inside this call, but the
+    // contract is only "after it" — and the handler serves `pending`.
+    NokreShareInterop *interop = NULL;
+    NokreHstring class_h = NULL;
+    static const WCHAR class_name[] = L"Windows.ApplicationModel.DataTransfer.DataTransferManager";
+    if (FAILED(g_share.windows_create_string(class_name, (UINT32)(wcslen(class_name)), &class_h)))
+        return;
+    HRESULT hr = g_share.ro_get_activation_factory(class_h, &nokre_iid_dtm_interop, (void **)&interop);
+    g_share.windows_delete_string(class_h);
+    if (FAILED(hr) || interop == NULL) return;
+    interop->vtbl->ShowShareUIForWindow(interop, g.hwnd);
+    interop->vtbl->Release(interop);
 }
 
 // ---- deep_link service inbound hook ----

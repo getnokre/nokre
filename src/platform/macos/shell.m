@@ -6,6 +6,7 @@
 #include "../../services/deep_link/deep_link.h"
 #include "../../services/locale/locale.h"
 #include "../../services/open_url/open_url.h"
+#include "../../services/share/share.h"
 
 @interface NokreView : NSView <NSTextInputClient> {
   @public
@@ -487,6 +488,31 @@ void nokre_open_url_open(const char *url, size_t len) {
     // the user's mail client for mailto. Fire-and-forget by contract,
     // so the BOOL result is not consulted.
     [NSWorkspace.sharedWorkspace openURL:target];
+}
+
+// The last picker shown, held strongly: NSSharingServicePicker's menu
+// does not retain the picker itself, so a local released at the end of
+// the hook tears the menu down mid-gesture. Replaced at the next share
+// — UI lifetime, not app state; the bytes it holds are the ones the
+// menu is showing.
+static NSSharingServicePicker *g_share_picker = nil;
+
+void nokre_share_show(const char *text, size_t len) {
+    NSString *str = [[NSString alloc] initWithBytes:text
+                                             length:len
+                                           encoding:NSUTF8StringEncoding];
+    NokreView *view = g_main_view;
+    if (str == nil || view == nil) return;
+    NSSharingServicePicker *picker =
+        [[NSSharingServicePicker alloc] initWithItems:@[ str ]];
+    g_share_picker = picker;
+    // Centered on the app's one view: the service API carries no
+    // geometry (share.h), so the menu anchors app-level rather than to
+    // whichever control the app happened to wire the action to.
+    NSRect bounds = view.bounds;
+    [picker showRelativeToRect:NSMakeRect(NSMidX(bounds), NSMidY(bounds), 1, 1)
+                        ofView:view
+                 preferredEdge:NSMinYEdge];
 }
 
 void nokre_shell_request_frame(void *view) {

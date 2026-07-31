@@ -193,7 +193,11 @@ sessionStorage mirror, deep_link's `nokre_deep_link_receive`, and
 locale's seed/receive pair. services.js implements the imports they
 call out through; live.js seeds the pre-boot values (locale tag, oauth
 redirect, secure_store snapshot) and delivers the boot-time and
-`hashchange` deep links, per each file's stated ordering.
+`hashchange` deep links, per each file's stated ordering. share is the
+degenerate case that needs no doorway and no seed: both directions are
+plain imports — the `nokre_share_available` probe App.init calls (a
+bool needs no scratch buffer) and the fire-and-forget
+`nokre_share_show` — so services.js is its entire web leg.
 
 Two rules the glue keeps, because both are silent corruption if broken:
 a pointer handed across is borrowed for the call and anything outliving

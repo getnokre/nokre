@@ -454,6 +454,12 @@ expectation can't be met there, a screen reader user can't meet it either.
   link asked the OS for X". Sync and fire-and-forget — the journal is
   the whole observable effect, and a scheme the allowlist rejected
   never appears in it.
+- `sharesShown()` — every text the app put on the OS share sheet, in
+  order, from the journaling share mock — open_url's rules exactly: a
+  refused share (empty, over-cap, or a sheetless boot) never appears.
+  Boot a sheetless target with `.share = .{ .available = false }` (the
+  Linux desktop, a browser without `navigator.share`) and assert the
+  app drew no share affordance.
 - `expectTree(expected)` — inline snapshot of the whole laid-out tree in
   the trace format below. On mismatch both trees print; review the
   actual, then paste it into the test.

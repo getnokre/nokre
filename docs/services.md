@@ -48,6 +48,7 @@ internals doc.
 | `iap` | The platform stores: catalog, payment sheet, purchase-update stream, finish, restore. | **Working** — StoreKit and Play Billing; no store on Windows, Linux, or the web |
 | `haptic` | The back gesture's threshold knock. **Framework-internal: no app can call it.** | **Working** — iOS only, the one platform that runs a threshold of nokre's own ([internals/haptics.md](internals/haptics.md)) |
 | `open_url` | One verb: hand a URL (https/http/mailto — a closed set) to the system browser. Fire-and-forget. | **Working** — every shell and the web; nothing links |
+| `share` | One verb: put the OS share sheet up with UTF-8 text on it; the user picks the destination. Fire-and-forget. | **Working** — four native sheets and the web's `navigator.share`; no sheet on the Linux desktop, and `available` says so |
 
 `haptic` is on this list for completeness, not for use: it is a
 `Services` field because everything platform-flavored is injected and
@@ -1022,6 +1023,90 @@ In tests the mock journals every open, in order:
 `app.services.open_url.opens()`, or the harness's `urlsOpened()` — so
 "pressing this link asked the OS for X" is a first-class assertion,
 and a rejected scheme journals nothing, because the OS was never asked
+([testing.md](testing.md)).
+
+### share: the sheet is the user's
+
+`share.show(app, text)` puts the OS share sheet on screen with a piece
+of UTF-8 text on it, and stops. The user picks the destination — a chat
+app, mail, notes, another device — from UI the OS draws, populated with
+the accounts and apps the OS knows about and nokre never sees.
+
+```zig
+// Boot, inside build: is there a sheet here at all? Cached at App.init
+// like locale's tag — synchronous, no OS call, no error. False means
+// draw no share affordance; iap's "do not draw a Buy button" rule.
+const can_share = nokre.services.share.available(app);
+
+// From an action:
+try nokre.services.share.show(app, "Look at this: https://example.com/n/42");
+```
+
+**One string, and a URL rides as text.** There is no `url` field, no
+`title`, no subject line: those are knobs only some destinations honor —
+mail reads a subject, a chat app drops it — and a field that works on
+half the sheet is a styling hook wearing a lanyard. Every share target
+accepts text, and the ones that special-case links find the link in the
+text. Files, images, and multiple items are refused for the same
+reason the payload is not a document (below): a share is a message.
+
+**Fire-and-forget, twice over.** Once the sheet is up, the only thing
+this call could honestly report is that the OS was asked — open_url's
+line — so nothing comes back. And which destination the user picked, or
+whether they dismissed the sheet, is deliberately unobservable:
+clipboard's write-only posture applied to sharing out. Three platforms
+would report the chosen target and three would not, and the three that
+would are reporting on the user, not for the app.
+
+The caps are contract, not configuration, checked on the Zig side
+before any OS call so each error means one thing on every platform:
+
+| Error | Why |
+| --- | --- |
+| `EmptyText` | a sheet with nothing on it shares nothing — open_url's bare-`mailto:` rule |
+| `TextTooLarge` | over 64 KiB. Android sets the bound: the chooser intent crosses the binder transaction buffer — 1 MiB, shared by everything the process has in flight, and overflowing it kills the process rather than returning an error. 64 KiB stays an order of magnitude clear of a cliff whose exact edge depends on traffic, and a share bigger than that is a document — share a URL to the document instead (secure_store's refusal, restated) |
+| `Unavailable` | `available` is false: the Linux desktop, or a browser without `navigator.share` |
+
+**Two platforms have no sheet, and say so.** The Linux desktop has no
+share target convention — no portal, no chooser; a sheet built from
+`.desktop` files would be nokre inventing OS UI — and a browser only
+sometimes has `navigator.share` (secure contexts, and not every
+browser/OS pair). Both answer at runtime through `available`, iap's
+shape: an app ships one build tree, and the honest instruction is "do
+not draw the share affordance", not "fork your source". Everywhere
+else the sheet is the OS's own: `NSSharingServicePicker` on macOS,
+`UIActivityViewController` on iOS, the ACTION_SEND chooser on Android
+— always the chooser, so the user picks from everything installed
+rather than whatever won the last "always" — and the WinRT share pane
+on Windows, reached through the OS's own Win32 bridge with no packaging
+identity required (unlike the store, which is why iap answers false on
+Windows and share does not).
+
+**No geometry in the API.** The sheet is app-level, not
+element-anchored: the platforms that need a rect (the iPad popover,
+macOS's picker) get the view's center from the shell, arrowless. A
+share anchored to the control that fired it would need the tap's
+coordinates in a service call, and coordinates are core's, not a
+service's.
+
+**On the web,** the browser requires the call to ride the user's own
+gesture (transient activation): a share from a tap's action shows the
+sheet, a share fired later from an http callback is refused by the
+browser — and swallowed by fire-and-forget, so put the call in the
+action, not in the response handler. `navigator.share` absent at boot
+is `available` false for the session.
+
+**Nothing links** — clipboard's posture: no framework, no permission,
+no entitlement, no manifest entry anywhere, and an app that never
+shares pays nothing. There is no share element and no share glyph
+auto-wired: the icon set carries `share` and `share_2` for the button
+an app builds itself, and whether a screen offers sharing is the
+screen's business.
+
+In tests the mock journals every text put on the sheet, in order:
+`app.services.share.shares()`, or the harness's `sharesShown()` — and a
+refused share journals nothing, because the OS was never asked. Boot a
+sheetless target with `.share = .mock(.{ .available = false })`
 ([testing.md](testing.md)).
 
 ## Not services

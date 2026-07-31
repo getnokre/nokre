@@ -20,11 +20,13 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "../shell.h" // NOKRE_POINTER_* — nativeTap speaks the shared phase enum
 #include "../../../shim/nokre_accesskit.h"
 #include "../../services/deep_link/deep_link.h"
 #include "../../services/oauth/oauth.h"
 #include "../../services/locale/locale.h"
 #include "../../services/open_url/open_url.h"
+#include "../../services/share/share.h"
 
 // ---- the Zig doorway (android.zig exports) ----
 
@@ -58,6 +60,7 @@ static jmethodID g_mid_a11y_begin;     // a11yBegin(int, long)
 static jmethodID g_mid_a11y_node;      // a11yNode(...)
 static jmethodID g_mid_write_clipboard; // writeClipboard(byte[])
 static jmethodID g_mid_open_url;        // openUrl(byte[])
+static jmethodID g_mid_show_share;      // showShare(byte[])
 static jmethodID g_mid_locale_tag;      // localeTag() -> byte[]
 
 static ANativeWindow *g_window;
@@ -175,6 +178,18 @@ void nokre_open_url_open(const char *url, size_t len) {
     if (bytes == NULL) return;
     (*env)->SetByteArrayRegion(env, bytes, 0, (jsize)len, (const jbyte *)url);
     (*env)->CallVoidMethod(env, g_view, g_mid_open_url, bytes);
+    (*env)->DeleteLocalRef(env, bytes);
+}
+
+// ---- share (service outbound hook; NokreView.showShare fires the chooser) ----
+
+void nokre_share_show(const char *text, size_t len) {
+    JNIEnv *env = mainEnv(); // main thread only, like all input callbacks
+    if (env == NULL || g_view == NULL) return;
+    jbyteArray bytes = (*env)->NewByteArray(env, (jsize)len);
+    if (bytes == NULL) return;
+    (*env)->SetByteArrayRegion(env, bytes, 0, (jsize)len, (const jbyte *)text);
+    (*env)->CallVoidMethod(env, g_view, g_mid_show_share, bytes);
     (*env)->DeleteLocalRef(env, bytes);
 }
 
@@ -585,10 +600,11 @@ JNIEXPORT jint JNI_OnLoad(JavaVM *vm, void *reserved) {
     g_mid_a11y_node = (*env)->GetMethodID(env, cls, "a11yNode", "(JI[B[BIIIIIZZZZZIIIZ)V");
     g_mid_write_clipboard = (*env)->GetMethodID(env, cls, "writeClipboard", "([B)V");
     g_mid_open_url = (*env)->GetMethodID(env, cls, "openUrl", "([B)V");
+    g_mid_show_share = (*env)->GetMethodID(env, cls, "showShare", "([B)V");
     g_mid_locale_tag = (*env)->GetMethodID(env, cls, "localeTag", "()[B");
     if (g_mid_request_render == NULL || g_mid_a11y_changed == NULL || g_mid_a11y_begin == NULL ||
         g_mid_a11y_node == NULL || g_mid_write_clipboard == NULL || g_mid_open_url == NULL ||
-        g_mid_locale_tag == NULL)
+        g_mid_show_share == NULL || g_mid_locale_tag == NULL)
         return JNI_ERR;
     return JNI_VERSION_1_6;
 }
