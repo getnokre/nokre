@@ -81,19 +81,28 @@ fn seeded(buf: []u8, seed: []const u8) []const u8 {
     return buf[0..n];
 }
 
-// The wasm gap the plan named rather than discovering at link time:
-// `std.crypto.random` on `freestanding` has no `getrandom` to reach, so
-// the web leg routes to `crypto.getRandomValues` through services.js
-// (both instances implement it — the browser's CSPRNG is synchronous on
-// the main thread and in a Worker alike). Referenced only from this
-// file's random path, so a build that never mints a verifier never
-// names the import.
+// The wasm gap the plan named rather than discovering at link time: a
+// `freestanding` target has no `getrandom` to reach, so the web leg
+// routes to `crypto.getRandomValues` through services.js (both
+// instances implement it — the browser's CSPRNG is synchronous on the
+// main thread and in a Worker alike). Referenced only from this file's
+// random path, so a build that never mints a verifier never names the
+// import.
 extern fn nokre_oauth_js_random(ptr: [*]u8, len: usize) void;
 
+/// RtlGenRandom, exported by advapi32 under its ordinal name only.
+extern "advapi32" fn SystemFunction036(buffer: [*]u8, length: u32) callconv(.winapi) u8;
+
+// Zig 0.16 has no ambient CSPRNG (`std.crypto.random` is gone), so each
+// native family names the OS call it already links: arc4random_buf on
+// Apple, Android and glibc/BSD, RtlGenRandom on Windows — the same
+// advapi32 secure_store is built against.
 fn fill(dest: []u8) void {
     if (comptime is_wasm) {
         nokre_oauth_js_random(dest.ptr, dest.len);
+    } else if (comptime builtin.os.tag == .windows) {
+        _ = SystemFunction036(dest.ptr, @intCast(dest.len));
     } else {
-        std.crypto.random.bytes(dest);
+        std.c.arc4random_buf(dest.ptr, dest.len);
     }
 }
