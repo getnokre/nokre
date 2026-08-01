@@ -114,8 +114,8 @@ assertable without a finger (`Harness.knocks()`).
 
 Everything above the shell boundary: eligibility, the threshold, the
 hysteresis band, the knock sequence, cancel-versus-release, the RTL
-mirror, and the armed Back control (a golden — `back-armed.pgm` differs
-from `back-chrome.pgm` by one glyph, which is the whole visual footprint
+mirror, and the armed Back control (a golden — `back-armed.ppm` differs
+from `back-chrome.ppm` by one glyph, which is the whole visual footprint
 of this feature).
 
 Below it, one thing is not: on iOS the edge recognizers must win the

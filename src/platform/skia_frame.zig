@@ -1,5 +1,5 @@
 //! The Skia frame source: the surface lifecycle and the render call that
-//! turn a dirty app into the gray8 buffer a shell blits.
+//! turn a dirty app into the RGBX buffer a shell blits (shell.h).
 //!
 //! This lives beside the shells rather than inside them. A shell's whole
 //! job is events in and blit the buffer it is handed

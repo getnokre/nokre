@@ -321,6 +321,121 @@ test "secondary button draws an outline on the ambient, never a fill" {
     try testing.expectEqual(app.tree.rectOf(primary).h, r.h);
 }
 
+test "the Google button overlays four arc glyphs in the mandated colors at one origin" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    const btn = try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Sign in with Google", .provider = .google } });
+
+    var rec = frameOf(&app);
+    defer rec.deinit();
+
+    // The four colors are the vendor's spec, transcribed — pinned here
+    // so a palette refactor can never drift them. One origin: the arcs
+    // compose into a G only because they share the frame they were cut
+    // from.
+    const want = [_]struct { glyph: []const u8, rgb: canvas_mod.Rgb }{
+        .{ .glyph = "\u{e901}", .rgb = .{ .r = 0x42, .g = 0x85, .b = 0xF4 } },
+        .{ .glyph = "\u{e902}", .rgb = .{ .r = 0x34, .g = 0xA8, .b = 0x53 } },
+        .{ .glyph = "\u{e903}", .rgb = .{ .r = 0xFB, .g = 0xBC, .b = 0x05 } },
+        .{ .glyph = "\u{e904}", .rgb = .{ .r = 0xEA, .g = 0x43, .b = 0x35 } },
+    };
+    var arcs = rec.opsOf(.draw_text_rgb);
+    var n: usize = 0;
+    var origin_x: ?i32 = null;
+    var origin_y: ?i32 = null;
+    while (arcs.next()) |a| : (n += 1) {
+        try testing.expect(n < want.len);
+        try testing.expectEqualStrings(want[n].glyph, a.bytes);
+        try testing.expectEqual(want[n].rgb, a.rgb);
+        try testing.expectEqual(text.Face.brand, a.face);
+        if (origin_x) |x| try testing.expectEqual(x, a.x) else origin_x = a.x;
+        if (origin_y) |y| try testing.expectEqual(y, a.baseline) else origin_y = a.baseline;
+    }
+    try testing.expectEqual(want.len, n);
+
+    // The pill itself never leaves the palette: white at the pinned
+    // endpoint with the hairline border, near-black label (the golden
+    // pins the bytes; this pins the steps).
+    app.performLayout();
+    const r = app.tree.rectOf(btn);
+    var found_fill = false;
+    var found_border = false;
+    var fills = rec.opsOf(.fill_rect);
+    while (fills.next()) |f| {
+        if (std.meta.eql(f.rect, r) and f.gray == Gray.g12) found_fill = true;
+    }
+    var strokes = rec.opsOf(.stroke_rect);
+    while (strokes.next()) |s| {
+        if (std.meta.eql(s.rect, r) and s.gray == Gray.g6 and s.thickness == metrics.border) found_border = true;
+    }
+    try testing.expect(found_fill);
+    try testing.expect(found_border);
+    try testing.expect(rec.containsText("Sign in with Google"));
+}
+
+test "the dark appearance flips the Google button to its dark theme, G unchanged" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    app.setScheme(.dark);
+    const btn = try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Sign in with Google", .provider = .google } });
+
+    var rec = frameOf(&app);
+    defer rec.deinit();
+
+    app.performLayout();
+    const r = app.tree.rectOf(btn);
+    var found_fill = false;
+    var fills = rec.opsOf(.fill_rect);
+    while (fills.next()) |f| {
+        if (std.meta.eql(f.rect, r) and f.gray == Gray.g0) found_fill = true;
+    }
+    try testing.expect(found_fill);
+    // A trademark has no dark mode: the same four ops, the same colors.
+    var arcs = rec.opsOf(.draw_text_rgb);
+    var n: usize = 0;
+    while (arcs.next()) |a| : (n += 1) {
+        try testing.expect(a.rgb.r != a.rgb.g or a.rgb.g != a.rgb.b); // colored, not resolved through any ramp
+    }
+    try testing.expectEqual(@as(usize, 4), n);
+}
+
+test "a dimmed Google button draws the G as a silhouette, not in color" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    _ = try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Sign in with Google", .provider = .google, .disabled = true } });
+
+    var rec = frameOf(&app);
+    defer rec.deinit();
+
+    var arcs = rec.opsOf(.draw_text_rgb);
+    try testing.expectEqual(@as(?canvas_mod.Recording.DrawTextRgb, null), arcs.next());
+    // All four arcs still land — overlaid in one tone they read as the
+    // whole G — in the disabled label gray.
+    var n: usize = 0;
+    var texts = rec.opsOf(.draw_text);
+    while (texts.next()) |t| {
+        if (t.face.family == .brand) {
+            try testing.expectEqual(Gray.g11, t.gray);
+            n += 1;
+        }
+    }
+    try testing.expectEqual(@as(usize, 4), n);
+}
+
+test "no frame without a Google button carries a colored op" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    const root = app.tree.rootId();
+    _ = try app.tree.append(root, .{ .heading = .{ .content = "Sign in", .level = .h1 } });
+    _ = try app.tree.append(root, .{ .button = .{ .label = "Sign in with Apple", .provider = .apple } });
+    _ = try app.tree.append(root, .{ .button = .{ .label = "Continue", .icon = .chevron_right } });
+
+    var rec = frameOf(&app);
+    defer rec.deinit();
+    var arcs = rec.opsOf(.draw_text_rgb);
+    try testing.expectEqual(@as(?canvas_mod.Recording.DrawTextRgb, null), arcs.next());
+}
+
 test "disabled glyph-form button dims its glyph" {
     var app = try test_app.init(400, 400);
     defer app.deinit();

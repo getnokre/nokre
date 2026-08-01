@@ -1,4 +1,4 @@
-// Win32 shell. Thin by charter: window, gray8 blit, input forwarding,
+// Win32 shell. Thin by charter: window, RGBX blit, input forwarding,
 // IMM32 for IME. No timers, no compositor hooks — nokre repaints only
 // when state changes.
 #define WINVER 0x0A00
@@ -35,7 +35,7 @@ static struct {
     nokre_shell_config config;
     HWND hwnd;
     int32_t scale; // integer device scale, >= 1
-    uint32_t *blit; // gray8 expanded to BGRX for SetDIBitsToDevice
+    uint32_t *blit; // RGBX swizzled to BGRX for SetDIBitsToDevice
     size_t blit_cap;
     int composing; // inside an IME composition
     int wheel_rem_x, wheel_rem_y; // sub-notch wheel remainders, in delta units
@@ -97,9 +97,9 @@ static void paint(HDC hdc) {
                                               g.scale, &w, &h);
     if (!pixels || w <= 0 || h <= 0) return;
 
-    // GDI has no gray8 DIB without palette bookkeeping (and 8bpp rows
-    // would need DWORD alignment); expanding to BGRX keeps the blit one
-    // unconditional memcpy-shaped loop.
+    // GDI wants BGRX and the frame arrives RGBX (shell.h); the swizzle
+    // keeps the blit the same one unconditional memcpy-shaped loop the
+    // gray8 expansion was.
     size_t count = (size_t)w * (size_t)h;
     if (count > g.blit_cap) {
         free(g.blit);
@@ -108,8 +108,8 @@ static void paint(HDC hdc) {
         if (!g.blit) return;
     }
     for (size_t i = 0; i < count; i++) {
-        uint32_t v = pixels[i];
-        g.blit[i] = v | (v << 8) | (v << 16);
+        const uint8_t *px = pixels + i * 4;
+        g.blit[i] = (uint32_t)px[2] | ((uint32_t)px[1] << 8) | ((uint32_t)px[0] << 16);
     }
 
     BITMAPINFO bi = {0};

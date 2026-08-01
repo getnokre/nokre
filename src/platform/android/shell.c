@@ -1,6 +1,6 @@
 // Android JNI shell — the native side between NokreView.java and the Zig
 // exports in android.zig. Thin by charter: register the Java natives,
-// blit the gray8 frame into the ANativeWindow, ferry strings as UTF-8
+// blit the RGBX frame into the ANativeWindow, ferry strings as UTF-8
 // bytes, and lend the main thread's ALooper as the post target for
 // worker wakes and out-of-stream frame requests. No state beyond the
 // JNI plumbing; everything intelligent lives above this line.
@@ -356,12 +356,12 @@ static void nativeRender(JNIEnv *env, jobject view, jint logical_w, jint logical
     int32_t w = buf.width < out_w ? buf.width : out_w;
     int32_t h = buf.height < out_h ? buf.height : out_h;
     for (int32_t y = 0; y < h; y++) {
-        const uint8_t *src = pixels + (size_t)y * (size_t)out_w;
+        const uint8_t *src = pixels + (size_t)y * (size_t)out_w * 4;
         uint32_t *dst = (uint32_t *)buf.bits + (size_t)y * (size_t)buf.stride;
-        for (int32_t x = 0; x < w; x++) {
-            // RGBX little-endian: one gray byte fans out to R=G=B.
-            dst[x] = 0xff000000u | (uint32_t)src[x] * 0x010101u;
-        }
+        // The frame is RGBX (shell.h) and so is the buffer — the one
+        // shell whose blit is a straight row copy; the format ignores
+        // the padding byte on both sides.
+        memcpy(dst, src, (size_t)w * 4);
     }
     ANativeWindow_unlockAndPost(g_window);
 }

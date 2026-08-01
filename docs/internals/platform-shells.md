@@ -11,7 +11,7 @@ A shell's complete job description:
 
 1. Create a window/surface and report its logical size and integer scale.
 2. Deliver input: tap, key, text, IME, scroll.
-3. When the app has a dirty frame, fetch the rendered gray8 buffer and
+3. When the app has a dirty frame, fetch the rendered RGBX buffer and
    blit it.
 4. Write text to the system clipboard when asked — the one C hook
    behind the clipboard service ([../services.md](../services.md)),
@@ -43,7 +43,7 @@ instead of forking all five ([renderer-editions.md](renderer-editions.md)).
 
 [src/platform/shell.h](../../src/platform/shell.h) defines
 `nokre_shell_config`: logical size, title, and callbacks —
-`on_frame` (returns the gray8 pixel buffer for the current scale, and
+`on_frame` (returns the RGBX pixel buffer for the current scale, and
 carries `safe_bottom` — the height of any OS-drawn band at the view's
 bottom edge, 0 where there is none; core keeps layout above it and
 extends bottom-pane fills through it),
@@ -280,8 +280,8 @@ same contract with four twists:
 [windows/shell.c](../../src/platform/windows/shell.c) is a Win32 port
 of the same contract — plain C, message loop, no framework. Its twists:
 
-- **Blit.** GDI has no gray8 DIB without palette bookkeeping (and 8bpp
-  rows would need DWORD alignment), so the shell expands gray8 to BGRX
+- **Blit.** GDI wants BGRX and the frame arrives RGBX, so the shell
+  swizzles the channels
   once per frame and `SetDIBitsToDevice` maps it 1:1 onto device
   pixels. Repaints stay on demand: events call `wants_frame` and
   invalidate; `WM_PAINT` renders. Per-monitor-v2 DPI awareness, with
@@ -361,8 +361,9 @@ shell.m. Its twists:
   `nokreWebBuild` bargain), with one comptime line forcing the export
   block into the build. The allocator is bionic's malloc
   (`std.heap.c_allocator`) — the same heap the NDK-linked Skia uses.
-- **Blit.** `SurfaceView`: shell.c locks the `ANativeWindow`, expands
-  gray8 to RGBX into the window buffer, and posts. The buffer stays at
+- **Blit.** `SurfaceView`: shell.c locks the `ANativeWindow`, copies
+  the RGBX rows straight into the window buffer (the one shell whose
+  format matches the frame's), and posts. The buffer stays at
   the window's own pixel size so the compositor never scales; density
   rounds to an integer scale and logical size is the ceiling, remainder
   cropped at the edge (the Windows policy). Edge-to-edge on API
@@ -445,7 +446,7 @@ the same contract — plain C against libwayland, one poll loop, no
 framework. X11 is deliberately absent: Wayland is the modern default,
 and one backend per platform is the charter. Its twists:
 
-- **Blit.** `wl_shm`: the shell expands gray8 to XRGB8888 into a
+- **Blit.** `wl_shm`: the shell swizzles RGBX to XRGB8888 into a
   double-buffered memfd pool and commits the free buffer, tracking
   `wl_buffer.release` so it never overwrites one the compositor still
   holds. Integer buffer scale from the `wl_output` the surface is on, the
@@ -617,7 +618,7 @@ adapter:
 
 Port `shell.h` to the platform's windowing API (~300–500 lines of native
 code), map keycodes to the `NOKRE_KEY_*` enum — Space by the one-leg rule
-above, which no golden can catch for you — blit gray8. Add
+above, which no golden can catch for you — blit RGBX. Add
 `nokre_locale_install` with it — the one service hook that has no unlinked
 path, so an omission is an unresolved symbol rather than a missing
 feature (the contract, including the fire-before-you-return clause, is

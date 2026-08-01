@@ -1,4 +1,4 @@
-// Wayland shell. Thin by charter: a wl_surface, a gray8→XRGB blit into
+// Wayland shell. Thin by charter: a wl_surface, a RGBX→XRGB blit into
 // wl_shm buffers, input forwarding, text-input-v3 for IME. No timers past
 // the one keyboard-repeat timerfd the compositor makes us own, no
 // animation — nokre repaints only when state changes, and the event loop
@@ -241,13 +241,13 @@ static void paint(void) {
     if (pixels == NULL || out_w <= 0 || out_h <= 0) return;
     if (!ensure_buffer(i, out_w, out_h)) return;
 
-    // Expand gray8 to XRGB8888 (v | v<<8 | v<<16), one memcpy-shaped loop —
-    // the Windows BGRX blit, byte-order-identical on little-endian.
+    // Swizzle RGBX (shell.h) to XRGB8888, one memcpy-shaped loop — the
+    // Windows BGRX blit, byte-order-identical on little-endian.
     size_t count = (size_t)out_w * (size_t)out_h;
     uint32_t *dst = (uint32_t *)g.bufs[i].data;
     for (size_t p = 0; p < count; p++) {
-        uint32_t v = pixels[p];
-        dst[p] = v | (v << 8) | (v << 16);
+        const uint8_t *px = pixels + p * 4;
+        dst[p] = (uint32_t)px[2] | ((uint32_t)px[1] << 8) | ((uint32_t)px[0] << 16);
     }
 
     g.bufs[i].busy = 1;

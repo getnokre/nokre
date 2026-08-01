@@ -95,10 +95,15 @@ typedef struct nokre_shell_config {
     void *ctx;
 
     // Asks Zig for the current frame at the view's current logical size.
-    // Returns a tightly packed gray8 buffer of logical size * scale,
-    // valid until the next callback. `safe_bottom` is the height (in
-    // logical pixels) of the OS-drawn band at the view's bottom edge
-    // (the iPhone home indicator); pass 0 where there is none.
+    // Returns a tightly packed RGBX8888 buffer (4 bytes per pixel: R, G,
+    // B, then a padding byte the shell must ignore) of logical size *
+    // scale, valid until the next callback. RGB and not gray8 because
+    // the renderer's vendor sign-in mark is the one thing on any screen
+    // drawn in color; everything else arrives with r=g=b, and the shell
+    // neither knows nor cares — it blits, it does not interpret.
+    // `safe_bottom` is the height (in logical pixels) of the OS-drawn
+    // band at the view's bottom edge (the iPhone home indicator); pass 0
+    // where there is none.
     const uint8_t *(*on_frame)(void *ctx, int32_t logical_w, int32_t logical_h, int32_t safe_bottom,
                                int32_t scale, int32_t *out_w, int32_t *out_h);
     // Input; coordinates are logical pixels. `phase` is NOKRE_POINTER_*.

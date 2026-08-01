@@ -203,6 +203,30 @@ test "static elements: the words are what is conveyed" {
     try expectContains(html, "width:calc(100% * 12 / 30)");
 }
 
+test "sign-in buttons carry the vendor mark, and the markup carries no color" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    const root = app.tree.rootId();
+    _ = try app.tree.append(root, .{ .button = .{ .label = "Sign in with Apple", .provider = .apple } });
+    _ = try app.tree.append(root, .{ .button = .{ .label = "Sign in with Google", .provider = .google } });
+
+    const html = try render(&app);
+    defer testing.allocator.free(html);
+    // The mark is decorative beside the real label, standing down from
+    // assistive tech exactly like a lead icon.
+    try expectContains(html, "class=\"btn auth\"");
+    try expectContains(html, "<span class=\"brand-mark\" aria-hidden=\"true\">&#xE900;</span>Sign in with Apple");
+    // Google's G: four arc glyphs the stylesheet overlays and colors —
+    // the markup itself is colorless, here and everywhere; the class is
+    // the whole hook, and only the stylesheet (infrastructure) knows
+    // what it means.
+    try expectContains(html, "class=\"btn auth google\"");
+    try expectContains(html, "<span class=\"brand-mark g\" aria-hidden=\"true\">" ++
+        "<span>&#xE901;</span><span>&#xE902;</span><span>&#xE903;</span><span>&#xE904;</span></span>Sign in with Google");
+    try expectLacks(html, "color:");
+    try expectLacks(html, "#4285");
+}
+
 test "an icon with no label is decorative, and a named one is an image" {
     var app = try test_app.init(400, 400);
     defer app.deinit();

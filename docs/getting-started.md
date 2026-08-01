@@ -1573,7 +1573,7 @@ test "a step trace replays the run, one snapshot per action" {
 }
 ```
 
-(`nok.render.skia.PixelSink` is the pixel twin — one PGM frame per step
+(`nok.render.skia.PixelSink` is the pixel twin — one PPM frame per step
 through the production renderer, numbering matched file-for-file.)
 
 Third, **golden screenshot tests**: byte-exact frames, no tolerance, no
@@ -1630,16 +1630,16 @@ test "golden: the sign-in screen" {
     t.app.measurer = nok.render.skia.measurer(); // real text metrics
     t.app.invalidate();
     t.renderTo(surface.canvas());
-    try nok.testing.golden.expectMatches(gpa, surface.pixels(), surface.pixelWidth(), surface.pixelHeight(), "tests/goldens/signin.pgm");
+    try nok.testing.golden.expectMatches(gpa, surface.pixels(), surface.pixelWidth(), surface.pixelHeight(), "tests/goldens/signin.ppm");
 }
 ```
 
 **Checkpoint:** `zig build test -Dgolden` fails, reporting that
-`tests/goldens/signin.pgm` is *missing* — baselines are never created
-implicitly. Rerun with `-Dupdate-goldens` to create it, open the PGM
+`tests/goldens/signin.ppm` is *missing* — baselines are never created
+implicitly. Rerun with `-Dupdate-goldens` to create it, open the PPM
 (almost any image tool reads P5), review it, commit it; the plain run
 now passes byte-exact, and every run after that proves the pixels never
-drifted. On a mismatch the runner writes `<name>.actual.pgm` next to
+drifted. On a mismatch the runner writes `<name>.actual.ppm` next to
 the golden for eyeball diffing; if the change was intended, rerun with
 `-Dupdate-goldens` to rewrite the golden in place and review the diff.
 CI runs without `-Dupdate-goldens`, so a lost baseline fails instead of

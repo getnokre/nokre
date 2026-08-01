@@ -1,4 +1,4 @@
-// iOS UIKit shell. Thin by charter: full-screen view, gray8 blit, input
+// iOS UIKit shell. Thin by charter: full-screen view, RGBX blit, input
 // forwarding, UITextInput for the software keyboard + IME, VoiceOver via
 // UIAccessibility elements built from the flattened a11y snapshot. No
 // timers, no CADisplayLink — nokre repaints only when state changes.
@@ -393,12 +393,13 @@ static void nokreSchedulePrewarm(NokreView *view) {
     const uint8_t *pixels = config.on_frame(config.ctx, logical_w, logical_h, safe_bottom, scale, &w, &h);
     if (!pixels || w <= 0 || h <= 0) return;
 
-    CGColorSpaceRef space = CGColorSpaceCreateDeviceGray();
+    CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
     CGDataProviderRef provider =
-        CGDataProviderCreateWithData(NULL, pixels, (size_t)w * (size_t)h, NULL);
-    CGImageRef image = CGImageCreate((size_t)w, (size_t)h, 8, 8, (size_t)w, space,
-                                     kCGBitmapByteOrderDefault, provider, NULL, false,
-                                     kCGRenderingIntentDefault);
+        CGDataProviderCreateWithData(NULL, pixels, (size_t)w * (size_t)h * 4, NULL);
+    // RGBX: 32 bpp, the padding byte after B skipped, per shell.h.
+    CGImageRef image = CGImageCreate((size_t)w, (size_t)h, 8, 32, (size_t)w * 4, space,
+                                     kCGImageAlphaNoneSkipLast | kCGBitmapByteOrderDefault,
+                                     provider, NULL, false, kCGRenderingIntentDefault);
     CGContextRef cg = UIGraphicsGetCurrentContext();
     CGContextSetInterpolationQuality(cg, kCGInterpolationNone);
     // UIKit's context is flipped for top-left origin; un-flip for

@@ -1,8 +1,10 @@
 # nokre documentation
 
 nokre is a deliberately limited GUI library: text, lines, and boxes,
-grayscale only, deterministic to the pixel, accessibility derived
-automatically from the tree. This directory is the whole story.
+grayscale only (one framework-drawn trademark excepted — see
+[introduction.md](introduction.md)), deterministic to the pixel,
+accessibility derived automatically from the tree. This directory is
+the whole story.
 
 The docs come in **two tracks**, by audience:
 

@@ -2,11 +2,17 @@
 
 A deliberately limited GUI library: text, lines, and boxes. Zig 0.16 + Skia
 (CPU raster), grayscale only, deterministic to the pixel, accessibility
-derived automatically from the tree.
+derived automatically from the tree. The frame is RGB (`kRGB_888x`,
+RGBX out of `on_frame`, PPM goldens) but every canvas op except one
+writes r=g=b: the single exception is the Google sign-in G, drawn by
+the renderer from its own color table. rgb is infrastructure only —
+no element carries a color and no consumer call accepts one.
 
-The refusals (no hover, no animation, no color, no custom widgets, no
-GPU, no styling hooks) are guarantees, not gaps — never "fix" them; their
-rationale is `docs/introduction.md`. Docs are two tracks: consumer-facing
+The refusals (no hover, no animation, no color for apps, no custom
+widgets, no GPU, no styling hooks) are guarantees, not gaps — never
+"fix" them; their rationale is `docs/introduction.md`, and the one
+recorded reversal (the G, owner-decided) is
+`docs/internals/oauth.md`. Docs are two tracks: consumer-facing
 (`docs/*.md`) and contributor internals (`docs/internals/*.md`) — each
 fact has one home; complement, never duplicate. Start with
 `docs/internals/architecture.md` (layers + module map).

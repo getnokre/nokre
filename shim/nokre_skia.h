@@ -40,11 +40,16 @@ int32_t hsk_fonts_load(const uint8_t *const *faces, const size_t *lens, int32_t 
 // Advance width in logical px, ceiled.
 int32_t hsk_text_width(int32_t face, int32_t size_px, const uint8_t *utf8, size_t len);
 
-// CPU raster surface of (w*scale) x (h*scale) gray8 pixels; draw calls
-// take logical px and are scaled by the integer factor.
+// CPU raster surface of (w*scale) x (h*scale) RGBX pixels; draw calls
+// take logical px and are scaled by the integer factor. The surface is
+// RGB with no alpha channel — nokre composites nothing — and every op
+// below except hsk_draw_text_rgb writes r=g=b, so the frame is gray by
+// construction everywhere the one sanctioned color op did not touch
+// (docs/internals/pixel-model.md).
 hsk_surface *hsk_surface_create(int32_t w, int32_t h, int32_t scale);
 void hsk_surface_destroy(hsk_surface *s);
-// Tightly packed gray8 snapshot; valid until the next shim call.
+// Tightly packed RGBX8888 snapshot (4 bytes per pixel: R, G, B, then a
+// padding byte readers must ignore); valid until the next shim call.
 const uint8_t *hsk_surface_pixels(hsk_surface *s);
 
 void hsk_clear(hsk_surface *s, uint8_t gray);
@@ -57,6 +62,14 @@ void hsk_line(hsk_surface *s, int32_t x0, int32_t y0, int32_t x1, int32_t y1,
               int32_t thickness, uint8_t gray);
 void hsk_draw_text(hsk_surface *s, int32_t face, int32_t size_px, int32_t x,
                    int32_t baseline, const uint8_t *utf8, size_t len, uint8_t gray);
+// The one operation that may put a non-gray pixel in the frame. It
+// exists for exactly one caller: the renderer's vendor sign-in mark
+// (the multicolour G), whose colors are the vendor's trademark and not
+// nokre's palette. Same shaping and rasterization as hsk_draw_text —
+// only the paint differs.
+void hsk_draw_text_rgb(hsk_surface *s, int32_t face, int32_t size_px, int32_t x,
+                       int32_t baseline, const uint8_t *utf8, size_t len,
+                       uint8_t r, uint8_t g, uint8_t b);
 void hsk_clip_push(hsk_surface *s, int32_t x, int32_t y, int32_t w, int32_t h);
 void hsk_clip_pop(hsk_surface *s);
 // 1px (logical) checkerboard of gray over the rect; the other pixels are

@@ -225,6 +225,18 @@ fn onSave(ctx: ?*anyopaque) void {
     setStatus(state, "Saved.", .{});
 }
 
+// The sink links no services, so the sign-in buttons demonstrate the
+// button, not the flow: a real app starts the oauth service here.
+fn onAppleSignIn(ctx: ?*anyopaque) void {
+    const state: *State = @ptrCast(@alignCast(ctx.?));
+    setStatus(state, "A real app would start the Apple flow here (docs/services.md).", .{});
+}
+
+fn onGoogleSignIn(ctx: ?*anyopaque) void {
+    const state: *State = @ptrCast(@alignCast(ctx.?));
+    setStatus(state, "A real app would start the Google flow here (docs/services.md).", .{});
+}
+
 fn onToggleNotify(ctx: ?*anyopaque, checked: bool) void {
     const state: *State = @ptrCast(@alignCast(ctx.?));
     setStatus(state, "Notifications {s}.", .{if (checked) "on" else "off"});
@@ -666,6 +678,25 @@ fn buildHome(ctx: ?*anyopaque, app: *h.App) !void {
     _ = try tree.append(pager_row, .{ .button = .{ .label = "Previous month", .icon = .chevron_left, .icon_only = true } });
     _ = try tree.append(pager_row, .{ .text = .{ .content = "March" } });
     _ = try tree.append(pager_row, .{ .button = .{ .label = "Next month", .icon = .chevron_right, .icon_only = true } });
+
+    _ = try tree.append(root, .{ .heading = .{ .content = "Vendor sign-in", .level = .h3 } });
+    // `provider` is rendering only — the sink links no services, and a
+    // real flow would build its authorize URL and call the oauth
+    // service from `on_press` (docs/services.md). The words are the
+    // app's to supply, from the vendor's published strings. Google's G
+    // is the one colored thing nokre ever draws; it is the renderer's,
+    // and there is no way to ask for color anywhere else.
+    _ = try tree.append(root, .{ .text = .{ .content = "Conforming vendor buttons: the mark is nokre's to draw, the words are yours. Apple's flips black/white with the appearance; Google's G keeps the vendor's colors on either theme.", .style = .{ .scale = .small, .ink = .dark } } });
+    _ = try tree.append(root, .{ .button = .{
+        .label = "Sign in with Apple",
+        .provider = .apple,
+        .on_press = .{ .ctx = state, .call = onAppleSignIn },
+    } });
+    _ = try tree.append(root, .{ .button = .{
+        .label = "Sign in with Google",
+        .provider = .google,
+        .on_press = .{ .ctx = state, .call = onGoogleSignIn },
+    } });
 
     _ = try tree.append(root, .{ .heading = .{ .content = "Tiles", .level = .h2 } });
     const tiles = try tree.append(root, .{ .tile_group = .{

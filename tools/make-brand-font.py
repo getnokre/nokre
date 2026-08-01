@@ -20,16 +20,22 @@ read from disk, there are no timestamps, and the cubic-to-quadratic
 conversion is a pure function of its error bound. Re-running produces a
 byte-identical file, so the goldens that embed it stay byte-identical.
 
-The outline is Apple's own artwork, transcribed verbatim from the asset
-they publish for this purpose — never redrawn. Apple's guidelines say
-explicitly not to recreate the mark, and a redraw is exactly that:
+Every outline is the vendor's own artwork, transcribed verbatim from the
+asset they publish for this purpose — never redrawn. Both vendors'
+guidelines say explicitly not to recreate their mark, and a redraw is
+exactly that:
 
     developer.apple.com/design/human-interface-guidelines/sign-in-with-apple
+    developers.google.com/identity/branding-guidelines
 
-There is exactly one glyph here and there will not be a second. Google's
-four G arcs are the only other mark that was ever considered, and they
-are refused for good: drawing them compliantly means colour in the frame,
-which is the grayscale guarantee itself (docs/internals/oauth.md).
+Two marks, five glyphs, and the set is closed there. Apple's logo is one
+monochrome glyph. Google's G ships as FOUR glyphs — one per colored arc,
+all sharing one advance so the renderer overlays them at a single origin
+and paints each through the one rgb canvas op (the sole color in nokre;
+docs/internals/oauth.md records why the frame format widened for it).
+Splitting by color in the *font* is what keeps color out of the font
+format itself: no COLR/CPAL, no bitmap, just outlines — the color is a
+draw-time paint owned by the renderer, exactly like every gray.
 """
 
 import os
@@ -78,10 +84,14 @@ SIDE_BEARING = 60
 # reproducible.
 CURVE_ERROR = 0.6
 
-# The codepoint the mark answers to. Private Use Area, like Lucide's:
-# this is not a character, it is a drawing addressed by name from exactly
-# one element. Nothing outside a `provider` button may reach it.
+# The codepoints the marks answer to. Private Use Area, like Lucide's:
+# these are not characters, they are drawings addressed by name from
+# exactly one element. Nothing outside a `provider` button may reach
+# them. The G's arcs are consecutive from E901 in the order the renderer
+# paints them; E901 doubles as the measuring glyph, which works because
+# all four carry the same advance.
 APPLE_CP = 0xE900
+GOOGLE_CPS = {"g-blue": 0xE901, "g-green": 0xE902, "g-yellow": 0xE903, "g-red": 0xE904}
 
 # ---- Apple's artwork ------------------------------------------------
 # Verbatim from Apple's published SVG, in its own 814 x 1000 frame with
@@ -101,6 +111,34 @@ APPLE_PATH = (
     "-50.6 1.9-110.8 33.7-147.1 75.8-28.5 32.4-55.1 83.6-55.1 135.5 0 7.8 1.3 15.6 1.9 18.1"
     "3.2.6 8.4 1.3 13.6 1.3 45.4 0 102.5-30.4 135.5-71.3z"
 )
+
+
+# ---- Google's artwork ------------------------------------------------
+# Verbatim from the G in Google's published sign-in button assets
+# (developers.google.com/identity/branding-guidelines), in its own
+# 48 x 48 frame with y growing downward. Four subpaths, one per color;
+# the color itself is NOT here — it is the renderer's paint
+# (render/renderer.zig's google_g table), the same way a gray is.
+# Not modified, not simplified, not re-traced — the numbers are Google's.
+GOOGLE_SRC_WIDTH, GOOGLE_SRC_HEIGHT = 48, 48
+GOOGLE_PATHS = {
+    "g-blue": (
+        "M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94"
+        "c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"
+    ),
+    "g-green": (
+        "M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3"
+        "-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"
+    ),
+    "g-yellow": (
+        "M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19"
+        "C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"
+    ),
+    "g-red": (
+        "M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0"
+        " 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"
+    ),
+}
 
 
 def draw_apple(pen):
@@ -132,6 +170,32 @@ def draw_apple(pen):
     return round((x_max - x_min) * scale) + 2 * SIDE_BEARING
 
 
+def draw_google(pens):
+    """Normalise Google's G into the em frame, one arc per pen.
+
+    Same two passes as `draw_apple`, with one addition that IS the G's
+    whole trick: the ink bounds are measured over the UNION of the four
+    arcs, and every arc is placed by that one shared transform. Scale an
+    arc to its own box instead and the arcs stop meeting — they only
+    compose into a G because they were cut from one drawing, and only a
+    shared frame keeps them cut from one drawing. The shared advance
+    falls out of the same union, which is what lets the renderer (and
+    the measurer) treat four glyphs as one mark.
+    """
+    flip = Transform(1, 0, 0, -1, 0, GOOGLE_SRC_HEIGHT)
+
+    bounds = BoundsPen(None)
+    for path in GOOGLE_PATHS.values():
+        parse_path(path, TransformPen(bounds, flip))
+    x_min, y_min, x_max, y_max = bounds.bounds
+
+    scale = MARK_HEIGHT / (y_max - y_min)
+    place = Transform(scale, 0, 0, scale, SIDE_BEARING - x_min * scale, -MARK_OVERSHOOT - y_min * scale)
+    for name, path in GOOGLE_PATHS.items():
+        parse_path(path, TransformPen(pens[name], place.transform(flip)))
+    return round((x_max - x_min) * scale) + 2 * SIDE_BEARING
+
+
 def check(glyph):
     """Assert the things a size measurement cannot see.
 
@@ -156,20 +220,66 @@ def check(glyph):
     assert leaf[1] > body[1], f"leaf sits below the body — the mark is upside down ({leaf[1]:.0f} <= {body[1]:.0f})"
 
 
+def mean_point(glyph, axis):
+    glyph.recalcBounds(None)
+    vals = [p[axis] for p in glyph.coordinates]
+    return sum(vals) / len(vals)
+
+
+def check_google(glyphs, advance):
+    """The G's honest tests: composition, orientation, and the shared frame.
+
+    Each arc alone passes any size check while the G is scrambled, so
+    what is asserted is the relationships: the union spans exactly the
+    mark box (each arc is a fragment — none may span it alone), the red
+    arc is the top one and the green the bottom (the y-flip survived),
+    the blue sits right of the yellow (no mirroring), and the four ride
+    one advance (the overlay contract the renderer relies on).
+    """
+    for g in glyphs.values():
+        g.recalcBounds(None)
+    y_lo = min(g.yMin for g in glyphs.values())
+    y_hi = max(g.yMax for g in glyphs.values())
+    assert y_lo == -MARK_OVERSHOOT, f"union ink bottom {y_lo} != {-MARK_OVERSHOOT}"
+    assert y_hi - y_lo == MARK_HEIGHT, f"union ink height {y_hi - y_lo} != {MARK_HEIGHT}"
+    for name, g in glyphs.items():
+        assert g.numberOfContours == 1, f"{name}: expected one arc, got {g.numberOfContours}"
+        assert g.yMax - g.yMin < MARK_HEIGHT, f"{name} spans the whole mark — arcs must be fragments"
+    assert mean_point(glyphs["g-red"], 1) > mean_point(glyphs["g-green"], 1), "red arc below green — the G is upside down"
+    assert mean_point(glyphs["g-blue"], 0) > mean_point(glyphs["g-yellow"], 0), "blue arc left of yellow — the G is mirrored"
+    assert advance > 0
+
+
 def build(out_path):
+    order = [".notdef", "apple"] + list(GOOGLE_CPS)
     fb = FontBuilder(UPM, isTTF=True)
-    fb.setupGlyphOrder([".notdef", "apple"])
-    fb.setupCharacterMap({APPLE_CP: "apple"})
+    fb.setupGlyphOrder(order)
+    cmap = {APPLE_CP: "apple"}
+    cmap.update({cp: name for name, cp in GOOGLE_CPS.items()})
+    fb.setupCharacterMap(cmap)
 
     tt_pen = TTGlyphPen(None)
     advance = draw_apple(TransformPen(Cu2QuPen(tt_pen, CURVE_ERROR), (1, 0, 0, 1, 0, 0)))
     # Built exactly once: TTGlyphPen.glyph() *resets* the pen, so asking
     # it twice hands the second caller an empty glyph.
     apple = tt_pen.glyph()
-
     check(apple)
-    fb.setupGlyf({".notdef": TTGlyphPen(None).glyph(), "apple": apple})
-    fb.setupHorizontalMetrics({".notdef": (advance, 0), "apple": (advance, SIDE_BEARING)})
+
+    g_pens = {name: TTGlyphPen(None) for name in GOOGLE_CPS}
+    g_advance = draw_google({name: TransformPen(Cu2QuPen(pen, CURVE_ERROR), (1, 0, 0, 1, 0, 0)) for name, pen in g_pens.items()})
+    g_glyphs = {name: pen.glyph() for name, pen in g_pens.items()}
+    check_google(g_glyphs, g_advance)
+
+    glyf = {".notdef": TTGlyphPen(None).glyph(), "apple": apple}
+    glyf.update(g_glyphs)
+    fb.setupGlyf(glyf)
+    metrics = {".notdef": (advance, 0), "apple": (advance, SIDE_BEARING)}
+    for name, g in g_glyphs.items():
+        # One shared advance per the overlay contract; each arc's own
+        # left bearing, because hmtx wants the truth about the ink.
+        g.recalcBounds(None)
+        metrics[name] = (g_advance, g.xMin)
+    fb.setupHorizontalMetrics(metrics)
     fb.setupHorizontalHeader(ascent=ASCENT, descent=DESCENT)
     fb.setupOS2(
         sTypoAscender=ASCENT,
@@ -197,7 +307,7 @@ def build(out_path):
     fb.font["head"].created = 0
     fb.font["head"].modified = 0
     fb.save(out_path)
-    print(f"wrote {out_path} ({os.path.getsize(out_path)} bytes, advance {advance})")
+    print(f"wrote {out_path} ({os.path.getsize(out_path)} bytes, apple advance {advance}, G advance {g_advance})")
 
 
 if __name__ == "__main__":

@@ -6,11 +6,15 @@ the consumer contract; this file is the design behind it, written before
 the code so the expensive decisions were argued once, and amended after
 it with what the code actually settled. Two parts: the service itself,
 then the brand marks a sign-in button needs on screen — which is where
-nokre's grayscale refusal met two vendors' branding rules. That second
-part is now settled both ways: **Apple's mark is built** — one monochrome
-glyph and a `button` field, no colour anywhere — and **Google's is
-refused permanently**. No palette exception is pending; the cost of the
-one that was considered is recorded there so the question stays closed.
+nokre's grayscale refusal met two vendors' branding rules. Both marks
+are now built: **Apple's** — one monochrome glyph and a `button` field —
+and **Google's multicolour G**, which this file once refused permanently
+and whose refusal the owner reversed in 2026-08. The reversal's shape
+matters more than its fact: rgb was unlocked for the *infrastructure*
+(canvas, shim, frame format), never for the API — no element carries a
+colour, no consumer call accepts one — and the G is the sole colour
+caller. The full record, including what the old refusal protected and
+what the reversal paid, is in the brand-marks half below.
 
 ## What is already covered
 
@@ -252,15 +256,14 @@ implement:
    contract ([contributing.md](contributing.md)), and a sign-in screen
    without a brand mark is a plain `button`, which the sink already has.
 
-What is built below this line is **Apple's mark only**, and the split
-turned out sharper than the plan drew it: the entire frame-format cost —
-the extra canvas op, the shim's patch rendering, the `on_frame` contract,
-five shells — was *Google's*, because Apple's mark is monochrome and
-therefore just a `drawText` call with `.ink` into the plane that already
-exists. So Apple's conforming button landed as `brand.ttf` (one glyph),
-`text.Family.brand`, and `Button.provider`, with no colour, no shell
-change, and no golden-format fork. Google's is not unbuilt-for-now; it is
-refused, and the section below is why.
+The split the plan predicted held exactly: Apple's mark, being
+monochrome, landed as `brand.ttf`, `text.Family.brand`, and
+`Button.provider` with no colour and no shell change — just a `drawText`
+call at the pinned endpoints. The entire frame-format cost was
+*Google's*, which is why Google's mark shipped later and separately,
+when the owner reversed the refusal recorded below and paid that cost
+knowingly (the canvas op, the shim surface, `on_frame`, five shells,
+the golden format).
 
 One finding worth recording: the a11y audit already refuses two sign-in
 buttons with the same accessible name on one screen
@@ -302,25 +305,32 @@ zig's clang against a current iOS SDK.
 
 ---
 
-# The brand marks: one built, one refused
+# The brand marks: both built, one of them a reversed refusal
 
 Both providers' branding rules govern the button that starts the flow.
 This is the only place where a store-facing requirement collided with a
 [refusal](../introduction.md) rather than a mere convention, so it was
-argued in full — and both halves are decided: **Apple's mark ships,
-Google's never will.** What follows is the record of why, kept whole so
-that the absent button reads as an answer rather than as an omission.
+argued in full — twice. The first argument (kept below, whole) refused
+Google's mark permanently; the second, in 2026-08, was the owner's
+deliberate reversal of that refusal. Both marks now ship. The old
+record is preserved rather than rewritten because its cost analysis is
+exactly what the reversal paid, and a record that vanished when the
+answer changed would make the next argument start from nothing.
 
 Two facts about the pipeline set the price of everything below.
-The vocabulary is [eight operations](../../src/render/canvas.zig), none
-of which draws an image; the only path-rendering op is `drawText`, which
-is why the icon set is a font ([lucide.ttf](../../src/assets/fonts),
+The vocabulary is [nine operations](../../src/render/canvas.zig) — eight
+speaking `Gray` plus the one rgb text op the reversal added — none of
+which draws an image; the only path-rendering ops are the text ones,
+which is why the icon set is a font ([lucide.ttf](../../src/assets/fonts),
 `IconName` in [element.zig](../../src/core/element.zig)) rather than
-vectors. And the surface is 8-bit gray from end to end:
-`kGray_8_SkColorType` in [nokre_skia.cpp](../../shim/nokre_skia.cpp),
-a gray8 readback out of `hsk_surface_pixels`, a gray8 buffer returned by
-`on_frame` in [shell.h](../../src/platform/shell.h), five shells blitting
-gray8, and PGM goldens.
+vectors. And the surface was, at the time of the first argument, 8-bit
+gray from end to end: `kGray_8_SkColorType` in
+[nokre_skia.cpp](../../shim/nokre_skia.cpp), a gray8 readback out of
+`hsk_surface_pixels`, a gray8 buffer returned by `on_frame` in
+[shell.h](../../src/platform/shell.h), five shells blitting gray8, and
+PGM goldens. That format commitment is what the refusal below was
+protecting, and widening it is what the reversal paid — see "The
+reversal" at the end of this file for what each layer became.
 
 ## Apple needs no color at all
 
@@ -352,7 +362,12 @@ What was missing is only the Apple logotype, and that mark is monochrome
 Both are built; the semantics are in
 [elements.md](../elements.md#button).
 
-## Google: refused, and not on a schedule
+## Google: the refusal as it stood (2026-07 and earlier)
+
+*This section and the next are the preserved first argument. Its
+conclusion no longer holds — the reversal below supersedes it — but its
+reasoning was sound on its own premise and is what the reversal had to
+answer.*
 
 Google's guidelines require the official multicolor **G** mark, in one of
 two sanctioned buttons: the light button (white background, `#1F1F1F`
@@ -361,21 +376,20 @@ white G). A gray G is not a sanctioned variant, so unlike Apple this
 cannot be resolved inside the palette. Either nokre puts colour on
 screen or it deviates from the guidelines; there is no third reading.
 
-**It deviates.** `AuthProvider` has one arm and gains no second one —
+**It deviates** — so the record said. `AuthProvider` was to keep one arm,
 closed in the sense hover and animation are closed
 ([introduction.md](../introduction.md)), not a backlog entry. An app that
-signs in with Google still gets the entire flow, because the service
+signs in with Google still got the entire flow, because the service
 never knew which provider it was talking to: `start` takes the authorize
-URL the app built, and the button beside it is a plain `button` carrying
-the app's own words. What the app does not get is Google's mark on
-nokre's canvas.
+URL the app built, and the button beside it was a plain `button` carrying
+the app's own words.
 
-The exposure is named rather than waved away: Google brand review of the
-OAuth client can object to a text-only button. That is a materially
-smaller risk than what compliance costs — which is byte-exact grayscale
-determinism, the guarantee the whole project is organized around. App
-Store review is not in play at all; the mark is Google's rule, not
-Apple's.
+The exposure was named rather than waved away: Google brand review of the
+OAuth client can object to a text-only button. That was judged a
+materially smaller risk than what compliance costs — which is byte-exact
+grayscale determinism, the guarantee the whole project is organized
+around. App Store review is not in play at all; the mark is Google's
+rule, not Apple's.
 
 ### What compliance would have cost
 
@@ -424,15 +438,58 @@ layers. Four options existed, and none is cheap:
 - **D. Ship no Google mark.** Text-only button in the palette. Passes
   every gate, costs nothing, deviates from Google's branding rules.
 
-**D, and D is final.** An earlier draft of this file held C open behind a
-`-Dbrand_color` flag, so a consumer needing strict compliance would have
-a designed path rather than an improvised one. That is withdrawn. A flag
-that forks the golden set is a second product with a second determinism
-story, and "grayscale, byte-exact, everywhere" stops being true the
-moment the flag exists — a guarantee with an opt-out is not a guarantee,
-it is a default. So there is no `-Dbrand_color`, the canvas stays at
-eight operations, and the frame stays gray8 through all five layers.
-Apple's compliant button needs none of it and ships regardless.
+**D, and D is final** — so the first argument closed. An earlier draft
+had held C open behind a `-Dbrand_color` flag; that was withdrawn on the
+grounds that a flag forking the golden set is a second product with a
+second determinism story, and a guarantee with an opt-out is not a
+guarantee. Apple's compliant button needed none of it and shipped
+regardless.
+
+## The reversal (2026-08): rgb unlocked for the infrastructure, and for nothing else
+
+The owner reversed D. Not by finding the cost had come down — it had not
+— but by re-drawing the line the first argument treated as one line.
+"Colour in the frame" bundles two different guarantees:
+
+- **The consumer guarantee**: an app cannot put colour on screen. This
+  is the accessibility argument (information must survive grayscale, so
+  grayscale is the only mode) and it is *untouched*. No element carries
+  a colour, no consumer call accepts one, the element set gives an app
+  no way to name one, and `Tree.append` never sees one. The palette an
+  app authors in is thirteen grays, exactly as before.
+- **The format guarantee**: every byte in the frame is a gray byte.
+  This is what the reversal spent. It was never something an app could
+  observe through the API — it was infrastructure describing itself —
+  and the one thing it was blocking was a trademark the vendor refuses
+  to let anyone redraw in gray.
+
+What shipped is option **A**'s frame with "the part that looked cheap"'s
+canvas — and deliberately not A's moral: the surface is
+`kRGB_888x` (rgb, no alpha — nokre still composites nothing), `on_frame`
+hands shells RGBX they blit without interpreting, goldens are PPM, and
+every op but one still writes r=g=b, so the frame is gray by
+construction everywhere the mark is not. The canvas gained exactly one
+operation (`drawTextRgb`), the brand face gained the four arc glyphs on
+one shared advance, and the renderer's `google_g` table is the only
+place the four colour values exist. There is still no `-Dbrand_color`
+and no fork: the format changed for *everyone*, one product, one
+determinism story — "same viewport, same bytes" holds as before, three
+channels wide. The first argument's objection to A — "it makes colour
+possible framework-wide, which is the refusal itself" — is answered
+structurally rather than dismissed: possible in the infra, unreachable
+from the API, and the enforcement point (the element set) is the same
+one every other refusal already stands on.
+
+The accessibility half of the old analysis carried over unchanged and
+picked the same variant it picked then: the light button (with its
+hairline border), whose dark-theme twin the appearance selects the way
+Apple's pair flips — `secondary` is rejected on `.google` because Google
+sanctions themes, not emphases. The mark is decorative beside a real
+label, so the audit's rules see the button exactly as they see Apple's.
+The two auth-button goldens are where the only coloured pixels in the
+entire golden set live — the goldens pin them byte-for-byte like every
+other pixel — and `renderer_test.zig` asserts that no frame without a
+Google button records a coloured op at all.
 
 ## Font and licensing
 
@@ -442,10 +499,13 @@ merged into `lucide.ttf` — Lucide is ISC-licensed and a trademark glyph
 inside it would misrepresent that license. So: a separate `brand.ttf`, a
 separate `text.Family` arm (`.brand`), and its own
 [LICENSE-Brand.txt](../../src/assets/fonts/LICENSE-Brand.txt) stating
-plainly that the mark is not nokre's and is used per the vendor's
-published guidelines. The glyph set is closed at one, for the same reason
-it was going to be closed at five: an open brand font is a trademark
-liability, not a feature.
+plainly that the marks are not nokre's and are used per the vendors'
+published guidelines. The glyph set is closed at five — Apple's logo and
+the G's four arcs — for the same reason it was once closed at one: an
+open brand font is a trademark liability, not a feature. The G ships as
+four glyphs rather than a COLR/CPAL colour glyph on purpose: the font
+stays a plain outline font, and the colours stay a draw-time paint owned
+by the renderer, exactly like every gray.
 
 ## Open questions, and how they closed
 
@@ -469,6 +529,7 @@ liability, not a feature.
   real redirect behind it, which arrives promptly or not at all.
 - **Is `auth_button` a distinct element or a `button` variant?** A
   variant, and closed. `Button.provider` carries the mark, so the element
-  set grew by a field rather than a row, and nothing reopens it — the
-  colour work that might have wanted its own element is refused above,
-  not deferred.
+  set grew by a field rather than a row — and the reversal held this
+  line: Google arrived as an enum arm on the same field, not as an
+  element, and the colour arrived in the renderer, not on any element
+  at all.

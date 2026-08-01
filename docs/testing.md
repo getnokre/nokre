@@ -502,14 +502,17 @@ stack [0,0,480,640]
 ```
 
 `nok.render.skia.PixelSink` (requires `-Dskia`) is the pixel twin: one
-PGM frame per step through the production renderer, with identical
-numbering, so `.txt` and `.pgm` traces pair file-for-file. Custom sinks
+PPM frame per step through the production renderer, with identical
+numbering, so `.txt` and `.ppm` traces pair file-for-file. Custom sinks
 implement `trace.StepObserver`.
 
 ## Golden screenshot tests
 
-Byte-exact frame comparison against committed PGM (P5) files — viewable
-with almost any image tool.
+Byte-exact frame comparison against committed PPM (P6) files — viewable
+with almost any image tool. PPM rather than PGM because the frame is
+RGB for the one colored mark nokre draws (the Google G — see
+[internals/pixel-model.md](internals/pixel-model.md)); everything else
+is r=g=b, so diffs read like the gray ones did.
 
 ```zig
 var surface = try nok.render.skia.Surface.init(480, 640, 1);
@@ -518,7 +521,7 @@ t.app.measurer = nok.render.skia.measurer();  // real text metrics
 t.app.invalidate();
 t.renderTo(surface.canvas());
 try nok.testing.golden.expectMatches(gpa, surface.pixels(),
-    surface.pixelWidth(), surface.pixelHeight(), "tests/goldens/checkout.pgm");
+    surface.pixelWidth(), surface.pixelHeight(), "tests/goldens/checkout.ppm");
 ```
 
 Workflow:
@@ -531,7 +534,7 @@ Workflow:
    heal a lost one into a pass.
 2. First run with the flag creates the golden and reports it — review
    the image, commit it.
-3. On mismatch the test fails and writes `<name>.actual.pgm` next to the
+3. On mismatch the test fails and writes `<name>.actual.ppm` next to the
    golden for eyeball diffing. If the change is intended, rerun with
    `-Dupdate-goldens` to rewrite the golden, then review the diff and
    commit.

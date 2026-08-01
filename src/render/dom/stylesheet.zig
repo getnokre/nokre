@@ -231,6 +231,17 @@ fn writeRamp(gpa: std.mem.Allocator, out: *std.ArrayList(u8), appearance: color.
         const b = g.byte(appearance);
         try out.print(gpa, "{s}--{s}: #{x:0>2}{x:0>2}{x:0>2};\n", .{ indent, f.name, b, b, b });
     }
+    // The vendor sign-in pill rides the light ramp's true endpoints
+    // whatever the appearance — the reference's pinned pen
+    // (renderer.zig) — and flips which endpoint is the fill: Apple's
+    // button is black on the light screen and white on the dark one,
+    // Google's the reverse (the `.btn.auth` rules in `sheet` spend
+    // these crossed). Emitted by the ramp writer so the pair can never
+    // drift from the appearance the ramp answers to.
+    switch (appearance) {
+        .light => try out.print(gpa, "{s}--auth-fill: #000000;\n{s}--auth-ink: #ffffff;\n", .{ indent, indent }),
+        .dark => try out.print(gpa, "{s}--auth-fill: #ffffff;\n{s}--auth-ink: #000000;\n", .{ indent, indent }),
+    }
 }
 
 /// The rules whose *values* are computed rather than named — a mark's
@@ -368,6 +379,15 @@ fn writeFaces(gpa: std.mem.Allocator, out: *std.ArrayList(u8), dir: []const u8, 
         // nokre's own bundle; a site that subset it named it for what
         // it is.
         .{ dir, if (std.mem.eql(u8, ext, ".woff2")) "icons" else "lucide", ext, format },
+    );
+    // The vendor sign-in marks (LICENSE-Brand.txt). `block` like the
+    // icon face: a trademark flashing as fallback tofu is worse than a
+    // beat of nothing.
+    try out.print(
+        gpa,
+        "@font-face {{ font-family: brand; font-weight: 400; font-display: block;" ++
+            " src: url({s}/brand{s}) format(\"{s}\"); }}\n",
+        .{ dir, ext, format },
     );
 }
 
@@ -935,6 +955,43 @@ const sheet =
     \\  color: var(--ink);
     \\}
     \\.btn.icon-only[disabled] { background: transparent; color: var(--g6); }
+    \\
+    \\/* A vendor sign-in pill rides the light ramp's true endpoints, not
+    \\   the softened aliases — the reference draws it through a pinned
+    \\   pen (renderer.zig), and `--auth-fill`/`--auth-ink` are that pin,
+    \\   flipping with the appearance so the dark screen gets Apple's
+    \\   white button. `secondary` is exempt: the outlined third style is
+    \\   the ordinary outlined pill. Disabled is exempt too — an inactive
+    \\   control dims into the palette like any other. */
+    \\.btn.auth:not(.secondary):not([disabled]) { background: var(--auth-fill); color: var(--auth-ink); }
+    \\/* Google's themes cross the pin — white pill on the light screen,
+    \\   near-black on the dark — with the hairline border its light
+    \\   button carries. The border byte is the mid gray of the *light*
+    \\   ramp on both themes, exactly the pinned `.g6` stroke the
+    \\   reference draws. */
+    \\.btn.auth.google:not(.secondary):not([disabled]) {
+    \\  background: var(--auth-ink);
+    \\  color: var(--auth-fill);
+    \\  border-color: #808080;
+    \\}
+    \\
+    \\/* The mark that leads a sign-in label: brand-face glyphs standing
+    \\   on the text baseline at cap height, the way the vendor's own
+    \\   button art relates the logo to the words — an icon centres in
+    \\   its em box instead, because an icon is not a letter. */
+    \\.brand-mark { font-family: brand; font-weight: 400; font-style: normal; }
+    \\/* Google's G: four arc glyphs on one advance, overlaid by the grid
+    \\   into one drawing. The colors are the vendor's trademark spec —
+    \\   the ONLY color literals in this stylesheet, matching the
+    \\   renderer's `google_g` table — and they apply only on the live
+    \\   branded pill: a dimmed button's G falls back to currentColor
+    \\   and reads as a silhouette, like the reference. */
+    \\.brand-mark.g { display: inline-grid; }
+    \\.brand-mark.g > span { grid-area: 1 / 1; }
+    \\.btn.auth.google:not(.secondary):not([disabled]) .brand-mark.g > span:nth-child(1) { color: #4285f4; }
+    \\.btn.auth.google:not(.secondary):not([disabled]) .brand-mark.g > span:nth-child(2) { color: #34a853; }
+    \\.btn.auth.google:not(.secondary):not([disabled]) .brand-mark.g > span:nth-child(3) { color: #fbbc05; }
+    \\.btn.auth.google:not(.secondary):not([disabled]) .brand-mark.g > span:nth-child(4) { color: #ea4335; }
     \\
     \\/* A percentage fills the pill as the work goes. On a filled button
     \\   the track is `.g7` — already clear of the ground it sits on —

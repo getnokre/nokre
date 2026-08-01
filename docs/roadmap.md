@@ -10,7 +10,7 @@ is what remains, ordered by leverage.
 ## 1. Tooling
 
 - Semantic-tree dump (debug print of any screen from a test)
-- Golden diff visualizer (side-by-side PGM compare)
+- Golden diff visualizer (side-by-side PPM compare)
 - CI golden regeneration workflow with image review artifacts
 
 ## 2. nokre-owned Skia builds

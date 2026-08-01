@@ -291,6 +291,18 @@ test "append demands the vendor's words on a sign-in button, and refuses an icon
         .provider = .apple,
         .secondary = true,
     } });
+
+    // Google sanctions themes, which the appearance already picks —
+    // there is no outlined Google button for `secondary` to map onto.
+    try std.testing.expectError(error.GoogleButtonHasOneEmphasis, tree.append(root, .{ .button = .{
+        .label = "Mit Google anmelden",
+        .provider = .google,
+        .secondary = true,
+    } }));
+    _ = try tree.append(root, .{ .button = .{
+        .label = "Sign in with Google",
+        .provider = .google,
+    } });
 }
 
 test "append rejects malformed table structure" {

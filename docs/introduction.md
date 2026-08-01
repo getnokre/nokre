@@ -91,6 +91,16 @@ problems, because the library cannot express them.
   gentler than light where light-on-dark reads heavier — a mirror moves
   every ratio together and cannot. A palette you can enumerate is a
   palette you can prove.
+
+  One honest asterisk, framework-drawn: the Google sign-in button's
+  multicolour G — a trademark whose owner refuses a gray variant. The
+  framework paints it from its own renderer; there is no way for an app
+  to color anything, no element that takes a color, and nothing else on
+  any screen that is not gray. The refusal an app builds against is
+  intact — *your* information still has to survive grayscale, because
+  grayscale is still all you can author.
+  [internals/oauth.md](internals/oauth.md) records why this one mark
+  crossed the line and nothing else may follow it.
 - **No system fonts.** Four bundled families — one mono, one
   proportional, one icon face, and one Arabic-script companion every
   family falls back to for Persian and Arabic — every variant a real

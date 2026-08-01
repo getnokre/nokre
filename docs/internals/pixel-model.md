@@ -124,8 +124,27 @@ white-outlined and nothing between. `Tree.append` rejects text at that contrast
 Tests in `color.zig` prove all of this; a ramp byte that breaks compliance —
 in either direction, in either appearance — fails the build.
 
-Surfaces are `kGray_8`. Anti-aliased text and rounded corners produce
-intermediate bytes; square-cornered geometry never does.
+### The one colored artwork
+
+One thing on any nokre screen is not gray: the multicolour G on the
+Google sign-in button, drawn because Google's branding rules refuse a
+gray variant of their trademark. This is an *infrastructure* fact, not
+an API one — the four colour values live in the renderer's `google_g`
+table, reach pixels through the canvas's single rgb operation
+(`drawTextRgb`), and are not reachable from any element: no element
+carries a colour, no consumer call accepts one, and the palette an app
+authors in remains the thirteen grays above. The colours resolve
+through no ramp and follow no appearance — a trademark has no dark
+mode. The decision record (this was a refusal for a long time, and the
+reversal was the owner's) is in [oauth.md](oauth.md).
+
+Surfaces are `kRGB_888x` — rgb with no alpha channel, because nokre
+composites nothing. Every canvas operation except `drawTextRgb` paints
+r=g=b, so the frame is grayscale by construction everywhere that one
+mark is not. `on_frame` hands shells tightly packed RGBX (4 bytes per
+pixel; the padding byte is outside the promise and readers ignore it).
+Anti-aliased text and rounded corners produce intermediate bytes;
+square-cornered geometry never does.
 
 ## Geometry: anti-aliased only at rounded corners
 
@@ -143,8 +162,9 @@ the shim ignores anything else by design.
   and bold-italic, the icon face, the Arabic-script companion
   (Vazirmatn regular and bold; the script has no italic tradition, so
   italic requests resolve to the upright weight), and the brand face
-  (one glyph, renderer-only — `text.Family.brand`, which no app text
-  can reach). Variants are real
+  (five glyphs — Apple's logo and the Google G's four arcs;
+  renderer-only, `text.Family.brand`, which no app text can reach).
+  Variants are real
   drawn faces from the same upstream builds as the regulars (Skia's
   fake-bold and oblique are never enabled — synthesis is
   rasterizer-dependent); the system font stack is never consulted for

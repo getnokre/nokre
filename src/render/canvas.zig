@@ -1,6 +1,8 @@
-//! The drawing vocabulary. Eight operations — everything nokre can ever
+//! The drawing vocabulary. Nine operations — everything nokre can ever
 //! put on screen. Backends: the Skia shim (production), a recording canvas
-//! (renderer tests).
+//! (renderer tests). Eight of them speak `Gray`; the ninth (`drawTextRgb`)
+//! is the one place color exists in nokre, and it is infrastructure, not
+//! API — see `Rgb`.
 
 const std = @import("std");
 const geometry = @import("../core/geometry.zig");
@@ -11,6 +13,25 @@ const Rect = geometry.Rect;
 const Point = geometry.Point;
 const Gray = color.Gray;
 const Appearance = color.Appearance;
+
+/// One opaque color. Infrastructure, not API: no element carries one, no
+/// consumer call accepts one, and nothing in core can produce one — the
+/// element set is where the no-color guarantee is enforced, and it is
+/// unchanged. The type exists for exactly one draw site: the renderer's
+/// vendor sign-in mark (the multicolour G), whose colors are the
+/// vendor's trademark spec, not a palette. It deliberately resolves
+/// through no ramp and answers to no appearance — a trademark does not
+/// have a dark mode — and it has no alpha, because nokre composites
+/// nothing.
+///
+/// If a second caller ever wants this type, that is a design argument to
+/// have in docs/internals/oauth.md's brand-mark record, not a field to
+/// fill in.
+pub const Rgb = struct {
+    r: u8,
+    g: u8,
+    b: u8,
+};
 
 pub const Canvas = struct {
     ctx: ?*anyopaque,
@@ -27,6 +48,10 @@ pub const Canvas = struct {
         strokeRect: *const fn (ctx: ?*anyopaque, rect: Rect, radius: i32, thickness: i32, gray: Gray, a: Appearance) void,
         line: *const fn (ctx: ?*anyopaque, from: Point, to: Point, thickness: i32, gray: Gray, a: Appearance) void,
         drawText: *const fn (ctx: ?*anyopaque, x: i32, baseline: i32, face: text.Face, size_px: i32, bytes: []const u8, gray: Gray, a: Appearance) void,
+        /// The ninth op, and the only one that speaks `Rgb`. No
+        /// appearance parameter on purpose: an `Rgb` resolves through no
+        /// ramp, which is the whole difference between it and a `Gray`.
+        drawTextRgb: *const fn (ctx: ?*anyopaque, x: i32, baseline: i32, face: text.Face, size_px: i32, bytes: []const u8, rgb: Rgb) void,
         pushClip: *const fn (ctx: ?*anyopaque, rect: Rect) void,
         popClip: *const fn (ctx: ?*anyopaque) void,
         /// 1px checkerboard of `gray` over the rect: the palette-pure
@@ -37,10 +62,13 @@ pub const Canvas = struct {
     /// The same canvas pinned to the light ramp. Two surfaces want true
     /// ink on true paper whatever the appearance: the QR tile, because a
     /// scanner wants maximum modulation and a photo-negative code is a
-    /// different code, and the vendor sign-in marks, because Apple's HIG
-    /// sanctions black / white / white-outlined and nothing between.
-    /// Both then draw `.g0` and `.g12` explicitly — the two steps the
-    /// design system itself no longer uses.
+    /// different code, and the vendor sign-in pills, because the vendors
+    /// sanction exact fills and nothing between (Apple's black / white /
+    /// white-outlined; Google's white and near-black themes). Both then
+    /// draw `.g0` and `.g12` explicitly — the two steps the design
+    /// system itself no longer uses. The G's colors are not this pin's
+    /// business: they arrive through `drawTextRgb`, which no ramp
+    /// touches either way.
     pub fn light(self: Canvas) Canvas {
         return .{ .ctx = self.ctx, .vtable = self.vtable, .appearance = .light };
     }
@@ -59,6 +87,9 @@ pub const Canvas = struct {
     }
     pub fn drawText(self: Canvas, x: i32, baseline: i32, face: text.Face, size_px: i32, bytes: []const u8, gray: Gray) void {
         self.vtable.drawText(self.ctx, x, baseline, face, size_px, bytes, gray, self.appearance);
+    }
+    pub fn drawTextRgb(self: Canvas, x: i32, baseline: i32, face: text.Face, size_px: i32, bytes: []const u8, rgb: Rgb) void {
+        self.vtable.drawTextRgb(self.ctx, x, baseline, face, size_px, bytes, rgb);
     }
     pub fn pushClip(self: Canvas, rect: Rect) void {
         self.vtable.pushClip(self.ctx, rect);
@@ -83,6 +114,7 @@ pub const Recording = struct {
     appearance: Appearance = .light,
 
     pub const DrawText = struct { x: i32, baseline: i32, face: text.Face, size_px: i32, bytes: []const u8, gray: Gray };
+    pub const DrawTextRgb = struct { x: i32, baseline: i32, face: text.Face, size_px: i32, bytes: []const u8, rgb: Rgb };
 
     pub const Op = union(enum) {
         clear: Gray,
@@ -90,6 +122,7 @@ pub const Recording = struct {
         stroke_rect: struct { rect: Rect, radius: i32, thickness: i32, gray: Gray },
         line: struct { from: Point, to: Point, thickness: i32, gray: Gray },
         draw_text: DrawText,
+        draw_text_rgb: DrawTextRgb,
         push_clip: Rect,
         pop_clip,
         dither: struct { rect: Rect, gray: Gray },
@@ -175,6 +208,12 @@ pub const Recording = struct {
         .drawText = struct {
             fn f(ctx: ?*anyopaque, x: i32, baseline: i32, face: text.Face, size_px: i32, bytes: []const u8, gray: Gray, a: Appearance) void {
                 record(ctx, .{ .draw_text = .{ .x = x, .baseline = baseline, .face = face, .size_px = size_px, .bytes = bytes, .gray = gray } }, a);
+            }
+        }.f,
+        .drawTextRgb = struct {
+            fn f(ctx: ?*anyopaque, x: i32, baseline: i32, face: text.Face, size_px: i32, bytes: []const u8, rgb: Rgb) void {
+                // No appearance to stamp: the op resolves through no ramp.
+                recordPlain(ctx, .{ .draw_text_rgb = .{ .x = x, .baseline = baseline, .face = face, .size_px = size_px, .bytes = bytes, .rgb = rgb } });
             }
         }.f,
         .pushClip = struct {

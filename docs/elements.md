@@ -331,17 +331,19 @@ its surroundings should have kept its words — the labeled pill is the
 default, the bare glyph is the exception.
 
 Setting `provider` makes it a conforming vendor sign-in button: the
-vendor's mark leads the label, and `append` fills the label in with the
-vendor's mandated wording when you leave it empty. This is the one place
-in nokre where the visual spec is **not nokre's to choose** — every
-detail of these buttons is the vendor's, which is exactly why `provider`
-is the whole API. There is no size, no ink, no corner radius, and no
-custom label: a knob here would be an invitation to violate the
-guidelines the button exists to satisfy.
+vendor's mark leads the label, and the label stays yours to supply —
+`append` rejects an empty one (`error.AuthButtonNeedsVendorLabel`),
+because nokre ships the mark and no translation of the vendor's
+mandated string (see the localization note below). This is the one
+place in nokre where the visual spec is **not nokre's to choose** —
+every detail of these buttons is the vendor's, which is exactly why
+`provider` is the whole API. There is no size, no ink, no corner
+radius: a knob here would be an invitation to violate the guidelines
+the button exists to satisfy.
 
 ```zig
 _ = try tree.append(root, .{ .button = .{
-    .label = "",                 // append supplies "Sign in with Apple"
+    .label = "Sign in with Apple", // the vendor's published wording, your locale
     .provider = .apple,
     .on_press = .{ .ctx = state, .call = startSignIn },
 } });
@@ -357,26 +359,29 @@ Its *position* does mirror, because leading is leading.
 
 The emphasis pair maps onto the vendor's sanctioned styles instead of
 adding new ones. Apple sanctions three — black, white, and white with a
-black outline — and all three fall out of the palette nokre already has:
-the filled default is `.ink` on `.paper`, which is the black button in
-light appearance and, because both flip, the white one in dark; and
-`secondary` is the outlined third. That is why a conforming Sign in with
-Apple button needs no colour at all. `icon` and `icon_only` are both
-rejected at `append` — the mark occupies the icon slot, and no vendor
-sanctions a glyph-only sign-in button.
+black outline: the filled default is the black button in light
+appearance and, because the endpoints flip, the white one in dark; and
+`secondary` is the outlined third. Google sanctions *themes* rather
+than emphases — a light button (white, hairline border) and a dark one
+— so the appearance picks the theme and `secondary` is rejected at
+`append` (`error.GoogleButtonHasOneEmphasis`): there is no outlined
+Google button to map it to. `icon` and `icon_only` are rejected on both
+— the mark occupies the icon slot, and no vendor sanctions a glyph-only
+sign-in button.
 
-Two things this does not do for you. **Localization**: Apple requires
-the mandated string translated to the app's language, and nokre ships
-no translation of it — inventing one would be fabricating a mandated
-string. A translated app sets `label` itself, to the vendor's own
-published wording for that locale. **Google**: not offered, and not
-pending. Its guidelines require the official multicolour G, and a gray
-one is not a sanctioned variant, so a `.google` arm could only render a
-button that violates them — while a compliant one would put colour in
-the frame, which is the grayscale refusal itself. Sign-in with Google
-still works; the button is a plain `button` with your own words. The
-argument, and what compliance would have cost, is in
-[internals/oauth.md](internals/oauth.md).
+The Google button's G is drawn in the vendor's four colors — the one
+colored thing nokre ever puts on screen, painted by the renderer from
+its own table. Nothing about it is yours to configure, which is the
+`provider` field's whole design: there is no color API here or anywhere
+else, and your app remains grayscale-only. The decision record — this
+was a refusal for a long time, and reversing it meant widening the
+frame format itself — is in [internals/oauth.md](internals/oauth.md).
+
+One thing this does not do for you. **Localization**: the vendors
+require their mandated string translated to the app's language, and
+nokre ships no translation of it — inventing one would be fabricating a
+mandated string. A translated app sets `label` itself, to the vendor's
+own published wording for that locale.
 
 The marks themselves are not nokre's work and are not covered by its
 license — see

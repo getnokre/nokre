@@ -37,6 +37,7 @@ extern fn hsk_fill_rect(s: *HskSurface, x: i32, y: i32, w: i32, h: i32, radius: 
 extern fn hsk_stroke_rect(s: *HskSurface, x: i32, y: i32, w: i32, h: i32, radius: i32, thickness: i32, gray: u8) void;
 extern fn hsk_line(s: *HskSurface, x0: i32, y0: i32, x1: i32, y1: i32, thickness: i32, gray: u8) void;
 extern fn hsk_draw_text(s: *HskSurface, face: i32, size_px: i32, x: i32, baseline: i32, utf8: [*]const u8, len: usize, gray: u8) void;
+extern fn hsk_draw_text_rgb(s: *HskSurface, face: i32, size_px: i32, x: i32, baseline: i32, utf8: [*]const u8, len: usize, r: u8, g: u8, b: u8) void;
 extern fn hsk_clip_push(s: *HskSurface, x: i32, y: i32, w: i32, h: i32) void;
 extern fn hsk_clip_pop(s: *HskSurface) void;
 extern fn hsk_dither(s: *HskSurface, x: i32, y: i32, w: i32, h: i32, gray: u8) void;
@@ -127,9 +128,13 @@ pub const Surface = struct {
         hsk_surface_destroy(self.handle);
     }
 
-    /// Tightly packed gray8, (logical_w*scale) x (logical_h*scale).
+    /// Tightly packed RGBX8888 (4 bytes per pixel; the fourth is padding
+    /// readers ignore), (logical_w*scale) x (logical_h*scale). RGB, not
+    /// gray8, since the frame format widened for the vendor sign-in mark
+    /// — every op but `drawTextRgb` still writes r=g=b
+    /// (docs/internals/pixel-model.md).
     pub fn pixels(self: *Surface) []const u8 {
-        const n: usize = @intCast(self.logical_w * self.scale * self.logical_h * self.scale);
+        const n: usize = @intCast(self.logical_w * self.scale * self.logical_h * self.scale * 4);
         return hsk_surface_pixels(self.handle)[0..n];
     }
 
@@ -176,6 +181,11 @@ const vtable: Canvas.VTable = .{
             hsk_draw_text(handleFrom(ctx), faceIndex(face), size_px, x, baseline, bytes.ptr, bytes.len, gray.byte(a));
         }
     }.f,
+    .drawTextRgb = struct {
+        fn f(ctx: ?*anyopaque, x: i32, baseline: i32, face: text.Face, size_px: i32, bytes: []const u8, rgb: canvas_mod.Rgb) void {
+            hsk_draw_text_rgb(handleFrom(ctx), faceIndex(face), size_px, x, baseline, bytes.ptr, bytes.len, rgb.r, rgb.g, rgb.b);
+        }
+    }.f,
     .pushClip = struct {
         fn f(ctx: ?*anyopaque, rect: Rect) void {
             hsk_clip_push(handleFrom(ctx), rect.x, rect.y, rect.w, rect.h);
@@ -194,8 +204,8 @@ const vtable: Canvas.VTable = .{
 };
 
 /// The pixel twin of `testing.trace.TreeSink`: renders the app through
-/// the production Skia pipeline after every step and writes a PGM per
-/// frame with the same numbering, so `.txt` and `.pgm` traces pair up.
+/// the production Skia pipeline after every step and writes a PPM per
+/// frame with the same numbering, so `.txt` and `.ppm` traces pair up.
 pub const PixelSink = struct {
     io: Io,
     dir: Io.Dir,
@@ -223,9 +233,9 @@ pub const PixelSink = struct {
         renderer.render(app, surface.canvas());
 
         var name_buf: [64]u8 = undefined;
-        const name = trace.stepFileName(&name_buf, step, action, "pgm");
+        const name = trace.stepFileName(&name_buf, step, action, "ppm");
         const path = try std.fmt.allocPrint(self.gpa, "{s}/{s}", .{ self.sub_dir, name });
         defer self.gpa.free(path);
-        try golden.writePgm(self.io, self.dir, self.gpa, surface.pixels(), surface.pixelWidth(), surface.pixelHeight(), path);
+        try golden.writePpm(self.io, self.dir, self.gpa, surface.pixels(), surface.pixelWidth(), surface.pixelHeight(), path);
     }
 };

@@ -94,7 +94,7 @@ One loop, everywhere:
    canvas)`. The shell reconciles the viewport and safe area the OS
    reported and blits the buffer it gets back; what is *in* the buffer is
    the source's business, never the shell's.
-4. The shell blits the gray8 buffer. That's the entire frame story — there
+4. The shell blits the RGBX buffer. That's the entire frame story — there
    is no ticker; a nokre app at rest costs zero CPU.
 
 The testing harness drives step 1 and reads state after step 2, and can run

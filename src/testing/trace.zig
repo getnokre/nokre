@@ -2,7 +2,7 @@
 //! default and free when off. `TreeSink` writes a text snapshot of the
 //! laid-out tree per step — pure Zig, no Skia. The pixel sink lives with
 //! the Skia bindings (`render.skia.PixelSink`) and pairs with this one
-//! file-for-file: `0007-tap-Show-done.txt` next to `0007-tap-Show-done.pgm`.
+//! file-for-file: `0007-tap-Show-done.txt` next to `0007-tap-Show-done.ppm`.
 
 const std = @import("std");
 const Io = std.Io;
@@ -276,7 +276,7 @@ const testing = std.testing;
 
 test "stepFileName numbers, sanitizes, truncates" {
     var buf: [64]u8 = undefined;
-    try testing.expectEqualStrings("0007-tap-Show-done.pgm", stepFileName(&buf, 7, "tap Show done", "pgm"));
+    try testing.expectEqualStrings("0007-tap-Show-done.ppm", stepFileName(&buf, 7, "tap Show done", "ppm"));
     try testing.expectEqualStrings("0000-init.txt", stepFileName(&buf, 0, "init", "txt"));
     const long = stepFileName(&buf, 1, "x" ** 100, "txt");
     try testing.expect(long.len <= buf.len);

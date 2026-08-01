@@ -493,6 +493,12 @@ pub const Tree = struct {
                 // about the provider, not about a missing icon.
                 if (b.provider != null and b.icon != null) return error.AuthButtonHasNoIcon;
                 if (b.provider != null and b.icon_only) return error.AuthButtonNeedsItsLabel;
+                // Apple sanctions an outlined third style and `secondary`
+                // maps onto it; Google sanctions themes the appearance
+                // already picks, and no outlined form exists to map to —
+                // so the flag would render a button no guideline
+                // describes, and is refused instead (element.zig).
+                if (b.provider == .google and b.secondary) return error.GoogleButtonHasOneEmphasis;
                 // No vendor sanctions a progress bar inside their
                 // button, and the brand pill is drawn through a
                 // light-pinned canvas at the true endpoints — a track on

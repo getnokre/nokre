@@ -1,4 +1,4 @@
-// macOS AppKit shell. Thin by charter: window, gray8 blit, input
+// macOS AppKit shell. Thin by charter: window, RGBX blit, input
 // forwarding, NSTextInputClient for IME. No timers, no CADisplayLink —
 // nokre repaints only when state changes.
 #import <Cocoa/Cocoa.h>
@@ -75,12 +75,13 @@
     const uint8_t *pixels = config.on_frame(config.ctx, logical_w, logical_h, 0, scale, &w, &h);
     if (!pixels || w <= 0 || h <= 0) return;
 
-    CGColorSpaceRef space = CGColorSpaceCreateDeviceGray();
+    CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
     CGDataProviderRef provider =
-        CGDataProviderCreateWithData(NULL, pixels, (size_t)w * (size_t)h, NULL);
-    CGImageRef image = CGImageCreate((size_t)w, (size_t)h, 8, 8, (size_t)w, space,
-                                     kCGBitmapByteOrderDefault, provider, NULL, false,
-                                     kCGRenderingIntentDefault);
+        CGDataProviderCreateWithData(NULL, pixels, (size_t)w * (size_t)h * 4, NULL);
+    // RGBX: 32 bpp, the padding byte after B skipped, per shell.h.
+    CGImageRef image = CGImageCreate((size_t)w, (size_t)h, 8, 32, (size_t)w * 4, space,
+                                     kCGImageAlphaNoneSkipLast | kCGBitmapByteOrderDefault,
+                                     provider, NULL, false, kCGRenderingIntentDefault);
     CGContextRef cg = [NSGraphicsContext currentContext].CGContext;
     CGContextSetInterpolationQuality(cg, kCGInterpolationNone);
     // The view is flipped; un-flip for CGContextDrawImage.

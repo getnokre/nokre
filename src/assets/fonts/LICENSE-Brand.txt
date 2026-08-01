@@ -13,7 +13,14 @@ misrepresent that license to everyone who redistributes nokre.
 Contents
 --------
 
-  U+E900  apple   The Apple logo. A trademark of Apple Inc.
+  U+E900  apple     The Apple logo. A trademark of Apple Inc.
+  U+E901  g-blue    The Google "G", blue arc. Part of a trademark of
+  U+E902  g-green   Google LLC. One glyph per colored arc, all on one
+  U+E903  g-yellow  advance: the renderer overlays the four at a single
+  U+E904  g-red     origin and paints each in the color Google mandates.
+                    The colors are not in this file — an outline font
+                    carries no color — they are applied at draw time
+                    from the values in Google's brand guidelines.
 
 Terms
 -----
@@ -24,6 +31,7 @@ owner's published brand guidelines:
 
   Apple    developer.apple.com/design/human-interface-guidelines/
            sign-in-with-apple
+  Google   developers.google.com/identity/branding-guidelines
 
 Use of these marks does not imply endorsement of nokre, or of any
 application built with it, by their owners. Neither nokre nor its
@@ -42,12 +50,14 @@ recreated by hand: Apple's guidelines say explicitly not to recreate
 their logo, and every other owner says something equivalent.
 
 The Apple outline here is transcribed verbatim from Apple's published
-SVG, in its original 814 x 1000 frame, and is inlined in
+SVG, in its original 814 x 1000 frame; the Google G's four arcs are
+transcribed verbatim from the G in Google's published sign-in button
+assets, in their original 48 x 48 frame. Both are inlined in
 tools/make-brand-font.py — so what is committed can be diffed against
-the source Apple ships, and nothing about it was drawn by hand. That
-script does the mechanical part only: the y-flip into font coordinates,
-the scale to cap height, the side bearings, and the cubic-to-quadratic
-conversion TrueType requires. Regenerate with:
+the sources the vendors ship, and nothing about them was drawn by hand.
+That script does the mechanical part only: the y-flip into font
+coordinates, the scale to cap height, the side bearings, and the
+cubic-to-quadratic conversion TrueType requires. Regenerate with:
 
     python3 tools/make-brand-font.py
 

@@ -379,6 +379,7 @@ pub fn node(em: *Emitter, id: NodeId) anyerror!void {
             try em.raw("<button type=\"button\" class=\"btn");
             if (b.secondary) try em.raw(" secondary");
             if (b.provider != null) try em.raw(" auth");
+            if (b.provider == .google) try em.raw(" google");
             if (b.icon_only) try em.raw(" icon-only");
             try em.raw("\"");
             if (b.disabled) try em.raw(" disabled");
@@ -420,6 +421,18 @@ pub fn node(em: *Emitter, id: NodeId) anyerror!void {
                     try em.print("<span class=\"btn-wait\" aria-hidden=\"true\">{s}</span>", .{layout.ellipsis});
                 }
             } else {
+                // The vendor's mark leads the words, decorative beside
+                // the real label like every lead mark. It stands down
+                // while work runs (the branch above), exactly as the
+                // reference's lead does. Google's G is four arc glyphs
+                // the stylesheet overlays into one drawing and colors
+                // on the live pill — the markup itself carries no
+                // color, here or anywhere.
+                if (b.provider) |p| switch (p) {
+                    .apple => try em.raw("<span class=\"brand-mark\" aria-hidden=\"true\">&#xE900;</span>"),
+                    .google => try em.raw("<span class=\"brand-mark g\" aria-hidden=\"true\">" ++
+                        "<span>&#xE901;</span><span>&#xE902;</span><span>&#xE903;</span><span>&#xE904;</span></span>"),
+                };
                 if (b.icon) |name| try icon(em, name, "", .ink, .body, .mark);
                 if (b.icon_only) {
                     try em.raw("<span class=\"visually-hidden\">");

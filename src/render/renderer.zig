@@ -66,6 +66,13 @@ const Painter = struct {
     fn drawPiece(self: Painter, x: i32, baseline: i32, face: text.Face, size_px: i32, bytes: []const u8, gray: Gray) void {
         self.canvas.drawText(x, baseline, face, size_px, bytes, self.text_ink orelse gray);
     }
+    /// The one colored draw in nokre: an arc of the Google G, in the
+    /// color the vendor mandates (`google_g`). Bypasses bidi (a PUA
+    /// glyph is not text) and `text_ink` (a trademark's color is not
+    /// nokre's to restate) on purpose.
+    fn drawTextRgb(self: Painter, x: i32, baseline: i32, face: text.Face, size_px: i32, bytes: []const u8, rgb: canvas_mod.Rgb) void {
+        self.canvas.drawTextRgb(x, baseline, face, size_px, bytes, rgb);
+    }
     fn pushClip(self: Painter, rect: Rect) void {
         self.canvas.pushClip(rect);
     }
@@ -1149,6 +1156,40 @@ fn drawButton(app: *App, canvas: Painter, r: Rect, b: element_mod.Button, focuse
 /// — but its *position* does, because leading is leading.
 const Lead = struct { face: text.Face, glyph: []const u8, baseline: i32 };
 
+/// Google's G: four arc glyphs cut from one drawing, sharing one advance
+/// (tools/make-brand-font.py), overlaid at a single origin, each painted
+/// in the color Google's branding guidelines mandate. These four values
+/// are the only colors in nokre, and this table is the only place they
+/// exist — they are the vendor's trademark spec, transcribed, not a
+/// palette to pick from. The mark is decorative beside a real label
+/// (a11y-exempt like every lead mark), so no contrast gate applies; the
+/// pill under it is drawn at the light-pinned endpoints like Apple's.
+const google_g = [_]struct { glyph: []const u8, rgb: canvas_mod.Rgb }{
+    .{ .glyph = "\u{e901}", .rgb = .{ .r = 0x42, .g = 0x85, .b = 0xF4 } }, // blue
+    .{ .glyph = "\u{e902}", .rgb = .{ .r = 0x34, .g = 0xA8, .b = 0x53 } }, // green
+    .{ .glyph = "\u{e903}", .rgb = .{ .r = 0xFB, .g = 0xBC, .b = 0x05 } }, // yellow
+    .{ .glyph = "\u{e904}", .rgb = .{ .r = 0xEA, .g = 0x43, .b = 0x35 } }, // red
+};
+
+/// Draws a pill's lead mark at `tx`. The Google G is the special case:
+/// four glyphs at one origin — in the mandated colors on a live branded
+/// pill, and as a single-tone silhouette in `fg` when the button is
+/// dimmed (disabled dims everything it carries; a full-color mark on a
+/// gray pill would make the dimmed state the loudest thing on screen,
+/// and Google's own disabled spec grays the G too).
+fn drawLead(canvas: Painter, tx: i32, l: Lead, size: i32, fg: Gray, b: element_mod.Button, branded: bool) void {
+    if (b.provider == .google) {
+        for (google_g) |arc| {
+            if (branded)
+                canvas.drawTextRgb(tx, l.baseline, l.face, size, arc.glyph, arc.rgb)
+            else
+                canvas.drawText(tx, l.baseline, l.face, size, arc.glyph, fg);
+        }
+        return;
+    }
+    canvas.drawText(tx, l.baseline, l.face, size, l.glyph, fg);
+}
+
 fn drawPillButton(app: *App, canvas: Painter, r: Rect, b: element_mod.Button, focused: bool) void {
     const size = text.Scale.body.px();
     // A vendor sign-in button is the one place a store-facing rule
@@ -1176,8 +1217,29 @@ fn drawPillButton(app: *App, canvas: Painter, r: Rect, b: element_mod.Button, fo
         fg = if (b.disabled) .g6 else .ink;
     } else if (branded) {
         const on_dark = app.appearance() == .dark;
-        pen.fillRect(r, metrics.radius, if (on_dark) .g12 else .g0);
-        fg = if (on_dark) .g0 else .g12;
+        switch (b.provider.?) {
+            // Apple's solid pair: black on the light screen, white on
+            // the dark one, one style flipping with the appearance.
+            .apple => {
+                pen.fillRect(r, metrics.radius, if (on_dark) .g12 else .g0);
+                fg = if (on_dark) .g0 else .g12;
+            },
+            // Google's theme pair: the light button (white, hairline
+            // border, near-black label) and the dark one (near-black,
+            // same border, white label) — the appearance picks the
+            // theme, exactly Apple's arrangement with the fills
+            // swapped. The border is Google's own light-button detail;
+            // drawn through the pinned pen it is the same mid byte in
+            // both themes, which is what their spec's two border grays
+            // round to in a thirteen-step palette. The G's four colors
+            // land in drawLead below — the pill itself never leaves
+            // the pinned endpoints.
+            .google => {
+                pen.fillRect(r, metrics.radius, if (on_dark) .g0 else .g12);
+                pen.strokeRect(r, metrics.radius, metrics.border, .g6);
+                fg = if (on_dark) .g12 else .g0;
+            },
+        }
     } else {
         canvas.fillRect(r, metrics.radius, if (b.disabled) .g6 else .ink);
         fg = if (b.disabled) .g11 else .paper;
@@ -1210,7 +1272,7 @@ fn drawPillButton(app: *App, canvas: Painter, r: Rect, b: element_mod.Button, fo
         var tx = r.right() - metrics.border - metrics.button_pad_h;
         if (lead) |l| {
             tx -= app.measurer.measure(l.face, size, l.glyph);
-            pen.drawText(tx, l.baseline, l.face, size, l.glyph, fg);
+            drawLead(pen, tx, l, size, fg, b, branded);
             tx -= metrics.icon_gap;
         }
         tx -= app.measurer.measure(.prose, size, b.label);
@@ -1218,7 +1280,7 @@ fn drawPillButton(app: *App, canvas: Painter, r: Rect, b: element_mod.Button, fo
     } else {
         var tx = r.x + metrics.border + metrics.button_pad_h;
         if (lead) |l| {
-            pen.drawText(tx, l.baseline, l.face, size, l.glyph, fg);
+            drawLead(pen, tx, l, size, fg, b, branded);
             tx += app.measurer.measure(l.face, size, l.glyph) + metrics.icon_gap;
         }
         pen.drawText(tx, ty, .prose, size, b.label, fg);

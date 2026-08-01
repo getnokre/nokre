@@ -785,13 +785,13 @@ signed with the developer's `.p8` key, which must never ship in a
 binary.
 
 The button that starts the flow is `button` with `provider` set: nokre
-draws Apple's conforming sign-in button, mark and mandated wording
-included, in the palette it already had — see
-[elements.md](elements.md#button). Google's is not offered and will not
-be: its guidelines require a multicolour mark, drawing one compliantly
-means colour in the frame, and grayscale is a guarantee rather than a
-default. The full argument is in
-[internals/oauth.md](internals/oauth.md).
+draws the vendor's conforming sign-in button — Apple's in the palette
+it already had, Google's with the multicolour G, which is the one
+colored thing nokre ever draws and is the renderer's, never the app's
+(the words are yours to supply in your locale on both) — see
+[elements.md](elements.md#button). Google's mark was long refused and
+the refusal was deliberately reversed; the record of both decisions is
+in [internals/oauth.md](internals/oauth.md).
 
 In tests the mock is one app's fake browser: `start` parks and journals
 what the app actually built — so "the app requested the wrong scopes"

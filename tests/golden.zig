@@ -1,10 +1,14 @@
 //! Golden screenshot tests: render real screens through the production
-//! Skia pipeline and compare gray8 output byte-for-byte against committed
-//! PGM files. Run with `zig build test -Dskia -Dgolden`.
+//! Skia pipeline and compare output byte-for-byte against committed
+//! PPM files. Run with `zig build test -Dskia -Dgolden`.
+//! PPM and not PGM since the frame widened to RGB for the Google G —
+//! every pixel outside that one mark is still r=g=b by construction
+//! (docs/internals/pixel-model.md), and the auth-button goldens are
+//! where the exception is visible and reviewed.
 //! Baselines are explicit: add -Dupdate-goldens to create missing goldens
-//! or rewrite mismatched ones, then review (any PGM viewer) and commit.
+//! or rewrite mismatched ones, then review (any PPM viewer) and commit.
 //! Without it a missing golden fails — CI can never mint a baseline —
-//! and a mismatch lands a .actual.pgm next to the golden.
+//! and a mismatch lands a .actual.ppm next to the golden.
 
 const std = @import("std");
 const build_options = @import("build_options");
@@ -28,7 +32,7 @@ fn renderGolden(harness: *h.testing.Harness, comptime name: []const u8) !void {
     defer surface.deinit();
     harness.renderTo(surface.canvas());
 
-    try expectGolden(gpa, surface.pixels(), surface.pixelWidth(), surface.pixelHeight(), "tests/goldens/" ++ name ++ ".pgm");
+    try expectGolden(gpa, surface.pixels(), surface.pixelWidth(), surface.pixelHeight(), "tests/goldens/" ++ name ++ ".ppm");
 }
 
 fn buildElements(_: ?*anyopaque, app: *h.App) !void {
@@ -275,6 +279,11 @@ fn buildAuthButtons(_: ?*anyopaque, app: *h.App) !void {
     // Beside an ordinary pill, so the mark's optical size against a
     // Lucide glyph at the same scale is reviewable in one image.
     _ = try tree.append(root, .{ .button = .{ .label = "Add reminder", .icon = .alarm_clock_plus } });
+    // The Google button: the four G arcs are the only colored pixels
+    // any golden carries, and this pair of images (light and dark) is
+    // where a reviewer sees them — white pill with the hairline border
+    // in light, near-black pill in dark, the G identical in both.
+    _ = try tree.append(root, .{ .button = .{ .label = "Sign in with Google", .provider = .google } });
 }
 
 test "golden: sign-in buttons carry the vendor mark in both emphases" {
@@ -696,7 +705,7 @@ test "golden: 2x integer scale is pixel-doubled" {
     var surface = try skia.Surface.init(200, 120, 2);
     defer surface.deinit();
     harness.renderTo(surface.canvas());
-    try expectGolden(std.testing.allocator, surface.pixels(), surface.pixelWidth(), surface.pixelHeight(), "tests/goldens/form-2x.pgm");
+    try expectGolden(std.testing.allocator, surface.pixels(), surface.pixelWidth(), surface.pixelHeight(), "tests/goldens/form-2x.ppm");
 }
 
 fn buildNavScreen(_: ?*anyopaque, app: *h.App) anyerror!void {
@@ -1108,7 +1117,7 @@ test "golden: RTL locale mirrors the chrome; text still aligns by content" {
     try renderGolden(&harness, "persian-rtl-chrome");
 }
 
-test "trace: PixelSink writes a PGM frame per step" {
+test "trace: PixelSink writes a PPM frame per step" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
@@ -1122,8 +1131,8 @@ test "trace: PixelSink writes a PGM frame per step" {
     try harness.pressKey(.tab, .{});
     try harness.typeText("Ada");
 
-    for ([_][]const u8{ "frames/0000-init.pgm", "frames/0001-key-tab.pgm", "frames/0002-type-Ada.pgm" }) |path| {
-        const frame = try golden.readPgm(std.testing.io, tmp.dir, std.testing.allocator, path);
+    for ([_][]const u8{ "frames/0000-init.ppm", "frames/0001-key-tab.ppm", "frames/0002-type-Ada.ppm" }) |path| {
+        const frame = try golden.readPpm(std.testing.io, tmp.dir, std.testing.allocator, path);
         defer frame.deinit(std.testing.allocator);
         try std.testing.expectEqual(@as(usize, 360), frame.w);
         try std.testing.expectEqual(@as(usize, 280), frame.h);

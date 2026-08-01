@@ -1,6 +1,9 @@
 // nokre Skia shim — the complete C surface between nokre and Skia.
-// CPU raster only, gray8, no antialiased geometry (crisp 1px lines),
-// grayscale-antialiased text with fixed hinting. Deterministic per font
+// CPU raster only, RGB with no alpha (kRGB_888x), no antialiased
+// geometry (crisp 1px lines), grayscale-antialiased text with fixed
+// hinting. Every op but hsk_draw_text_rgb paints r=g=b, so the frame
+// stays gray by construction except where the renderer's one sanctioned
+// color caller — the vendor sign-in mark — drew. Deterministic per font
 // binary + Skia build; see docs/internals/pixel-model.md.
 //
 // Text goes through HarfBuzz (deps/harfbuzz, compiled into this shim,
@@ -189,7 +192,7 @@ struct hsk_surface {
     int32_t logical_h;
     int32_t scale;
     int32_t clip_depth;
-    std::unique_ptr<uint8_t[]> readback; // gray8 snapshot for hsk_surface_pixels
+    std::unique_ptr<uint8_t[]> readback; // RGBX snapshot for hsk_surface_pixels
 };
 
 extern "C" {
@@ -240,7 +243,10 @@ int32_t hsk_text_width(int32_t face, int32_t size_px, const uint8_t *utf8, size_
 
 hsk_surface *hsk_surface_create(int32_t w, int32_t h, int32_t scale) {
     if (w <= 0 || h <= 0 || scale < 1) return nullptr;
-    SkImageInfo info = SkImageInfo::Make(w * scale, h * scale, kGray_8_SkColorType,
+    // kRGB_888x, not kRGBA/kBGRA: rgb is unlocked for the shim, alpha is
+    // not — nokre composites nothing, and an alpha channel would be a
+    // blending vocabulary waiting to be used. The x byte is padding.
+    SkImageInfo info = SkImageInfo::Make(w * scale, h * scale, kRGB_888x_SkColorType,
                                          kOpaque_SkAlphaType);
     sk_sp<SkSurface> surface = SkSurfaces::Raster(info);
     if (!surface) return nullptr;
@@ -264,10 +270,10 @@ const uint8_t *hsk_surface_pixels(hsk_surface *s) {
     const int32_t pw = s->logical_w * s->scale;
     const int32_t ph = s->logical_h * s->scale;
     if (!s->readback) {
-        s->readback.reset(new uint8_t[(size_t)pw * (size_t)ph]);
+        s->readback.reset(new uint8_t[(size_t)pw * (size_t)ph * 4]);
     }
-    SkImageInfo info = SkImageInfo::Make(pw, ph, kGray_8_SkColorType, kOpaque_SkAlphaType);
-    s->surface->readPixels(info, s->readback.get(), (size_t)pw, 0, 0);
+    SkImageInfo info = SkImageInfo::Make(pw, ph, kRGB_888x_SkColorType, kOpaque_SkAlphaType);
+    s->surface->readPixels(info, s->readback.get(), (size_t)pw * 4, 0, 0);
     return s->readback.get();
 }
 
@@ -329,8 +335,11 @@ void hsk_line(hsk_surface *s, int32_t x0, int32_t y0, int32_t x1, int32_t y1,
     }
 }
 
-void hsk_draw_text(hsk_surface *s, int32_t face, int32_t size_px, int32_t x,
-                   int32_t baseline, const uint8_t *utf8, size_t len, uint8_t gray) {
+// Shared by the gray and rgb text entry points: shaping, positioning
+// and rasterization are identical — the two may only ever differ in
+// paint color, or the mark's arcs would not land on the gray text grid.
+static void drawTextColor(hsk_surface *s, int32_t face, int32_t size_px, int32_t x,
+                          int32_t baseline, const uint8_t *utf8, size_t len, SkColor color) {
     if (len == 0) return;
     bool rtl = false;
     const int32_t resolved = resolveFace(face, utf8, len, &rtl);
@@ -354,9 +363,20 @@ void hsk_draw_text(hsk_surface *s, int32_t face, int32_t size_px, int32_t x,
     SkFont font = makeFont(resolved, size_px);
     SkPaint paint;
     paint.setAntiAlias(true);
-    paint.setColor(SkColorSetARGB(0xFF, gray, gray, gray));
+    paint.setColor(color);
     s->surface->getCanvas()->drawGlyphs((int)n, ids.data(), points.data(),
                                         SkPoint::Make(0, 0), font, paint);
+}
+
+void hsk_draw_text(hsk_surface *s, int32_t face, int32_t size_px, int32_t x,
+                   int32_t baseline, const uint8_t *utf8, size_t len, uint8_t gray) {
+    drawTextColor(s, face, size_px, x, baseline, utf8, len, SkColorSetARGB(0xFF, gray, gray, gray));
+}
+
+void hsk_draw_text_rgb(hsk_surface *s, int32_t face, int32_t size_px, int32_t x,
+                       int32_t baseline, const uint8_t *utf8, size_t len,
+                       uint8_t r, uint8_t g, uint8_t b) {
+    drawTextColor(s, face, size_px, x, baseline, utf8, len, SkColorSetARGB(0xFF, r, g, b));
 }
 
 void hsk_clip_push(hsk_surface *s, int32_t x, int32_t y, int32_t w, int32_t h) {

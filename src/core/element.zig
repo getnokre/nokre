@@ -231,22 +231,33 @@ pub const Stack = struct {
 /// these buttons is the vendor's to specify, so `provider` is the whole
 /// API and there is nothing else to configure.
 ///
-/// Google is deliberately absent, permanently. Its guidelines require
-/// the official multicolour G, and a gray one is not a sanctioned
-/// variant — so a `.google` arm here could only render a button that
-/// violates them, which is worse than not offering it. Drawing it
-/// compliantly means colour in the frame, which is the grayscale
-/// guarantee itself; the cost is recorded in docs/internals/oauth.md and
-/// the answer there is no, not later.
+/// Google's arm is the one place color exists in nokre, and it is the
+/// renderer's, not this element's. Its guidelines require the official
+/// multicolour G — a gray one is not a sanctioned variant — and drawing
+/// it was long refused for exactly that reason. The refusal was
+/// reversed as a deliberate owner decision (2026-08, recorded in
+/// docs/internals/oauth.md): rgb is unlocked for the *infrastructure* —
+/// the canvas, the shim, the frame — and for this trademark alone. No
+/// element carries a color, no consumer call accepts one, and this enum
+/// stays the whole API; an app still cannot put a colored pixel on
+/// screen. The no-color guarantee an app can rely on is unchanged —
+/// what changed is that the framework itself now draws one vendor's
+/// artwork in the vendor's colors.
 pub const AuthProvider = enum {
     apple,
+    google,
 
     /// The mark, as a codepoint in the brand face
     /// (src/assets/fonts/LICENSE-Brand.txt). Trademarked artwork, drawn
-    /// from exactly one place in the renderer.
+    /// from exactly one place in the renderer. Google's G is four
+    /// glyphs on one shared advance (one per colored arc — the color
+    /// itself lives in the renderer, never here); this returns the
+    /// first, which is also what layout measures, and the renderer
+    /// overlays all four at the origin this one is placed at.
     pub fn mark(self: AuthProvider) []const u8 {
         return switch (self) {
             .apple => "\u{e900}",
+            .google => "\u{e901}",
         };
     }
 };
@@ -337,11 +348,16 @@ pub const Button = struct {
     /// (Apple's ship with the button assets, alongside the mark).
     ///
     /// The emphasis pair maps onto the sanctioned styles rather than
-    /// adding new ones: the filled default is Apple's solid button
-    /// (black on light, and automatically white on dark, since `.ink`
-    /// and `.paper` flip with the appearance), and `secondary` is the
-    /// outlined one. All three of Apple's sanctioned styles fall out of
-    /// the palette nokre already has, which is why this needs no colour.
+    /// adding new ones: for Apple the filled default is the solid
+    /// button (black on light, and automatically white on dark, since
+    /// the true endpoints flip with the appearance), and `secondary` is
+    /// the outlined one — all three of Apple's sanctioned styles fall
+    /// out of the palette nokre already has. Google sanctions *themes*
+    /// (a light button and a dark one), not emphases: the appearance
+    /// picks the theme, and `secondary` is rejected at append because
+    /// there is no outlined Google button to map it to. The G on that
+    /// button is the one colored thing nokre ever draws — the
+    /// renderer's doing, not a field here; see `AuthProvider`.
     ///
     /// Rejected at append alongside `icon` or `icon_only`: the mark
     /// occupies the icon slot, and a glyph-only sign-in button is not a
@@ -1405,6 +1421,9 @@ test "a provider button carries the vendor mark and the app's own words" {
     const localized: Element = .{ .button = .{ .label = "Mit Apple anmelden", .provider = .apple } };
     try std.testing.expectEqualStrings("Mit Apple anmelden", localized.label());
     try std.testing.expectEqualStrings("\u{e900}", AuthProvider.apple.mark());
+    // Google's mark answers with the first of its four arc glyphs —
+    // the one layout measures; the colors live in the renderer.
+    try std.testing.expectEqualStrings("\u{e901}", AuthProvider.google.mark());
 
     // Emphasis maps onto the vendor's sanctioned styles rather than
     // adding any: filled paints its own ground, outlined draws ink on
