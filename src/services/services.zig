@@ -16,6 +16,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const clipboard = @import("clipboard/clipboard.zig");
+const clock = @import("clock/clock.zig");
 const deep_link = @import("deep_link/deep_link.zig");
 const haptic = @import("haptic/haptic.zig");
 const http = @import("http/http.zig");
@@ -87,6 +88,15 @@ pub const Services = struct {
     /// platform without one — the Linux desktop — answers `available`
     /// false at runtime rather than deriving anything.
     share: share.Service = .{},
+    /// Packaging footprint: nothing, anywhere — stated rather than
+    /// implied. Reading the wall clock is a call every platform hands
+    /// out unasked: no manifest entry, no permission (Android's
+    /// SET_TIME is for *writing* it, which nokre never does), no
+    /// entitlement, and `Date.now()` needs neither a secure context nor
+    /// an origin trial. The odd one out of the roster in a second way:
+    /// no shell answers it either — the OS call is Zig's own, so this
+    /// is the only service with no C header at all.
+    clock: clock.Service = .{},
 
     /// The bare-test one-liner: every service as its default mock.
     /// Test builds only — in a release build the same `.{}` silently
@@ -125,6 +135,8 @@ pub const Services = struct {
         // `*App` in hand (docs/internals/iap.md).
         try self.iap.init(gpa, runtime);
         errdefer self.iap.deinit();
+        try self.clock.init(gpa);
+        errdefer self.clock.deinit();
         // Last, and deliberately: locale's init is the only one that
         // calls out to the shell and gets a value back before it
         // returns (the boot tag), so it runs with every other service
@@ -142,6 +154,7 @@ pub const Services = struct {
         self.oauth.deinit();
         self.share.deinit();
         self.iap.deinit();
+        self.clock.deinit();
         self.locale.deinit();
     }
 };

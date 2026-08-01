@@ -19,7 +19,10 @@ in review, not aspirational.
   check in [color.zig](../../src/core/color.zig) — deterministic
   IEEE-754, a construction-time gate that never positions a pixel. No
   clocks, no randomness — anything nondeterministic breaks the
-  [pixel model](pixel-model.md).
+  [pixel model](pixel-model.md). Both carve-outs live in services and
+  nowhere else (`oauth`'s CSPRNG, `clock`'s wall time), for the reason
+  stated at each: a service is not core, and neither one may be reached
+  from `src/core` or `src/render`.
 
 ## Adding an element
 

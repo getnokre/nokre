@@ -54,6 +54,10 @@ async function boot(msg) {
       nokre_oauth_js_random: (ptr, len) => {
         crypto.getRandomValues(memory().subarray(ptr, ptr + len));
       },
+      // The clock (docs/services.md), for pkce's reason again: an actor
+      // is the app's code, so it may stamp what it computes, and a
+      // Worker's `Date.now()` is the page's.
+      nokre_clock_js_now: () => Date.now(),
     };
     const source = await WebAssembly.instantiateStreaming(fetch(msg.wasm), { env: hooks });
     nk = source.instance.exports;

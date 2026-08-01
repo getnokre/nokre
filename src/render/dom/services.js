@@ -42,6 +42,14 @@ export function silentHooks() {
     // memory, which only the instance has. This no-op exists because a
     // missing import is an instantiation failure.
     nokre_oauth_js_random: () => {},
+    // Overridden by *both* instances for the same reason, and with the
+    // same real implementation: `Date.now()` exists in a Worker exactly
+    // as it does on the page, and a compute actor running the app's
+    // code may stamp a reply. A clock that answered the epoch would be
+    // a plausible-looking lie, which is what the service refuses
+    // (docs/services.md); this no-op exists because a missing import is
+    // an instantiation failure.
+    nokre_clock_js_now: () => 0,
     nokre_ss_mirror_set: () => {},
     nokre_ss_mirror_del: () => {},
     // A compute instance lays nothing out, so it never asks.
@@ -474,6 +482,13 @@ export function appHooks({ nk, memory, workerUrl, wasmUrl, onWork, onMetrics }) 
     nokre_oauth_js_random: (ptr, len) => {
       crypto.getRandomValues(memory().subarray(ptr, ptr + len));
     },
+
+    // ---- clock (docs/services.md) ----
+    // The whole web leg: no scratch buffer, no seed, no doorway — a
+    // number in, nothing out. A double rather than a wasm i64, which
+    // would cross as a BigInt: `Date.now()` is already integral
+    // milliseconds and exact to well past any date a person will type.
+    nokre_clock_js_now: () => Date.now(),
 
     // ---- secure_store's write-through mirror ----
     // The wasm table already holds the truth the app reads back; this

@@ -146,6 +146,17 @@ deep_link and routes on the fragment sees it twice — routing.md says to
 route on one or the other. The export exists only when the app linked
 the service, so a page that never claims a deep link pays nothing.
 
+One service on the roster deliberately asks the shells for *nothing*:
+`clock`. Wall time is a call every OS exposes to the process directly —
+`clock_gettime` on the POSIX family, `GetSystemTimePreciseAsFileTime` on
+Windows, `Date.now()` through services.js on the web — so it has no
+header and no shell hook, and a new shell owes it no line. It is
+recorded here only so the omission reads as a decision rather than a
+gap: a shell that grew a `nokre_clock_*` export would be answering a
+question the process can already answer, which is the redirection this
+document's last paragraph makes in the other direction
+([../services.md](../services.md)).
+
 locale's `nokre_locale_install`
 ([src/services/locale/locale.h](../../src/services/locale/locale.h)) is
 the second inbound hook, and the one a new shell cannot skip: it links

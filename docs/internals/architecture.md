@@ -79,6 +79,7 @@ nokre is a strict layer cake. Each layer knows only the layer below it.
 | [src/services/iap/iap.zig](../../src/services/iap/iap.zig) | the platform stores: catalog, payment sheet, purchase stream, finish, restore — and `available` where there is no store ([iap.md](iap.md)) |
 | [src/services/open_url/open_url.zig](../../src/services/open_url/open_url.zig) | one verb: hand a URL to the system browser, behind a closed scheme allowlist; external link activation lands here ([services.md](../services.md)) |
 | [src/services/share/share.zig](../../src/services/share/share.zig) | one verb: put the OS share sheet up with UTF-8 text on it — and `available` where there is no sheet ([services.md](../services.md)) |
+| [src/services/clock/clock.zig](../../src/services/clock/clock.zig) | one verb: the wall clock in milliseconds since the Unix epoch, UTC — the OS call direct, no shell hook; core and the renderers never call it ([services.md](../services.md)) |
 | [shim/nokre_skia.cpp](../../shim/nokre_skia.cpp) | the entire C surface over Skia |
 
 ## Data flow

@@ -262,7 +262,7 @@ app.tree.get(state.save_id).?.button.in_progress = true;
 app.tree.get(state.save_id).?.button.in_progress = false;
 ```
 
-Nothing clears it for you. nokre has no clock and no notion of what
+Nothing clears it for you. nokre runs no timer and has no notion of what
 your work is, so the state is yours to end — as ordinary a field as the
 label beside it. Clear it on **every** path that ends the work, not just
 the one that succeeds: a button cleared only by the success reply sits

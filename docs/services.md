@@ -49,6 +49,7 @@ internals doc.
 | `haptic` | The back gesture's threshold knock. **Framework-internal: no app can call it.** | **Working** — iOS only, the one platform that runs a threshold of nokre's own ([internals/haptics.md](internals/haptics.md)) |
 | `open_url` | One verb: hand a URL (https/http/mailto — a closed set) to the system browser. Fire-and-forget. | **Working** — every shell and the web; nothing links |
 | `share` | One verb: put the OS share sheet up with UTF-8 text on it; the user picks the destination. Fire-and-forget. | **Working** — four native sheets and the web's `navigator.share`; no sheet on the Linux desktop, and `available` says so |
+| `clock` | One verb: the wall clock, in milliseconds since the Unix epoch, UTC. Read on demand. | **Working** — every target; nothing links, and no shell is involved |
 
 `haptic` is on this list for completeness, not for use: it is a
 `Services` field because everything platform-flavored is injected and
@@ -961,10 +962,12 @@ Where the service stops is `oauth`'s line. No receipt verification — the
 `token` goes to the app's backend, which calls the App Store Server API or
 the Play Developer API; verifying on the device is verifying with the
 attacker's copy of the key. No entitlement or expiry model — `isActive`,
-renewal windows, and grace periods need a clock, and a timer is a ticker,
-which nokre has none of; `restore` reports what the store says is owned
-right now, with no dates and no arithmetic. No catalog, no price cache, no
-paywall layout, no route table.
+renewal windows, and grace periods are a policy with a schedule behind
+it, and a schedule is a timer, which is a ticker nokre has none of (the
+`clock` service reports the time; nothing in nokre runs one); `restore`
+reports what the store says is owned right now, with no dates and no
+arithmetic. No catalog, no price cache, no paywall layout, no route
+table.
 
 In tests the mock is one app's fake store: seed a catalog and queries
 answer themselves with fixed price strings, so a paywall renders
@@ -1107,6 +1110,88 @@ In tests the mock journals every text put on the sheet, in order:
 `app.services.share.shares()`, or the harness's `sharesShown()` — and a
 refused share journals nothing, because the OS was never asked. Boot a
 sheetless target with `.share = .mock(.{ .available = false })`
+([testing.md](testing.md)).
+
+### clock: the time, and nothing that ticks
+
+`clock.now(app)` answers the wall clock in milliseconds since the Unix
+epoch, UTC. One verb, one integer, no error, no allocation, and nothing
+to settle:
+
+```zig
+// In an action — a tap, a reply handler — not inside `build`.
+state.saved_at = nokre.services.clock.now(app);
+```
+
+Reading the time is the whole service. What the number *means* is the
+app's: a "saved at" stamp, an age to compare a token's expiry against, a
+created date to sort by. nokre does no arithmetic on it and draws none
+of it.
+
+**Core stays clockless, and that is why this is a service rather than a
+utility.** A frame is a function of state, so a screen that changed
+because time passed changed for a reason no golden can hold still and no
+test can reproduce — which is exactly what the refusals that name a
+clock are protecting: no animation, no fading scrollbar, no
+self-clearing copy mark, no velocity on the back gesture
+([introduction.md](introduction.md)). Nothing in nokre's core or its
+renderers calls this, ever. It is `oauth`'s randomness carve-out
+restated — a service is not core — and it costs the pixel model nothing,
+because a timestamp an app read is app state, and the frame that renders
+it is a frame that renders state like every other.
+
+**Read it in the action; keep what you read.** Nothing stops a `build`
+from calling this — a value with no error has no honest failure to
+raise — but a screen built from the clock is a screen that differs on
+every frame: its golden cannot hold still and two runs of the same test
+disagree. Read the clock where the event happens, put the result in your
+own state, and let `build` render state.
+
+**Milliseconds, UTC, an integer.** Milliseconds is the resolution
+people's events happen at, and an i64 of them spans ±292 million years
+where an i64 of nanoseconds runs out in 2262 and buys precision no app
+that draws text can spend. UTC because a time zone is not a fact about
+the instant: converting to local time means the platform's zone database
+and date formatter, which is the locale library
+[localization.md](localization.md) refuses for producing different bytes
+on different OS versions. The same instant is the same number on all six
+platforms; a human-readable date is the app's to write, as the same doc
+already asks for decimals and dates in messages.
+
+**It can go backwards, and there is no monotonic twin.** An NTP
+correction, a user setting the date, a laptop waking up somewhere else —
+wall time moves in both directions, so an app that subtracts two stamps
+must survive a negative difference. nokre offers no monotonic clock to
+hide behind because there is nothing here to time: no animation, no
+ticker, no frame budget an app can observe, and a second clock would be
+a second thing to explain for a duration nobody is drawing.
+
+**No timers and no scheduling.** "Call me in 30 seconds" is a ticker,
+and a nokre app at rest costs zero CPU
+([internals/architecture.md](internals/architecture.md)). Expiry
+policies, refresh windows, and retry backoff are the app's, computed
+from stamps it took — the line `oauth` and `iap` already draw, unmoved
+by this service existing.
+
+**Nothing links, and no shell is involved** — clipboard's posture,
+without even clipboard's C hook. There is no header, no build flag, no
+permission and no entitlement anywhere: the call is Zig's own on every
+native family (`clock_gettime(CLOCK_REALTIME)` on macOS, iOS, Android
+and Linux; `GetSystemTimePreciseAsFileTime` on Windows — the precise
+form, because the plain one is quantized to the ~15.6 ms scheduler tick
+and would make two stamps either side of real work read as one instant).
+**On the web** it is `Date.now()` through services.js, implemented by
+both instances the driver runs, so a compute worker can stamp what it
+computes. And unlike `share` there is no `available` to ask: a platform
+without a clock is not one of the six.
+
+In tests the mock is one app's fake clock, and under `zig test` it is
+the *only* clock on every platform — the machine's real time is
+unreachable, so a screen that stamps an instant goldens byte-for-byte.
+Boot it at an instant with `.clock = .{ .millis = … }` (the default is a
+fixed, obviously fake one), move it with `advanceClock(ms)` — signed,
+because a device really does correct backwards — and assert that a
+screen never asked at all with `clockReads()`
 ([testing.md](testing.md)).
 
 ## Not services

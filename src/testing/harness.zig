@@ -21,6 +21,7 @@ const renderer = @import("../render/renderer.zig");
 const canvas_mod = @import("../render/canvas.zig");
 const semantics = @import("../a11y/semantics.zig");
 const workers = @import("../workers/workers.zig");
+const clock = @import("../services/clock/clock.zig");
 const haptic = @import("../services/haptic/haptic.zig");
 const http = @import("../services/http/http.zig");
 const secure_store = @import("../services/secure_store/secure_store.zig");
@@ -63,6 +64,7 @@ pub const InitOptions = struct {
     initial_route: []const u8 = "", // required when routes given
     store: secure_store.Mock.Config = .{},
     locale: locale.Mock.Config = .{}, // the device tag at boot; "" is "the platform said nothing"
+    clock: clock.Mock.Config = .{}, // the wall clock at boot; the default is a fixed, obviously fake instant
     oauth: oauth.Mock.Config = .{}, // the PKCE seeds, and optionally what the browser does
     iap: iap.Mock.Config = .{}, // the store's shelf, and whether there is a store at all
     share: share.Mock.Config = .{}, // whether this boot has a share sheet at all
@@ -94,6 +96,7 @@ pub const Harness = struct {
                 .services = .{
                     .secure_store = .mock(opts.store),
                     .locale = .mock(opts.locale),
+                    .clock = .mock(opts.clock),
                     .oauth = .mock(opts.oauth),
                     .iap = .mock(opts.iap),
                     .share = .mock(opts.share),
@@ -476,6 +479,38 @@ pub const Harness = struct {
     /// one" stay distinguishable.
     pub fn localesSeen(self: *const Harness) []const []u8 {
         return self.app.services.locale.seen();
+    }
+
+    // ---- the wall clock ----
+    // Boot state like the locale's tag: `InitOptions.clock` seeds the
+    // instant inside App.init, so the first action already reads it.
+    // Nothing here settles and nothing is delivered — a clock has no
+    // handler to route to and nokre has no ticker that could move it —
+    // so time passes only where a test says it does.
+
+    /// Move the wall clock under the running app: `clock.now(app)`
+    /// answers `ms` later from here on. Signed, because wall time is
+    /// not monotonic — a negative delta is the NTP correction a device
+    /// really does perform, and an app that subtracts two stamps has to
+    /// survive it. Nothing on the app's side runs; the trace step is
+    /// there so a trace shows *when* time moved, which is otherwise the
+    /// one thing about a run that leaves no mark.
+    pub fn advanceClock(self: *Harness, ms: i64) !void {
+        self.app.services.clock.advance(ms);
+        try self.afterStep("clock {d}ms", .{ms});
+    }
+
+    /// What `clock.now(&app)` answers right now.
+    pub fn clockNow(self: *const Harness) i64 {
+        return self.app.services.clock.now();
+    }
+
+    /// How many times the app has asked the time — a count, not a
+    /// journal, since a stopped clock answers every read identically.
+    /// Zero is assertable and is the point: "this screen is clockless"
+    /// is the app-side spelling of what core promises.
+    pub fn clockReads(self: *const Harness) usize {
+        return self.app.services.clock.reads();
     }
 
     // ---- sign-in (docs/services.md) ----

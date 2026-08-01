@@ -326,6 +326,52 @@ locale-dependent screen stays byte-deterministic in a golden test. A
 *running* app is a different matter, which is why nokre's own
 examples carry their locale in state instead of asking the device.
 
+## The wall clock
+
+`clock` is boot state like the locale, and it is the only clock a test
+can reach: under `zig test` the machine's real time is unreachable on
+every platform, so a screen that stamps an instant renders identically
+every run and goldens byte-for-byte. Time moves where the test moves it
+and nowhere else — there is no ticker to move it behind your back.
+
+```zig
+var t = try nok.testing.Harness.initWith(gpa, .{ .w = 320, .h = 480 }, .{
+    .ctx = &state,
+    .build = State.build,
+    // The device's clock at boot; the default is a fixed, fake instant.
+    .clock = .{ .millis = 1_700_000_000_000 },
+});
+
+// "This screen is clockless" — assertable, and true of most of them.
+try std.testing.expectEqual(@as(usize, 0), t.clockReads());
+
+try t.tapLabel("Save");      // the action reads it, and keeps what it read
+_ = try t.getByLabel("Saved at 1700000000000");
+
+try t.advanceClock(std.time.ms_per_hour);   // an hour passes, because we said
+_ = try t.getByLabel("Saved at 1700000000000");  // nothing ran; nothing moved
+try t.tapLabel("Save");
+_ = try t.getByLabel("Saved at 1700003600000");
+```
+
+`advanceClock` takes a **signed** delta, because wall time is not
+monotonic: an NTP correction moves a real device backwards, and an app
+that subtracts two stamps has to survive a negative difference — this is
+the verb that produces one, and the reason there is no monotonic clock
+to hide behind ([services.md](services.md)). Nothing on the app's side
+runs when it is called: a clock has no handler to route to, so the new
+time is simply what the next `now` answers. It still traces and
+re-audits like any driver action, so a trace shows *when* time moved.
+
+`clockNow()` is what `clock.now(&app)` would answer, and `clockReads()`
+is how many times the app has asked — a count, not a journal, since a
+stopped clock answers every read identically. Zero is the interesting
+value: "this build never read the clock" is the app-side spelling of
+what core promises about itself, and looking through the harness does
+not disturb it. A bare test constructs the same fake directly:
+`.services = .{ .clock = .mock(.{ .millis = 1_700_000_000_000 }) }`,
+with `app.services.clock.advance(ms)` as the untraced verb.
+
 ## Sign-in
 
 `oauth` parks like `http` and settles like it: `start` leaves from an

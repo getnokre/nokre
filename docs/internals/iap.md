@@ -112,7 +112,9 @@ the product type it already knows; Play does not.
   framework would mean a JWKS fetch with a cache policy and a clock — the
   argument that already excluded JWT verification from `oauth`.
 - **No entitlement or expiry model.** `isActive`, renewal windows, grace periods,
-  and billing retry all need a clock, and nokre has none: a timer is a ticker.
+  and billing retry are all schedules, and a schedule is a timer, which is a
+  ticker nokre has none of — the `clock` service reads the time, it does not
+  keep one.
   The app asks its backend what the user owns. `restore` reports what the store
   says is owned *right now* — a list, no dates, no arithmetic.
 - **No catalog and no price cache.** The ids are the app's, the store owns the

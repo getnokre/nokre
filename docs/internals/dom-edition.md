@@ -197,7 +197,12 @@ redirect, secure_store snapshot) and delivers the boot-time and
 degenerate case that needs no doorway and no seed: both directions are
 plain imports — the `nokre_share_available` probe App.init calls (a
 bool needs no scratch buffer) and the fire-and-forget
-`nokre_share_show` — so services.js is its entire web leg.
+`nokre_share_show` — so services.js is its entire web leg. clock is
+that case reduced once more: one import, `nokre_clock_js_now`, wired to
+`Date.now()` in *both* instances for pkce's reason (an actor runs the
+app's code, so it may stamp what it computes), and named by nothing
+unless an app asks the time — so a module that never reads a clock has
+no clock in its import table at all.
 
 Two rules the glue keeps, because both are silent corruption if broken:
 a pointer handed across is borrowed for the call and anything outliving
