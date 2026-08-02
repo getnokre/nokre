@@ -104,6 +104,18 @@ The authoring rules that keep the shell/service split honest:
   own build file, and the shell unchanged.
 - **Native side holds no state.** Same as shells: callbacks carry a
   `ctx`, Zig owns everything.
+- **A service may name the shell; the shell may never name the service.**
+  A shell links into every app and an optional service's native leg links
+  into some, so a shell that calls a service's C function is a link error
+  in every app that does not link that service — which is most of them,
+  and which no compile-only check can see. Where the OS hands something
+  to the shell that only a service can interpret, the shell defines the
+  entry and the service installs itself into it: a function pointer
+  (notification's Apple push-token sink) or a dispatch the service
+  implements (`nokre_notification_dispatch`, `nokre_oauth_dispatch` on
+  Android). `__attribute__((weak_import))` is not a substitute — zig's
+  MachO linker rejects an undefined weak symbol no input defines, so the
+  null check such a shell writes is never reached.
 - **Callbacks arrive on the main thread**, interleaved with shell events.
   A service that does async work (OAuth, IAP) delivers results as
   callbacks, never blocks.
@@ -182,7 +194,33 @@ way. The shell's complete job description is in
   `zig build test -Dskia -Dgolden`.
 - `zig build check-targets` compile-checks six targets: macOS, iOS,
   Windows, Linux, Android (`aarch64-linux-android`), and
-  `wasm32-freestanding`.
+  `wasm32-freestanding` — and *links* the last of them. Compiling is not
+  linking: an object never resolves a symbol, so a declaration with no
+  definition passes this step silently, which is how an Apple shell
+  naming a symbol only the notification service defines reached a
+  consumer's build. The web is the one target a link can be attempted on
+  from any host (no Skia, no AccessKit, no SDK, no C shell), so it is
+  linked here with every service it has a leg for. The other five are
+  covered by the desktop link below.
+- **A real parse of the shipped JavaScript**, in `zig build test`. Four
+  files in [src/render/dom](../../src/render/dom) ride into every
+  consumer's site verbatim and a fifth (`boot.js`) is emitted by
+  [packaging.zig](../../src/packaging/packaging.zig); Zig only copies
+  them, so the first thing that reads them is a browser, and a browser
+  answers a syntax error by refusing to boot the app at all. Each is
+  parsed by node in the goal it is loaded with — module for the three
+  the driver imports, classic script for `sw.js`. Two notes, both
+  load-bearing: `node --check` on a bare `.js` exits *zero* on a file
+  that parses as neither CommonJS nor ESM, so the check copies each file
+  under `.mjs`/`.cjs` first; and node missing from PATH **fails** the
+  build rather than skipping, because a gate that stands aside quietly
+  reports a green nobody can interpret. `-Djs-parse=false` is the way to
+  decline it out loud.
+- **The desktop link**, in `zig build test -Dskia`: the examples are
+  built, not just installed. hello links the services that need an
+  identity and the kitchen sink links none at all — the shape every app
+  starts in, and the shape an undefined symbol in an always-linked shell
+  breaks first.
 
 Goldens are byte-exact and must stay byte-identical unless a change is
 intentionally visual — then regenerate, eyeball the image, and commit it

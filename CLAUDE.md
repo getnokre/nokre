@@ -19,7 +19,13 @@ fact has one home; complement, never duplicate. Start with
 
 ## Commands
 
-- `zig build test` — pure unit tests, no dependencies
+- `zig build test` — pure unit tests, plus a real parse of the five
+  JavaScript files that ship into a web build (the one thing here no Zig
+  test can read). That parse is the build's only external tool: it wants
+  `node` on PATH and **fails without it** rather than passing a check it
+  did not run — `-Djs-parse=false` is how you say you meant to skip it.
+  With `-Dskia` it also links the examples, which is the desktop link
+  `check-targets` cannot do
 - `zig build test -Dskia -Dgolden` — golden screenshot tests, byte-exact
   (run `tools/fetch-deps.sh` once first; add `-Dupdate-goldens` to
   create missing goldens or regenerate after an intentional visual
@@ -44,7 +50,8 @@ fact has one home; complement, never duplicate. Start with
   Skia, no emscripten (`docs/internals/dom-edition.md`)
 - `zig build pkg` — generate the platform packaging manifests into
   `zig-out/pkg` (the Android example's Gradle runs it per configuration)
-- `zig build check-targets` — compile-check all platform stubs
+- `zig build check-targets` — compile-check all platform stubs, and
+  *link* the one of the six that needs no prebuilt or SDK (the web)
 
 ## Conventions
 

@@ -890,6 +890,7 @@ pub fn build(b: *std.Build) void {
     const enable_golden = b.option(bool, "golden", "Run golden screenshot tests (requires -Dskia)") orelse false;
     const update_goldens = b.option(bool, "update-goldens", "Create missing goldens and rewrite mismatched ones in place (requires -Dgolden)") orelse false;
     const port = b.option(u16, "port", "The port `zig build serve` serves the web build on") orelse 8000;
+    const js_parse = b.option(bool, "js-parse", "Parse the shipped JavaScript with node during `zig build test` (default true; false ships it unparsed)") orelse true;
 
     // The Windows Skia prebuilt is MSVC-ABI (clang-cl), so -Dskia builds
     // must be too; defaulting the ABI here keeps `zig build run-… -Dskia`
@@ -1038,6 +1039,9 @@ pub fn build(b: *std.Build) void {
     }) });
     test_step.dependOn(&b.addRunArtifact(serve_tests).step);
 
+    // The other half of the web edition, which no Zig test can reach.
+    addJsParseCheck(b, test_step, js_parse);
+
     if (update_goldens and !enable_golden) {
         const fail = b.addFail("-Dupdate-goldens requires -Dgolden: `zig build test -Dskia -Dgolden -Dupdate-goldens`");
         test_step.dependOn(&fail.step);
@@ -1098,6 +1102,34 @@ pub fn build(b: *std.Build) void {
             .notification = true,
             .notification_push = true,
         });
+    }
+
+    // The one target of the six that can be *linked* from any host, and
+    // therefore the only place this step can ask the question objects
+    // cannot answer: does every symbol the linked services name have a
+    // definition? The other five need a prebuilt, an SDK, or a shell
+    // whose system headers exist on one OS — so they stay compile-only,
+    // and the desktop link that covers them is the examples hanging off
+    // `test -Dskia`. The web needs none of that: no Skia, no AccessKit,
+    // no libc, no C shell — services.js and this module are the whole
+    // edition. Every service the web has a leg for is on, so a web half
+    // that is declared and never defined fails here rather than in a
+    // consumer's `zig build -Dweb`. iap is absent on the web by contract
+    // (docs/services.md) and stays off.
+    {
+        const app = addAppTo(b, .{
+            .name = "nokre-check-web",
+            .root_source_file = b.path("examples/kitchen_sink/main.zig"),
+            .target = webTarget(b),
+            .optimize = optimize,
+            .pkg = check_decl,
+            .secure_store = true,
+            .deep_link_domains = &.{"nokre.dev"},
+            .oauth_schemes = &.{"dev.nokre.check"},
+            .notification = true,
+            .notification_push = true,
+        });
+        check_step.dependOn(&app.artifact.step);
     }
 
     // ---- Web: the kitchen sink as a servable site. ----
@@ -1210,6 +1242,19 @@ pub fn build(b: *std.Build) void {
             .notification = ex.pkg != null,
         });
         b.installArtifact(app.artifact);
+        // The link `check-targets` cannot do. That step compiles objects
+        // and never links, so a declaration with no definition is
+        // invisible to it — which is exactly how a shell naming a symbol
+        // that only an optional service defines reached a consumer's
+        // build. These two artifacts are the two ends of the service
+        // spectrum on the one target this machine can actually link: the
+        // kitchen sink at zero linked services, which is the shape every
+        // app starts in and the shape that broke, and hello with the
+        // ones that need an identity. Hanging them on `test` costs
+        // nothing — `-Dskia` already builds both for the install step —
+        // and makes `zig build test -Dskia -Dgolden` the gate that
+        // would have caught it.
+        test_step.dependOn(&app.artifact.step);
         // On macOS the run step drives the binary inside an assembled
         // bundle: without one there is no bundle identifier, and a
         // notification cannot be posted at all (addMacosBundle).
@@ -1508,6 +1553,88 @@ fn configureNokre(b: *std.Build, mod: *std.Build.Module, pkg: ?PackageDecl, serv
         }
     }
     configureServices(b, mod, pkg, services);
+}
+
+/// Every JavaScript file that reaches a browser, and the goal each one is
+/// loaded with. The four in `src/render/dom` are copied verbatim into
+/// every consumer's site by `addWebSite`; `boot.js` is emitted by
+/// packaging.zig into the generated page's directory, and the testdata
+/// copy checked here is the byte-exact golden of that emitter
+/// (packaging_test.zig's "web boot.js is byte-exact"), so parsing it
+/// parses what ships.
+///
+/// The goal is not decoration. live.js, live-worker.js and services.js
+/// are ES modules — the driver imports them and the compute actor is a
+/// `{ type: "module" }` Worker — while sw.js is a classic script,
+/// because `navigator.serviceWorker.register` is called without that
+/// option. A module is strict-mode and a classic script is not, so
+/// checking one as the other would be checking a file no browser loads.
+const js_shipped = [_]struct {
+    path: []const u8,
+    /// The extension the check copies the file under, which is the only
+    /// way to tell node the goal reliably: `node --check` on a bare
+    /// `.js` runs its CommonJS-then-ESM detection and *exits zero on a
+    /// file that parses as neither* — it reported the unterminated block
+    /// in live.js as success. `.mjs` and `.cjs` take the detection out
+    /// of the loop, and the copy keeps the original name in front of the
+    /// extension so the error names the file a reader can open.
+    ext: []const u8,
+}{
+    .{ .path = "src/render/dom/live.js", .ext = ".mjs" },
+    .{ .path = "src/render/dom/live-worker.js", .ext = ".mjs" },
+    .{ .path = "src/render/dom/services.js", .ext = ".mjs" },
+    .{ .path = "src/render/dom/sw.js", .ext = ".cjs" },
+    .{ .path = "src/packaging/testdata/boot.js", .ext = ".mjs" },
+};
+
+/// Parse the shipped JavaScript, as part of `zig build test`.
+///
+/// nokre's own tests are Zig, and Zig cannot see a syntax error in a file
+/// it only copies: the four driver files and the emitted boot script ride
+/// into every web build untouched, and the first thing that reads them is
+/// a browser, which answers a bad one by refusing to boot the app at all.
+/// That is a whole edition dark, and until this step nothing between the
+/// edit and the browser looked.
+///
+/// A real parse, by the engine that will run them — a brace count would
+/// have caught the case that prompted this and nothing subtler. node is
+/// not a nokre dependency and never becomes one: nothing here links it,
+/// ships it, or reads it at runtime, and it is asked one question per
+/// file through the interface every JavaScript engine has.
+///
+/// **When node is absent this step fails.** A gate that quietly stands
+/// aside on the machine where the tool is missing is worse than no gate,
+/// because the build still reports green and the reader has no way to
+/// know which green they got. So the two honest outcomes are the only
+/// two available: the files were parsed, or someone said in the command
+/// line that they would not be.
+fn addJsParseCheck(b: *std.Build, step: *std.Build.Step, enabled: bool) void {
+    if (!enabled) return;
+    const node = b.findProgram(&.{"node"}, &.{}) catch {
+        step.dependOn(&b.addFail(
+            "the JavaScript that ships in every web build went unparsed: `node` is not on PATH. " ++
+                "live.js, live-worker.js, services.js, sw.js and the generated boot.js are copied " ++
+                "into a consumer's site verbatim, no Zig test reads them, and a browser answers a " ++
+                "syntax error in any of them by refusing to boot the app — so this build fails " ++
+                "rather than reporting a green it did not earn. Install node, or pass " ++
+                "-Djs-parse=false to say that this run ships them unparsed.",
+        ).step);
+        return;
+    };
+    // One copy directory for the set: the check needs the goal in the
+    // extension (see `ext` above), and the sources cannot carry it —
+    // their names are the names the page and the worker registration
+    // ask for.
+    const copies = b.addWriteFiles();
+    for (js_shipped) |js| {
+        const named = b.fmt("{s}{s}", .{ std.fs.path.basename(js.path), js.ext });
+        const run = b.addSystemCommand(&.{ node, "--check" });
+        run.addFileArg(copies.addCopyFile(b.path(js.path), named));
+        // The step's name carries the source path, because node's error
+        // can only name the copy.
+        run.setName(b.fmt("parse {s}", .{js.path}));
+        step.dependOn(&run.step);
+    }
 }
 
 /// One compile-check object: the library built for `query` with exactly
