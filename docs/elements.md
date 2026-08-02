@@ -1009,7 +1009,8 @@ has no leading edge to swap. The section card the chip opens is
 centered on the same group.
 
 The chip is a `combo_box` to assistive tech, not a link: it opens a list
-and takes a choice. Its accessible name is always "Section" and the
+and takes a choice. Its accessible name is the framework's own word for
+it ("Section" in English, `App.Chrome.section` in yours) and the
 current section is its *value*, so the control a screen-reader user
 looks for does not rename itself every time it is used. The list is the
 select's picker in behavior and a card in shape: it stands on the chip's
@@ -1096,7 +1097,10 @@ that element indented past it. The target hangs into the page margin on
 both axes so the *glyph* is what lines up: its leading edge sits on the
 text column, and it centers on that first line's cap region rather than
 its line box, which a heading without descenders reads low against.
-Its accessible name is always "Back"; activation pops one screen
+Its accessible name is the framework's own word for it ("Back" in
+English, `App.Chrome.back` in yours —
+[localization.md](localization.md#the-frameworks-own-words)); activation
+pops one screen
 (`App.navigateBack`). There is nothing to configure and nothing to wire
 — consumers never build their own back control, and a pushed screen
 without one cannot exist. The stack root (depth 1) has nothing to go

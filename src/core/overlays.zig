@@ -34,7 +34,7 @@ pub fn presentSheet(app: *App, title: []const u8) !NodeId {
     // A sheet without its close control is inescapable chrome; if the
     // control cannot be built, neither is the sheet.
     errdefer app.tree.remove(sheet) catch {};
-    _ = try app.tree.append(sheet, .{ .sheet_close = .{} });
+    _ = try app.tree.append(sheet, .{ .sheet_close = .{ .label = app.chrome.close } });
     app.sheet_return_focus = app.focused;
     app.focused = focus.firstFocusable(&app.tree, sheet);
     // The sheet wins the bottom pane; the banner or notices pane
@@ -155,9 +155,10 @@ fn refilterPicker(app: *App, filter: []const u8) !void {
 /// element's `options` — so the modal layer, the focus hand-off, the
 /// keyboard, and Esc are all the same code and cannot drift apart.
 ///
-/// The title is the framework's English, like "Close" and "Back": no
-/// consumer named this control, so no consumer's string can name it. It
-/// is not drawn — a card standing on the chip is named by the chip
+/// The title is the framework's own word, in the app's language
+/// (`App.Chrome.sections`): no consumer named this control, so no
+/// consumer's *data* can name it — only their catalog can. It is not
+/// drawn — a card standing on the chip is named by the chip
 /// (`renderer.drawNavMenu`) — but it is still what assistive tech is
 /// told the dialog is called, which is the job it was written for.
 pub fn openNavPicker(app: *App, nav_current: NodeId) !void {
@@ -171,7 +172,7 @@ pub fn openNavPicker(app: *App, nav_current: NodeId) !void {
     const roster = nav_mod.effectiveRoster(app, &buf);
     const current = nav_mod.currentIndex(app);
     const picker = try app.tree.append(app.tree.rootId(), .{ .picker = .{
-        .title = "Sections",
+        .title = app.chrome.sections,
         .option_count = roster.len,
         .above_nav = true,
     } });

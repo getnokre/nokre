@@ -168,28 +168,28 @@ fn installBanner(app: *App) !void {
     if (app.notices.items.len == 1) {
         _ = try app.tree.append(notice, .{ .icon_button = .{
             .glyph = .open,
-            .label = try chromeLabel(app, "Open: {s}", front.title),
+            .label = try chromeLabel(app, app.chrome.open_prefix, front.title),
         } });
     } else {
-        _ = try app.tree.append(notice, .{ .icon_button = .{ .glyph = .expand, .label = "Show all notices" } });
+        _ = try app.tree.append(notice, .{ .icon_button = .{ .glyph = .expand, .label = app.chrome.show_all_notices } });
     }
-    _ = try app.tree.append(notice, .{ .icon_button = .{ .glyph = .minimize, .label = "Minimize notices" } });
+    _ = try app.tree.append(notice, .{ .icon_button = .{ .glyph = .minimize, .label = app.chrome.minimize_notices } });
     _ = try app.tree.append(notice, .{ .icon_button = .{
         .glyph = .dismiss,
-        .label = try chromeLabel(app, "Dismiss: {s}", front.title),
+        .label = try chromeLabel(app, app.chrome.dismiss_prefix, front.title),
     } });
 }
 
 fn installPane(app: *App) !void {
-    const pane = try installChromeRoot(app, .{ .notices_pane = .{} });
+    const pane = try installChromeRoot(app, .{ .notices_pane = .{ .title = app.chrome.notices } });
     // Both header controls pin to the trailing corner, dismiss-all
     // inward and minimize outermost-last (`pinHeaderControl`), so
     // document order is the visual order. Minimize keeps the corner
     // itself: that slot is where a modal closes (the sheet's close),
     // and the reflex press it collects must park the notices, not
     // destroy them.
-    _ = try app.tree.append(pane, .{ .icon_button = .{ .glyph = .dismiss_all, .label = "Dismiss all notices" } });
-    _ = try app.tree.append(pane, .{ .icon_button = .{ .glyph = .minimize, .label = "Minimize notices" } });
+    _ = try app.tree.append(pane, .{ .icon_button = .{ .glyph = .dismiss_all, .label = app.chrome.dismiss_all_notices } });
+    _ = try app.tree.append(pane, .{ .icon_button = .{ .glyph = .minimize, .label = app.chrome.minimize_notices } });
     // The rows scroll; the header does not. A pane is capped at
     // `sheet_min_top` from the top edge, and enough notices — or few of
     // them on a landscape phone, where that cap is most of a short
@@ -203,10 +203,12 @@ fn installPane(app: *App) !void {
     // list must not scroll away as the list grows.
     const region = try app.tree.append(pane, .{ .scroll_region = .{ .height = 0 } });
     // Important notices lead the list (notify keeps them in front), and
-    // when both kinds are pending a label heads each group. Framework
-    // English like "Close" and "Back": no consumer named these groups.
-    // Plain text, not headings — two words of chrome should not enter a
-    // screen reader's heading navigation ahead of the consumer's page.
+    // when both kinds are pending a caption heads each group. Framework
+    // words in the framework's own language (`App.Chrome`): no consumer
+    // named these groups, so no consumer's data can — only their
+    // catalog. Plain text, not headings — two words of chrome should not
+    // enter a screen reader's heading navigation ahead of the
+    // consumer's page.
     const split = blk: {
         var i: usize = 0;
         while (i < app.notices.items.len and app.notices.items[i].important) i += 1;
@@ -214,8 +216,8 @@ fn installPane(app: *App) !void {
     };
     const grouped = split > 0 and split < app.notices.items.len;
     for (app.notices.items, 0..) |n, i| {
-        if (grouped and i == 0) _ = try app.tree.append(region, group_label_important);
-        if (grouped and i == split) _ = try app.tree.append(region, group_label_other);
+        if (grouped and i == 0) _ = try app.tree.append(region, groupLabel(app.chrome.important));
+        if (grouped and i == split) _ = try app.tree.append(region, groupLabel(app.chrome.other));
         const row = try app.tree.append(region, .{ .notice = .{
             .title = n.title,
             .description = n.description,
@@ -224,28 +226,23 @@ fn installPane(app: *App) !void {
         } });
         _ = try app.tree.append(row, .{ .icon_button = .{
             .glyph = .open,
-            .label = try chromeLabel(app, "Open: {s}", n.title),
+            .label = try chromeLabel(app, app.chrome.open_prefix, n.title),
         } });
         _ = try app.tree.append(row, .{ .icon_button = .{
             .glyph = .dismiss,
-            .label = try chromeLabel(app, "Dismiss: {s}", n.title),
+            .label = try chromeLabel(app, app.chrome.dismiss_prefix, n.title),
         } });
     }
 }
 
-/// The pane's group labels: small and dark like a notice's description
-/// — a caption over the rows, not a rival to their titles.
-const group_label_important: Element = .{ .text = .{
-    .content = "Important",
-    .style = .{ .scale = .small, .ink = .dark },
-} };
-const group_label_other: Element = .{ .text = .{
-    .content = "Other",
-    .style = .{ .scale = .small, .ink = .dark },
-} };
+/// A pane group's caption: small and dark like a notice's description —
+/// a caption over the rows, not a rival to their titles.
+fn groupLabel(words: []const u8) Element {
+    return .{ .text = .{ .content = words, .style = .{ .scale = .small, .ink = .dark } } };
+}
 
 fn installIndicator(app: *App) !void {
-    _ = try installChromeRoot(app, .{ .icon_button = .{ .glyph = .expand, .label = "Show notices" } });
+    _ = try installChromeRoot(app, .{ .icon_button = .{ .glyph = .expand, .label = app.chrome.show_notices } });
 }
 
 /// Right after the nav in document order: chrome leads the focus
@@ -257,8 +254,11 @@ fn installChromeRoot(app: *App, el: Element) !NodeId {
         app.tree.insertFirst(app.tree.rootId(), el);
 }
 
-fn chromeLabel(app: *App, comptime fmt: []const u8, arg: []const u8) ![]const u8 {
-    return std.fmt.allocPrint(app.tree.arena.allocator(), fmt, .{arg});
+/// A notice control's name: the framework's word for what it does, then
+/// the notice it does it to. A prefix and a join, never a format string
+/// — see `Chrome.open_prefix` for why a runtime format is not on offer.
+fn chromeLabel(app: *App, prefix: []const u8, title: []const u8) ![]const u8 {
+    return std.mem.concat(app.tree.arena.allocator(), u8, &.{ prefix, title });
 }
 
 fn inNoticeChrome(app: *const App, id: NodeId) bool {

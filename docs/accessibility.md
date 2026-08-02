@@ -44,8 +44,8 @@ and produces a flat, parent-linked `Snapshot` in document order. Roles map
 | picker (framework) | `dialog` | modal; `picker_item` → `option`, selected |
 | `nav` | `navigation` | — |
 | `nav_item` | `link` | selected (aria-current), focused; its icon is decorative — the label is the name |
-| `nav_current` (framework) | `combo_box` | named "Section", current section as value, focused |
-| `nav_here` (framework) | `static_text` | named "Current screen", the route's title as value; no focus stop — it names where you are, it does not go there |
+| `nav_current` (framework) | `combo_box` | named by the framework ("Section" in English — [localization.md](localization.md#the-frameworks-own-words)), current section as value, focused |
+| `nav_here` (framework) | `static_text` | named by the framework ("Current screen"), the route's title as value; no focus stop — it names where you are, it does not go there |
 | `sheet` | `dialog` | modal |
 | `notice` | `status` | title as label |
 | `notices_pane` | `dialog` | modal |
@@ -83,7 +83,8 @@ gets, arriving and leaving with the check in the field. A mark with no
 words needs a voice, and it cannot be the element's own: the label and
 value stay untouched, because they are what a screen-reader user reads
 back to check the value they just copied. The words are the framework's
-English, like `Close` and `Back`.
+own — English until an app translates them, like `Close` and `Back`
+([localization.md](localization.md#the-frameworks-own-words)).
 
 ## Focus
 
@@ -121,7 +122,7 @@ two agree by construction. There is exactly one focus model to test.
 **No gesture is ever the only way to anything.** nokre has one gesture
 at all — the edge pan that goes back ([routing.md](routing.md)) — and
 what it activates is the Back control the framework already installed on
-that screen: a real focus stop, named "Back", reachable by Tab and by
+that screen: a real focus stop, named by the framework, reachable by Tab and by
 every screen reader's own navigation. A pushed screen without that
 control cannot exist, so there is no state a user reaches the gesture's
 destination *only* by dragging. Its threshold is drawn as well as felt,

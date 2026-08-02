@@ -1463,6 +1463,25 @@ arrow keys like the rest of Part 10:
 fn onLanguageSelect(ctx: ?*anyopaque, selected: usize) void {
     const state: *State = @ptrCast(@alignCast(ctx.?));
     state.locale = if (selected == 0) .en else .fa;
+    // The three surfaces the app does not write inline: nokre's own
+    // chrome, the names of the screens, and which way the chrome runs.
+    state.app.setChrome(.{ .back = L.tr(state.locale, .back) });
+    state.routes = routesFor(state.locale); // borrowed — it has to outlive the call
+    state.app.setRouteTitles(&state.routes) catch {};
+    state.app.setDirection(L.dir(state.locale));
+}
+
+/// Part 3's table, with the titles coming out of the catalog instead of
+/// out of literals — the only thing `setRouteTitles` accepts about it
+/// changing. Returned by value; the tree copies at `append`, but a route
+/// table is *borrowed*, so hold it in your state (or make it a comptime
+/// array per locale) rather than on the stack.
+fn routesFor(loc: L.Locale) [3]h.RouteDef {
+    return .{
+        .{ .name = "notes", .title = L.tr(loc, .notesTitle), .build = buildNotes },
+        .{ .name = "note", .title = L.tr(loc, .noteTitle), .args = 1, .build = buildNote },
+        .{ .name = "settings", .title = L.tr(loc, .settingsTitle), .build = buildSettings },
+    };
 }
 ```
 
@@ -1489,14 +1508,22 @@ Things worth noticing, because they generalize:
   carry its `few` and `many`. The full list of guarantees and refusals
   (no dates, no floats, no runtime loading):
   [localization.md](localization.md).
-- **What's still English is a choice you can see.** The nav labels
-  (`setNav` chrome), the sign-in screen, statuses, button labels — the
-  same pattern extends to each; the course stops at one screen because
-  the lesson doesn't repeat. Booting in the device's language is the
-  `locale` service ([services.md](services.md)) and two lines in
-  `build`: `state.locale = L.resolve(h.services.locale.tag(app))`, then
-  `app.setDirection(L.dir(state.locale))` to mirror the chrome —
-  [localization.md](localization.md) walks the wiring.
+- **The nav bar and the back control travel too.** A destination's
+  words are its route's `title`, so retitling the table retitles the
+  row, the collapsed chip, and the marker for a screen that is no
+  destination — all from one place, in every language. nokre's own
+  words (Back, Close, the notices chrome) are `setChrome`'s, one struct
+  and one call. Neither is a label on a `Destination`: that would be a
+  second home for a fact the route table already holds.
+  [localization.md](localization.md#the-chrome-nokre-writes) has the
+  whole table.
+- **What's still English is a choice you can see.** The sign-in screen,
+  statuses, button labels — the same pattern extends to each; the
+  course stops at one screen because the lesson doesn't repeat. Booting
+  in the device's language is the `locale` service
+  ([services.md](services.md)) and the same three calls in `build`,
+  starting from `state.locale = L.resolve(h.services.locale.tag(app))`
+  — [localization.md](localization.md) walks the wiring.
 
 The test drives the switch like a user and asserts the translated
 screen through the same a11y snapshot as always:
@@ -1509,9 +1536,8 @@ test "switching the language localizes the notes screen" {
     state.app = &t.app;
 
     try t.tapLabel("Settings");
-    try t.focusVia(try t.getByLabel("Language"));
-    try t.pressKey(.right, .{}); // segmented commits on arrow keys
-    try t.tapLabel("Notes");
+    try t.selectOption("Language", "فارسی"); // names both ends, no arrow counting
+    try t.tapLabel("یادداشت‌ها");             // the destination, already renamed
 
     _ = try t.getByLabel("یادداشت‌ها"); // the heading, translated
     _ = try t.getByLabel("0 از 16 یادداشت"); // fmt: two placeholders

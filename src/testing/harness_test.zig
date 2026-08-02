@@ -509,6 +509,61 @@ test "e2e: a Markdown link carries route arguments" {
     try testing.expect(harness.queryByLabel("2938") != null);
 }
 
+// The same three routes twice over — English, then what an app would
+// build from its Farsi catalog. Only the titles move; `setRouteTitles`
+// accepts nothing else about a table changing.
+fn buildBlank(_: ?*anyopaque, app: *App) anyerror!void {
+    _ = try app.tree.append(app.tree.rootId(), .{ .text = .{ .content = "…" } });
+}
+
+const shop_routes = [_]@import("../core/router.zig").RouteDef{
+    .{ .name = "inbox", .title = "Inbox", .build = buildInbox },
+    .{ .name = "archive", .title = "Archive", .build = buildBlank },
+    .{ .name = "ticket", .title = "Ticket", .args = 1, .build = buildTicketScreen },
+};
+
+const shop_routes_fa = [_]@import("../core/router.zig").RouteDef{
+    .{ .name = "inbox", .title = "صندوق", .build = buildInbox },
+    .{ .name = "archive", .title = "بایگانی", .build = buildBlank },
+    .{ .name = "ticket", .title = "بلیت", .args = 1, .build = buildTicketScreen },
+};
+
+test "e2e: a Farsi app ships a Farsi nav bar and a Farsi back control" {
+    var h = try Harness.initWithNav(
+        testing.allocator,
+        .{ .w = 900, .h = 480 },
+        &shop_routes,
+        &.{
+            .{ .route = "inbox", .icon = .inbox },
+            .{ .route = "archive", .icon = .archive },
+        },
+        null,
+        "inbox",
+    );
+    defer h.deinit();
+    _ = try h.getByRole(.nav_item, "Archive");
+
+    h.app.setChrome(.{ .back = "بازگشت", .current_screen = "این صفحه" });
+    try h.app.setRouteTitles(&shop_routes_fa);
+    h.app.setDirection(.rtl);
+
+    // The destinations are labelled from the route table, so retitling
+    // it is the whole of a translated nav bar — nothing on the roster
+    // had to be told, and no `Destination` grew a label of its own.
+    _ = try h.getByRole(.nav_item, "بایگانی");
+    try h.expectAbsent("Archive");
+
+    // A pushed screen's back control is the framework's own word,
+    // reached through the a11y snapshot like any other name.
+    try h.tapLabel("the flaky build");
+    _ = try h.getByRole(.back, "بازگشت");
+    try h.expectAbsent("Back");
+    // …and the marker for a screen that is no destination is the same
+    // name/value split, both halves translated from their own home.
+    _ = try h.getByRole(.nav_here, "این صفحه");
+    try h.expectValue("این صفحه", "بلیت");
+}
+
 test "e2e: the back gesture is an action like any other" {
     var harness = try Harness.initWithRoutes(testing.allocator, .{ .w = 360, .h = 300 }, &ticket_routes, null, "inbox");
     defer harness.deinit();

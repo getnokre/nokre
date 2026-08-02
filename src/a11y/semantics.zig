@@ -265,17 +265,18 @@ fn appendNode(snap: *Snapshot, app: *App, id: NodeId, parent: ?usize) !void {
 /// notice gets, arriving and leaving with the mark, which is how the
 /// platforms' own copy confirmations reach assistive tech.
 ///
-/// The words are nokre's, so they are the framework's English like
-/// "Close" and "Back" — the element's own label and value stay untouched,
-/// because the announcement must not disturb what an assistive-tech user
-/// reads back to check the value they just copied.
+/// The words are nokre's, so they are the framework's own
+/// (`App.Chrome.copied`, English until an app translates it) — the
+/// element's own label and value stay untouched, because the
+/// announcement must not disturb what an assistive-tech user reads back
+/// to check the value they just copied.
 fn appendAck(snap: *Snapshot, app: *App, id: NodeId, parent: usize) !void {
     const acked = if (app.ack) |a| a.eql(id) else false;
     if (!acked) return;
     try snap.nodes.append(snap.gpa, .{
         .id = id,
         .role = .status,
-        .label = "Copied",
+        .label = app.chrome.copied,
         // The field's own rect: the announcement is about this control,
         // and adapters that place their mirror need somewhere to put it.
         .rect = app.tree.rectOf(id),

@@ -52,6 +52,12 @@ pub const RouteDef = struct {
     /// It names the route, not the screen: `note~42` and `note~43` are
     /// both "Note", because the alternative is a callback the router
     /// would have to invoke on every sync.
+    ///
+    /// Comptime, and a locale is not — so a translated app hands the
+    /// whole table over again with translated titles
+    /// (`App.setRouteTitles`, which accepts nothing else about it
+    /// changing). That keeps this the one home for what a screen is
+    /// called in *every* language, rather than buying a second one.
     title: []const u8,
     /// How many positional arguments this screen takes. Declared, so a
     /// reference carrying the wrong number fails loudly instead of
@@ -165,6 +171,30 @@ pub const Router = struct {
             }
         }
         return .{ .routes = routes, .stack = .empty };
+    }
+
+    /// Swaps the table for one that differs only in its titles — the
+    /// same app, said in another language (`App.setRouteTitles`, which
+    /// is the consumer's door to this and re-points the nav's roster
+    /// afterwards).
+    ///
+    /// Everything but `title` must match position for position, because
+    /// a stack entry holds an *index*: a table that reordered or
+    /// replaced a route would rename every screen already on the stack,
+    /// silently and only in one language. Validated whole before
+    /// anything is assigned, `init`'s rule — a refused call leaves the
+    /// router reading exactly the table it was.
+    pub fn retitle(self: *Router, routes: []const RouteDef) !void {
+        if (routes.len != self.routes.len) return error.RouteTablesDiffer;
+        for (routes, self.routes) |new, old| {
+            if (!std.mem.eql(u8, new.name, old.name)) return error.RouteTablesDiffer;
+            if (new.args != old.args) return error.RouteTablesDiffer;
+            if (new.build != old.build) return error.RouteTablesDiffer;
+            // The one check `init` makes that comptime cannot: an empty
+            // title written on purpose, here in a translation.
+            if (new.title.len == 0) return error.EmptyRouteTitle;
+        }
+        self.routes = routes;
     }
 
     pub fn deinit(self: *Router, gpa: std.mem.Allocator) void {
@@ -374,7 +404,7 @@ pub const Router = struct {
         // convention). At depth 1 (a section root) there is nothing
         // to go back to and no control.
         if (self.stack.items.len > 1) {
-            _ = try app.tree.append(app.tree.rootId(), .{ .back = .{} });
+            _ = try app.tree.append(app.tree.rootId(), .{ .back = .{ .label = app.chrome.back } });
         }
         try def.build(app.ctx, app);
         // After the builder and before the invalidate, so the restored

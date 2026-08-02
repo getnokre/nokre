@@ -157,6 +157,112 @@ QR code's modules never mirror — a mirrored symbol does not scan. The
 vertical axis is direction-blind throughout, so `↑`/`↓` in a radio group
 mean the same thing in both, while `←`/`→` swap with the layout.
 
+## The chrome nokre writes
+
+Two things on a screen carry words the app never typed at the point they
+appear: what a **screen** is called, and what nokre's **own controls**
+are called. Both are localizable, from their own home, and a locale
+change says all of it in three lines beside `setDirection`:
+
+```zig
+fn applyLocale(state: *State, loc: L.Locale) !void {
+    state.locale = loc;
+    state.app.setChrome(chromeFor(loc));   // nokre's own words
+    state.routes = routesFor(loc);          // borrowed: it outlives the call
+    try state.app.setRouteTitles(&state.routes); // what each screen is called
+    state.app.setDirection(L.dir(loc));     // which way the chrome runs
+}
+```
+
+**A screen's name is the route table's** — `RouteDef.title`, which every
+line of the nav is labelled from ([routing.md](routing.md)): the
+destinations, the collapsed chip's section, the rows of the picker it
+opens, and the marker for a screen that is none of them. That is one
+home on purpose, so a nav and a screen's own chrome cannot disagree. But
+the table is comptime and a locale is not, so a translated app hands the
+**same table** over again with translated titles:
+
+```zig
+fn routesFor(loc: L.Locale) [3]nok.RouteDef {
+    return .{
+        .{ .name = "notes", .title = L.tr(loc, .notesTitle), .build = buildNotes },
+        .{ .name = "note", .title = L.tr(loc, .noteTitle), .args = 1, .build = buildNote },
+        .{ .name = "settings", .title = L.tr(loc, .settingsTitle), .build = buildSettings },
+    };
+}
+```
+
+The table is **borrowed**, as it is at `App.init` — the router keeps the
+slice — so hold it in your own state (or make it a comptime array per
+locale). The titles inside it need no such care: `tr` hands back
+constant data.
+
+`setRouteTitles` accepts a retitling and nothing else — same length,
+same names, same arities, same builders, position for position, or
+`error.RouteTablesDiffer`. A stack entry holds an *index* into the
+table, so a table that reordered or replaced a route would silently
+rename every screen already on the stack, in one language only. Nothing
+is committed until the whole table passes, and the nav's roster
+re-borrows from the new one on the spot: a row of destinations, a
+collapsed chip and the marker beside them all change together.
+
+### The framework's own words
+
+Everything else nokre puts on a screen is nokre's, and no consumer's
+*data* can name it — only their catalog. `App.Chrome` is the whole list,
+English until an app says otherwise:
+
+| Field | English | Where it appears |
+| --- | --- | --- |
+| `back` | "Back" | the back control's accessible name; nothing draws it |
+| `close` | "Close" | the sheet's close control |
+| `section` | "Section" | the collapsed nav chip's *name* (its section is its value) |
+| `current_screen` | "Current screen" | the marker for a screen that is no destination |
+| `sections` | "Sections" | the chip's picker, as a dialog name and as the nav landmark's |
+| `notices` | "Notices" | the notices pane's heading and its name |
+| `show_notices` | "Show notices" | the minimized indicator |
+| `show_all_notices` | "Show all notices" | the banner's expand control |
+| `minimize_notices` | "Minimize notices" | the banner's and the pane's |
+| `dismiss_all_notices` | "Dismiss all notices" | the pane's header |
+| `open_prefix` | "Open: " | joined to a notice's title, on its open control |
+| `dismiss_prefix` | "Dismiss: " | joined the same way, on its dismiss control |
+| `important` / `other` | "Important" / "Other" | the pane's two group captions |
+| `copied` | "Copied" | the live region an acknowledged `copyable` grows |
+
+```zig
+fn chromeFor(loc: L.Locale) nok.App.Chrome {
+    return .{
+        .back = L.tr(loc, .back),
+        .close = L.tr(loc, .close),
+        // …and the rest; anything left out stays English.
+    };
+}
+```
+
+One struct and one call, not a setter per control: these are one fact —
+what nokre calls its own chrome — and a locale changes every one of them
+at once, so a half-translated nav bar is not a state that can be
+reached. Chrome already standing is re-said on the spot, so the call
+does not wait for the rebuild that follows a locale change. The strings
+are **borrowed**, exactly as `RouteDef.title` is: `tr` hands back
+constant data, which is what these are for.
+
+The two prefixes are prefixes and not format strings, deliberately. A
+runtime `"Open: {title}"` is a placeholder a translator can drop,
+reorder, or mistype, and this document's whole posture is that such a
+mistake is a *build* error — but there is no comptime left to check a
+string written into a struct at run time. Joining costs the reordering a
+few languages would want and buys a string that cannot be wrong.
+
+**One string is not here: "More"**, the control an overflowing row of
+actions folds into ([elements.md](elements.md#the-folded-tail-more)).
+Layout reserves that control's width while *deciding* the fold — before
+the control exists, so the pass that installs it reaches the same fold —
+so its words have to be knowable with no node to read them from, which
+is how every other chrome string escapes: by riding on the node it
+names. Localizing it means handing layout the app's chrome, and that is
+a wider change than a nav bar's labels.
+
 ## What the compiler checks
 
 Everything below is a build failure with the locale, message, and line

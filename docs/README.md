@@ -49,8 +49,10 @@ you need them.
   snapshot is derived, what construction refuses to build, and what the
   automatic audit catches.
 - [localization.md](localization.md) — ARB catalogs compiled at comptime,
-  ICU message syntax, right-to-left chrome, and everything the compiler
-  checks so a build that passes has every locale whole.
+  ICU message syntax, right-to-left chrome, the two homes a translated
+  nav bar comes from (the route table's titles and the framework's own
+  words), and everything the compiler checks so a build that passes has
+  every locale whole.
 - [testing.md](testing.md) — the headless e2e harness: semantic queries,
   the input driver, service fakes, step traces, and byte-exact golden
   screenshots.

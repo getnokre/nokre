@@ -1407,6 +1407,152 @@ test "the picker still crosses to a destination from an off-roster screen" {
     try testing.expectEqualStrings("Settings", app.tree.getConst(navChip(&app).?).?.nav_current.section);
 }
 
+// ---- a nav bar in another language ----
+//
+// The same four routes, said in Turkish. A real app builds this from its
+// catalog (`L.tr`) per locale; the shape is what matters here — the same
+// table, only the titles moved.
+const offroster_routes_tr = [_]router_mod.RouteDef{
+    .{ .name = "home", .title = "Ana sayfa", .build = buildNavSection },
+    .{ .name = "settings", .title = "Ayarlar", .build = buildNavSection },
+    .{ .name = "terms", .title = "Koşullar", .build = buildNavSection },
+    .{ .name = "ticket", .title = "Bilet", .args = 1, .build = buildNavSection },
+};
+
+test "setRouteTitles renames the destinations, the chip, and the marker" {
+    var app = try offRosterApp(900);
+    defer app.deinit();
+    try app.setNav(&offroster_nav);
+    try app.navigate("home");
+
+    const nav = layout.findNav(&app.tree).?;
+    var it = app.tree.children(nav);
+    try testing.expectEqualStrings("Home", app.tree.getConst(it.next().?).?.nav_item.label);
+
+    try app.setRouteTitles(&offroster_routes_tr);
+    // The row re-borrowed from the new table: a guard that only counted
+    // destinations would have left the English words standing.
+    it = app.tree.children(nav);
+    try testing.expectEqualStrings("Ana sayfa", app.tree.getConst(it.next().?).?.nav_item.label);
+    try testing.expectEqualStrings("Ayarlar", app.tree.getConst(it.next().?).?.nav_item.label);
+
+    // The marker for a screen that is no destination is labelled from
+    // the same table, so it follows without being told.
+    try app.navigate("terms");
+    try testing.expectEqualStrings("Koşullar", app.tree.getConst(navHere(&app).?).?.nav_here.label);
+
+    // And the collapsed shape, which names the section it stands on.
+    var narrow = try offRosterApp(300);
+    defer narrow.deinit();
+    try narrow.setNav(&offroster_nav);
+    try narrow.navigate("settings");
+    try narrow.setRouteTitles(&offroster_routes_tr);
+    try testing.expectEqualStrings("Ayarlar", narrow.tree.getConst(navChip(&narrow).?).?.nav_current.section);
+}
+
+test "setRouteTitles accepts a retitling and nothing else" {
+    var app = try offRosterApp(900);
+    defer app.deinit();
+    try app.setNav(&offroster_nav);
+    try app.navigate("home");
+
+    // A stack entry holds an index into the table, so anything but a
+    // retitling would rename screens already on the stack.
+    const shorter = offroster_routes_tr[0..3];
+    try testing.expectError(error.RouteTablesDiffer, app.setRouteTitles(shorter));
+    const reordered = [_]router_mod.RouteDef{
+        offroster_routes_tr[1], offroster_routes_tr[0],
+        offroster_routes_tr[2], offroster_routes_tr[3],
+    };
+    try testing.expectError(error.RouteTablesDiffer, app.setRouteTitles(&reordered));
+    const rearity = [_]router_mod.RouteDef{
+        .{ .name = "home", .title = "Ana sayfa", .args = 1, .build = buildNavSection },
+        offroster_routes_tr[1],
+        offroster_routes_tr[2],
+        offroster_routes_tr[3],
+    };
+    try testing.expectError(error.RouteTablesDiffer, app.setRouteTitles(&rearity));
+    // An empty title written on purpose is `init`'s one runtime check,
+    // reached again here.
+    const blank = [_]router_mod.RouteDef{
+        .{ .name = "home", .title = "", .build = buildNavSection },
+        offroster_routes_tr[1],
+        offroster_routes_tr[2],
+        offroster_routes_tr[3],
+    };
+    try testing.expectError(error.EmptyRouteTitle, app.setRouteTitles(&blank));
+
+    // Every refusal left the table exactly as it was.
+    var it = app.tree.children(layout.findNav(&app.tree).?);
+    try testing.expectEqualStrings("Home", app.tree.getConst(it.next().?).?.nav_item.label);
+}
+
+test "setChrome re-says the framework's own words, in place" {
+    var app = try offRosterApp(300); // narrow: the collapsed chip
+    defer app.deinit();
+    try app.setNav(&offroster_nav);
+    try app.navigate("home");
+    try app.navigate("terms"); // depth 2, so a back control exists
+    try app.notify(.{ .title = "Kaydedildi", .route = "home", .important = true });
+
+    try testing.expectEqualStrings("Back", app.tree.getConst(findBack(&app).?).?.label());
+    try testing.expectEqualStrings("Section", app.tree.getConst(navChip(&app).?).?.label());
+
+    app.setChrome(.{
+        .back = "Geri",
+        .close = "Kapat",
+        .section = "Bölüm",
+        .current_screen = "Bu ekran",
+        .sections = "Bölümler",
+        .notices = "Bildirimler",
+        .show_notices = "Bildirimleri göster",
+        .show_all_notices = "Tüm bildirimleri göster",
+        .minimize_notices = "Bildirimleri küçült",
+        .dismiss_all_notices = "Tüm bildirimleri kapat",
+        .open_prefix = "Aç: ",
+        .dismiss_prefix = "Kapat: ",
+        .important = "Önemli",
+        .other = "Diğer",
+    });
+
+    // Chrome already standing is re-said on the spot, not left for
+    // whatever rebuild happens next.
+    try testing.expectEqualStrings("Geri", app.tree.getConst(findBack(&app).?).?.label());
+    try testing.expectEqualStrings("Bölüm", app.tree.getConst(navChip(&app).?).?.label());
+    // The banner's controls name the notice they act on, so they are
+    // rebuilt rather than patched — prefix joined to the title.
+    try testing.expect(queryLabel(&app, "Aç: Kaydedildi") != null);
+    try testing.expect(queryLabel(&app, "Kapat: Kaydedildi") != null);
+    try testing.expect(queryLabel(&app, "Bildirimleri küçült") != null);
+    try testing.expect(queryLabel(&app, "Minimize notices") == null);
+
+    // And chrome built afterwards is born in the new language.
+    try app.openNoticesPane();
+    const pane = layout.findNoticesPane(&app.tree).?;
+    try testing.expectEqualStrings("Bildirimler", app.tree.getConst(pane).?.label());
+    try testing.expect(queryLabel(&app, "Tüm bildirimleri kapat") != null);
+
+    const sheet = try app.presentSheet("Bir sayfa");
+    _ = sheet;
+    try testing.expect(queryLabel(&app, "Kapat") != null);
+}
+
+fn findBack(app: *App) ?NodeId {
+    var it = app.tree.dfs();
+    while (it.next()) |id| {
+        if (app.tree.getConst(id).?.role() == .back) return id;
+    }
+    return null;
+}
+
+fn queryLabel(app: *App, label: []const u8) ?NodeId {
+    var it = app.tree.dfs();
+    while (it.next()) |id| {
+        if (std.mem.eql(u8, app.tree.getConst(id).?.label(), label)) return id;
+    }
+    return null;
+}
+
 test "setNav must precede content" {
     var app = try test_app.init(400, 400);
     defer app.deinit();

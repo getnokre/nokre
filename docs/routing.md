@@ -38,6 +38,16 @@ It names the *route*, not the screen: `note~42` and `note~43` are both
 invoke on every sync, and the router does not call into consumer code to
 find out what to draw.
 
+The table is comptime and a locale is not, so a translated app hands the
+**same table** over again with translated titles —
+`App.setRouteTitles`, which accepts a retitling and nothing else (same
+names, same arities, same builders, or `error.RouteTablesDiffer`: a
+stack entry holds an index into the table). One screen keeps one name in
+every language, and the nav's row, chip and marker change together.
+[localization.md](localization.md#the-chrome-nokre-writes) has the
+wiring, along with `App.Chrome` — the framework's own words, which are
+nokre's rather than any route's.
+
 Four motions move the stack, and every one of them rebuilds the current
 screen's subtree from scratch:
 

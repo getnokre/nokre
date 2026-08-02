@@ -353,10 +353,12 @@ fn drawNode(app: *App, canvas: Painter, id: NodeId) void {
         .back => drawBack(app, canvas, r, ring),
         .icon_button => |ib| drawIconButton(app, canvas, id, r, ib, ring),
         .notice => |n| drawNotice(app, canvas, id, r, n),
-        .notices_pane => {
+        .notices_pane => |p| {
             canvas.pushClip(paneClipRect(app, r));
             // The header corner is reserved for the minimize control.
-            drawModalSurface(app, canvas, r, "Notices", 2 * metrics.touch_target + metrics.icon_gap);
+            // The title rides on the node (`App.Chrome.notices`), which
+            // is also what layout measured the header from.
+            drawModalSurface(app, canvas, r, p.title, 2 * metrics.touch_target + metrics.icon_gap);
             drawChildren(app, canvas, id);
             canvas.popClip();
         },

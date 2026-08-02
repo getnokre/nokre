@@ -616,7 +616,10 @@ pub fn node(em: *Emitter, id: NodeId) anyerror!void {
         // ---- navigation chrome ----
 
         .nav => {
-            try em.raw("<nav class=\"nav\" aria-label=\"Sections\"><div class=\"nav-row\">");
+            // The landmark's name is the framework's, in the app's
+            // language: the same word the collapsed chip's picker is
+            // titled with, because it names the same set.
+            try em.print("<nav class=\"nav\" aria-label=\"{s}\"><div class=\"nav-row\">", .{em.app.chrome.sections});
             try children(em, id);
             // The indicator is one more thing standing in the bar's
             // group, not a layer beside it: `layoutNavChrome` counts its
@@ -726,10 +729,11 @@ pub fn node(em: *Emitter, id: NodeId) anyerror!void {
             try noticeControls(em, id, .trail);
             try em.raw("</div>");
         },
-        .notices_pane => {
-            // Framework English, like "Close" and "Back": no consumer
-            // named this pane, so no consumer's string can name it.
-            try modalSurface(em, id, "notices-pane", "Notices");
+        .notices_pane => |p| {
+            // The framework's own word for it, in the app's language
+            // (`App.Chrome.notices`) — carried on the node, so the
+            // reference and this edition name the pane from one place.
+            try modalSurface(em, id, "notices-pane", p.title);
             try children(em, id);
             try em.raw("</div>");
         },

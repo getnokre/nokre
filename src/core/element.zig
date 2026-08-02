@@ -674,6 +674,73 @@ pub const Copyable = struct {
 /// bottom pane, centered and capped at the sheet width.
 pub const Nav = struct {};
 
+/// Every string nokre itself puts on a screen or into the accessibility
+/// tree — the framework's own words. No consumer wrote them, so no
+/// consumer's data can supply them: `RouteDef.title` names *screens*,
+/// and none of these is a screen.
+///
+/// English by default, so an app that ships one language declares
+/// nothing. An app that ships more says them in the language on screen
+/// with one call (`App.setChrome`), because that is what they are —
+/// one fact, "what nokre calls its own chrome", and a locale changes
+/// every one of them at once. A field per control would let a nav bar
+/// be half translated.
+///
+/// Borrowed, never owned, exactly like `RouteDef.title`: an ARB
+/// catalog's `tr` hands back constant data, which is what these are for.
+pub const Chrome = struct {
+    /// The back control's accessible name. Nothing draws it — the
+    /// chevron is the control — so this is purely what a reader hears.
+    back: []const u8 = "Back",
+    /// The sheet's close control, same shape.
+    close: []const u8 = "Close",
+    /// The collapsed nav chip's *name*. The section it stands on is its
+    /// value and comes from the route table, so this is the half of the
+    /// chip a catalog has to supply.
+    section: []const u8 = "Section",
+    /// The marker for a screen that is none of the destinations — again
+    /// a name, with the route's own title as its value.
+    current_screen: []const u8 = "Current screen",
+    /// The dialog title of the picker the collapsed chip opens. Never
+    /// drawn (the card stands on the chip that names it), but it is what
+    /// assistive tech is told the dialog is called.
+    sections: []const u8 = "Sections",
+    /// The notices pane's title: drawn as its heading and announced as
+    /// its name.
+    notices: []const u8 = "Notices",
+    /// The indicator that stands for pending notices in the nav pane.
+    show_notices: []const u8 = "Show notices",
+    /// The banner's expand control, when more than one notice is
+    /// pending; with exactly one, the banner offers `open_prefix`
+    /// instead.
+    show_all_notices: []const u8 = "Show all notices",
+    minimize_notices: []const u8 = "Minimize notices",
+    dismiss_all_notices: []const u8 = "Dismiss all notices",
+    /// A notice's own two controls name the notice they act on, so they
+    /// are a prefix and a title joined — not a format string. A runtime
+    /// format is a placeholder a translator can drop, reorder, or
+    /// mistype, and nokre's whole l10n posture is that such a mistake is
+    /// a build error; there is no comptime left to check one written
+    /// here. Joining costs the reordering a few languages would want,
+    /// and buys a string that cannot be wrong.
+    open_prefix: []const u8 = "Open: ",
+    dismiss_prefix: []const u8 = "Dismiss: ",
+    /// The two captions the notices pane heads its groups with, when
+    /// both kinds are pending.
+    important: []const u8 = "Important",
+    other: []const u8 = "Other",
+    /// The live region an acknowledged `copyable` grows while its check
+    /// is showing (docs/accessibility.md). A derived node, not an
+    /// element — so unlike the rest this one is read where it is built,
+    /// which the snapshot can do because it holds the App.
+    copied: []const u8 = "Copied",
+};
+
+/// The English nokre ships, and what every chrome element's own field
+/// defaults to — so a framework control built before `setChrome` is
+/// named rather than blank.
+pub const default_chrome: Chrome = .{};
+
 /// Modal bottom sheet, installed via `App.presentSheet`. While one is
 /// open the rest of the tree is inert: focus, taps, and scrolling stay
 /// inside. It appears and disappears instantly — there is no transition
@@ -684,9 +751,15 @@ pub const Sheet = struct {
 };
 
 /// The sheet's close control, installed by `App.presentSheet` and pinned
-/// to the header corner by layout. Drawn as the square-x glyph; its
-/// accessible name is always "Close". Activation dismisses the sheet.
-pub const SheetClose = struct {};
+/// to the header corner by layout. Drawn as the square-x glyph;
+/// activation dismisses the sheet.
+pub const SheetClose = struct {
+    /// The framework's own word for it (`App.Chrome.close`), copied in
+    /// when the control is built rather than read where it is needed:
+    /// `Element.label()` is pure and has no App to ask which language
+    /// this app is in.
+    label: []const u8 = default_chrome.close,
+};
 
 /// The folded tail of an overflowing row of actions: the control that
 /// stands in for the buttons and links that did not fit — and for the
@@ -706,17 +779,31 @@ pub const SheetClose = struct {};
 /// the roster survives the nav collapsing.
 pub const More = struct {};
 
-/// The folded-tail control's name and its sheet's title. Framework
-/// English like "Close" and "Back": no consumer named this control, so
-/// no consumer's string can name it.
+/// The folded-tail control's name, the words on its pill, and its
+/// sheet's title.
+///
+/// Deliberately *not* in `Chrome`, and the one framework string that is
+/// not. Layout reserves this control's width while deciding the fold —
+/// before the control exists, so that the pass which installs it reaches
+/// the same fold (`moreSize`) — and layout is handed a tree and a
+/// measurer and nothing else. Its words therefore have to be knowable
+/// with no node to read them from, which every other chrome string
+/// escapes by riding on the node it names. Localizing this one means
+/// handing layout the app's chrome, which is a wider change than a nav
+/// bar's labels: it is the next one, not this one.
 pub const more_label = "More";
 
 /// The framework's back control, installed by the router on every pushed
 /// screen (stack depth > 1) — consumers never wire their own. Laid out at
 /// the start of the first content element's line (a heading, by
-/// convention), drawn as the chevron-left glyph; its accessible name is
-/// always "Back". Activation pops one screen.
-pub const Back = struct {};
+/// convention), drawn as the chevron-left glyph. Activation pops one
+/// screen.
+pub const Back = struct {
+    /// The framework's own word for it (`App.Chrome.back`), copied in at
+    /// construction — `SheetClose.label`'s rule. Nothing draws it: the
+    /// glyph is the control, and this is what a reader hears.
+    label: []const u8 = default_chrome.back,
+};
 
 /// The Lucide glyphs framework chrome draws. Icons are text: the bundled
 /// icon font keeps them grayscale and deterministic like everything else.
@@ -848,16 +935,17 @@ pub const Notice = struct {
     height: i32 = 0,
 };
 
-/// The pane's accessible name and drawn header title. One declaration,
-/// because layout measures the header from the same bytes `label()`
-/// announces — a second literal could drift and mis-measure.
-pub const notices_label = "Notices";
-
 /// Modal list of every pending notice, opened from the banner's expand
 /// control or the nav pane's indicator. Children are `notice` rows plus
 /// the pane's own controls; Esc, the scrim, or its minimize control
 /// collapse it back to the nav pane.
 pub const NoticesPane = struct {
+    /// The pane's accessible name *and* its drawn header title — one
+    /// field, because layout measures the header from the same bytes
+    /// `label()` announces and a second copy could drift and
+    /// mis-measure. Copied in from `App.Chrome.notices` at
+    /// construction, `SheetClose.label`'s rule.
+    title: []const u8 = default_chrome.notices,
     /// Written by layout; consumers read, never write.
     height: i32 = 0,
 };
@@ -936,15 +1024,19 @@ pub const NavCurrent = struct {
     /// router rebuild. Stored rather than derived because `label()` is
     /// pure: it has no App to ask which route is current.
     ///
-    /// It is the control's *value*, not its name — the name stays
-    /// "Section" (`label()`), like a select's. A control that renamed
-    /// itself every time it was used would leave a screen-reader user
-    /// with nothing stable to look for.
+    /// It is the control's *value*, not its name — the name is `name`
+    /// below, like a select's. A control that renamed itself every time
+    /// it was used would leave a screen-reader user with nothing stable
+    /// to look for.
     section: []const u8,
     /// The current section's glyph, refreshed by the same sync and
     /// leading the label exactly as the row item's does. The chip
     /// stands in for one destination; it wears that destination's mark.
     icon: IconName,
+    /// The framework's own word for the control (`App.Chrome.section`),
+    /// copied in at construction — the other half of the name/value
+    /// split above, and the half a catalog has to supply.
+    name: []const u8 = default_chrome.section,
 };
 
 /// The row's marker for a screen that is *not* one of the destinations:
@@ -962,13 +1054,16 @@ pub const NavCurrent = struct {
 /// It is static text, not a `nav_item`: a destination is a link that
 /// goes somewhere, and this one goes where you already are. So it takes
 /// no focus, answers no press, and is not in the tab order — it is a
-/// label in the shape of a plate. Its name is the framework's ("Current
-/// screen") and the title is its value, the same split `nav_current`
-/// makes, so a screen reader has something stable to look for.
+/// label in the shape of a plate. Its name is the framework's and the
+/// title is its value, the same split `nav_current` makes, so a screen
+/// reader has something stable to look for.
 pub const NavHere = struct {
     /// `RouteDef.title` for the screen on top. Named, not derived: see
-    /// that field's rationale (router.zig).
+    /// that field's rationale (router.zig). It is the marker's *value*.
     label: []const u8,
+    /// And this is its name (`App.Chrome.current_screen`), copied in at
+    /// construction like `nav_current`'s.
+    name: []const u8 = default_chrome.current_screen,
 };
 
 /// file-text: the mark every off-roster screen wears. One glyph for all
@@ -1192,16 +1287,16 @@ pub const Element = union(Role) {
             .copyable => |c| c.label,
             .nav_item => |n| n.label,
             .sheet => |s| s.title,
-            .sheet_close => "Close",
-            .back => "Back",
+            .sheet_close => |c| c.label,
+            .back => |b| b.label,
             // Framework chrome, framework name — the section it is
             // showing is its value, not what it is called.
-            .nav_current => "Section",
+            .nav_current => |n| n.name,
             // The same split, for the marker that is not a section: the
             // route's title is its value (`NavHere`).
-            .nav_here => "Current screen",
+            .nav_here => |n| n.name,
             .notice => |n| n.title,
-            .notices_pane => notices_label,
+            .notices_pane => |p| p.title,
             .icon_button => |i| i.label,
             .picker => |p| p.title,
             .picker_item => |p| p.label,

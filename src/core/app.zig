@@ -161,6 +161,16 @@ pub const App = struct {
     notices: std.ArrayList(notices_mod.OwnedNotice) = .empty,
     /// How the pending notices surface; `.none` iff there are none.
     notice_state: NoticeState = .none,
+    /// The framework's own words, in this app's language (`setChrome`).
+    /// English until an app says otherwise. Borrowed, never owned — a
+    /// catalog's `tr` hands back constant data, `RouteDef.title`'s rule.
+    chrome: Chrome = .{},
+
+    /// Every string nokre itself puts on a screen. Declared with the
+    /// elements it names (element.zig), because each chrome element
+    /// copies its own out at construction: `Element.label()` is pure and
+    /// has no App to ask which language this app is in.
+    pub const Chrome = element_mod.Chrome;
 
     pub const NoticeState = enum { none, banner, pane, minimized };
 
@@ -313,6 +323,92 @@ pub const App = struct {
         // (nav.zig). A failed reshape leaves the old shape standing —
         // the wrong width to draw at, but drawable, which beats a nav
         // that vanished because an allocation did.
+        nav_mod.syncNavChrome(self) catch {};
+        self.invalidate();
+    }
+
+    /// Says the framework's own words in this app's language: the back
+    /// control's name, the sheet's close, the nav chip and the marker
+    /// beside it, the notices pane and every control on it
+    /// (`App.Chrome`). English until this is called, so an app shipping
+    /// one language never calls it.
+    ///
+    /// One call for all of them, and one struct, because they are one
+    /// fact — what nokre calls its own chrome — and a locale changes
+    /// every one at once. A setter per control would let a nav bar be
+    /// half translated, which is exactly the bug this exists for.
+    ///
+    /// The other half of a translated nav bar is the *destinations*,
+    /// whose words are the route table's (`RouteDef.title`) and never
+    /// nokre's: `setRouteTitles` is that half. Pair the two with
+    /// `setDirection` at boot and again wherever the locale changes:
+    ///
+    ///     app.setChrome(.{ .back = L.tr(loc, .back), … });
+    ///     try app.setRouteTitles(routeTable(loc));
+    ///     app.setDirection(L.dir(loc));
+    ///
+    /// Chrome standing in the tree right now is re-said on the spot —
+    /// the back control, the nav's shape, the whole notice chrome — so
+    /// this does not wait for the rebuild that follows a locale change.
+    /// The strings are borrowed: they must outlive the app, which an
+    /// ARB catalog's constant data does.
+    pub fn setChrome(self: *App, chrome: Chrome) void {
+        self.chrome = chrome;
+        // The chrome elements copied their words in when they were
+        // built, so the ones already standing are re-said here rather
+        // than left for whatever rebuild happens next.
+        var it = self.tree.dfs();
+        while (it.next()) |id| {
+            const el = self.tree.get(id) orelse continue;
+            switch (el.*) {
+                .back => |*b| b.label = chrome.back,
+                .sheet_close => |*c| c.label = chrome.close,
+                .nav_current => |*n| n.name = chrome.section,
+                .nav_here => |*n| n.name = chrome.current_screen,
+                .notices_pane => |*p| p.title = chrome.notices,
+                else => {},
+            }
+        }
+        // The notice chrome's controls name the notices they act on, so
+        // there is nothing to patch in place — it is rebuilt, which is
+        // what that function is for.
+        notices_mod.syncNoticeChrome(self) catch {};
+        self.invalidate();
+    }
+
+    /// Re-declares the route table in another language: the same table,
+    /// said differently.
+    ///
+    /// What a *screen* is called is `RouteDef.title`'s and nothing
+    /// else's — the nav's destinations, the collapsed chip's section,
+    /// the picker's rows and the marker for an off-roster screen are all
+    /// labelled from there (`nav.effectiveRoster`), which is what keeps
+    /// one screen to one name. But that table is comptime and a locale
+    /// is not, so a translated app has to be able to hand over the same
+    /// table with translated titles. Build it from your catalog and pass
+    /// it here.
+    ///
+    /// Only the titles may differ, and that is enforced: same length,
+    /// same names, same arities, same builders, position for position.
+    /// A stack entry holds an *index* into the table, so a different
+    /// table would silently rename every screen on the stack after the
+    /// first mismatch — `error.RouteTablesDiffer` instead. Nothing is
+    /// committed until the whole table has passed, so a refused call
+    /// leaves the app exactly as it was.
+    ///
+    /// The nav's roster re-borrows from the new table on the spot and
+    /// its chrome resyncs, so a row of destinations, a collapsed chip
+    /// and the marker beside them all change together.
+    pub fn setRouteTitles(self: *App, routes: []const router_mod.RouteDef) !void {
+        try self.router.retitle(routes);
+        // The roster borrowed every string it holds from the old table
+        // (`nav.RosterItem`), so it is re-pointed rather than merely
+        // re-labelled: the table it was reading may be about to go.
+        for (self.nav_items.items) |*item| {
+            const def = self.router.lookup(item.route).?;
+            item.route = def.name;
+            item.label = def.title;
+        }
         nav_mod.syncNavChrome(self) catch {};
         self.invalidate();
     }

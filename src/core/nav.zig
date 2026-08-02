@@ -32,6 +32,11 @@ const NodeId = tree_mod.NodeId;
 /// says what the screen is called (`RouteDef.title`), and a roster that
 /// repeated it would be a second place for the same fact to be wrong,
 /// with the nav and the screen's own chrome free to disagree.
+///
+/// Which is also why a translated nav bar is not a label here: the
+/// titles are the table's, so the table is what a locale change hands
+/// over again (`App.setRouteTitles`). One screen, one name, in every
+/// language.
 pub const Destination = struct {
     /// A route *name*, never a reference: a destination is a place the
     /// app always has, and an argument would make it one particular
@@ -202,18 +207,19 @@ pub fn syncNavChrome(app: *App) !void {
                 el.nav_current.icon == cur.icon) return;
         }
         try clearChildren(app, nav);
-        _ = try app.tree.append(nav, .{ .nav_current = .{ .section = cur.label, .icon = cur.icon } });
+        _ = try app.tree.append(nav, .{ .nav_current = .{ .section = cur.label, .icon = cur.icon, .name = app.chrome.section } });
     } else {
         // The destinations draw their own current state from the router,
         // so the row survives a move between two of them untouched. What
         // it cannot survive is the roster changing under it — crossing on
-        // or off it adds or drops the trailing marker — so the guard
-        // compares the tail as well as the count.
+        // or off it adds or drops the trailing marker, and a retitled
+        // table renames every one of them (`App.setRouteTitles`) — so the
+        // guard compares the words and the tail as well as the count.
         if (rowMatches(app, nav, roster)) return;
         try clearChildren(app, nav);
         for (roster) |item| {
             _ = if (item.here)
-                try app.tree.append(nav, .{ .nav_here = .{ .label = item.label } })
+                try app.tree.append(nav, .{ .nav_here = .{ .label = item.label, .name = app.chrome.current_screen } })
             else
                 try app.tree.append(nav, .{ .nav_item = .{ .label = item.label, .route = item.route, .icon = item.icon } });
         }
@@ -229,9 +235,10 @@ fn rowMatches(app: *const App, nav: NodeId, roster: []const RosterItem) bool {
         const el = app.tree.getConst(it.next() orelse return false).?;
         if (item.here) {
             // The label is the whole of it: the marker's glyph is a
-            // constant, and two routes sharing a title render alike.
+            // constant, and two routes sharing a title render alike. Its
+            // *name* is chrome and is re-said in place (`setChrome`).
             if (el.* != .nav_here or !std.mem.eql(u8, el.nav_here.label, item.label)) return false;
-        } else if (el.* != .nav_item) return false;
+        } else if (el.* != .nav_item or !std.mem.eql(u8, el.nav_item.label, item.label)) return false;
     }
     return true;
 }

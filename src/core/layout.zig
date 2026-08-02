@@ -754,7 +754,11 @@ fn layoutNoticesPane(tree: *Tree, measurer: text.Measurer, pane: NodeId, viewpor
     // the title; they pack flush like a notice row's trailing pair, so
     // only the group as a whole is held off the words.
     const title_w = inner_w - 2 * metrics.touch_target - metrics.icon_gap;
-    const title_h = ctx.wrappedHeight(.prose, .h2, element_mod.notices_label, &.{}, title_w);
+    // Read off the pane: the framework's word for it is the app's to
+    // translate (`App.Chrome.notices`) and rides on the node, so the
+    // header is measured from the bytes that will be drawn and announced
+    // rather than from a second copy that could drift.
+    const title_h = ctx.wrappedHeight(.prose, .h2, tree.getConst(pane).?.notices_pane.title, &.{}, title_w);
     const header_h = pane_edge + title_h + 8;
 
     var region: ?NodeId = null;
