@@ -71,9 +71,10 @@ pub const AppOptions = struct {
     /// checks only that it is a bundle whose layer images ship
     /// (docs/services.md).
     apple_icon: ?std.Build.LazyPath = null,
-    /// Web only: the name of the wasm module the packaging tree's
-    /// generated index.html loads, served beside it (with live.js and
-    /// its imports, per docs/internals/dom-edition.md's host contract).
+    /// Web only: the name the app's module carries inside the site
+    /// (`App.web`), and therefore the name the generated page loads.
+    /// The default is a name a page can state without knowing the
+    /// artifact's; nothing outside the site refers to it either way.
     web_wasm: []const u8 = "app.wasm",
 };
 
@@ -99,6 +100,22 @@ pub const App = struct {
     ///
     ///     b.installDirectory(.{ .source_dir = app.pkg.?, .install_dir = .prefix, .install_subdir = "pkg" });
     pkg: ?std.Build.LazyPath = null,
+    /// The **site**: everything a browser needs to run this app, in one
+    /// directory — the wasm module under the name the page loads, the
+    /// live driver's three modules, the generated stylesheet, the
+    /// faces, and the page, manifest and icons the declaration
+    /// produces. Non-null exactly when the target is the web; the rest
+    /// of the platforms have a shell instead. Install it like `pkg`,
+    /// and what lands is servable and uploadable as it stands:
+    ///
+    ///     if (app.web) |site| b.installDirectory(.{ .source_dir = site, .install_dir = .prefix, .install_subdir = "web" });
+    ///
+    /// It is a directory rather than a list of files because half a
+    /// site is not a smaller site: a missing services.js is a blank
+    /// page at run time, not a build error. There is nothing here to
+    /// copy and nothing to keep in step — the whole of it is generated
+    /// from nokre's own sources on every build (docs/getting-started.md).
+    web: ?std.Build.LazyPath = null,
 };
 
 /// The one consumer entry point: the windowed-app link wiring as a
@@ -151,6 +168,34 @@ pub fn linkSkia(nokre_dep: *std.Build.Dependency, tests: *std.Build.Step.Compile
 /// rather than restating it.
 pub fn webTarget(b: *std.Build) std.Build.ResolvedTarget {
     return b.resolveTargetQuery(.{ .cpu_arch = .wasm32, .os_tag = .freestanding });
+}
+
+pub const ServeOptions = struct {
+    /// The loopback port the site is served on.
+    port: u16 = 8000,
+};
+
+/// Serve an app's site (`App.web`) over http on this machine, as a
+/// build step:
+///
+///     const serve = nokre.addWebServe(nokre_dep, app, .{});
+///     b.step("serve", "Serve the web build at http://localhost:8000").dependOn(&serve.step);
+///
+/// It exists because a built site cannot be opened: neither a wasm
+/// module nor an ES module loads from a `file://` URL, so the last step
+/// of "see it in a browser" is a server, and every nokre project would
+/// otherwise pick a different one. nokre's own `zig build serve` runs
+/// this same binary over this same directory
+/// (src/render/dom/serve.zig), so a consumer's browser and nokre's are
+/// looking at the site through the same window.
+///
+/// The step is returned rather than named here, because a step name
+/// belongs to the build file that owns it — but name it unconditionally
+/// on either side of `-Dweb`: an app built for a native target hands
+/// back a step that says so when it runs, which is a better answer than
+/// a `serve` that exists only under a flag.
+pub fn addWebServe(nokre_dep: *std.Build.Dependency, app: App, options: ServeOptions) *std.Build.Step.Run {
+    return addWebServeTo(nokre_dep.builder, app.web, options);
 }
 
 fn addAppTo(hb: *std.Build, options: AppOptions) App {
@@ -565,7 +610,114 @@ fn addWebApp(hb: *std.Build, options: AppOptions) App {
     exe.entry = .disabled;
     exe.rdynamic = true;
     checkServicesNeedPkg(hb, options, exe);
-    return .{ .nokre = nokre_mod, .module = app_mod, .artifact = exe, .pkg = appPkgTree(hb, options) };
+    // One tree, read twice: the manifests a consumer installs as `pkg`,
+    // and — the `web/` corner of it — the page, manifest and icons the
+    // site is assembled around.
+    const pkg = appPkgTree(hb, options);
+    return .{
+        .nokre = nokre_mod,
+        .module = app_mod,
+        .artifact = exe,
+        .pkg = pkg,
+        .web = addWebSite(hb, exe.getEmittedBin(), options.web_wasm, pkg),
+    };
+}
+
+/// The site: the app's own module plus the half that makes it run, in
+/// one directory (`App.web`). Both halves are outputs — the stylesheet
+/// is generated out of color.zig/text.zig/layout.zig on every build, the
+/// glue and the faces are copied from nokre's own sources by the build
+/// graph, and the page comes from the declaration — so nothing in a
+/// site can be older than the nokre it was built against.
+///
+/// The set of files lives here and only here, and nokre's own web step
+/// assembles through this same function: a fourth module added to
+/// src/render/dom is one edit, not one per consumer. That is the whole
+/// reason this is a function rather than a paragraph in a doc — a
+/// paragraph is what a consumer was left with, and a site missing one
+/// of these files is a blank page rather than a build error.
+fn addWebSite(
+    hb: *std.Build,
+    wasm: std.Build.LazyPath,
+    web_wasm: []const u8,
+    pkg_tree: ?std.Build.LazyPath,
+) std.Build.LazyPath {
+    const wf = hb.addWriteFiles();
+    _ = wf.addCopyFile(wasm, web_wasm);
+    // The live driver's browser half (docs/internals/dom-edition.md):
+    // the page loads live.js alone, which imports the other two.
+    inline for (.{ "live.js", "live-worker.js", "services.js" }) |f| {
+        _ = wf.addCopyFile(hb.path("src/render/dom/" ++ f), f);
+    }
+    _ = wf.addCopyFile(emitStylesheet(hb), "style.css");
+    // The bundled faces, and nothing else in that directory: the
+    // licenses beside them are a fact about this repository, not a file
+    // anyone's site should answer a request for.
+    _ = wf.addCopyDirectory(hb.path("src/assets/fonts"), "fonts", .{ .include_extensions = &.{".ttf"} });
+    if (pkg_tree) |tree| {
+        // The declaration's own web corner — index.html, the
+        // manifest, the icons — lands at the site root, where the page
+        // expects the module and the stylesheet beside it.
+        _ = wf.addCopyDirectory(tree.path(hb, "web"), "", .{});
+    } else {
+        // The invalid-declaration rule (addPkgTree): the fix rides the
+        // tree's step, so a build that never installs the site
+        // proceeds and one that does fails saying what to declare.
+        wf.step.dependOn(&hb.addFail("a web app needs the app's identity — its page title, its manifest and its icons are outputs of the declaration, so declare .pkg alongside a web target (docs/getting-started.md)").step);
+    }
+    return wf.getDirectory();
+}
+
+/// The DOM edition's stylesheet, generated by the library itself on the
+/// host: thirteen grays, six type scales and every metric read out of
+/// core rather than transcribed (docs/internals/dom-edition.md). A
+/// palette byte that changes is in the next site; a copy would not be.
+fn emitStylesheet(hb: *std.Build) std.Build.LazyPath {
+    const host_nokre = hb.createModule(.{
+        .root_source_file = hb.path("src/nokre.zig"),
+        .target = hb.graph.host,
+        .optimize = .Debug,
+        .link_libc = true,
+    });
+    configureNokre(hb, host_nokre, null, .{});
+    const tool = hb.addExecutable(.{
+        .name = "emit-css",
+        .root_module = hb.createModule(.{
+            .root_source_file = hb.path("src/render/dom/emit_css.zig"),
+            .target = hb.graph.host,
+            .optimize = .Debug,
+            .imports = &.{.{ .name = "nokre", .module = host_nokre }},
+        }),
+    });
+    const run = hb.addRunArtifact(tool);
+    const css = run.addOutputFileArg("style.css");
+    // Where the faces are, as the page will ask for them.
+    run.addArgs(&.{ "./fonts", ".ttf" });
+    return css;
+}
+
+/// `addWebServe`'s inside, shared with nokre's own `serve` step. A site
+/// that does not exist — the app was built for a native target — is not
+/// a missing step but a step that says so, `blockedRunSteps`' rule:
+/// naming it only under `-Dweb` turns a forgotten flag into "no step
+/// named 'serve'".
+fn addWebServeTo(hb: *std.Build, site: ?std.Build.LazyPath, options: ServeOptions) *std.Build.Step.Run {
+    const tool = hb.addExecutable(.{
+        .name = "nokre-serve",
+        .root_module = hb.createModule(.{
+            .root_source_file = hb.path("src/render/dom/serve.zig"),
+            .target = hb.graph.host,
+            .optimize = .Debug,
+        }),
+    });
+    const run = hb.addRunArtifact(tool);
+    if (site) |dir| {
+        run.addDirectoryArg(dir);
+        run.addArg(hb.fmt("{d}", .{options.port}));
+    } else {
+        run.step.dependOn(&hb.addFail("there is no site to serve — this app was built for a native target; pass nokre.webTarget(b) as .target to build it for the browser (docs/getting-started.md)").step);
+    }
+    return run;
 }
 
 const skia_root = "deps/skia";
@@ -678,6 +830,7 @@ pub fn build(b: *std.Build) void {
     const enable_skia = b.option(bool, "skia", "Link the Skia shim for real rendering (run tools/fetch-deps.sh first)") orelse false;
     const enable_golden = b.option(bool, "golden", "Run golden screenshot tests (requires -Dskia)") orelse false;
     const update_goldens = b.option(bool, "update-goldens", "Create missing goldens and rewrite mismatched ones in place (requires -Dgolden)") orelse false;
+    const port = b.option(u16, "port", "The port `zig build serve` serves the web build on") orelse 8000;
 
     // The Windows Skia prebuilt is MSVC-ABI (clang-cl), so -Dskia builds
     // must be too; defaulting the ABI here keeps `zig build run-… -Dskia`
@@ -798,6 +951,18 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run unit tests (pure Zig; add -Dskia -Dgolden for screenshot tests)");
     test_step.dependOn(&run_unit_tests.step);
 
+    // The dev server is a tool rather than a part of the library, so it
+    // is not in the module above — but the two questions it answers
+    // (what a target names, what a browser is told a file is) are
+    // exactly the kind that fail as a blank page, so they are tested
+    // here with everything else.
+    const serve_tests = b.addTest(.{ .root_module = b.createModule(.{
+        .root_source_file = b.path("src/render/dom/serve.zig"),
+        .target = target,
+        .optimize = optimize,
+    }) });
+    test_step.dependOn(&b.addRunArtifact(serve_tests).step);
+
     if (update_goldens and !enable_golden) {
         const fail = b.addFail("-Dupdate-goldens requires -Dgolden: `zig build test -Dskia -Dgolden -Dupdate-goldens`");
         test_step.dependOn(&fail.step);
@@ -849,12 +1014,12 @@ pub fn build(b: *std.Build) void {
         addCheckObject(b, check_step, query, optimize, "nokre-check-iap", check_decl, .{ .iap = true });
     }
 
-    // ---- Web: the kitchen sink as a wasm module. ----
+    // ---- Web: the kitchen sink as a servable site. ----
     // The web's edition is the DOM one (docs/internals/dom-edition.md):
     // no Skia, no emscripten, no libc — wasm32-freestanding and the
-    // browser's own rasterizer. The artifact is one .wasm plus the
-    // module that drives it, and the directory is servable as it
-    // stands.
+    // browser's own rasterizer. The directory is what a consumer's
+    // `App.web` is, assembled by the same function, so nokre's own site
+    // and every consumer's are the same set of files by construction.
     {
         // Through the same consumer path an app takes: addAppTo sees a
         // wasm target and hands back one module, entry disabled.
@@ -865,43 +1030,31 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize, // addWebApp forces ReleaseSmall
         });
 
-        // The stylesheet is generated from color.zig/text.zig/layout.zig
-        // by the library itself; this runs that on the host and points
-        // the faces at nokre's own bundled binaries.
-        const host_nokre = b.createModule(.{
-            .root_source_file = b.path("src/nokre.zig"),
-            .target = b.graph.host,
-            .optimize = .Debug,
-            .link_libc = true,
-        });
-        configureNokre(b, host_nokre, null, .{});
-        const css_tool = b.addExecutable(.{
-            .name = "emit-css",
-            .root_module = b.createModule(.{
-                .root_source_file = b.path("src/render/dom/emit_css.zig"),
-                .target = b.graph.host,
-                .optimize = .Debug,
-                .imports = &.{.{ .name = "nokre", .module = host_nokre }},
-            }),
-        });
-        const css_run = b.addRunArtifact(css_tool);
-        const css_file = css_run.addOutputFileArg("style.css");
-        css_run.addArgs(&.{ "./fonts", ".ttf" });
+        // The kitchen sink declares no identity to `addApp` — declaring
+        // one links package_info, and this example runs with zero
+        // services linked by contract (docs/internals/contributing.md)
+        // — so its page, manifest and icons come from the declaration
+        // handed straight to the tree, exactly as installKitchenSinkPkg
+        // does for the manifests. `app.web` is therefore not the one
+        // installed here; this is the same assembly around the same
+        // module.
+        const pkg = b.addWriteFiles();
+        addPkgTree(b, pkg, kitchen_sink_pkg, .{}, "app.wasm", null);
+        const site = addWebSite(b, app.artifact.getEmittedBin(), "app.wasm", pkg.getDirectory());
 
-        const out = b.addWriteFiles();
-        _ = out.addCopyFile(app.artifact.getEmittedBin(), "app.wasm");
-        inline for (.{ "live.js", "live-worker.js", "services.js", "index.html" }) |f| {
-            _ = out.addCopyFile(b.path("src/render/dom/" ++ f), f);
-        }
-        _ = out.addCopyFile(css_file, "style.css");
-        _ = out.addCopyDirectory(b.path("src/assets/fonts"), "fonts", .{ .include_extensions = &.{".ttf"} });
-
-        const web_step = b.step("web", "Build the kitchen sink for the browser (serve zig-out/web/)");
+        const web_step = b.step("web", "Build the kitchen sink for the browser into zig-out/web/");
         web_step.dependOn(&b.addInstallDirectory(.{
-            .source_dir = out.getDirectory(),
+            .source_dir = site,
             .install_dir = .prefix,
             .install_subdir = "web",
         }).step);
+
+        // A site cannot be opened, only served (src/render/dom/serve.zig
+        // says why), so the second half of "see it in a browser" is a
+        // step and not a sentence in a doc telling the reader to find a
+        // static server.
+        const serve_step = b.step("serve", b.fmt("Build the kitchen sink for the browser and serve it at http://localhost:{d}", .{port}));
+        serve_step.dependOn(&addWebServeTo(b, site, .{ .port = port }).step);
     }
 
     // ---- Packaging manifests: build outputs of the declaration

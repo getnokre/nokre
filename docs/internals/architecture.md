@@ -58,6 +58,7 @@ nokre is a strict layer cake. Each layer knows only the layer below it.
 | [src/render/dom/serialize.zig](../../src/render/dom/serialize.zig) | `node`, `drawNode`'s counterpart: tree → markup ([dom-edition.md](dom-edition.md)) |
 | [src/render/dom/stylesheet.zig](../../src/render/dom/stylesheet.zig) | that edition's stylesheet, generated from color/text/layout |
 | [src/render/dom/live.zig](../../src/render/dom/live.zig) / [live.js](../../src/render/dom/live.js) | that edition's live driver: the app in a browser, wasm32-freestanding, no Skia |
+| [src/render/dom/emit_css.zig](../../src/render/dom/emit_css.zig) / [serve.zig](../../src/render/dom/serve.zig) | its two host tools, build-time only and in no app: the stylesheet writer, and the server a site is looked at over ([dom-edition.md](dom-edition.md)) |
 | [shim/freestanding](../../shim/freestanding/README.md) | the three headers vendored qrcodegen wants where there is no libc |
 | [src/a11y/semantics.zig](../../src/a11y/semantics.zig) | tree → flat accessibility snapshot |
 | [src/a11y/accesskit.zig](../../src/a11y/accesskit.zig) | adapter over the AccessKit C bindings — VoiceOver, UIA, and AT-SPI are live; iOS (`UIAccessibilityElement`s) and Android (`AccessibilityNodeProvider`) consume the same `flatten` output without AccessKit, and the web needs no bridge at all |

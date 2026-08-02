@@ -61,13 +61,18 @@ The same kitchen sink runs in a browser, and that is one command with
 no toolchain behind it:
 
 ```sh
-zig build web
-python3 -m http.server 8000 -d zig-out/web
+zig build serve            # -Dport=9000 if 8000 is taken
 ```
 
-Then open <http://localhost:8000> — it has to be served over http,
-since neither a wasm module nor an ES module loads from a `file://`
-URL. What runs there is the **DOM edition**: the same tree, written as
+Then open <http://localhost:8000>. Serving it is not a nicety: neither a
+wasm module nor an ES module loads from a `file://` URL, so the site has
+to arrive over http — which is why the server is a build step rather
+than a sentence telling you to go and find one. `zig build web` writes
+the same directory to `zig-out/web/` without serving it, and that
+directory is the whole site: nothing else has to go beside it, on this
+machine or on a host.
+
+What runs there is the **DOM edition**: the same tree, written as
 markup and drawn by the browser, in one 200 KB wasm module with no
 Skia in it ([internals/dom-edition.md](internals/dom-edition.md)). It
 is the one platform whose pixels are not nokre's, and the one whose
@@ -1857,32 +1862,76 @@ library, and the applicationId, which Gradle reads from the generated
 identity properties so it tracks your declaration. Open the project in
 Android Studio and Run, or `./gradlew installDebug` headlessly.
 
-**Web.** The lightest of the six. There is no native link to arrange,
-no archive to hand on, and no SDK: `addApp` sees a wasm target and
-gives back one module. Add a flag to `build.zig`:
+**Web.** The lightest of the six. There is no native link to arrange, no
+archive to hand on, and no SDK — and nothing to author either: `addApp`
+sees a wasm target and hands back the app *and the site around it*. Add
+a flag to `build.zig`:
 
 ```zig
-    const web = b.option(bool, "web", "Build the wasm module for the web") orelse false;
+    const web = b.option(bool, "web", "Build for the browser") orelse false;
 ```
 
-and pass `.target = if (web) nokre.webTarget(b) else target` to
-`addApp`. `zig build -Dweb` then produces `zig-out/bin/notes.wasm`.
-Serve it beside the four files nokre's own web step copies —
-[live.js](../src/render/dom/live.js),
+pass `.target = if (web) nokre.webTarget(b) else target` to `addApp`,
+and install what comes back beside the packaging tree:
+
+```zig
+    if (app.web) |site| b.installDirectory(.{
+        .source_dir = site,
+        .install_dir = .prefix,
+        .install_subdir = "web",
+    });
+
+    const serve = nokre.addWebServe(nokre_dep, app, .{}); // .port = 8000
+    b.step("serve", "Serve the web build at http://localhost:8000").dependOn(&serve.step);
+```
+
+Two commands from here:
+
+```sh
+zig build -Dweb          # zig-out/web/ — the whole site
+zig build serve -Dweb    # the same site, served at http://localhost:8000
+```
+
+`app.web` is a directory, not a file, and that is the point: the wasm
+module under the name the page loads, the live driver's three modules
+([live.js](../src/render/dom/live.js),
 [live-worker.js](../src/render/dom/live-worker.js),
-[services.js](../src/render/dom/services.js) and a page that calls
-`mount({ wasm, into })` — plus the stylesheet the library generates and
-the faces it serves ([index.html](../src/render/dom/index.html) is the
-whole of that page, and `zig build web`'s step in nokre's `build.zig`
-is the recipe). Everything carries over: keyboard, scrolling, the
-software keyboard, dark mode from the OS, and an accessibility tree
-that is not mirrored anywhere, because it is the page.
+[services.js](../src/render/dom/services.js)), the stylesheet the
+library generates out of its own palette and metrics, the four bundled
+faces, and the page, manifest and icons your Part 1 declaration
+produces. Half a site is not a smaller site — a missing `services.js` is
+a blank page in a browser rather than an error in a build — so there is
+nothing here to copy by hand and nothing that can fall behind the nokre
+you built against. Upload the directory to any static host and you have
+shipped; there is no server-side anything.
+
+Name the `serve` step whether or not the flag is set. Built for a native
+target, `app.web` is null and the step you get says so when it runs,
+which beats `zig build serve` answering "no step named 'serve'".
+
+Everything carries over: keyboard, scrolling, the software keyboard,
+dark mode from the OS, and an accessibility tree that is not mirrored
+anywhere, because it is the page. Three things do not, and they are the
+web's price rather than a gap to be closed
+([internals/dom-edition.md](internals/dom-edition.md) argues each):
+
+- **No pixel goldens.** Part 12's screenshot tests cover the five native
+  shells and stop at the browser, because the browser owns text metrics:
+  it measures the runs, so it decides where your prose wraps and whether
+  a row of actions folds its tail. Your web build's frames are not its
+  macOS sibling's, and the assertions that do hold there are the
+  semantic ones — the tree, the roles, the labels — which is what the
+  harness checks anyway.
+- **No fractional-scaling refusal.** A browser will hand out a 1.1
+  device pixel ratio and no edition can decline it on your behalf.
+- **System fonts show through.** The four bundled faces are still the
+  only ones nokre asks for, but a codepoint outside them falls back to
+  whatever the reader has.
 
 Text on Windows and Android rasterizes through FreeType rather than
 CoreText, and byte-identity today is per-platform, not across
 platforms — your goldens reflect the platform that created them
-([internals/skia-build.md](internals/skia-build.md)); the web has its
-own answer, which is that its pixels are the browser's. The `worker`
+([internals/skia-build.md](internals/skia-build.md)). The `worker`
 and `http` services need no porting anywhere: the same app code runs on
 a `std.Thread` or a Web Worker, `std.http.Client` or `fetch`.
 
@@ -1928,8 +1977,8 @@ zig build run-hello -Dskia      # examples (macOS / Windows / Linux)
 zig build run-kitchen-sink -Dskia
 tools/build-skia-ios.sh         # build Skia for iOS from source (once)
 tools/build-skia-android.sh     # build Skia for Android from source (once; needs an NDK)
-zig build web                   # kitchen sink for the browser → zig-out/web/
-python3 -m http.server 8000 -d zig-out/web   # then open http://localhost:8000
+zig build web                   # kitchen sink's site for the browser → zig-out/web/
+zig build serve                 # the same site at http://localhost:8000 (-Dport=…)
 zig build check-targets         # compile-check every platform stub
 ```
 
@@ -1940,6 +1989,7 @@ zig build run                   # the windowed app (macOS / Windows / Linux)
 zig build test                  # headless e2e tests, no dependencies
 zig build test -Dgolden         # + byte-exact golden screenshots
 zig build                       # artifact + generated zig-out/pkg/ manifests
-zig build -Dweb                 # the wasm module the web page loads (zig-out/bin/notes.wasm)
+zig build -Dweb                 # the servable site → zig-out/web/
+zig build serve -Dweb           # the same site at http://localhost:8000
 zig build -Dtarget=aarch64-linux-android  # SDK-free compile check
 ```

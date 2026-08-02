@@ -627,13 +627,35 @@ pub fn webManifest(gpa: std.mem.Allocator, decl: Decl) error{OutOfMemory}![]u8 {
 /// The whole web host page, so a consumer authors no HTML at all: title
 /// and manifest come from the declaration, `module_wasm` names the wasm
 /// module served beside it. live.js, services.js, live-worker.js,
-/// style.css and the fonts ride along from the web build (build.zig's
-/// web step writes the set) — the page loads only live.js, which
-/// imports the rest itself. It is short because everything a nokre app
-/// puts on screen comes out of the tree; what is left to a host page is
-/// the readable column, the one thing the tree cannot say
-/// (src/render/dom/index.html states that call at length — this page
-/// makes the same one).
+/// style.css and the fonts ride along in the same directory (build.zig's
+/// `addWebSite` writes the set) — the page loads only live.js, which
+/// imports the rest itself. It is the only host page nokre has: the
+/// kitchen sink's own site is served from this same emitter, so there
+/// is no second one to drift from.
+///
+/// It is this short because everything a nokre app puts on screen comes
+/// out of the tree, so a page around one has nothing to say and no
+/// markup to get wrong. What is left to it is the one thing the tree
+/// cannot say: how wide a window may get before its prose stops being
+/// readable.
+///
+/// That number is the page's own, not `--pane`: that variable is
+/// `sheet_max_w`, which the library spends on the surfaces holding prose
+/// *inside* an app — a sheet, the notices pane, a select's picker.
+/// Borrowing it would make this cap look like a library rule rather than
+/// a page agreeing with one, and retuning it would move all of those
+/// panes. 560 is the phone's answer; a desktop window reading 560px of
+/// 1400 looks like a phone emulator, so it steps once and no further.
+///
+/// It goes on the mount container rather than on the screen inside it,
+/// because the driver reports that container's width to core as the
+/// viewport (docs/internals/dom-edition.md): a cap the page kept to
+/// itself would be a column core never heard of, and every measured
+/// decision core makes — where prose wraps, whether a row of actions
+/// folds, whether a track has to bleed — would be answered against a
+/// width nobody is looking at. Which is also why the step at 900px is
+/// not a page style: it hands core a wider viewport and has it answer
+/// those questions again.
 pub fn webIndexHtml(gpa: std.mem.Allocator, decl: Decl, module_wasm: []const u8) error{OutOfMemory}![]u8 {
     const name_html = try xmlEscapedAlloc(gpa, decl.name);
     defer gpa.free(name_html);

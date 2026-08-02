@@ -100,6 +100,73 @@ The one thing a consumer's root still owes is a reference to the library
 (`comptime { _ = nokre; }`), because `main` never runs here and without
 it nothing pulls nokre into the build at all.
 
+### The unit is the site, and there is one assembler
+
+The module is half of what a browser needs; the other half is the glue
+that instantiates it, the stylesheet, the faces, and a page. Those are
+not the app's, so they cannot be the app's build's — and for a while
+they were nobody's on the consumer's side: `zig build web` assembled
+them here, `addApp` handed a consumer a bare `.wasm`, and the recipe
+for the rest was a paragraph in getting-started.md. A paragraph is a
+poor place for it. Miss `services.js` out of the set and the failure is
+a blank page in someone's browser, not an error in anyone's build.
+
+So the set lives in exactly one function — `addWebSite` in
+[build.zig](../../build.zig) — which `addApp` calls for every wasm
+target and which nokre's own `web` step calls for the kitchen sink.
+What it writes:
+
+| in the site | where it comes from |
+| --- | --- |
+| the app's module, under `web_wasm` | the consumer's own compile |
+| `live.js`, `live-worker.js`, `services.js` | `src/render/dom`, copied by the build graph |
+| `style.css` | *generated*, by running `emit_css.zig` on the host |
+| `fonts/*.ttf` | `src/assets/fonts` |
+| `index.html`, `manifest.webmanifest`, `icon-*.png` | the packaging tree's `web/` corner (packaging.zig) |
+
+Two properties follow, and they are the reason for the shape. Nothing
+in a site can be stale, because nothing in it is a copy a human made:
+the stylesheet is generated from `color.zig`/`text.zig`/`layout.zig` on
+every build, the glue and the faces are graph inputs, and the page is
+an output of the app's declaration. And nothing in a site can be
+*partial*, because a consumer installs one directory rather than
+assembling a list — `App.web`, exactly as they install `App.pkg`. A
+fourth module added to `src/render/dom` is one edit here and it is in
+every consumer's next build.
+
+The page is the declaration's, which is why a web target without one
+fails: `packaging.webIndexHtml` needs a title, and the manifest and
+icons need an identity. The refusal follows the invalid-declaration
+rule the packaging tree already uses — the fail rides the tree's step,
+so a build that never installs the site proceeds and one that does
+fails naming `.pkg`. The kitchen sink is the exception that proves the
+rule: it links zero services by contract, so it cannot declare `.pkg`
+to `addApp` at all, and its site is assembled around the declaration
+handed straight to `addPkgTree` — the arrangement `zig build pkg`
+already used for its manifests.
+
+There is no second host page anywhere. The hand-written one this
+directory used to keep was the same page `webIndexHtml` emits, minus
+an identity, and two of a thing that must agree is one too many.
+
+### Serving it, which is not optional
+
+A site cannot be opened, only served: `WebAssembly.instantiateStreaming`
+wants `application/wasm` and an ES module import wants a JavaScript
+type, and a `file://` URL supplies neither — both fail as a blank page
+rather than as a message. So the server is part of the edition, not an
+errand left to the reader:
+[serve.zig](../../src/render/dom/serve.zig) is a host tool beside
+`emit_css.zig`, `zig build serve` runs it here, and
+`nokre.addWebServe` gives a consumer the same binary over their own
+`App.web`. It binds loopback only, states the two content types a
+browser refuses to guess, answers `no-store` so a rebuild is one
+refresh away, and resolves a target to a path inside the site or to
+nothing at all. Its two decisions are unit-tested in the file, and
+`main` is referenced by a test so a broken server is caught by
+`zig build test` rather than by a developer who wanted to look at their
+app.
+
 ### Live over a generated page
 
 The two drivers over one page, which is the pairing the split exists

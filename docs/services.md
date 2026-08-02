@@ -230,7 +230,9 @@ Nothing is read back at runtime; instead the manifests are packaging
 [src/packaging/packaging.zig](../src/packaging/packaging.zig) generate
 them all from this one declaration — `Info.plist`, `AndroidManifest.xml`
 (plus the identity properties Gradle reads), the web page and its app
-manifest, and the app icon in each platform's format — so no file can
+manifest (which a web build folds into the site it hands back —
+[getting-started.md](getting-started.md)), and the app icon in each
+platform's format — so no file can
 become a second source of truth or need hand-writing; generated ones
 stay gitignored. The icon is derived too: a deterministic grayscale
 mark computed from the id

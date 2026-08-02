@@ -37,8 +37,10 @@ fact has one home; complement, never duplicate. Start with
 - `tools/build-skia-android.sh` once (needs an NDK), then open
   `examples/kitchen_sink/android` in Android Studio (or `./gradlew installDebug`
   there) — kitchen sink on an Android emulator / device
-- `zig build web` and serve `zig-out/web/` — kitchen sink in the
-  browser. The web's edition is the DOM one: wasm32-freestanding, no
+- `zig build serve` (`-Dport=…`) — kitchen sink in the browser;
+  `zig build web` writes the same site to `zig-out/web/` without
+  serving it, and a consumer gets that directory as `App.web` from
+  `addApp`. The web's edition is the DOM one: wasm32-freestanding, no
   Skia, no emscripten (`docs/internals/dom-edition.md`)
 - `zig build pkg` — generate the platform packaging manifests into
   `zig-out/pkg` (the Android example's Gradle runs it per configuration)
