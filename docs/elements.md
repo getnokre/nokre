@@ -110,6 +110,28 @@ an empty badge is a floating border saying nothing. For status inside a
 Semantics: plain static text; assistive tech hears the words, which is
 everything the badge says.
 
+**A number with a name on it is a badge.** "3 credits", "12 active
+keys", "2 pending" — a quantity and the thing it counts, formatted by
+you (nokre does no number formatting; that is
+[localization.md](localization.md)'s refusal) and handed over as one
+label. That is what the element is: the chip whose *words* carry the
+state, so a labelled scalar is its central case rather than an
+afterthought. Reaching for `text` instead is the mistake this paragraph
+exists to prevent — plain text puts the figure in the prose column at
+prose weight, where nothing distinguishes a live count from a sentence
+about one, and the border a badge draws is exactly what says "this is a
+reading, and it changes".
+
+The one to hand it to `meter` instead is a **fraction of a whole you
+want seen as a fraction**: "5 of 10 uses", "12 of 30 days". Both
+elements put the state in the words, and the split is whether there is a
+whole to be part of and whether being three-quarters through it is worth
+a glance. A count with no ceiling ("3 credits") has no bar to draw and
+takes the chip; a count against a ceiling you are meant to feel takes
+the bar and the full width it needs. Where the ceiling exists but the
+fill would say nothing — "1 of 4 seats", in a row of other chips — the
+badge is still the honest answer, and the words still say all of it.
+
 ### `meter`
 How much of a whole is filled: a full-width bar under words that state
 it, at `text_input`'s label scale. As with `badge`, the words carry the
