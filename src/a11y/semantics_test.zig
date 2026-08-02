@@ -962,3 +962,40 @@ test "a folded button is absent; the control standing in for it is a button" {
     try testing.expectEqualStrings("More", dialog.?.label);
     try testing.expectEqual(A11yRole.button, opened.findByLabel("Five").?.role);
 }
+
+test "wrapping a row changes no part of what is announced" {
+    // Wrapping is where marks land, not what is said. The proof is the
+    // snapshot taken twice — once on a row that fits, once on the same
+    // row narrowed until it takes three lines — compared field by field
+    // with the rect deliberately left out, because the rect is the only
+    // thing that is *supposed* to move.
+    var app = try test_app.init(600, 400);
+    defer app.deinit();
+    const row = try app.tree.append(app.tree.rootId(), .{ .stack = .{ .axis = .horizontal, .gap = 8 } });
+    for ([_][]const u8{ "Admin", "Until cycle end", "Held for review" }) |label| {
+        _ = try app.tree.append(row, .{ .badge = .{ .label = label } });
+    }
+
+    var wide = try snapshot(testing.allocator, &app);
+    defer wide.deinit();
+
+    app.setViewport(.{ .w = 200, .h = 400 });
+    var narrow = try snapshot(testing.allocator, &app);
+    defer narrow.deinit();
+
+    // It did wrap: three chips, three lines.
+    var ys: [3]i32 = undefined;
+    var it = app.tree.children(row);
+    for (&ys) |*slot| slot.* = app.tree.rectOf(it.next().?).y;
+    try testing.expect(ys[0] < ys[1] and ys[1] < ys[2]);
+
+    try testing.expectEqual(wide.nodes.items.len, narrow.nodes.items.len);
+    for (wide.nodes.items, narrow.nodes.items) |a, b| {
+        var stripped_a = a;
+        var stripped_b = b;
+        stripped_a.rect = .zero;
+        stripped_b.rect = .zero;
+        try testing.expectEqualStrings(a.label, b.label);
+        try testing.expectEqualDeep(stripped_a, stripped_b);
+    }
+}

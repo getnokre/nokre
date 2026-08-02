@@ -138,8 +138,10 @@ scale, the same for every glyph in the bundled face (pinned by a test,
 since the guidance below rests on the number).
 
 Twenty pixels is 15% of a long chip and over a third of a short one, on
-an element that is often several across in a row that already has to fit
-a 320pt screen. So: **a mark earns its width where chips are read as a
+an element that is often several across in a row on a 320pt screen. That
+row [wraps](#a-row-too-narrow-for-its-children) rather than clipping, so
+the width a mark takes is spent in *lines* now rather than in pixels off
+the edge — cheaper, and still spent. So: **a mark earns its width where chips are read as a
 set** — a row of tags, a row of dimensions, where the glyphs are what
 lets the eye sort them — and not on a lone chip beside prose, where it
 is 20px spent on a picture of a word already visible next to it.
@@ -213,10 +215,45 @@ element bleeds is the framework's decision, not a knob. Negative
 inset buys elsewhere is exactly what declining the advice provides,
 bounded by an edge instead of a number.
 
-A horizontal stack holding nothing but **actions** — `button`s and
-`link`s, in any mix — is a row of actions, and one too narrow for them
-folds instead of running off the edge. See
-[the folded tail](#the-folded-tail-more) below. Nothing opts in.
+#### A row too narrow for its children
+
+A horizontal stack that runs out of line does one of exactly two things,
+and **the row's own children pick which**. There is no field, no wrapper
+and nothing to opt into, so there is no way to be handed the wrong one:
+
+- **A row of actions folds.** Every child a `button` or a `link`, two or
+  more of them: the tail collapses into a `More` control and the row
+  stays one line. [The folded tail](#the-folded-tail-more) has the
+  mechanics.
+- **Every other row wraps.** Children flow along the line and break onto
+  a new one when the next will not fit — greedy, first-fit, in document
+  order, each line `gap` below the last and centered on its own tallest.
+
+The split is what the row *is*. Actions have to stay reachable and a user
+needs all of them, so one row plus a control that opens the rest is the
+honest shape; folding three status chips behind `More` would hide state
+behind a press, and clipping them would hide it outright. Wrapping is
+also the answer for the rows that cannot fold — a lone action, and a row
+of actions inside a sheet, which has no second sheet to fold into.
+
+Width is not an input to the choice. A row is a row of actions or it
+isn't, at every viewport, so resizing the window can change where a line
+breaks or how deep a tail folds, but never which of the two the reader is
+looking at.
+
+Wrapping bounds the problem the way shortening the words never could:
+**a row can always fit, as long as each child fits a line on its own.**
+One that does not — a chip whose label alone exceeds the span — gets a
+line to itself and overflows it. Nothing ahead of it pushes it further
+out and nothing behind it is dragged along, but nokre does not shrink it,
+elide it or refuse it: an oversized chip is over-long *words*, and the
+words are the whole element ([badge](#badge)).
+
+Wrapping changes where marks land and nothing else. No node is added,
+removed or hidden, the focus order is document order either way, and the
+accessibility snapshot of a row that wrapped is identical to the same
+row's on a wider screen. A reader is never told a line broke — because
+nothing about the app did.
 
 ### `box`
 Grouping container: vertical flow, optional 1px border (default on),
@@ -481,8 +518,9 @@ would take the press and leave the original saying the old thing.
 Anything else in the row and it doesn't fold: two arrows with a month
 between them is a pager, not a menu, and folding "March" behind a control
 named for having more would be nonsense. A row of one action doesn't fold
-either — that hides the only action twice. Those rows keep the behavior
-every over-wide row had before the fold existed.
+either — that hides the only action twice. Those rows
+[wrap](#a-row-too-narrow-for-its-children) instead, which is the other
+half of the same rule.
 
 The fold is deliberately one action deeper than the overflow itself. The
 one that was already half off the screen is not the one to replace:
@@ -507,8 +545,8 @@ Details worth knowing:
   already running), in which case the sheet stays where it is.
 - **Not inside a sheet.** There is one sheet at a time, so a row already
   inside one has nowhere to fold to; it keeps every action it was given
-  and clips like any other over-wide content. A sheet is a handful of
-  controls, not a toolbar.
+  and [wraps](#a-row-too-narrow-for-its-children) to a second line. A
+  sheet is a handful of controls, not a toolbar.
 - **The sheet closes if what it lists stops being true.** The window
   grew and the actions are back on the row; it folded deeper and the
   open list no longer names everything hidden; or a folded original

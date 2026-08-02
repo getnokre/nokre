@@ -185,6 +185,13 @@ CSS, because they are not style: they are decisions core made from a
 number. The only repair is to ask again with the right number, which is
 what booting does.
 
+A **wrapping** row is the one that comes out right anyway, for a reason
+worth naming. *Which* rows wrap is `layout.rowOverflow`, a question about
+the children and not about a width, so the serializer answers it with no
+ruler at all; *where* the lines then break is `flex-wrap`'s, which is the
+reader's own metrics in the reader's own window. The fold needs a
+measurement a generator does not have. Wrapping needs none.
+
 What the host document owes, and what it keeps:
 
 - **Its own `<main>`.** `mount({ into, content })` patches the

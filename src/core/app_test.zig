@@ -3882,7 +3882,7 @@ test "a folded button is neither a focus stop nor a target" {
     try testing.expect(stop.?.on(more)); // One, Two, Three, then More
 }
 
-test "a row of actions inside a sheet does not fold" {
+test "a row of actions inside a sheet wraps instead of folding" {
     var counter: PressCounter = .{};
     var app = try test_app.init(400, 600);
     defer app.deinit();
@@ -3897,12 +3897,25 @@ test "a row of actions inside a sheet does not fold" {
     app.performLayout();
 
     // A sheet is the one layer a sheet cannot open over, so the tail has
-    // nowhere to go and the row keeps every button it was given.
+    // nowhere to go and the row keeps every button it was given. It is
+    // therefore not a folding row, and gets the other behaviour: the
+    // buttons that do not fit stand on a second line inside the sheet,
+    // where they used to run out through its edge.
     try testing.expect(childOfRole(&app, row, .more) == null);
+    const pane = app.tree.rectOf(sheet);
+    var lines: usize = 0;
+    var prev_y: i32 = -1;
     var it = app.tree.children(row);
     while (it.next()) |c| {
         try testing.expect(!app.tree.getConst(c).?.button.folded);
+        const r = app.tree.rectOf(c);
+        try testing.expect(r.x >= pane.x and r.x + r.w <= pane.x + pane.w);
+        if (r.y != prev_y) {
+            lines += 1;
+            prev_y = r.y;
+        }
     }
+    try testing.expect(lines > 1);
 }
 
 test "focus follows a second fold, when the control is already standing" {

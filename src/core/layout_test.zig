@@ -533,6 +533,129 @@ test "layout: a mixed row and a lone button never fold" {
     var folded: [5][]const u8 = undefined;
     try testing.expectEqual(@as(usize, 0), foldedLabels(&tree, mixed, &folded));
     try testing.expectEqual(@as(usize, 0), foldedLabels(&tree, lone, &folded));
+    // Both wrap instead — which is what "does not fold" now means.
+    try testing.expectEqual(layout.RowOverflow.wrap, layout.rowOverflow(&tree, mixed));
+    try testing.expectEqual(layout.RowOverflow.wrap, layout.rowOverflow(&tree, lone));
+}
+
+// ---- the wrapped lines of every other row -----------------------------------
+
+/// Chips of `len` codepoints under the fixed measurer: small is 12px, so
+/// 7px a character, plus the chip's two pads and two borders.
+fn badgeWidth(len: i32) i32 {
+    return 7 * len + 2 * (metrics.badge_pad_h + metrics.border);
+}
+
+const badge_h = text.Scale.small.lineHeight() + 2 * (metrics.badge_pad_v + metrics.border);
+
+/// Five four-character chips, 46px each with an 8px gap, in the 168px a
+/// 200px viewport leaves after the root's margin: three fit (154), a
+/// fourth would want 208.
+fn buildChipRow(tree: *Tree, count: usize) !NodeId {
+    const row = try tree.append(tree.rootId(), .{ .stack = .{ .axis = .horizontal, .gap = 8 } });
+    for (0..count) |_| _ = try tree.append(row, .{ .badge = .{ .label = "abcd" } });
+    return row;
+}
+
+fn nthChild(tree: *const Tree, parent: NodeId, n: usize) NodeId {
+    var it = tree.children(parent);
+    var i: usize = 0;
+    while (it.next()) |c| : (i += 1) if (i == n) return c;
+    unreachable;
+}
+
+test "layout: a row of chips breaks to the next line rather than off the edge" {
+    var tree = try Tree.init(testing.allocator);
+    defer tree.deinit();
+    const row = try buildChipRow(&tree, 5);
+    compute(&tree, text.Measurer.fixed, .{ .w = 200, .h = 480 });
+
+    const w = badgeWidth(4);
+    try testing.expectEqual(46, w);
+    // Greedy first fit, in document order: three, then the rest.
+    const xs = [_]i32{ 16, 16 + w + 8, 16 + 2 * (w + 8), 16, 16 + w + 8 };
+    const ys = [_]i32{ 16, 16, 16, 16 + badge_h + 8, 16 + badge_h + 8 };
+    for (xs, ys, 0..) |x, y, i| {
+        const r = tree.rectOf(nthChild(&tree, row, i));
+        try testing.expectEqual(x, r.x);
+        try testing.expectEqual(y, r.y);
+        try testing.expectEqual(w, r.w);
+    }
+    // Nothing runs past the content edge any more, and the row is as
+    // tall as the two lines it took.
+    for (0..5) |i| {
+        const r = tree.rectOf(nthChild(&tree, row, i));
+        try testing.expect(r.x + r.w <= 200 - 16);
+    }
+    try testing.expectEqual(2 * badge_h + 8, tree.rectOf(row).h);
+}
+
+test "layout: a wrapped row mirrors, and breaks in the same places" {
+    var ltr = try Tree.init(testing.allocator);
+    defer ltr.deinit();
+    const ltr_row = try buildChipRow(&ltr, 5);
+    compute(&ltr, text.Measurer.fixed, .{ .w = 200, .h = 480 });
+
+    var rtl = try Tree.init(testing.allocator);
+    defer rtl.deinit();
+    const rtl_row = try buildChipRow(&rtl, 5);
+    _ = layout.computeScrolled(&rtl, text.Measurer.fixed, .{ .w = 200, .h = 480 }, 0, 0, .rtl, "More");
+
+    const w = badgeWidth(4);
+    for (0..5) |i| {
+        const l = ltr.rectOf(nthChild(&ltr, ltr_row, i));
+        const r = rtl.rectOf(nthChild(&rtl, rtl_row, i));
+        // Same line, same order along it — the mirror image, not a
+        // different break.
+        try testing.expectEqual(l.y, r.y);
+        try testing.expectEqual(200 - l.x - w, r.x);
+    }
+    try testing.expectEqual(ltr.rectOf(ltr_row).h, rtl.rectOf(rtl_row).h);
+}
+
+test "layout: a chip wider than the line gets the line to itself" {
+    var tree = try Tree.init(testing.allocator);
+    defer tree.deinit();
+    const row = try tree.append(tree.rootId(), .{ .stack = .{ .axis = .horizontal, .gap = 8 } });
+    _ = try tree.append(row, .{ .badge = .{ .label = "abcd" } });
+    const huge = try tree.append(row, .{ .badge = .{ .label = "a" ** 40 } });
+    _ = try tree.append(row, .{ .badge = .{ .label = "abcd" } });
+    compute(&tree, text.Measurer.fixed, .{ .w = 200, .h = 480 });
+
+    const first = tree.rectOf(nthChild(&tree, row, 0));
+    const big = tree.rectOf(huge);
+    const last = tree.rectOf(nthChild(&tree, row, 2));
+    // The one case wrapping cannot rescue, and does not pretend to: the
+    // chip starts a line of its own and overflows it. What wrapping does
+    // buy is that it overflows by its own width and no more — nothing
+    // ahead of it pushes it further out, and nothing behind it is dragged
+    // along.
+    try testing.expectEqual(16, first.x);
+    try testing.expectEqual(16, big.x);
+    try testing.expect(big.x + big.w > 200);
+    try testing.expectEqual(16, last.x);
+    try testing.expectEqual(first.y + badge_h + 8, big.y);
+    try testing.expectEqual(big.y + badge_h + 8, last.y);
+}
+
+test "layout: each wrapped line centers on its own tallest" {
+    var tree = try Tree.init(testing.allocator);
+    defer tree.deinit();
+    const row = try tree.append(tree.rootId(), .{ .stack = .{ .axis = .horizontal, .gap = 8 } });
+    // Line one: a chip beside a button, which is taller. Line two: two
+    // chips, whose line has no button to center against.
+    const chip = try tree.append(row, .{ .badge = .{ .label = "abcd" } });
+    const button = try tree.append(row, .{ .button = .{ .label = "Press" } });
+    const wrapped = try tree.append(row, .{ .badge = .{ .label = "abcd" } });
+    compute(&tree, text.Measurer.fixed, .{ .w = 200, .h = 480 });
+
+    const button_h = text.Scale.body.lineHeight() + 2 * (metrics.button_pad_v + metrics.border);
+    const b = tree.rectOf(button);
+    try testing.expectEqual(16, b.y);
+    // Centered against the button on its line…
+    try testing.expectEqual(16 + @divTrunc(button_h - badge_h, 2), tree.rectOf(chip).y);
+    // …and flush with the top of a line that holds only chips.
+    try testing.expectEqual(16 + button_h + 8, tree.rectOf(wrapped).y);
 }
 
 test "layout: a link among the buttons is one of the actions, not a disqualifier" {

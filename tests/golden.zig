@@ -468,6 +468,60 @@ test "golden: a row of chips carrying decorative marks" {
     try renderGolden(&harness, "badge-marked");
 }
 
+/// The case wrapping exists for: a member row's state chips at the
+/// narrowest viewport nokre targets. Three of them do not fit one line
+/// and they are not actions, so the row breaks instead of folding — a
+/// fold would hide state behind a press, and clipping would hide it
+/// outright. Nothing about the tree changed; only where the marks land.
+fn buildWrappedChips(_: ?*anyopaque, app: *h.App) !void {
+    const tree = &app.tree;
+    const root = tree.rootId();
+    // A member box, which is where the row actually sits: the box's edge
+    // takes 13px off each side, and that is the width the third chip
+    // runs out of.
+    const box = try tree.append(root, .{ .box = .{} });
+    _ = try tree.append(box, .{ .text = .{ .content = "bob@acme.com" } });
+    const row = try tree.append(box, .{ .stack = .{ .axis = .horizontal } });
+    _ = try tree.append(row, .{ .badge = .{ .label = "Admin" } });
+    _ = try tree.append(row, .{ .badge = .{ .label = "Until cycle end" } });
+    _ = try tree.append(row, .{ .badge = .{ .label = "Held for review" } });
+    // A button beside chips: each line centers on its own tallest, so
+    // the chips below are not held to the taller line above them.
+    const mixed = try tree.append(root, .{ .box = .{} });
+    const mixed_row = try tree.append(mixed, .{ .stack = .{ .axis = .horizontal } });
+    _ = try tree.append(mixed_row, .{ .button = .{ .label = "Manage" } });
+    _ = try tree.append(mixed_row, .{ .badge = .{ .label = "Pending review" } });
+    _ = try tree.append(mixed_row, .{ .badge = .{ .label = "Invited" } });
+}
+
+test "golden: a row of chips too wide for the line wraps instead of folding" {
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 320, .h = 220 }, null, buildWrappedChips);
+    defer harness.deinit();
+    try renderGolden(&harness, "chips-wrapped");
+}
+
+fn buildWrappedChipsRtl(_: ?*anyopaque, app: *h.App) !void {
+    // Mirrored, each line fills from the right and breaks in the same
+    // places: the lines are the LTR ones reflected, not a different
+    // arrangement. Vertical geometry is direction-blind, so they still
+    // stack downward.
+    app.setDirection(.rtl);
+    const tree = &app.tree;
+    const root = tree.rootId();
+    const box = try tree.append(root, .{ .box = .{} });
+    _ = try tree.append(box, .{ .text = .{ .content = "بهرام" } });
+    const row = try tree.append(box, .{ .stack = .{ .axis = .horizontal } });
+    _ = try tree.append(row, .{ .badge = .{ .label = "مدیر" } });
+    _ = try tree.append(row, .{ .badge = .{ .label = "در پایان دوره ترک می‌کند" } });
+    _ = try tree.append(row, .{ .badge = .{ .label = "در انتظار بررسی" } });
+}
+
+test "golden: a wrapped row mirrors, filling each line from the right" {
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 320, .h = 160 }, null, buildWrappedChipsRtl);
+    defer harness.deinit();
+    try renderGolden(&harness, "chips-wrapped-rtl");
+}
+
 fn buildCheckboxes(_: ?*anyopaque, app: *h.App) !void {
     const tree = &app.tree;
     const root = tree.rootId();

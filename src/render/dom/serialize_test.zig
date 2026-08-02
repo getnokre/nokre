@@ -537,6 +537,30 @@ test "a folded action is not on the row; the more control stands there" {
     try expectLacks(tr, ">More</button>");
 }
 
+test "which of the two things a row does is carried into the markup" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    // A row of actions folds and stays on one line; a row of chips wraps.
+    // The class is `layout.rowOverflow`'s answer, not a selector's guess,
+    // so the browser breaks exactly the rows core breaks.
+    const actions = try app.tree.append(app.tree.rootId(), .{ .stack = .{ .axis = .horizontal } });
+    _ = try app.tree.append(actions, .{ .button = .{ .label = "Save" } });
+    _ = try app.tree.append(actions, .{ .link = .{ .label = "Details", .route = "d" } });
+    const chips = try app.tree.append(app.tree.rootId(), .{ .stack = .{ .axis = .horizontal } });
+    _ = try app.tree.append(chips, .{ .badge = .{ .label = "Admin" } });
+    _ = try app.tree.append(chips, .{ .badge = .{ .label = "Held for review" } });
+
+    const html = try render(&app);
+    defer testing.allocator.free(html);
+    try expectContains(html, "<div class=\"stack row\">");
+    try expectContains(html, "<div class=\"stack row wrap\">");
+    // And the stylesheet has the rule the class names.
+    var css: std.ArrayList(u8) = .empty;
+    defer css.deinit(testing.allocator);
+    try stylesheet.write(testing.allocator, &css, .{});
+    try expectContains(css.items, ".stack.row.wrap { flex-wrap: wrap;");
+}
+
 test "a list's marker is derived, so the markup carries none" {
     var app = try test_app.init(400, 400);
     defer app.deinit();

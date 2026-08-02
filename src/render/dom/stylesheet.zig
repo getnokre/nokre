@@ -627,15 +627,23 @@ const sheet =
     \\  gap: var(--gap);
     \\  padding: var(--pad);
     \\}
-    \\/* Rows place children at their intrinsic widths and let the row
-    \\   overflow; a run of actions too wide for one folds its tail into
-    \\   the `more` control (overflow.zig) rather than wrapping to a
-    \\   second line, so there is no wrapping to switch on here. */
+    \\/* Rows place children at their intrinsic widths. Which of the two
+    \\   things an over-wide one does is `layout.rowOverflow`, asked in the
+    \\   serializer so both editions read one answer rather than a selector
+    \\   guessing at it: a run of actions folds its tail into the `more`
+    \\   control (overflow.zig) and stays on one line, everything else
+    \\   wraps. `align-content` because the default stretches the lines
+    \\   apart to fill a height the row does not have — they stack at the
+    \\   top, one `gap` apart, the way `layoutWrappingRow` stacks them. */
     \\.stack.row { flex-direction: row; flex-wrap: nowrap; align-items: center; }
+    \\.stack.row.wrap { flex-wrap: wrap; align-content: flex-start; }
     \\/* And each child takes its own width. `layoutHorizontalFlow` places
     \\   them at `intrinsicSize` — capped at the row's span, never
     \\   *shared* down to fit it — so a row too full overflows rather than
-    \\   squeezing every item in it a little. */
+    \\   squeezing every item in it a little. A wrapping row's line breaks
+    \\   are the browser's here, and greedy first-fit in core: the same
+    \\   rule over the same intrinsic widths, which is as close as the two
+    \\   editions get on geometry (renderer-editions.md). */
     \\.stack.row > * { flex: none; max-width: 100%; }
     \\
     \\/* A box groups; it does not decorate. Its edge is a wall — the

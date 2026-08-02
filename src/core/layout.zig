@@ -8,7 +8,9 @@
 //!   width, intrinsic elements (buttons, toggles, links, tables) take
 //!   their natural width, flush with the leading edge.
 //! - Horizontal stacks place intrinsic-width children in document
-//!   order along the flow direction.
+//!   order along the flow direction, breaking to a new line when the
+//!   next child will not fit — except a row of actions, which stays on
+//!   one line and folds its tail instead (`rowOverflow`).
 //! - There is no alignment system. Everything is leading/top — left in
 //!   LTR, right under `App.setDirection(.rtl)`, which mirrors every
 //!   leading/trailing choice here and in the renderer. Opinionated.
@@ -1424,6 +1426,15 @@ const Ctx = struct {
         const saved_margin = self.margin;
         self.margin = 0;
         defer self.margin = saved_margin;
+        switch (rowOverflow(self.tree, id)) {
+            .fold => return self.layoutFoldingRow(id, x, y, avail_w, padding, gap),
+            .wrap => return self.layoutWrappingRow(id, x, y, avail_w, padding, gap),
+        }
+    }
+
+    /// A row of actions: one line, however narrow the viewport gets, with
+    /// the tail folded behind the `more` control (`foldButtonRow`).
+    fn layoutFoldingRow(self: *Ctx, id: NodeId, x: i32, y: i32, avail_w: i32, padding: i32, gap: i32) i32 {
         // How many buttons a row too narrow for all of them keeps; null
         // while everything fits (overflow.zig turns this into the tree's
         // `more` control after the pass).
@@ -1484,10 +1495,109 @@ const Ctx = struct {
         return height;
     }
 
+    /// Every other row: children flow along the line and the line breaks
+    /// when the next one will not fit beside what is already standing
+    /// there — greedy, first-fit, in document order, so the break points
+    /// are a function of the widths alone and no child ever moves
+    /// backward past one.
+    ///
+    /// Nothing is added, removed or hidden by wrapping: each line is the
+    /// single-line row again, one under the next, `gap` apart and
+    /// cross-centered on its own tallest. That is why this is where marks
+    /// land and not what is announced — the semantic tree cannot tell.
+    fn layoutWrappingRow(self: *Ctx, id: NodeId, x: i32, y: i32, avail_w: i32, padding: i32, gap: i32) i32 {
+        const span = avail_w - 2 * padding;
+        // Document order runs leading-to-trailing: mirrored, the first
+        // child sits rightmost and each line grows leftward. Vertical
+        // geometry is direction-blind — lines always stack downward.
+        const line_x = if (self.rtl) x + avail_w - padding else x + padding;
+        var cx = line_x;
+        var line_y = y + padding;
+        var line_w: i32 = 0;
+        var line_h: i32 = 0;
+        // Children walked on this line, `more` included: what `centerLine`
+        // re-walks. `on_line` counts only the ones that took a slot.
+        var line_len: usize = 0;
+        var on_line: usize = 0;
+        var line_first = self.tree.children(id);
+        var pending = self.tree.children(id);
+        while (true) {
+            // Copied before the step, so it stands *at* the child a break
+            // is about to move to the next line.
+            const cursor = pending;
+            const child = pending.next() orelse break;
+            const el = self.tree.get(child).?;
+            // A control the fold left behind on a row that stopped being
+            // a row of actions, or grew wide enough again: it stands for
+            // nothing here, so it takes no space until the sync removes
+            // it (overflow.zig).
+            if (el.* == .more) {
+                self.tree.setRect(child, .zero);
+                line_len += 1;
+                continue;
+            }
+            // Wrapping hides nothing, so nothing on this row is folded —
+            // including an action that was, on a row that has since
+            // stopped folding.
+            if (el.foldable()) el.setFolded(false);
+            const size = self.intrinsicSize(child, span);
+            // The break. A line never breaks before its *first* child: one
+            // wider than the span alone gets the line to itself and
+            // overflows it, which is the one case wrapping cannot rescue
+            // and does not pretend to (docs/elements.md).
+            if (on_line > 0 and line_w + gap + size.w > span) {
+                self.centerLine(line_first, line_len, line_h);
+                line_y += line_h + gap;
+                cx = line_x;
+                line_w = 0;
+                line_h = 0;
+                line_len = 0;
+                on_line = 0;
+                line_first = cursor;
+            }
+            if (on_line > 0) {
+                line_w += gap;
+                cx += if (self.rtl) -gap else gap;
+            }
+            _ = self.layoutBlock(child, if (self.rtl) cx - size.w else cx, line_y, size.w);
+            const placed = self.tree.rectOf(child);
+            line_h = @max(line_h, placed.h);
+            line_w += placed.w;
+            cx += if (self.rtl) -placed.w else placed.w;
+            line_len += 1;
+            on_line += 1;
+        }
+        self.centerLine(line_first, line_len, line_h);
+        const height = (line_y - (y + padding)) + line_h + 2 * padding;
+        self.tree.setRect(id, .{ .x = x, .y = y, .w = avail_w, .h = height });
+        return height;
+    }
+
+    /// Centers one line's children on the line's tallest — the cross-axis
+    /// rule a row has always had, applied per line. `len` is how many
+    /// children the line consumed, so the walk stops where the line did;
+    /// a rect that means "not here" stays exactly zero.
+    fn centerLine(self: *Ctx, from: Tree.ChildIterator, len: usize, line_h: i32) void {
+        var it = from;
+        var seen: usize = 0;
+        while (seen < len) : (seen += 1) {
+            const child = it.next() orelse break;
+            const h = self.tree.rectOf(child).h;
+            if (h == 0) continue;
+            const dy = @divTrunc(line_h - h, 2);
+            if (dy <= 0) continue;
+            var walk = self.tree.dfsUnder(child);
+            while (walk.next()) |n| {
+                var r = self.tree.rectOf(n);
+                r.y += dy;
+                self.tree.setRect(n, r);
+            }
+        }
+    }
+
     /// How many actions of a row too narrow to hold all of them stay
-    /// standing — null when they all fit, and null for any row that is
-    /// not a plain run of actions (`Element.foldable`: buttons and
-    /// links, the two press-me leaves).
+    /// standing — null when they all fit. Only ever asked of a row
+    /// `rowOverflow` already called a row of actions.
     ///
     /// The rule the count comes from: the *last completely visible*
     /// action gives up its slot to the `more` control. Handing the
@@ -1497,17 +1607,7 @@ const Ctx = struct {
     /// failures. So the fold is deliberately one deeper than the
     /// overflow itself, and that one is the first thing the sheet lists.
     ///
-    /// A row of one does not fold: hiding the only action behind a
-    /// control named "More" hides it twice.
     fn foldButtonRow(self: *Ctx, id: NodeId, avail_w: i32, padding: i32, gap: i32) ?usize {
-        // Not inside a modal layer. The tail's whole answer is a sheet,
-        // and one sheet is all there is (`tree.validateAppend`) — a
-        // control that could not open anything is worse than a row that
-        // clips, and a *second* kind of layer, chosen by where the row
-        // happens to sit, is worse than both. A row of buttons inside a
-        // sheet behaves as every overflowing row did before the fold
-        // existed; a sheet is a handful of controls, not a toolbar.
-        if (self.inModalLayer(id)) return null;
         const span = avail_w - 2 * padding;
         var count: usize = 0;
         var total: i32 = 0;
@@ -1517,12 +1617,11 @@ const Ctx = struct {
             // The framework's own control never counts as content: it is
             // what the fold produces, not what it measures.
             if (el.* == .more) continue;
-            if (!el.foldable()) return null;
             if (count > 0) total += gap;
             total += self.intrinsicSize(child, span).w;
             count += 1;
         }
-        if (count < 2 or total <= span) return null;
+        if (total <= span) return null;
         // What fits whole, before the control asks for room of its own.
         var fits: usize = 0;
         var run: i32 = 0;
@@ -1543,17 +1642,6 @@ const Ctx = struct {
             visible -= 1;
         }
         return visible;
-    }
-
-    fn inModalLayer(self: *Ctx, id: NodeId) bool {
-        var cur: ?NodeId = id;
-        while (cur) |c| : (cur = self.tree.parentOf(c)) {
-            switch (self.tree.getConst(c).?.role()) {
-                .sheet, .picker, .notices_pane => return true,
-                else => {},
-            }
-        }
-        return false;
     }
 
     /// The width the first `count` actions of a row occupy, gaps
@@ -1960,6 +2048,57 @@ const Ctx = struct {
         return @max(lines, 1) * scale.lineHeight();
     }
 };
+
+/// What a horizontal `stack` does when its children exceed the line.
+/// Two behaviours, and the row's own contents pick which — there is no
+/// field, so a consumer cannot be handed the wrong one.
+pub const RowOverflow = enum {
+    /// A row of *actions* — every child a `button` or a `link`
+    /// (`Element.foldable`), two or more of them, outside a modal layer.
+    /// Actions have to stay reachable, and one row of them plus a control
+    /// that opens the rest is how they do (`overflow.zig`).
+    fold,
+    /// Everything else. Content that describes rather than acts is all
+    /// there already; breaking it onto a second line moves it, while
+    /// putting it behind a control named `More` would hide state behind a
+    /// press. This is also the answer for the rows that *cannot* fold —
+    /// a lone action, and a row of them inside a sheet.
+    wrap,
+};
+
+/// Which one `id` gets. Width is not an input: a row is a row of actions
+/// or it isn't, at every viewport, so widening the window can change
+/// where a line breaks or how deep a tail folds but never which of the
+/// two the reader is looking at. Layout and the DOM edition's serializer
+/// both ask here, so the two editions cannot disagree.
+pub fn rowOverflow(tree: *const Tree, id: NodeId) RowOverflow {
+    // Not inside a modal layer. The tail's whole answer is a sheet, and
+    // one sheet is all there is (`tree.validateAppend`) — a control that
+    // could not open anything is worse than a row that wraps, and a
+    // *second* kind of layer, chosen by where the row happens to sit, is
+    // worse than both. A sheet is a handful of controls, not a toolbar.
+    var cur: ?NodeId = id;
+    while (cur) |c| : (cur = tree.parentOf(c)) {
+        switch (tree.getConst(c).?.role()) {
+            .sheet, .picker, .notices_pane => return .wrap,
+            else => {},
+        }
+    }
+    var count: usize = 0;
+    var it = tree.children(id);
+    while (it.next()) |child| {
+        const el = tree.getConst(child).?;
+        // The framework's own control never counts as content: it is what
+        // the fold produces, not what it measures.
+        if (el.* == .more) continue;
+        if (!el.foldable()) return .wrap;
+        count += 1;
+    }
+    // A row of one does not fold: hiding the only action behind a control
+    // named "More" hides it twice. It has nothing to wrap either — one
+    // child is one line — so this is where the two behaviours agree.
+    return if (count < 2) .wrap else .fold;
+}
 
 /// The folded-tail control's box: exactly the outlined button it is
 /// drawn as, carrying the ellipsis and the framework's word for itself.

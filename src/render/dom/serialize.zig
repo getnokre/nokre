@@ -268,8 +268,14 @@ pub fn node(em: *Emitter, id: NodeId) anyerror!void {
             // class is that predicate, said once here rather than
             // guessed at from a selector.
             const hands_back = !row and s.padding == 0;
-            try em.print("<div class=\"stack{s}{s}\"", .{
+            // And the predicate no selector could answer either: which of
+            // the two things this row does when it runs out of line.
+            // `layout.rowOverflow` is the one place that decides, so the
+            // browser wraps exactly the rows core wraps.
+            const wraps = row and layout.rowOverflow(&em.app.tree, id) == .wrap;
+            try em.print("<div class=\"stack{s}{s}{s}\"", .{
                 if (row) " row" else "",
+                if (wraps) " wrap" else "",
                 if (hands_back) " hands-back" else "",
             });
             const d: element_mod.Stack = .{};

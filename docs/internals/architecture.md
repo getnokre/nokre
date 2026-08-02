@@ -34,7 +34,7 @@ nokre is a strict layer cake. Each layer knows only the layer below it.
 | [src/core/bidi.zig](../../src/core/bidi.zig) | UAX #9 in full: paragraph direction, embedding levels, visual run order — pure integer Zig, UCD-validated |
 | [src/core/element.zig](../../src/core/element.zig) | the closed element set (`Element` union) |
 | [src/core/tree.zig](../../src/core/tree.zig) | retained tree, generational `NodeId`s |
-| [src/core/layout.zig](../../src/core/layout.zig) | block-flow layout, word wrap, metrics |
+| [src/core/layout.zig](../../src/core/layout.zig) | block-flow layout, word wrap, row wrap (`rowOverflow`), metrics |
 | [src/core/event.zig](../../src/core/event.zig) | pointer (press/release) / key / text / IME / scroll — no hover |
 | [src/core/focus.zig](../../src/core/focus.zig) | document-order focus traversal |
 | [src/core/router.zig](../../src/core/router.zig) | named-screen stack with per-entry arguments, instant rebuilds, the current-route observer |

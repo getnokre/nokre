@@ -86,6 +86,17 @@ back to check the value they just copied. The words are the framework's
 own — English until an app translates them, like `Close` and `Back`
 ([localization.md](localization.md#the-frameworks-own-words)).
 
+**Layout is not in the snapshot.** A horizontal row too narrow for its
+children [wraps](elements.md#a-row-too-narrow-for-its-children), and a
+wrapped row's snapshot is identical to the same row's on a screen wide
+enough — same nodes, same order, same names, same states, only the rects
+moved. Where a line broke is not a fact about the app, so nobody is told
+one. Its counterpart is the exception that proves it: a row of actions
+that *folds* does change what is announced, because a folded action is
+not on the screen at all (see [elements](elements.md#the-folded-tail-more)),
+and that is exactly why folding is reserved for the rows where a control
+stands in for what it hid.
+
 ## Focus
 
 Focus is a first-class core concept, not a platform afterthought: Tab and
