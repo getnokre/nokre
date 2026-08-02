@@ -714,9 +714,12 @@ Each `tile` is its own tab stop carrying `label`, an optional dimmed
 `detail` line beneath it (the row grows by one small line to fit), and
 either a `route` or an `on_press`: a `route` tile renders a trailing
 chevron and navigates like a `link`; an `on_press` tile acts like a
-`button`. Its accessible role follows the same split. Focus is the
-picker's pattern — a heavier stroke hugging the row — because an outset
-ring would collide with the separators.
+`button`. Its accessible role follows the same split. Exactly one of
+the two, held at `append` the way a `link`'s destinations are: setting
+both, or neither, is rejected — with both the route wins and the press
+is never called, and with neither the row is a tab stop that answers
+nothing. Focus is the picker's pattern — a heavier stroke hugging the
+row — because an outset ring would collide with the separators.
 
 Reach for tiles where a screen is a list of destinations or row-shaped
 actions (settings screens, detail screens). For an exclusive choice

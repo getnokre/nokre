@@ -15,6 +15,8 @@ const A11yNode = semantics.A11yNode;
 const A11yRole = semantics.A11yRole;
 const snapshot = semantics.snapshot;
 
+fn noopPress(_: ?*anyopaque) void {}
+
 test "snapshot mirrors the semantic tree with correct roles and states" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
@@ -458,7 +460,7 @@ test "tiles map to links or buttons; the group is a group" {
     defer app.deinit();
     const group = try app.tree.append(app.tree.rootId(), .{ .tile_group = .{ .description = "Account actions" } });
     const nav_tile = try app.tree.append(group, .{ .tile = .{ .label = "Members", .route = "members" } });
-    const act_tile = try app.tree.append(group, .{ .tile = .{ .label = "Sign out", .detail = "Ends the session" } });
+    const act_tile = try app.tree.append(group, .{ .tile = .{ .label = "Sign out", .detail = "Ends the session", .on_press = .{ .call = noopPress } } });
 
     var snap = try snapshot(testing.allocator, &app);
     defer snap.deinit();
@@ -781,7 +783,7 @@ test "the click action is Element.isInteractive, for every element kind" {
         _ = try app.tree.append(root, .{ .segmented = .{ .label = "View", .options = &.{ "Day", "Week" } } });
         const tiles = try app.tree.append(root, .{ .tile_group = .{ .description = "Places" } });
         _ = try app.tree.append(tiles, .{ .tile = .{ .label = "Berlin", .route = "home" } });
-        _ = try app.tree.append(tiles, .{ .tile = .{ .label = "Rename" } });
+        _ = try app.tree.append(tiles, .{ .tile = .{ .label = "Rename", .on_press = .{ .call = noopPress } } });
         _ = try app.tree.append(root, .{ .radio_group = .{ .label = "Plan", .options = &.{ "Free", "Pro" } } });
         _ = try app.tree.append(root, .{ .select = .{ .label = "Language", .options = &.{ "English", "Deutsch" } } });
         _ = try app.tree.append(root, .{ .copyable = .{ .label = "Recovery code", .value = "XKCD-1234" } });

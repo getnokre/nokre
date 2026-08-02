@@ -17,6 +17,8 @@ const h = @import("nokre");
 const skia = h.render.skia;
 const golden = h.testing.golden;
 
+fn noopPress(_: ?*anyopaque) void {}
+
 fn expectGolden(gpa: std.mem.Allocator, pixels: []const u8, w: usize, h_px: usize, sub_path: []const u8) !void {
     // -Dupdate-goldens reaches the library here: the flag is a property
     // of this build, not of any one test, so every assertion applies it.
@@ -536,7 +538,7 @@ fn buildTiles(_: ?*anyopaque, app: *h.App) !void {
     });
     _ = try tree.append(group, .{ .tile = .{ .label = "Members", .detail = "12 people", .route = "members" } });
     _ = try tree.append(group, .{ .tile = .{ .label = "Invites", .route = "invites" } });
-    _ = try tree.append(group, .{ .tile = .{ .label = "Leave circle" } });
+    _ = try tree.append(group, .{ .tile = .{ .label = "Leave circle", .on_press = .{ .call = noopPress } } });
 }
 
 test "golden: tile group with focused row, details, chevrons, and description" {

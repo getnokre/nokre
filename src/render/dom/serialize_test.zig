@@ -27,6 +27,8 @@ const NodeId = tree_mod.NodeId;
 const testing = std.testing;
 
 /// The screen, as markup. The caller frees.
+fn noopPress(_: ?*anyopaque) void {}
+
 fn render(app: *App) ![]u8 {
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(testing.allocator);
@@ -329,7 +331,7 @@ test "a tile with a route is a link; one with an action is a button" {
     defer app.deinit();
     const group = try app.tree.append(app.tree.rootId(), .{ .tile_group = .{} });
     _ = try app.tree.append(group, .{ .tile = .{ .label = "Open", .route = "settings" } });
-    _ = try app.tree.append(group, .{ .tile = .{ .label = "Act", .on_press = .{} } });
+    _ = try app.tree.append(group, .{ .tile = .{ .label = "Act", .on_press = .{ .call = noopPress } } });
 
     const html = try render(&app);
     defer testing.allocator.free(html);
@@ -342,7 +344,7 @@ test "a tile with a route is a link; one with an action is a button" {
     );
     try testing.expectEqual(
         semantics.A11yRole.button,
-        semantics.roleOf(.{ .tile = .{ .label = "Act" } }),
+        semantics.roleOf(.{ .tile = .{ .label = "Act", .on_press = .{ .call = noopPress } } }),
     );
 }
 

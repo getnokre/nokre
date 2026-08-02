@@ -11,6 +11,8 @@ const NodeId = tree_mod.NodeId;
 const Element = tree_mod.Element;
 const Role = element_mod.Role;
 
+fn noopPress(_: ?*anyopaque) void {}
+
 test "append builds sibling chains in order" {
     var tree = try Tree.init(std.testing.allocator);
     defer tree.deinit();
@@ -408,9 +410,38 @@ test "append rejects malformed tile structure" {
 
     const group = try tree.append(root, .{ .tile_group = .{} });
     try std.testing.expectError(error.TileGroupChildMustBeTile, tree.append(group, .{ .text = .{ .content = "stray" } }));
-    try std.testing.expectError(error.UnlabeledInteractive, tree.append(group, .{ .tile = .{ .label = "" } }));
-    _ = try tree.append(group, .{ .tile = .{ .label = "Members" } });
-    try std.testing.expectError(error.TileOutsideTileGroup, tree.append(root, .{ .tile = .{ .label = "Lost" } }));
+    try std.testing.expectError(error.UnlabeledInteractive, tree.append(group, .{ .tile = .{ .label = "", .route = "members" } }));
+    _ = try tree.append(group, .{ .tile = .{ .label = "Members", .route = "members" } });
+    try std.testing.expectError(error.TileOutsideTileGroup, tree.append(root, .{ .tile = .{ .label = "Lost", .route = "lost" } }));
+}
+
+test "append holds a tile to exactly one destination, as it holds a link" {
+    var tree = try Tree.init(std.testing.allocator);
+    defer tree.deinit();
+
+    const group = try tree.append(tree.rootId(), .{ .tile_group = .{} });
+
+    // Both: the route would win and the press would never be called, on a
+    // row drawn and announced as a link.
+    try std.testing.expectError(error.TileHasOneDestination, tree.append(group, .{ .tile = .{
+        .label = "Members",
+        .route = "members",
+        .on_press = .{ .call = noopPress },
+    } }));
+    // Neither: a tab stop announced as a button that answers no press.
+    try std.testing.expectError(error.TileNeedsDestination, tree.append(group, .{ .tile = .{ .label = "Members" } }));
+    // A context with no function to call is not a destination — it is
+    // what `Action.invoke` does nothing with.
+    var ctx: u8 = 0;
+    try std.testing.expectError(error.TileNeedsDestination, tree.append(group, .{ .tile = .{
+        .label = "Members",
+        .on_press = .{ .ctx = &ctx },
+    } }));
+
+    // Either one alone builds.
+    _ = try tree.append(group, .{ .tile = .{ .label = "Members", .route = "members" } });
+    _ = try tree.append(group, .{ .tile = .{ .label = "Leave circle", .on_press = .{ .call = noopPress } } });
+    try std.testing.expectEqual(@as(usize, 2), tree.childCount(group));
 }
 
 test "append rejects malformed list structure" {

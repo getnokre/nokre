@@ -21,6 +21,8 @@ const metrics = layout.metrics;
 const obscure_bullet = renderer.obscure_bullet;
 const render = renderer.render;
 
+fn noopPress(_: ?*anyopaque) void {}
+
 /// One frame of `app`, as the ops it drew. The caller deinits — every
 /// test here reads a recording, and none of them cares how it was made.
 fn frameOf(app: *App) Recording {
@@ -879,7 +881,7 @@ test "tile group: labels and details drawn, route tiles carry a chevron" {
     defer app.deinit();
     const group = try app.tree.append(app.tree.rootId(), .{ .tile_group = .{} });
     _ = try app.tree.append(group, .{ .tile = .{ .label = "Members", .route = "members" } });
-    _ = try app.tree.append(group, .{ .tile = .{ .label = "Sign out", .detail = "Ends the session" } });
+    _ = try app.tree.append(group, .{ .tile = .{ .label = "Sign out", .detail = "Ends the session", .on_press = .{ .call = noopPress } } });
 
     var rec = frameOf(&app);
     defer rec.deinit();

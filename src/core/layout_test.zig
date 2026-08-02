@@ -19,6 +19,8 @@ const qrSide = layout.qrSide;
 const radioRowY = layout.radioRowY;
 const wrap = layout.wrap;
 
+fn noopPress(_: ?*anyopaque) void {}
+
 fn collectLines(content: []const u8, max_w: i32, out: [][]const u8) usize {
     var it = wrap(text.Measurer.fixed, .prose, 10, content, max_w);
     var n: usize = 0;
@@ -668,8 +670,8 @@ test "layout: tile group is hairline-gapped rows inside a 1px border" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
     const group = try tree.append(tree.rootId(), .{ .tile_group = .{} });
-    const plain = try tree.append(group, .{ .tile = .{ .label = "Members" } });
-    const detailed = try tree.append(group, .{ .tile = .{ .label = "Billing", .detail = "Visa 4242" } });
+    const plain = try tree.append(group, .{ .tile = .{ .label = "Members", .on_press = .{ .call = noopPress } } });
+    const detailed = try tree.append(group, .{ .tile = .{ .label = "Billing", .detail = "Visa 4242", .on_press = .{ .call = noopPress } } });
     compute(&tree, text.Measurer.fixed, .{ .w = 640, .h = 480 });
     try testing.expectEqual(@as(i32, 640 - 32), tree.rectOf(group).w);
     try testing.expectEqual(@as(i32, 44), tree.rectOf(plain).h);
@@ -683,7 +685,7 @@ test "layout: tile group description hangs below the border" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
     const group = try tree.append(tree.rootId(), .{ .tile_group = .{ .description = "Personalize your experience" } });
-    const row = try tree.append(group, .{ .tile = .{ .label = "Members" } });
+    const row = try tree.append(group, .{ .tile = .{ .label = "Members", .on_press = .{ .call = noopPress } } });
     compute(&tree, text.Measurer.fixed, .{ .w = 640, .h = 480 });
     // border box (1 + 44 + 1) + label gap + one small line
     try testing.expectEqual(@as(i32, 46 + 6 + 16), tree.rectOf(group).h);

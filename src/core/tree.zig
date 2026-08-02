@@ -534,7 +534,22 @@ pub const Tree = struct {
                 // draws it.
                 if (self.childCount(parent) >= element_mod.max_table_columns) return error.TooManyColumns;
             },
-            .tile => if (parent_role != .tile_group) return error.TileOutsideTileGroup,
+            // A tile is the row-shaped form of `link` and `button`, and it
+            // inherits the link's rule: exactly one destination. Both set
+            // is not a richer row — activation takes the route and never
+            // calls the press (`input.activate`), while the chevron and
+            // the announced role both say link, so the press is a wire to
+            // nowhere. Neither set is the same ambiguity from the other
+            // side: a tab stop announced as a button
+            // (`a11y/semantics.zig`) that answers no press.
+            .tile => |t| {
+                if (parent_role != .tile_group) return error.TileOutsideTileGroup;
+                // `call`, not `ctx`: an action without a function is what
+                // `Action.invoke` already treats as nothing to do.
+                const pressable = t.on_press.call != null;
+                if (t.route.len != 0 and pressable) return error.TileHasOneDestination;
+                if (t.route.len == 0 and !pressable) return error.TileNeedsDestination;
+            },
             .list_item => if (parent_role != .list) return error.ListItemOutsideList,
             // The depth cap is a construction rule, not a rendering
             // one: past it the indent has eaten the line and says
