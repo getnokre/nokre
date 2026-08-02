@@ -116,6 +116,16 @@ fn respond(io: Io, gpa: std.mem.Allocator, site: Io.Dir, request: *std.http.Serv
             // away; a cached wasm module would make it two, the second one
             // being a hard reload the developer has to know about.
             .{ .name = "cache-control", .value = "no-store" },
+            // The generated page carries the rest of the policy itself
+            // (packaging.webIndexHtml); this is the part it cannot.
+            // `frame-ancestors` is ignored inside a meta tag by spec, so
+            // it belongs to whoever serves the site — and while this
+            // server is developing rather than publishing, it is the one
+            // server nokre owns, so it sends what it tells a consumer's
+            // edge to send. Not a claim that a dev server is a
+            // deployment: docs/getting-started.md lists what else an edge
+            // still owes.
+            .{ .name = "content-security-policy", .value = "frame-ancestors 'none'" },
         },
     });
 }

@@ -76,6 +76,22 @@ pub const AppOptions = struct {
     /// The default is a name a page can state without knowing the
     /// artifact's; nothing outside the site refers to it either way.
     web_wasm: []const u8 = "app.wasm",
+    /// Web only: the hosts this app's own code talks to — its API, its
+    /// OAuth token endpoint, anything the http service fetches. They
+    /// join the generated page's `connect-src` and nothing else, so one
+    /// declared host grants one power and leaves the rest of the page's
+    /// policy where it was. Empty is the default and the common case: a
+    /// page still reaches the origin it was served from, which is where
+    /// its module, its faces and a same-host API already live.
+    ///
+    /// Entries are CSP source expressions — `https://api.example.com`,
+    /// `*.example.com`, `wss://live.example.com`. A bare `*` is refused,
+    /// as is anything carrying whitespace, a quote or a semicolon: a
+    /// string that could end its own directive fails the build instead
+    /// of reaching a page (the consumer story is
+    /// docs/getting-started.md, the policy it joins is
+    /// docs/internals/dom-edition.md).
+    web_connect_src: []const []const u8 = &.{},
 };
 
 pub const App = struct {
@@ -213,8 +229,14 @@ fn addAppTo(hb: *std.Build, options: AppOptions) App {
 fn appPkgTree(hb: *std.Build, options: AppOptions) ?std.Build.LazyPath {
     const decl = options.pkg orelse return null;
     const wf = hb.addWriteFiles();
-    addPkgTree(hb, wf, decl, appServices(options), options.web_wasm, options.apple_icon);
+    addPkgTree(hb, wf, decl, appServices(options), appWeb(options), options.apple_icon);
     return wf.getDirectory();
+}
+
+/// The web half of the declaration, as packaging reads it: the module's
+/// name in the site and the hosts the app is allowed to reach from it.
+fn appWeb(options: AppOptions) packaging.Web {
+    return .{ .module_wasm = options.web_wasm, .connect_src = options.web_connect_src };
 }
 
 /// secure_store without an identity cannot link (the id is the store's
@@ -1039,7 +1061,7 @@ pub fn build(b: *std.Build) void {
         // installed here; this is the same assembly around the same
         // module.
         const pkg = b.addWriteFiles();
-        addPkgTree(b, pkg, kitchen_sink_pkg, .{}, "app.wasm", null);
+        addPkgTree(b, pkg, kitchen_sink_pkg, .{}, .{}, null);
         const site = addWebSite(b, app.artifact.getEmittedBin(), "app.wasm", pkg.getDirectory());
 
         const web_step = b.step("web", "Build the kitchen sink for the browser into zig-out/web/");
@@ -1065,15 +1087,16 @@ pub fn build(b: *std.Build) void {
     {
         const pkg_step = b.step("pkg", "Generate platform packaging manifests into zig-out/pkg");
         installKitchenSinkPkg(b, pkg_step);
-        // app.wasm is the documented default name for the module the
-        // generated web index loads; regenerate via the packaging API
-        // to rename it. No apple_icon either: a `-D` option carries
+        // The web defaults: app.wasm as the module the generated page
+        // boots, and no extra connect-src host — a `-D` build here
+        // declares an identity, not a site, and both are `addApp`'s
+        // surface. No apple_icon either: a `-D` option carries
         // strings, and a path resolved against nokre's own build root
         // is not the consumer's icon — declaring one is `addApp`'s
         // surface, and this tree carries the derived mark
         // (docs/services.md).
         if (pkg_decl) |decl|
-            addPkgTree(b, b.addNamedWriteFiles("pkg"), decl, services, "app.wasm", null);
+            addPkgTree(b, b.addNamedWriteFiles("pkg"), decl, services, .{}, null);
     }
 
     // The run-* step names exist whatever the flags and dep state say:
@@ -1192,11 +1215,11 @@ const kitchen_sink_pkg: PackageDecl = .{
 
 fn installKitchenSinkPkg(b: *std.Build, into: *std.Build.Step) void {
     const wf = b.addWriteFiles();
-    // app.wasm matches the web step's output name, so the pkg tree's
+    // The default module name matches the web step's, so the pkg tree's
     // index.html and `zig build web`'s directory agree when merged.
     // No apple_icon: nokre ships no art, so the kitchen sink's icon is
     // the mark derived from its id, like any app that declares none.
-    addPkgTree(b, wf, kitchen_sink_pkg, .{}, "app.wasm", null);
+    addPkgTree(b, wf, kitchen_sink_pkg, .{}, .{}, null);
     into.dependOn(&b.addInstallDirectory(.{
         .source_dir = wf.getDirectory(),
         .install_dir = .prefix,
@@ -1214,7 +1237,7 @@ fn addPkgTree(
     wf: *std.Build.Step.WriteFile,
     decl: PackageDecl,
     services: packaging.Services,
-    web_wasm: []const u8,
+    web: packaging.Web,
     apple_icon: ?std.Build.LazyPath,
 ) void {
     packaging.validate(decl) catch |err| {
@@ -1225,6 +1248,16 @@ fn addPkgTree(
         wf.step.dependOn(&fail.step);
         return;
     };
+    // The same invalid-declaration rule, for the page's policy: a
+    // connect-src source that could end the directive it lands in never
+    // reaches a page — it fails the tree, naming the entry.
+    if (packaging.badConnectSrc(web.connect_src)) |bad| {
+        wf.step.dependOn(&b.addFail(b.fmt(
+            "web_connect_src takes hosts the app talks to — \"https://api.example.com\", \"*.example.com\" — and \"{s}\" is not one: no spaces, quotes or semicolons, and never a bare \"*\" (docs/getting-started.md)",
+            .{bad},
+        )).step);
+        return;
+    }
     const gpa = b.allocator;
     // nokre_app is the CMake target the Android shell loads
     // (examples/kitchen_sink/android/app/src/main/cpp/CMakeLists.txt).
@@ -1232,7 +1265,13 @@ fn addPkgTree(
     _ = wf.add("android/AndroidManifest.xml", packaging.androidManifest(gpa, decl, services, "nokre_app") catch @panic("OOM"));
     _ = wf.add("android/package.properties", packaging.androidProperties(gpa, decl) catch @panic("OOM"));
     _ = wf.add("web/manifest.webmanifest", packaging.webManifest(gpa, decl) catch @panic("OOM"));
-    _ = wf.add("web/index.html", packaging.webIndexHtml(gpa, decl, web_wasm) catch @panic("OOM"));
+    // The page and the two files it names. They are one artifact in
+    // three pieces — the split is the page's policy, which admits no
+    // inline script and no inline `<style>` block (packaging.zig's
+    // webIndexHtml states it directive by directive).
+    _ = wf.add("web/index.html", packaging.webIndexHtml(gpa, decl, web) catch @panic("OOM"));
+    _ = wf.add("web/page.css", packaging.web_page_css);
+    _ = wf.add("web/boot.js", packaging.webBootJs(gpa, web) catch @panic("OOM"));
     // The app icon set, derived from the id (src/packaging/icon.zig):
     // the asset-catalog scaffolding Xcode compiles, the adaptive-icon
     // resources Gradle merges, and the PNGs themselves. A declared Icon

@@ -144,6 +144,51 @@ pub const Services = struct {
     iap: bool = false,
 };
 
+/// The web build's third input, beside the declaration and the linked
+/// services: what the *site* is assembled around. Nothing in it is
+/// identity — a page carries a title because the app has a name, and it
+/// carries these because a browser needs them — so it rides beside
+/// `Decl` rather than inside it.
+pub const Web = struct {
+    /// The name the app's module carries inside the site, and therefore
+    /// the name the page's boot module asks for.
+    module_wasm: []const u8 = "app.wasm",
+    /// The hosts the app's own code talks to: its API, its OAuth token
+    /// endpoint, anything the http service will fetch. They are added to
+    /// the page's `connect-src` and to nothing else, so declaring one
+    /// grants exactly one power rather than loosening the policy around
+    /// it (the consumer contract is docs/getting-started.md, the
+    /// derivation docs/internals/dom-edition.md). Empty is both the
+    /// default and the common case — an app that talks to nothing but
+    /// the origin it was served from declares nothing.
+    ///
+    /// Each entry is a CSP source expression — `https://api.example.com`,
+    /// `*.example.com`, `wss://live.example.com` — and is checked by
+    /// `badConnectSrc` before it reaches the page: a string that lands
+    /// inside a policy is a string that could end the directive it landed
+    /// in and start a friendlier one.
+    connect_src: []const []const u8 = &.{},
+};
+
+/// The first `connect_src` entry a page will not carry, or null when
+/// every one of them is a plain source expression. Two refusals. Anything
+/// a source cannot contain — whitespace, a quote, a semicolon, a comma —
+/// because that is exactly how one declared origin becomes a second
+/// directive. And the bare wildcard, because "every host there is" names
+/// no host at all: it is the directive's absence, and a consumer who
+/// truly wants that can say so in their own edge configuration rather
+/// than have nokre generate it into every page they ship.
+pub fn badConnectSrc(sources: []const []const u8) ?[]const u8 {
+    for (sources) |src| {
+        if (src.len == 0 or std.mem.eql(u8, src, "*")) return src;
+        for (src) |c| switch (c) {
+            'a'...'z', 'A'...'Z', '0'...'9', '.', '-', '_', ':', '/', '*', '+', '[', ']' => {},
+            else => return src,
+        };
+    }
+    return null;
+}
+
 pub const Error = error{ InvalidId, InvalidBuild };
 
 /// The declare-once contract's teeth, run by build.zig before any
@@ -624,20 +669,10 @@ pub fn webManifest(gpa: std.mem.Allocator, decl: Decl) error{OutOfMemory}![]u8 {
     return out.toOwnedSlice(gpa);
 }
 
-/// The whole web host page, so a consumer authors no HTML at all: title
-/// and manifest come from the declaration, `module_wasm` names the wasm
-/// module served beside it. live.js, services.js, live-worker.js,
-/// style.css and the fonts ride along in the same directory (build.zig's
-/// `addWebSite` writes the set) — the page loads only live.js, which
-/// imports the rest itself. It is the only host page nokre has: the
-/// kitchen sink's own site is served from this same emitter, so there
-/// is no second one to drift from.
-///
-/// It is this short because everything a nokre app puts on screen comes
-/// out of the tree, so a page around one has nothing to say and no
-/// markup to get wrong. What is left to it is the one thing the tree
-/// cannot say: how wide a window may get before its prose stops being
-/// readable.
+/// The page's own stylesheet, and the whole of what a page around a
+/// nokre app has to say: everything on screen comes out of the tree, so
+/// the one thing left over is what the tree cannot say — how wide a
+/// window may get before its prose stops being readable.
 ///
 /// That number is the page's own, not `--pane`: that variable is
 /// `sheet_max_w`, which the library spends on the surfaces holding prose
@@ -656,16 +691,147 @@ pub fn webManifest(gpa: std.mem.Allocator, decl: Decl) error{OutOfMemory}![]u8 {
 /// width nobody is looking at. Which is also why the step at 900px is
 /// not a page style: it hands core a wider viewport and has it answer
 /// those questions again.
-pub fn webIndexHtml(gpa: std.mem.Allocator, decl: Decl, module_wasm: []const u8) error{OutOfMemory}![]u8 {
+///
+/// A file rather than the `<style>` block this used to be, for the
+/// reason webBootJs is a file: a policy that admitted inline blocks
+/// would admit every other one too, and a policy that hashed them would
+/// be one no consumer could lift to their own edge without carrying
+/// hashes that change under them (`webIndexHtml` states the policy).
+pub const web_page_css: []const u8 =
+    \\:root { --page-col: 560px; }
+    \\@media (min-width: 900px) { :root { --page-col: 760px; } }
+    \\body { margin: 0; background: var(--paper); }
+    \\#app { max-width: calc(var(--page-col) + 2 * var(--page-pad)); margin-inline: auto; }
+    \\
+;
+
+/// The page's boot module: the live driver's `mount` over the module the
+/// site carries, which is the only line of JavaScript a nokre site has
+/// that is not nokre's own (docs/internals/dom-edition.md).
+///
+/// It is a file for one reason, and the reason is the policy: an inline
+/// `<script>` is what `script-src 'self'` exists to refuse, and refusing
+/// it is worth more than the request this file costs — a page that could
+/// run one inline script could run the one an injection wrote. The name
+/// is escaped as a JSON string because JSON's escapes are JavaScript's,
+/// and a module name is a consumer's string.
+pub fn webBootJs(gpa: std.mem.Allocator, web: Web) error{OutOfMemory}![]u8 {
+    const wasm_js = try jsonEscapedAlloc(gpa, web.module_wasm);
+    defer gpa.free(wasm_js);
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(gpa);
+    try out.print(gpa,
+        \\import {{ mount }} from "./live.js";
+        \\await mount({{ wasm: "./{s}", into: document.getElementById("app") }});
+        \\
+    , .{wasm_js});
+    return out.toOwnedSlice(gpa);
+}
+
+/// The whole web host page, so a consumer authors no HTML at all: the
+/// title and the manifest come from the declaration, and the two files
+/// beside it — `page.css` and `boot.js`, emitted above — carry the
+/// column and the mount. live.js, services.js, live-worker.js, style.css
+/// and the fonts ride along in the same directory (build.zig's
+/// `addWebSite` writes the set); the page names only live.js's boot,
+/// which imports the rest itself. It is the only host page nokre has —
+/// the kitchen sink's own site is served from this same emitter — so
+/// there is no second one to drift from.
+///
+/// ## The policy
+///
+/// The page ships a Content-Security-Policy, because a site nokre
+/// generates whole is a site nokre can say the truth about: the edition
+/// knows every request its own page makes, and a consumer hand-editing
+/// a generated page would lose the policy on their next build.
+///
+/// It is an inventory of what the DOM edition actually does, not a
+/// template — every directive below is here because something would
+/// break without it, and `default-src 'none'` is what makes that
+/// claim checkable: a fetch nobody named is a fetch nobody makes.
+///
+/// - `script-src 'self' 'wasm-unsafe-eval'` — boot.js and the driver's
+///   three modules are the site's own files. The wasm keyword is the
+///   module itself: compiling one is script execution to a browser, and
+///   under any script-src Chrome and Firefox refuse it without this.
+///   `'wasm-unsafe-eval'` and not `'unsafe-eval'` — nokre calls neither
+///   `eval` nor `new Function`, and the narrow keyword says so.
+/// - `worker-src 'self'` — live-worker.js, the compute actor, which is
+///   the same module instantiated a second time (docs/services.md).
+///   Stated because worker-src falls back to child-src and then to
+///   default-src, which is 'none'.
+/// - `style-src 'self' 'unsafe-inline'` with `style-src-elem 'self'` —
+///   the generated stylesheet and this page's own are files, so no
+///   `<style>` block is admitted anywhere. The inline part is
+///   *attributes*, which the serializer writes on element after element:
+///   a list's measured gutter, a QR's whole-pixel side, a track's bleed,
+///   a container's own gap and padding (docs/internals/dom-edition.md
+///   says why each is a measured number and not a stylesheet guess).
+///   They cannot be hashed — every one of them is a value layout just
+///   computed — and they cannot be moved to script, because the static
+///   driver writes pages that run none. So the narrower pair carries the
+///   loosening: elements are files only, attributes are inline, and a
+///   browser too old for the split falls back to the style-src line,
+///   which a page shipping no `<style>` block never spends.
+/// - `img-src 'self'` — the two icons the page links. Nothing else: the
+///   QR is inline `<svg>` markup rather than an image request, and the
+///   element set has no image in it.
+/// - `font-src 'self'` — the four bundled faces, from `fonts/` beside
+///   the page.
+/// - `connect-src 'self'` plus `Web.connect_src` — the wasm module and
+///   any seed arrive by fetch, which is this directive and not
+///   script-src; so does every request the http service makes, and that
+///   is the one place an app outgrows what nokre can know. It is
+///   also the only directive a consumer extends, because a fetch is the
+///   only outbound request an app's own code can make: no app supplies
+///   script, style, fonts or images to this edition.
+/// - `manifest-src 'self'` — the web-app manifest, which likewise falls
+///   back to default-src.
+/// - `base-uri 'none'` and `form-action 'none'` — neither falls back to
+///   default-src, so 'none' has to be said. An injected `<base>` would
+///   re-point every relative URL in the page, and nokre emits no form.
+///
+/// What a meta tag cannot carry, whatever it says: `frame-ancestors`,
+/// `report-uri`/`report-to` and `sandbox` are ignored in one by spec, so
+/// they stay the deploying edge's — getting-started.md tells a consumer
+/// so in as many words, because a page that looked like the whole story
+/// would be worse than no policy at all.
+pub fn webIndexHtml(gpa: std.mem.Allocator, decl: Decl, web: Web) error{OutOfMemory}![]u8 {
     const name_html = try xmlEscapedAlloc(gpa, decl.name);
     defer gpa.free(name_html);
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(gpa);
+    // First in the head, before anything it governs: a policy only ever
+    // applies to what the parser meets after it.
     try out.appendSlice(gpa,
         \\<!doctype html>
         \\<html lang="en">
         \\<head>
         \\<meta charset="utf-8">
+        \\<meta http-equiv="Content-Security-Policy" content="
+        \\  default-src 'none';
+        \\  script-src 'self' 'wasm-unsafe-eval';
+        \\  worker-src 'self';
+        \\  style-src 'self' 'unsafe-inline';
+        \\  style-src-elem 'self';
+        \\  img-src 'self';
+        \\  font-src 'self';
+        \\  connect-src 'self'
+    );
+    // One space per source, on the line connect-src already owns: the
+    // consumer's own hosts are the only part of this policy that is not
+    // the same in every site nokre builds. `badConnectSrc` has already
+    // refused anything that could close the attribute or the directive.
+    for (web.connect_src) |src| {
+        try out.append(gpa, ' ');
+        try out.appendSlice(gpa, src);
+    }
+    try out.appendSlice(gpa,
+        \\;
+        \\  manifest-src 'self';
+        \\  base-uri 'none';
+        \\  form-action 'none'
+        \\">
         \\<meta name="viewport" content="width=device-width, initial-scale=1">
         \\<title>
     );
@@ -676,27 +842,13 @@ pub fn webIndexHtml(gpa: std.mem.Allocator, decl: Decl, module_wasm: []const u8)
         \\<link rel="icon" type="image/png" href="icon-192.png">
         \\<link rel="apple-touch-icon" href="icon-192.png">
         \\<link rel="stylesheet" href="style.css">
+        \\<link rel="stylesheet" href="page.css">
         \\<meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
         \\<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000000">
-        \\<style>
-        \\  :root { --page-col: 560px; }
-        \\  @media (min-width: 900px) { :root { --page-col: 760px; } }
-        \\  body { margin: 0; background: var(--paper); }
-        \\  #app { max-width: calc(var(--page-col) + 2 * var(--page-pad)); margin-inline: auto; }
-        \\</style>
         \\</head>
         \\<body>
         \\<div id="app"></div>
-        \\<script type="module">
-        \\  import { mount } from "./live.js";
-        \\  await mount({ wasm: "./
-    );
-    // Chunk boundaries sit mid-line around the two interpolations; the
-    // multiline literals above and below carry no newline at the seam.
-    try out.appendSlice(gpa, module_wasm);
-    try out.appendSlice(gpa,
-        \\", into: document.getElementById("app") });
-        \\</script>
+        \\<script type="module" src="boot.js"></script>
         \\</body>
         \\</html>
         \\

@@ -475,7 +475,10 @@ until the test answers it — and the consumer contract never changes:
 no futures, no locks, no callback off the UI thread. Requests and
 worker messages share one delivery lane, so ordering, thread
 discipline, and the testing story are the same fact, not three
-parallel ones.
+parallel ones. One platform wants the hosts in advance: a web build's
+page allows only the origins its declaration named, so a host reached
+from here is a `web_connect_src` entry there
+([getting-started.md](getting-started.md)).
 
 ```zig
 _ = try nokre.services.http.request(.{

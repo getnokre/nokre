@@ -122,7 +122,7 @@ What it writes:
 | `live.js`, `live-worker.js`, `services.js` | `src/render/dom`, copied by the build graph |
 | `style.css` | *generated*, by running `emit_css.zig` on the host |
 | `fonts/*.ttf` | `src/assets/fonts` |
-| `index.html`, `manifest.webmanifest`, `icon-*.png` | the packaging tree's `web/` corner (packaging.zig) |
+| `index.html`, `page.css`, `boot.js`, `manifest.webmanifest`, `icon-*.png` | the packaging tree's `web/` corner (packaging.zig) |
 
 Two properties follow, and they are the reason for the shape. Nothing
 in a site can be stale, because nothing in it is a copy a human made:
@@ -148,6 +148,67 @@ already used for its manifests.
 There is no second host page anywhere. The hand-written one this
 directory used to keep was the same page `webIndexHtml` emits, minus
 an identity, and two of a thing that must agree is one too many.
+
+### The page states what it is allowed to fetch
+
+A site nokre assembles whole is a site nokre can tell the truth about,
+and the truth is short: it loads its own module, four of its own
+scripts, two of its own stylesheets, its own faces and its own icons,
+and it talks to no host it was not told about. That is a
+Content-Security-Policy, and the page carries it as a `<meta>` — the
+per-directive inventory is `packaging.webIndexHtml`, which is the
+emitter, so the policy cannot fall behind the page it rides in.
+
+It belongs here rather than in a consumer's hands for the reason
+`services.js` does. A page a build regenerates is a poor place for a
+hand edit, an app's edge is a different piece of software on every
+consumer's side, and every one of them needs the same policy — so the
+one that is derived from what the edition *does* is worth more than
+whichever one each consumer would have written. `default-src 'none'` is
+what makes it an inventory rather than a wish: a fetch nobody named is
+a fetch nobody makes, and the day this edition needs a new kind of
+request the page fails loudly in a browser rather than quietly widening.
+
+**Two things in the edition moved rather than the policy.** The page
+used to carry its column in a `<style>` block and its mount in an inline
+`<script>`; both are files now (`page.css`, `boot.js`), because
+`script-src 'self'` refusing an inline script is the largest single
+thing a policy buys, and a page that hashed its own two blocks would be
+one no consumer could lift to their edge without carrying hashes that
+change under them.
+
+**One loosening stayed, and it is `style-src`'s.** The serializer writes
+inline style *attributes* on element after element — a list's measured
+gutter, a QR's whole-pixel side, a track's bleed, a container's own gap
+and padding — and every one of them is a number layout just computed,
+so none can be hashed and none can be a stylesheet's guess (the four
+seams above say why each is measured). Nor can they move into script:
+the static driver writes pages that run none, and they must render
+right with the module blocked. So the page splits the directive instead
+of widening it — `style-src-elem 'self'` for the two `<link>`ed sheets,
+which is what refuses an injected `<style>`, and `'unsafe-inline'` left
+only where an attribute needs it.
+
+**`connect-src` is the one directive an app outgrows**, because a fetch
+is the only outbound request an app's own code can make here: no app
+supplies script, style, faces or images to this edition. So it is the
+one seam a consumer gets — `web_connect_src` on `addApp`, a list of
+hosts that joins that directive and no other — and the entries are
+checked before they reach the page (`packaging.badConnectSrc`), because
+a string that lands inside a policy is a string that could end the
+directive it landed in. The default is empty, which is the app's own
+origin and nothing else.
+
+**What a `<meta>` cannot carry, whatever it says.** `frame-ancestors`,
+`report-uri`/`report-to` and `sandbox` are ignored in one by spec, so
+they are the deploying edge's — getting-started.md tells a consumer so
+in as many words, because a page that looked like the whole story would
+be worse than no policy at all. `serve.zig` sends the first of them as a
+header on every response, which is nokre saying at its own dev server
+what it tells a consumer's edge to say. One directive an edge must
+*not* add: `require-trusted-types-for 'script'` would break the live
+driver, whose whole write path is parsing a frame off-document
+(`template.innerHTML`) and patching it in.
 
 ### Serving it, which is not optional
 

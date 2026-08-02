@@ -1909,6 +1909,53 @@ Name the `serve` step whether or not the flag is set. Built for a native
 target, `app.web` is null and the step you get says so when it runs,
 which beats `zig build serve` answering "no step named 'serve'".
 
+**The page ships a Content-Security-Policy**, derived from what the site
+actually contains: its own module and scripts, its own two stylesheets,
+its own faces and icons, `'wasm-unsafe-eval'` for the module a browser
+has to compile, and nothing else — `default-src 'none'` is the floor, so
+anything nobody named is refused. You author no HTML, so you do not
+author this either; it is regenerated with the page on every build,
+which is exactly why hand-editing the generated `index.html` would be
+the wrong place to keep one.
+
+One directive is yours, because it is the only one an app can outgrow:
+the hosts it fetches. Declare them where you declared everything else.
+
+```zig
+        .web_connect_src = &.{ "https://api.example.com", "wss://live.example.com" },
+```
+
+Those join `connect-src` and nothing else — an added host grants exactly
+one power and leaves the rest of the policy where it was — and the
+default is empty, which still reaches the origin the app was served
+from. Every host the app talks to needs a line here, including the ones
+it reaches through a service: `http.request`'s URLs, and your OAuth
+provider's *token* endpoint (the sign-in window itself is a navigation,
+which no directive governs). A missing one arrives as the http service's
+ordinary `"FetchFailed"`, with the browser's refusal in the console
+beside it. Entries are CSP sources — `https://api.example.com`,
+`*.example.com` — and a bare `*`, or anything carrying a space, a quote
+or a semicolon, fails the build rather than reaching a page.
+
+**Three directives are your edge's, not the page's**, and nothing the
+page says can change it: `frame-ancestors`, `report-uri`/`report-to` and
+`sandbox` are ignored inside a `<meta>` by specification. So set them
+wherever the site is served from:
+
+- `Content-Security-Policy: frame-ancestors 'none'` — who may frame the
+  app, which is the clickjacking answer a page cannot give about itself.
+  nokre's own `serve` step sends exactly that header, so it is the shape
+  you have been developing against all along.
+- a reporting endpoint, if you want violations from the field.
+- the transport headers a static host owns either way:
+  `Strict-Transport-Security`, `X-Content-Type-Options: nosniff`.
+
+Sending the page's own policy as a header as well is worth it where your
+edge makes it easy: it is a constant apart from your hosts, and a header
+covers every response rather than one document. One thing not to add:
+`require-trusted-types-for 'script'` breaks the live driver, which
+patches each frame in by parsing markup off-document.
+
 Everything carries over: keyboard, scrolling, the software keyboard,
 dark mode from the OS, and an accessibility tree that is not mirrored
 anywhere, because it is the page. Three things do not, and they are the

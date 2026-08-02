@@ -207,9 +207,63 @@ test "web manifest is byte-exact" {
 }
 
 test "web index.html is byte-exact" {
-    const actual = try packaging.webIndexHtml(std.testing.allocator, fixture, "app.wasm");
+    const actual = try packaging.webIndexHtml(std.testing.allocator, fixture, .{});
     defer std.testing.allocator.free(actual);
     try std.testing.expectEqualStrings(@embedFile("testdata/index.html"), actual);
+}
+
+test "declared hosts join connect-src and no other directive" {
+    const actual = try packaging.webIndexHtml(std.testing.allocator, fixture, .{
+        .connect_src = &.{ "https://api.example.com", "wss://live.example.com" },
+    });
+    defer std.testing.allocator.free(actual);
+    try std.testing.expectEqualStrings(@embedFile("testdata/index.connect.html"), actual);
+
+    // The golden above is the contract; this is the property it exists
+    // for. Every other directive is byte-identical to the page an app
+    // that declared nothing gets — a consumer adding a host must never
+    // be adding anything else.
+    const plain = try packaging.webIndexHtml(std.testing.allocator, fixture, .{});
+    defer std.testing.allocator.free(plain);
+    var declared = std.mem.splitScalar(u8, actual, '\n');
+    var none = std.mem.splitScalar(u8, plain, '\n');
+    while (none.next()) |line| {
+        const other = declared.next().?;
+        if (std.mem.indexOf(u8, line, "connect-src") != null) {
+            try std.testing.expectEqualStrings("  connect-src 'self' https://api.example.com wss://live.example.com;", other);
+            continue;
+        }
+        try std.testing.expectEqualStrings(line, other);
+    }
+    try std.testing.expectEqual(null, declared.next());
+}
+
+test "a source that could end its own directive is refused" {
+    // The shapes a policy carries.
+    try std.testing.expectEqual(null, packaging.badConnectSrc(&.{
+        "https://api.example.com", "*.example.com", "wss://live.example.com:8443", "self.example.com",
+    }));
+    // A second directive smuggled in behind the first, the space that
+    // would start one, and the quote that would close the attribute the
+    // policy lives in — each is the whole point of checking at all.
+    try std.testing.expectEqualStrings("x.com; script-src *", packaging.badConnectSrc(&.{"x.com; script-src *"}).?);
+    try std.testing.expectEqualStrings("x.com 'unsafe-inline'", packaging.badConnectSrc(&.{"x.com 'unsafe-inline'"}).?);
+    try std.testing.expectEqualStrings("x.com\">", packaging.badConnectSrc(&.{"x.com\">"}).?);
+    // And the one that needs no smuggling: every host there is.
+    try std.testing.expectEqualStrings("*", packaging.badConnectSrc(&.{"*"}).?);
+    try std.testing.expectEqualStrings("", packaging.badConnectSrc(&.{""}).?);
+}
+
+test "web boot.js is byte-exact" {
+    const actual = try packaging.webBootJs(std.testing.allocator, .{});
+    defer std.testing.allocator.free(actual);
+    try std.testing.expectEqualStrings(@embedFile("testdata/boot.js"), actual);
+}
+
+test "a module name is escaped as the JavaScript string it lands in" {
+    const actual = try packaging.webBootJs(std.testing.allocator, .{ .module_wasm = "a\".wasm" });
+    defer std.testing.allocator.free(actual);
+    try std.testing.expect(std.mem.indexOf(u8, actual, "\"./a\\\".wasm\"") != null);
 }
 
 test "app icon png is byte-exact" {
