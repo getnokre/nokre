@@ -175,6 +175,7 @@ test {
     _ = @import("services/clock/clock_test.zig");
     _ = @import("services/oauth/oauth_test.zig");
     _ = @import("services/iap/iap_test.zig");
+    _ = @import("services/notification/notification_test.zig");
     _ = @import("services/services_test.zig");
     // Build-time only (consumed by build.zig, never compiled into
     // apps), but its goldens run with everything else's.

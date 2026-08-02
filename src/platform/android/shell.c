@@ -24,6 +24,7 @@
 #include "../../../shim/nokre_accesskit.h"
 #include "../../services/deep_link/deep_link.h"
 #include "../../services/oauth/oauth.h"
+#include "../../services/notification/notification.h"
 #include "../../services/locale/locale.h"
 #include "../../services/open_url/open_url.h"
 #include "../../services/share/share.h"
@@ -448,6 +449,28 @@ static void nativeAuthResult(JNIEnv *env, jobject view, jint status, jbyteArray 
     (*env)->ReleaseByteArrayElements(env, utf8, bytes, JNI_ABORT);
 }
 
+// A notification event NokreNotifications reported: the permission
+// answered, a tap, a foreground arrival, or a push token. Runs on the
+// main thread, so it reaches the app's handler the way every other
+// inbound event does. The dispatch lives in the service's own android.c —
+// a shell never learns what a notification is, the oauth rule.
+static void nativeNotificationEvent(JNIEnv *env, jobject view, jint kind, jint status,
+                                    jbyteArray a, jbyteArray b) {
+    (void)view;
+    jsize a_len = a == NULL ? 0 : (*env)->GetArrayLength(env, a);
+    jsize b_len = b == NULL ? 0 : (*env)->GetArrayLength(env, b);
+    jbyte *a_bytes = a_len == 0 ? NULL : (*env)->GetByteArrayElements(env, a, NULL);
+    jbyte *b_bytes = b_len == 0 ? NULL : (*env)->GetByteArrayElements(env, b, NULL);
+    nokre_notification_dispatch((int32_t)kind, (int32_t)status,
+                                a_bytes == NULL ? "" : (const char *)a_bytes, (size_t)a_len,
+                                b_bytes == NULL ? "" : (const char *)b_bytes, (size_t)b_len);
+    if (a_bytes != NULL) (*env)->ReleaseByteArrayElements(env, a, a_bytes, JNI_ABORT);
+    if (b_bytes != NULL) (*env)->ReleaseByteArrayElements(env, b, b_bytes, JNI_ABORT);
+    // The handler routed and invalidated like any action; repaint on the
+    // next looper turn (the on-demand loop, worker-pump rule).
+    nokre_shell_request_frame(NULL);
+}
+
 static void nativeScroll(JNIEnv *env, jobject view, jint x, jint y, jint dx, jint dy,
                          jint phase) {
     (void)env;
@@ -569,6 +592,7 @@ static const JNINativeMethod g_methods[] = {
     {"nativeText", "([B)V", (void *)nativeText},
     {"nativeDeepLink", "([B)V", (void *)nativeDeepLink},
     {"nativeAuthResult", "(I[B)V", (void *)nativeAuthResult},
+    {"nativeNotificationEvent", "(II[B[B)V", (void *)nativeNotificationEvent},
     {"nativeScroll", "(IIIII)V", (void *)nativeScroll},
     {"nativeBack", "()Z", (void *)nativeBack},
     {"nativeImeUpdate", "([BI)V", (void *)nativeImeUpdate},

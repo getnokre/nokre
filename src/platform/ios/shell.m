@@ -20,6 +20,13 @@
 #include "../../../shim/nokre_accesskit.h"
 #include <string.h>
 
+// The notification service's Apple half lives in
+// src/services/notification/apple.m and is linked only when the app links
+// the service. Weak, so a shell built with zero services still links: the
+// app delegate below checks the symbol before calling it.
+extern void nokre_notification_apple_push_token(const uint8_t *bytes, size_t len)
+    __attribute__((weak_import));
+
 static nokre_shell_config g_config;
 
 // ---- UITextInput plumbing: integer positions into the marked text ----
@@ -1208,6 +1215,30 @@ void nokre_locale_uninstall(void) {
 - (BOOL)application:(UIApplication *)application
     didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
     return YES;
+}
+
+// The notification service's one line into this shell, and the whole of
+// it (docs/internals/notifications.md). Everything else about
+// notifications is service-owned in src/services/notification/apple.m,
+// because UNUserNotificationCenter's delegate is any object — but an APNs
+// token is handed to the *application* delegate by UIKit and nowhere
+// else, so it crosses here. Weakly linked: an app that never links the
+// service leaves the symbol undefined, so the call is guarded rather than
+// named unconditionally (the shell's zero-services contract).
+- (void)application:(UIApplication *)application
+    didRegisterForRemoteNotificationsWithDeviceToken:(NSData *)deviceToken {
+    if (nokre_notification_apple_push_token != NULL) {
+        nokre_notification_apple_push_token(deviceToken.bytes, deviceToken.length);
+    }
+}
+
+- (void)application:(UIApplication *)application
+    didFailToRegisterForRemoteNotificationsWithError:(NSError *)error {
+    // No token, and nothing to report: the service's contract has one
+    // token lane and no failure lane, because an app cannot act
+    // differently on "APNs is unreachable right now" — it re-registers on
+    // the next launch, which UIKit does for it.
+    (void)error;
 }
 
 // The Info.plist manifest only opts in to scenes; the configuration

@@ -29,6 +29,13 @@ add_library(nokre_app SHARED
     # dependency lives entirely on the Java side, which an app that
     # links iap adds to its own build.gradle (docs/services.md).
     ${NOKRE_ROOT}/src/services/iap/android.c
+    # notification's JNI leg (bridges post/schedule/cancel and the
+    # permission to NokreNotifications, and carries taps and tokens
+    # back). Always compiled like the three above — jni.h only, and the
+    # Firebase dependency the push half needs lives entirely on the Java
+    # side, which an app that links push adds to its own build.gradle
+    # (docs/services.md).
+    ${NOKRE_ROOT}/src/services/notification/android.c
     ${NOKRE_ROOT}/shim/nokre_skia.cpp
     ${NOKRE_ROOT}/shim/nokre_skia_nocodec_stub.cpp
     # HarfBuzz rides in the shim, never in Skia (see build.zig addHarfBuzz).

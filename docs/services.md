@@ -50,6 +50,7 @@ internals doc.
 | `open_url` | One verb: hand a URL (https/http/mailto — a closed set) to the system browser. Fire-and-forget. | **Working** — every shell and the web; nothing links |
 | `share` | One verb: put the OS share sheet up with UTF-8 text on it; the user picks the destination. Fire-and-forget. | **Working** — four native sheets and the web's `navigator.share`; no sheet on the Linux desktop, and `available` says so |
 | `clock` | One verb: the wall clock, in milliseconds since the Unix epoch, UTC. Read on demand. | **Working** — every target; nothing links, and no shell is involved |
+| `notification` | The OS's own notification surface: ask, post, schedule, cancel, and one lane back for taps, arrivals and push tokens. | **Working** — all six platforms for the local half; push on four, and `scheduleAvailable` is false on the Linux desktop and the web |
 
 `haptic` is on this list for completeness, not for use: it is a
 `Services` field because everything platform-flavored is injected and
@@ -1020,7 +1021,8 @@ the Play Developer API; verifying on the device is verifying with the
 attacker's copy of the key. No entitlement or expiry model — `isActive`,
 renewal windows, and grace periods are a policy with a schedule behind
 it, and a schedule is a timer, which is a ticker nokre has none of (the
-`clock` service reports the time; nothing in nokre runs one); `restore`
+`clock` service reports the time and `notification.schedule` hands a
+date to the OS; nothing in nokre runs one); `restore`
 reports what the store says is owned right now, with no dates and no
 arithmetic. No catalog, no price cache, no paywall layout, no route
 table.
@@ -1222,12 +1224,20 @@ hide behind because there is nothing here to time: no animation, no
 ticker, no frame budget an app can observe, and a second clock would be
 a second thing to explain for a duration nobody is drawing.
 
-**No timers and no scheduling.** "Call me in 30 seconds" is a ticker,
-and a nokre app at rest costs zero CPU
+**No timers and no scheduling — nokre keeps none, and that is the
+precise claim.** "Call me in 30 seconds" is a ticker, and a nokre app at
+rest costs zero CPU
 ([internals/architecture.md](internals/architecture.md)). Expiry
 policies, refresh windows, and retry backoff are the app's, computed
 from stamps it took — the line `oauth` and `iap` already draw, unmoved
-by this service existing.
+by this service existing. `notification.schedule` is not the exception
+it looks like: it hands a fire date to the *OS* and returns, so the
+countdown belongs to a system that was going to run anyway and the
+process is usually not alive when it fires. Nothing in nokre waits.
+Where no such system exists — the Linux desktop, the web —
+`scheduleAvailable` says so rather than nokre filling in with a timer of
+its own ([internals/notifications.md](internals/notifications.md)
+records the decision).
 
 **Nothing links, and no shell is involved** — clipboard's posture,
 without even clipboard's C hook. There is no header, no build flag, no
@@ -1249,6 +1259,175 @@ fixed, obviously fake one), move it with `advanceClock(ms)` — signed,
 because a device really does correct backwards — and assert that a
 screen never asked at all with `clockReads()`
 ([testing.md](testing.md)).
+
+### notification: the OS's surface, and the interrupt you have to ask for
+
+A message shown **outside** the app — on a lock screen, in a shade, in a
+notification centre — now or at a fire date, raised locally or pushed
+from your server. nokre asks; the OS draws. Not one pixel of it is
+nokre's, which is why a service that reaches someone who put the app
+down costs the pixel model nothing (the share sheet's bargain) and why
+there is no styling surface here to refuse.
+
+```zig
+// Boot, inside build: three synchronous answers, cached at App.init like
+// locale's tag. Draw no notifications row where the device has none.
+const N = nokre.services.notification;
+if (!N.available(app)) return;
+
+// One handler, registered once inside build — the whole inbound lane.
+N.setHandler(app, state, onNotification);
+
+// From a control the user pressed, never at boot: the prompt has one
+// answer per install, and an app that asks before it has shown why gets
+// the reflexive no that cannot be taken back.
+try N.authorize(app);
+
+fn onNotification(ctx: ?*anyopaque, event: N.Event) void {
+    const state: *State = @ptrCast(@alignCast(ctx.?));
+    switch (event) {
+        // The prompt was answered — or the user changed their mind in
+        // Settings while the app ran. `status` is already updated.
+        .authorized => |s| if (s == .granted) requestToken(state),
+        // The user tapped one. May be the first thing that happens in a
+        // launch: the tap is what started the process.
+        .opened => |p| state.app.navigate(p.route) catch {},
+        // One came due with the app on screen. No OS banner is drawn for
+        // it — what to do is yours: raise an in-app notice, refresh a
+        // list, ignore it.
+        .received => |p| state.app.notify(.{ .title = "Updated", .route = p.route }) catch {},
+        // The push transport minted (or rotated) a token. Ship it to
+        // your backend over `http`; nokre speaks to no push service.
+        .push_token => |t| postTokenToBackend(state, t),
+    }
+    state.app.invalidate();
+}
+
+// In an action:
+try N.post(app, .{ .id = "msg.42", .title = "Two new messages", .route = "thread~42" });
+try N.schedule(app, .{ .id = "remind.1", .title = "Stand up" }, nokre.services.clock.now(app) + 30 * 60_000);
+try N.cancel(app, "remind.1"); // idempotent: already gone is success
+```
+
+**The interrupt decision is yours, and you make it twice.**
+`app.notify` interrupts inside the app ([elements.md](elements.md));
+this interrupts outside it. Neither derives from the other, and that is
+deliberate: a framework that turned every in-app notice into a lock-screen
+banner would be deciding, on your behalf, to reach someone who had put
+the app down. `important` is the same word in both places and means the
+same thing — quiet by default, because interrupting is the thing a
+message has to ask for. It selects Android's high-importance channel,
+Apple's time-sensitive interruption level, and the Linux daemon's normal
+urgency; the levels that override Do Not Disturb are deliberately not
+used, because "this one may interrupt" asks for less than that.
+
+**The tap carries a route reference, not a URL.** `deep_link` carries
+URLs precisely because nokre does not interpret them; both ends of this
+wire are nokre's, so what crosses is the reference the router already
+speaks (`thread~42` — [routing.md](routing.md)). Routing stays yours, as
+it is there.
+
+**Authorization is three states, not a bool.** `not_determined` is a
+fresh install where asking is still legal, `denied` is a decision no
+platform lets an app re-prompt its way out of, and only `granted` posts
+anything. Collapsing the first two makes "ask again" an app's most
+tempting bug. The state is cached and re-read whenever the app comes
+forward, so a user who switched it off in Settings is a `.authorized`
+event, not a stale screen.
+
+The caps are contract, not configuration — checked on the Zig side
+before any OS call, so each error means one thing on all six platforms:
+
+| Cap | Value | Why this number |
+| --- | --- | --- |
+| id | 1–64 bytes of `[a-z0-9._-]` | secure_store's charset for secure_store's reason: the id survives verbatim as a `UNNotificationRequest` identifier, an Android tag, a toast's launch argument and a D-Bus lookup key — one namespace rule, zero escaping |
+| title | 1–128 bytes | every platform truncates in display long before this; past it the payload is a document, and a document belongs behind the tap |
+| body | ≤ 512 bytes | the same rule, one line down |
+| route | ≤ 256 bytes | a route reference is a screen name plus identifier arguments, short by construction |
+
+| Error | On | Meaning |
+| --- | --- | --- |
+| `InvalidId` | post, schedule, cancel | outside the charset or the cap — a pure function of the argument |
+| `EmptyTitle` / `TitleTooLarge` / `BodyTooLarge` / `RouteTooLarge` | post, schedule | the caps above |
+| `NotAuthorized` | post, schedule, requestPushToken | `status` is not `granted` |
+| `FireDateInPast` | schedule | the instant has passed. Refused rather than fired immediately, because the platforms disagree — iOS rejects a non-positive interval and Android's alarm fires at once — and one meaning everywhere is worth more than a convenience that hides a clock bug |
+| `Unavailable` | all | the platform posture the three probes already report |
+
+**Three probes, because three different things can be missing.**
+`available` is whether the device notifies at all (false on a Linux
+session with no daemon on the bus, and in a browser without the
+Notification API). `scheduleAvailable` is whether a fire date can be
+handed over — false on the Linux desktop and the web, where nothing
+outlives the process to fire it, and nokre will not fake it with a timer
+of its own that would die with the tab. `pushAvailable` is whether there
+is a push transport: false on the Linux desktop and on Windows, whose
+WNS needs the packaged Store identity nokre does not emit (iap's answer,
+one row over), and false on the web until you declare a VAPID key. All
+three are cached at `App.init` and legal inside `build`, so an app draws
+around what is missing rather than offering a switch that fails.
+
+**Push stops where oauth stops.** The device token comes back — hex on
+APNs, the FCM token on Android, a JSON subscription on the web — and you
+ship it to your own backend over `http`. nokre speaks to no push
+service, holds no credential, and refuses silent (`content-available`)
+payloads: a push that wakes an app to run code with no UI is background
+execution, a different contract with a different owner.
+
+Linking needs identity, like `secure_store` — three platforms' worth at
+once: Android names its channel after the app, Windows derives its
+AppUserModelID from the id, and Apple keys the entitlement to it.
+
+```zig
+const nokre = b.dependency("nokre", .{
+    // ...
+    .pkg_id = @as([]const u8, "com.example.notes"),
+    .notification = true,
+    // Push is its own flag: local notifications derive one permission
+    // and no entitlement, and an app that only reminds locally should
+    // ship neither the entitlement nor the FCM declaration.
+    .notification_push = true,
+    .notification_push_key = @as([]const u8, "BEl62iUYgUiv…"), // web push only
+});
+```
+
+**One permission is derived, and it is the first one a user will see.**
+Android's `POST_NOTIFICATIONS` is *dangerous*: prompted at runtime from
+API 33, refusable, and revocable in Settings afterwards. Every
+permission nokre derived before it was normal and invisible, which is
+why those derivations could be silent and this one is stated here, where
+you read it, rather than only in the emitter. Push adds Apple's
+`aps-environment` entitlement and Android's FCM `<service>`. No
+exact-alarm permission is derived and none will be: `USE_EXACT_ALARM` is
+policed by Play, `SCHEDULE_EXACT_ALARM` is user-revocable, and a
+reminder that fires inside the OS's batching window is the right trade
+for a framework that draws no clock.
+
+**Two platform postures worth knowing before you design around them.** A
+scheduled notification is lost to a reboot on Android alone — alarms do
+not survive one, and re-arming them would mean nokre keeping a durable
+schedule of its own, which is the thing `schedule` exists not to be. And
+on Android, push means the Firebase messaging library: one Maven
+coordinate and one source directory in your own `app/build.gradle`, iap's
+exception restated in the open —
+
+```groovy
+android { sourceSets { main { java.srcDirs += '<nokre>/src/services/notification/java' } } }
+dependencies { implementation 'com.google.firebase:firebase-messaging:24.0.0' }
+```
+
+— and without them `pushAvailable` answers false on Android and nothing
+else changes.
+
+In tests the mock is one app's fake notification centre: every post,
+schedule, cancel, prompt and token request is journaled in order, and
+nothing the *user* does happens until the test says so —
+`grantNotifications`, `denyNotifications`, `deliverNotificationTap`,
+`deliverNotification`, `deliverPushToken` ([testing.md](testing.md)).
+Boot a device with no notifications, no scheduling, or no push with
+`.notification = .mock(.{ .available = false })` and its siblings. The
+wiring — the per-platform legs, the two recorded reversals, and why the
+fire date is the OS's — is
+[internals/notifications.md](internals/notifications.md).
 
 ## Not services
 
@@ -1275,7 +1454,9 @@ toolchain:
 
 - **ML runtimes** (ONNX and friends): the app links them like any other
   native library. nokre ships no inference.
-- **Payments outside the platform stores**, push notifications,
-  geolocation, camera, microphone, Bluetooth: no current requirement.
-  Each would be a new roster row with this same shape, argued for on its
-  own.
+- **Payments outside the platform stores**, geolocation, camera,
+  microphone, Bluetooth: no current requirement. Each would be a new
+  roster row with this same shape, argued for on its own. Push
+  notifications used to head this list; the row it became, and the
+  record of the reversal, are above and in
+  [internals/notifications.md](internals/notifications.md).

@@ -53,6 +53,13 @@ public final class NokreActivity extends Activity {
         // results back through the view (docs/services.md). Harmless
         // when the app links no oauth — nothing calls NokreOAuth then.
         NokreOAuth.attach(this, view);
+        // The notification service needs an Activity for the runtime
+        // permission and a Context for the channels, and it needs both
+        // before the first post. Harmless when the app links no
+        // notification service — nothing calls the verbs, and registering
+        // two channels the app never uses costs a row in a settings
+        // screen nobody opens.
+        NokreNotifications.attach(this, view);
         FrameLayout root = new FrameLayout(this);
         root.addView(view);
         setContentView(root);
@@ -133,10 +140,40 @@ public final class NokreActivity extends Activity {
         // which the system delivers before this, so a completed flow has
         // already cleared itself.
         NokreOAuth.resumed();
+        // Notifications can be switched off (or back on) in Settings
+        // while the app is away, and coming forward is the only moment
+        // that is observable. Only a change fires an event.
+        NokreNotifications.report();
+    }
+
+    /** The POST_NOTIFICATIONS prompt was answered. The result array is
+     *  not read: what the app *has* is the permission plus the app-wide
+     *  notification switch, and NokreNotifications.status reads both —
+     *  the same reason apple.m re-reads its settings instead of trusting
+     *  the prompt's own boolean. */
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions,
+            int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        NokreNotifications.report();
     }
 
     private void deliverLink(Intent intent) {
         if (view == null || intent == null) return;
+        // A notification tap first, and it is not a VIEW intent: the
+        // PendingIntent NokreNotifications built targets this activity
+        // directly and carries nokre's own route reference in extras,
+        // never a URL — which is exactly why it does not go through
+        // deep_link (docs/services.md draws that line).
+        String noteId = intent.getStringExtra(NokreNotifications.EXTRA_ID);
+        if (noteId != null) {
+            // Consumed, so a second onResume with the same intent stuck
+            // to the activity cannot report the tap twice.
+            intent.removeExtra(NokreNotifications.EXTRA_ID);
+            NokreNotifications.deliverTap(noteId,
+                    intent.getStringExtra(NokreNotifications.EXTRA_ROUTE));
+            return;
+        }
         if (!Intent.ACTION_VIEW.equals(intent.getAction())) return;
         Uri data = intent.getData();
         if (data == null) return;

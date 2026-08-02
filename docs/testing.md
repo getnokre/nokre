@@ -586,6 +586,21 @@ expectation can't be met there, a screen reader user can't meet it either.
   Boot a sheetless target with `.share = .{ .available = false }` (the
   Linux desktop, a browser without `navigator.share`) and assert the
   app drew no share affordance.
+- `notificationsRequested()` — everything the app asked the OS to do,
+  in order, from the journaling notification mock: posts and schedules
+  (told apart by `at_millis`), cancels, the permission prompt, and the
+  token request. A refused call never appears, because the OS was never
+  asked, and `askedToNotify()` is the assertion behind "this screen
+  posted without ever asking". What the *user* did is the test's to
+  drive: `grantNotifications()` and `denyNotifications()` answer the
+  prompt — or flip the switch in Settings without one, which is legal
+  and worth testing — `deliverNotificationTap(id, route)` is the tap
+  (call it first to write the launch that started from one),
+  `deliverNotification(id, route)` is one coming due with the app on
+  screen, and `deliverPushToken(token)` is the transport minting one.
+  Boot a device that cannot notify, cannot schedule, or cannot push with
+  `.notification = .{ .available = false }` and its siblings, and assert
+  the app drew around it.
 - `expectTree(expected)` — inline snapshot of the whole laid-out tree in
   the trace format below. On mismatch both trees print; review the
   actual, then paste it into the test.

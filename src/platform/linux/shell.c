@@ -44,6 +44,7 @@
 #include "../shell.h"
 #include "../../services/deep_link/deep_link.h"
 #include "../../services/locale/locale.h"
+#include "../../services/notification/notification.h"
 #include "../../services/open_url/open_url.h"
 
 // Optional appearance detection (xdg-desktop-portal over D-Bus). Isolated
@@ -1327,6 +1328,18 @@ static void appearance_init(void) {
                        "type='signal',interface='org.freedesktop.portal.Settings',"
                        "member='SettingChanged'",
                        NULL);
+    // The notification service's taps arrive on the same connection: this
+    // shell is the one place a session bus is already open and already
+    // polled, which is why the leg lives here rather than in a
+    // service-owned file (docs/internals/notifications.md).
+    dbus_bus_add_match(g_dbus,
+                       "type='signal',interface='org.freedesktop.Notifications',"
+                       "member='ActionInvoked'",
+                       NULL);
+    dbus_bus_add_match(g_dbus,
+                       "type='signal',interface='org.freedesktop.Notifications',"
+                       "member='NotificationClosed'",
+                       NULL);
     dbus_connection_flush(g_dbus);
 }
 
@@ -1334,8 +1347,253 @@ static void report_appearance(void) {
     g.config.on_appearance(g.config.ctx, portal_prefers_dark() ? 1 : 0);
 }
 
+// ---- notification (service hooks; docs/internals/notifications.md) ----
+// org.freedesktop.Notifications on the session bus this shell already
+// holds and already polls. The desktop has no scheduling service and no
+// push transport, and both are reported honestly rather than faked with a
+// timer of nokre's own — a schedule this process kept would die with it.
+//
+// The daemon speaks uint32 ids; the service speaks the app's own string
+// id. The table below is the whole translation, bounded because a shade
+// that is holding more than this many of one app's notifications has
+// stopped being a shade.
+
+#define NOKRE_NOTE_SLOTS 32
+
+typedef struct {
+    char id[64];
+    size_t id_len;
+    char route[256];
+    size_t route_len;
+    dbus_uint32_t daemon_id; // 0 = free
+} nokre_note_slot;
+
+static nokre_note_slot g_notes[NOKRE_NOTE_SLOTS];
+static void *g_note_ctx;
+static nokre_notification_cb g_note_cb;
+
+static nokre_note_slot *note_by_id(const char *id, size_t len) {
+    for (int i = 0; i < NOKRE_NOTE_SLOTS; i++) {
+        if (g_notes[i].daemon_id != 0 && g_notes[i].id_len == len &&
+            memcmp(g_notes[i].id, id, len) == 0)
+            return &g_notes[i];
+    }
+    return NULL;
+}
+
+static nokre_note_slot *note_by_daemon(dbus_uint32_t daemon_id) {
+    for (int i = 0; i < NOKRE_NOTE_SLOTS; i++) {
+        if (g_notes[i].daemon_id == daemon_id) return &g_notes[i];
+    }
+    return NULL;
+}
+
+// The daemon's ActionInvoked and NotificationClosed, routed from the one
+// pump. "default" is the body click — the tap — and every other action
+// key is one nokre never registers, so it is not ours to interpret.
+static void notification_signal(DBusMessage *msg) {
+    if (dbus_message_is_signal(msg, "org.freedesktop.Notifications", "NotificationClosed")) {
+        dbus_uint32_t id = 0, reason = 0;
+        if (dbus_message_get_args(msg, NULL, DBUS_TYPE_UINT32, &id, DBUS_TYPE_UINT32, &reason,
+                                  DBUS_TYPE_INVALID)) {
+            nokre_note_slot *slot = note_by_daemon(id);
+            // Freed, never reported: the service has no "dismissed" event
+            // and deliberately so — which notification a user swiped away
+            // is reporting on them, not for the app (share's rule).
+            if (slot != NULL) slot->daemon_id = 0;
+        }
+        return;
+    }
+    if (!dbus_message_is_signal(msg, "org.freedesktop.Notifications", "ActionInvoked")) return;
+    dbus_uint32_t id = 0;
+    const char *key = NULL;
+    if (!dbus_message_get_args(msg, NULL, DBUS_TYPE_UINT32, &id, DBUS_TYPE_STRING, &key,
+                               DBUS_TYPE_INVALID))
+        return;
+    if (key == NULL || strcmp(key, "default") != 0) return;
+    nokre_note_slot *slot = note_by_daemon(id);
+    if (slot == NULL || g_note_cb == NULL) return;
+    g_note_cb(g_note_ctx, NOKRE_NOTIFICATION_OPENED, NOKRE_NOTIFICATION_GRANTED, slot->id,
+              slot->id_len, slot->route, slot->route_len);
+    slot->daemon_id = 0;
+    maybe_repaint();
+}
+
+void nokre_notification_install(void *ctx, nokre_notification_cb cb) {
+    g_note_ctx = ctx;
+    g_note_cb = cb;
+    // Nothing to flush: a Wayland desktop cannot start a process from a
+    // notification tap — the daemon signals the *running* app — so there
+    // is no launch event to have buffered.
+}
+
+void nokre_notification_uninstall(void) {
+    g_note_ctx = NULL;
+    g_note_cb = NULL;
+}
+
+int32_t nokre_notification_available(void) {
+    if (g_dbus == NULL) return 0;
+    // A name owner is the honest probe: a session with no daemon running
+    // has nobody to post to, and the app should draw no notification
+    // affordance at all (share's `available` argument).
+    return dbus_bus_name_has_owner(g_dbus, "org.freedesktop.Notifications", NULL) ? 1 : 0;
+}
+
+int32_t nokre_notification_push_available(void) {
+    return 0; // no push service on the desktop, and none to invent
+}
+
+int32_t nokre_notification_schedule_available(void) {
+    // The spec has no scheduling, and nothing else on the session holds a
+    // date for an app that is not running. A timerfd here would be a
+    // schedule nokre owns, which dies with the process — exactly when a
+    // reminder matters.
+    return 0;
+}
+
+int32_t nokre_notification_status(void) {
+    // There is no permission model: a running daemon posts what it is
+    // given. So the answer is granted wherever there is a daemon, and the
+    // app never has a prompt to draw.
+    return nokre_notification_available() ? NOKRE_NOTIFICATION_GRANTED
+                                          : NOKRE_NOTIFICATION_NOT_DETERMINED;
+}
+
+void nokre_notification_authorize(void) {
+    // Nothing to ask. Reporting the state back keeps the app's one path
+    // working — it asked, and an answer arrives, as on every platform.
+    if (g_note_cb == NULL) return;
+    g_note_cb(g_note_ctx, NOKRE_NOTIFICATION_AUTHORIZED, nokre_notification_status(), "", 0, "", 0);
+}
+
+void nokre_notification_post(const char *id, size_t id_len, const char *title, size_t title_len,
+                             const char *body, size_t body_len, const char *route, size_t route_len,
+                             int32_t important, int64_t at_millis) {
+    (void)at_millis; // schedule_available already answered 0
+    if (g_dbus == NULL || id_len >= sizeof g_notes[0].id || route_len >= sizeof g_notes[0].route)
+        return;
+    // Reuse the slot when this id is already showing: the contract says a
+    // repeat replaces, and the daemon's own replaces_id does exactly that.
+    nokre_note_slot *slot = note_by_id(id, id_len);
+    if (slot == NULL) {
+        for (int i = 0; i < NOKRE_NOTE_SLOTS; i++) {
+            if (g_notes[i].daemon_id == 0) {
+                slot = &g_notes[i];
+                break;
+            }
+        }
+    }
+    if (slot == NULL) return; // 32 live notifications is a shade, not a slot shortage
+
+    DBusMessage *msg =
+        dbus_message_new_method_call("org.freedesktop.Notifications", "/org/freedesktop/Notifications",
+                                     "org.freedesktop.Notifications", "Notify");
+    if (msg == NULL) return;
+
+    char title_z[256], body_z[1024];
+    size_t tl = title_len < sizeof title_z - 1 ? title_len : sizeof title_z - 1;
+    size_t bl = body_len < sizeof body_z - 1 ? body_len : sizeof body_z - 1;
+    memcpy(title_z, title, tl);
+    title_z[tl] = 0;
+    memcpy(body_z, body, bl);
+    body_z[bl] = 0;
+
+    const char *app_name = g.config.app_id != NULL ? g.config.app_id : "nokre";
+    // The icon name is the app_id, which is what the .desktop file the
+    // packaging step writes is named after — the same association the
+    // compositor already uses for the window (docs/internals/platform-shells.md).
+    const char *icon = app_name;
+    const char *summary = title_z;
+    const char *text = body_z;
+    dbus_uint32_t replaces = slot->daemon_id;
+    // "default" is the body click. Registering it is what makes the whole
+    // notification tappable on the daemons that honour it; the label is
+    // never drawn for the default action, so it stays empty.
+    const char *actions[] = {"default", ""};
+    const char **actions_p = actions;
+    int n_actions = 2;
+    dbus_int32_t expires = important ? 0 : -1; // 0 = until dismissed, -1 = the daemon's default
+
+    DBusMessageIter it, arr, dict;
+    dbus_message_iter_init_append(msg, &it);
+    dbus_message_iter_append_basic(&it, DBUS_TYPE_STRING, &app_name);
+    dbus_message_iter_append_basic(&it, DBUS_TYPE_UINT32, &replaces);
+    dbus_message_iter_append_basic(&it, DBUS_TYPE_STRING, &icon);
+    dbus_message_iter_append_basic(&it, DBUS_TYPE_STRING, &summary);
+    dbus_message_iter_append_basic(&it, DBUS_TYPE_STRING, &text);
+    dbus_message_iter_open_container(&it, DBUS_TYPE_ARRAY, "s", &arr);
+    for (int i = 0; i < n_actions; i++)
+        dbus_message_iter_append_basic(&arr, DBUS_TYPE_STRING, &actions_p[i]);
+    dbus_message_iter_close_container(&it, &arr);
+    // hints: urgency, the one hint that carries the `important` semantic
+    // (0 low, 1 normal, 2 critical). Critical is deliberately not used —
+    // it never times out and overrides Do Not Disturb on most daemons,
+    // which is more than "this one may interrupt" asks for.
+    dbus_message_iter_open_container(&it, DBUS_TYPE_ARRAY, "{sv}", &arr);
+    {
+        DBusMessageIter var;
+        const char *key = "urgency";
+        unsigned char urgency = important ? 2 : 1;
+        dbus_message_iter_open_container(&arr, DBUS_TYPE_DICT_ENTRY, NULL, &dict);
+        dbus_message_iter_append_basic(&dict, DBUS_TYPE_STRING, &key);
+        dbus_message_iter_open_container(&dict, DBUS_TYPE_VARIANT, "y", &var);
+        dbus_message_iter_append_basic(&var, DBUS_TYPE_BYTE, &urgency);
+        dbus_message_iter_close_container(&dict, &var);
+        dbus_message_iter_close_container(&arr, &dict);
+    }
+    dbus_message_iter_close_container(&it, &arr);
+    dbus_message_iter_append_basic(&it, DBUS_TYPE_INT32, &expires);
+
+    DBusError err;
+    dbus_error_init(&err);
+    // Blocking, like the appearance read above and for its reason: the
+    // reply carries the daemon's id, which is what a later cancel and
+    // every tap have to match against. One millisecond of session bus.
+    DBusMessage *reply = dbus_connection_send_with_reply_and_block(g_dbus, msg, 1000, &err);
+    dbus_message_unref(msg);
+    if (reply == NULL) {
+        dbus_error_free(&err);
+        return;
+    }
+    dbus_uint32_t assigned = 0;
+    if (dbus_message_get_args(reply, NULL, DBUS_TYPE_UINT32, &assigned, DBUS_TYPE_INVALID) &&
+        assigned != 0) {
+        memcpy(slot->id, id, id_len);
+        slot->id_len = id_len;
+        memcpy(slot->route, route, route_len);
+        slot->route_len = route_len;
+        slot->daemon_id = assigned;
+    }
+    dbus_message_unref(reply);
+}
+
+void nokre_notification_cancel(const char *id, size_t id_len) {
+    if (g_dbus == NULL) return;
+    nokre_note_slot *slot = note_by_id(id, id_len);
+    if (slot == NULL) return; // never posted, or already closed: idempotent
+    DBusMessage *msg = dbus_message_new_method_call(
+        "org.freedesktop.Notifications", "/org/freedesktop/Notifications",
+        "org.freedesktop.Notifications", "CloseNotification");
+    if (msg != NULL) {
+        dbus_message_append_args(msg, DBUS_TYPE_UINT32, &slot->daemon_id, DBUS_TYPE_INVALID);
+        dbus_connection_send(g_dbus, msg, NULL); // fire-and-forget: no reply to read
+        dbus_connection_flush(g_dbus);
+        dbus_message_unref(msg);
+    }
+    slot->daemon_id = 0;
+}
+
+void nokre_notification_request_push(const char *key, size_t key_len) {
+    (void)key;
+    (void)key_len;
+    // No push transport here; push_available already answered 0.
+}
+
 // Drains pending D-Bus signals; re-reports appearance if one was a
-// SettingChanged. Called when the connection fd polls readable.
+// SettingChanged, and routes a notification action to the service. One
+// drain, because a connection has one queue — a second pump would race
+// the first for the same messages.
 static void appearance_pump(void) {
     if (g_dbus == NULL) return;
     dbus_connection_read_write(g_dbus, 0);
@@ -1345,6 +1603,8 @@ static void appearance_pump(void) {
         if (dbus_message_is_signal(msg, "org.freedesktop.portal.Settings",
                                    "SettingChanged"))
             changed = 1;
+        else
+            notification_signal(msg);
         dbus_message_unref(msg);
     }
     if (changed) {
@@ -1356,6 +1616,35 @@ static void appearance_pump(void) {
 static void appearance_init(void) {}
 static void report_appearance(void) { g.config.on_appearance(g.config.ctx, 0); }
 static void appearance_pump(void) {}
+
+// Without libdbus there is no session bus to post on, so every probe is
+// honest about it and every verb is a no-op — the same posture the
+// clipboard's hookless targets take, and what `available` false already
+// tells the app to draw around.
+void nokre_notification_install(void *ctx, nokre_notification_cb cb) {
+    (void)ctx;
+    (void)cb;
+}
+void nokre_notification_uninstall(void) {}
+int32_t nokre_notification_available(void) { return 0; }
+int32_t nokre_notification_push_available(void) { return 0; }
+int32_t nokre_notification_schedule_available(void) { return 0; }
+int32_t nokre_notification_status(void) { return NOKRE_NOTIFICATION_NOT_DETERMINED; }
+void nokre_notification_authorize(void) {}
+void nokre_notification_post(const char *id, size_t id_len, const char *title, size_t title_len,
+                             const char *body, size_t body_len, const char *route, size_t route_len,
+                             int32_t important, int64_t at_millis) {
+    (void)id; (void)id_len; (void)title; (void)title_len; (void)body; (void)body_len;
+    (void)route; (void)route_len; (void)important; (void)at_millis;
+}
+void nokre_notification_cancel(const char *id, size_t id_len) {
+    (void)id;
+    (void)id_len;
+}
+void nokre_notification_request_push(const char *key, size_t key_len) {
+    (void)key;
+    (void)key_len;
+}
 #endif
 
 // ---- run ----

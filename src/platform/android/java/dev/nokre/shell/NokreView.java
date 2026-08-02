@@ -65,6 +65,7 @@ public final class NokreView extends SurfaceView implements SurfaceHolder.Callba
     private native void nativeText(byte[] utf8);
     private native void nativeDeepLink(byte[] utf8);
     private native void nativeAuthResult(int status, byte[] utf8);
+    private native void nativeNotificationEvent(int kind, int status, byte[] a, byte[] b);
     private native void nativeScroll(int x, int y, int dx, int dy, int phase);
     private native boolean nativeBack();
     private native void nativeImeUpdate(byte[] utf8, int cursor);
@@ -213,6 +214,15 @@ public final class NokreView extends SurfaceView implements SurfaceHolder.Callba
      *  deep-link path's shape. */
     void authResult(int status, byte[] utf8) {
         nativeAuthResult(status, utf8);
+    }
+
+    /** A notification event (NokreNotifications): the permission answered,
+     *  a tap, a foreground arrival, or a push token. The native side
+     *  routes it to the app's handler and requests a repaint through the
+     *  pipe — the deep-link path's shape, and the shell learns no more
+     *  about what a notification is than it does about a flow. */
+    void notificationEvent(int kind, int status, byte[] a, byte[] b) {
+        nativeNotificationEvent(kind, status, a, b);
     }
 
     @Override

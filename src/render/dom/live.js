@@ -32,7 +32,7 @@
 //
 // — and everything below them is the same driver, doing the same thing.
 
-import { appHooks, reportAuthToOpener, seedSecureStore } from "./services.js";
+import { appHooks, registerServiceWorker, reportAuthToOpener, seedSecureStore } from "./services.js";
 
 // core/event.zig's `Key`, by the browser's name for each, in that
 // enum's order. Anything not here is not a key nokre has — the set is
@@ -663,6 +663,34 @@ export async function mount({ wasm, into, worker, content, route, seed, addressi
   // locale is read inside the first `build` (services/locale/web.zig
   // says so at length).
   nk.nokre_dom_system_appearance(dark.matches ? 1 : 0);
+  // The notification service's worker, and the cold-start tap it may
+  // have carried. Registration is after boot deliberately — it is
+  // asynchronous either way, and nothing in the first `build` can wait
+  // on it: the boot probes read `Notification.permission`, which the
+  // page answers without a worker (docs/internals/notifications.md).
+  registerServiceWorker();
+  {
+    // A tap with no page open opens one, and the only thing sw.js can
+    // hand a page that does not exist yet is its URL. Delivered as a tap
+    // once, then stripped from the address bar so a reload is not a
+    // second tap — the route the app navigates to is what stays there.
+    const q = new URLSearchParams(location.search);
+    const tapped = q.get("nokre.id");
+    if (tapped && nk.nokre_notification_scratch) {
+      const ib = bytes.encode(tapped);
+      const rb = bytes.encode(q.get("nokre.route") || "");
+      const ptr = nk.nokre_notification_scratch(ib.length + rb.length);
+      if (ptr) {
+        memory().set(ib, ptr);
+        memory().set(rb, ptr + ib.length);
+        nk.nokre_notification_receive(1, 1, ib.length, rb.length);
+      }
+      q.delete("nokre.id");
+      q.delete("nokre.route");
+      const rest = q.toString();
+      history.replaceState(null, "", location.pathname + (rest ? "?" + rest : "") + location.hash);
+    }
+
   if (!documents) {
     const inbound = location.hash.slice(1);
     if (inbound) nk.nokre_dom_navigate(put(inbound));

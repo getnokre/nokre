@@ -178,6 +178,120 @@ test "the BILLING permission is additive, and rides beside every other service" 
     try std.testing.expect(std.mem.indexOf(u8, actual, "android:scheme=\"dev.nokre.kitchensink_test\"") != null);
 }
 
+// notification derivations: the local half is one permission, and it is
+// the only *dangerous* one on the roster — prompted at runtime, refusable
+// and revocable — so unlike BILLING its arrival is something a user sees.
+// The push half adds an entitlement on Apple and a service on Android.
+const notification_services: packaging.Services = .{ .notification = true };
+const push_services: packaging.Services = .{ .notification = true, .notification_push = true };
+
+test "AndroidManifest.xml grows POST_NOTIFICATIONS when notification is linked" {
+    const actual = try packaging.androidManifest(std.testing.allocator, fixture, notification_services, "nokre_app");
+    defer std.testing.allocator.free(actual);
+    try std.testing.expectEqualStrings(@embedFile("testdata/AndroidManifest.notification.xml"), actual);
+}
+
+test "push adds the FCM service, and only push does" {
+    const actual = try packaging.androidManifest(std.testing.allocator, fixture, push_services, "nokre_app");
+    defer std.testing.allocator.free(actual);
+    try std.testing.expectEqualStrings(@embedFile("testdata/AndroidManifest.notification_push.xml"), actual);
+    // The local half declares no service: a push arrives with no
+    // activity, which is the whole reason that <service> exists, and an
+    // app that only reminds locally has nothing for Firebase to bind.
+    const local = try packaging.androidManifest(std.testing.allocator, fixture, notification_services, "nokre_app");
+    defer std.testing.allocator.free(local);
+    try std.testing.expect(std.mem.indexOf(u8, local, "MESSAGING_EVENT") == null);
+}
+
+test "no exact-alarm permission is ever derived" {
+    // The refusal is the row: an app whose fire date reads "remind me in
+    // the morning" must not make its consumer justify USE_EXACT_ALARM to
+    // Play, and RECEIVE_BOOT_COMPLETED would mean nokre keeping a durable
+    // schedule of its own — the thing `schedule` exists not to be.
+    const actual = try packaging.androidManifest(std.testing.allocator, fixture, push_services, "nokre_app");
+    defer std.testing.allocator.free(actual);
+    try std.testing.expect(std.mem.indexOf(u8, actual, "EXACT_ALARM") == null);
+    try std.testing.expect(std.mem.indexOf(u8, actual, "RECEIVE_BOOT_COMPLETED") == null);
+}
+
+test "push derives the aps-environment entitlement; local derives none" {
+    const ents = (try packaging.iosEntitlements(std.testing.allocator, fixture, push_services)).?;
+    defer std.testing.allocator.free(ents);
+    try std.testing.expectEqualStrings(@embedFile("testdata/App.push.entitlements"), ents);
+    // Local notifications ask at runtime through UNUserNotificationCenter
+    // — no plist key, no entitlement — so the file must not exist at all.
+    try std.testing.expectEqual(
+        @as(?[]u8, null),
+        try packaging.iosEntitlements(std.testing.allocator, fixture, notification_services),
+    );
+    const plist = try packaging.iosInfoPlist(std.testing.allocator, fixture, push_services);
+    defer std.testing.allocator.free(plist);
+    try std.testing.expectEqualStrings(@embedFile("testdata/Info.plist"), plist);
+}
+
+test "aps-environment rides beside the other entitlements, alphabetically first" {
+    var both = deep_link_services;
+    both.notification = true;
+    both.notification_push = true;
+    both.oauth_apple = true;
+    const ents = (try packaging.iosEntitlements(std.testing.allocator, fixture, both)).?;
+    defer std.testing.allocator.free(ents);
+    const aps = std.mem.indexOf(u8, ents, "aps-environment").?;
+    const signin = std.mem.indexOf(u8, ents, "applesignin").?;
+    const domains = std.mem.indexOf(u8, ents, "associated-domains").?;
+    try std.testing.expect(aps < signin);
+    try std.testing.expect(signin < domains);
+}
+
+// The macOS bundle: packaging emitted no plist for this platform until a
+// service needed the bundle identifier one describes
+// (docs/internals/notifications.md).
+test "macOS Info.plist is byte-exact" {
+    const actual = try packaging.macosInfoPlist(std.testing.allocator, fixture, .{}, "nokre_app");
+    defer std.testing.allocator.free(actual);
+    try std.testing.expectEqualStrings(@embedFile("testdata/Info.macos.plist"), actual);
+}
+
+test "the macOS plist is not the iOS one" {
+    // Two emitters rather than one with a flag: the scene manifest is
+    // UIKit's and means nothing on the desktop, and NSHighResolution
+    // Capable is the pixel model's stake in the file — without it AppKit
+    // hands the shell a 1x backing store and every glyph resamples.
+    const mac = try packaging.macosInfoPlist(std.testing.allocator, fixture, .{}, "nokre_app");
+    defer std.testing.allocator.free(mac);
+    try std.testing.expect(std.mem.indexOf(u8, mac, "NSHighResolutionCapable") != null);
+    try std.testing.expect(std.mem.indexOf(u8, mac, "UIApplicationSceneManifest") == null);
+    const ios = try packaging.iosInfoPlist(std.testing.allocator, fixture, .{});
+    defer std.testing.allocator.free(ios);
+    try std.testing.expect(std.mem.indexOf(u8, ios, "NSHighResolutionCapable") == null);
+}
+
+test "the icns container is well-formed and every entry is a PNG" {
+    const actual = try packaging.icon.icns(std.testing.allocator, fixture.id);
+    defer std.testing.allocator.free(actual);
+    try std.testing.expectEqualStrings("icns", actual[0..4]);
+    // The header's length covers the whole file, entries included: a
+    // container whose own size disagrees with its bytes is one Finder
+    // silently ignores.
+    const total = std.mem.readInt(u32, actual[4..8], .big);
+    try std.testing.expectEqual(actual.len, total);
+
+    var at: usize = 8;
+    var seen: usize = 0;
+    while (at + 8 <= actual.len) : (seen += 1) {
+        const tag = actual[at..][0..4];
+        const len = std.mem.readInt(u32, actual[at + 4 ..][0..4], .big);
+        try std.testing.expectEqualStrings(packaging.icon.icns_entries[seen].tag, tag);
+        try std.testing.expect(len > 8 and at + len <= actual.len);
+        // The payload is the same PNG every other platform's icon is —
+        // nothing is resampled or re-encoded for Apple.
+        try std.testing.expectEqualStrings("\x89PNG", actual[at + 8 ..][0..4]);
+        at += len;
+    }
+    try std.testing.expectEqual(packaging.icon.icns_entries.len, seen);
+    try std.testing.expectEqual(actual.len, at);
+}
+
 test "android package.properties is byte-exact" {
     const actual = try packaging.androidProperties(std.testing.allocator, fixture);
     defer std.testing.allocator.free(actual);

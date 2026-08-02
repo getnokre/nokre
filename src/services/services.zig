@@ -22,6 +22,7 @@ const haptic = @import("haptic/haptic.zig");
 const http = @import("http/http.zig");
 const iap = @import("iap/iap.zig");
 const locale = @import("locale/locale.zig");
+const notification = @import("notification/notification.zig");
 const oauth = @import("oauth/oauth.zig");
 const open_url = @import("open_url/open_url.zig");
 const secure_store = @import("secure_store/secure_store.zig");
@@ -88,6 +89,20 @@ pub const Services = struct {
     /// platform without one — the Linux desktop — answers `available`
     /// false at runtime rather than deriving anything.
     share: share.Service = .{},
+    /// Packaging footprint, and the only service so far whose derivation
+    /// a *user* can see: Android's `POST_NOTIFICATIONS`, which unlike
+    /// every permission derived before it is dangerous — prompted at
+    /// runtime, refusable, revocable — so the derivation is documented in
+    /// the consumer section rather than left to the emitter's silence
+    /// (the BILLING row states the rule this one is the exception to).
+    /// Push adds Apple's `aps-environment` entitlement and, on Android,
+    /// the FCM service declaration; local adds neither. Windows and Linux
+    /// derive nothing into a manifest — Windows instead registers its
+    /// AppUserModelID and activator CLSID at first run, which is a
+    /// narrowly scoped reversal of deep_link's registry refusal recorded
+    /// in docs/internals/notifications.md — and the web derives only the
+    /// service worker the site already emits.
+    notification: notification.Service = .{},
     /// Packaging footprint: nothing, anywhere — stated rather than
     /// implied. Reading the wall clock is a call every platform hands
     /// out unasked: no manifest entry, no permission (Android's
@@ -137,10 +152,20 @@ pub const Services = struct {
         errdefer self.iap.deinit();
         try self.clock.init(gpa);
         errdefer self.clock.deinit();
+        // Second to last: notification's init reads its three boot
+        // probes and installs the inbound receiver, so like locale it
+        // calls out to the shell before it returns — and a shell may
+        // flush the tap that launched the process during that install.
+        // It buffers rather than dispatching (no handler exists until
+        // the first build), but it still runs with everything else
+        // standing, for locale's reason.
+        try self.notification.init(gpa);
+        errdefer self.notification.deinit();
         // Last, and deliberately: locale's init is the only one that
-        // calls out to the shell and gets a value back before it
-        // returns (the boot tag), so it runs with every other service
-        // already standing — nothing it fires into can be half-built.
+        // calls out to the shell and gets a value back *and delivers it*
+        // before it returns (the boot tag fires the handler inside the
+        // install), so it runs with every other service already standing
+        // — nothing it fires into can be half-built.
         try self.locale.init(gpa);
     }
 
@@ -155,6 +180,7 @@ pub const Services = struct {
         self.share.deinit();
         self.iap.deinit();
         self.clock.deinit();
+        self.notification.deinit();
         self.locale.deinit();
     }
 };

@@ -61,6 +61,25 @@ pub const AppOptions = struct {
     /// Gradle coordinate the consumer adds themselves; nokre has no
     /// dependency manager to add it for them (docs/internals/iap.md).
     iap: bool = false,
+    /// Linking the notification service. Requires `pkg` — the Android
+    /// channel, the Windows AppUserModelID and Apple's entitlement are
+    /// all keyed to the app's identity — and derives Android's
+    /// POST_NOTIFICATIONS, the one *dangerous* permission any service
+    /// asks for (docs/services.md).
+    notification: bool = false,
+    /// Remote push on top of `notification`: adds Apple's
+    /// `aps-environment` entitlement and Android's FCM service
+    /// declaration. On Android the Firebase messaging library is one
+    /// Gradle coordinate the consumer adds themselves — iap's exception,
+    /// stated in the consumer's own build file rather than hidden
+    /// (docs/internals/notifications.md). Links notification on its own.
+    notification_push: bool = false,
+    /// The VAPID application server key web push subscribes with — the
+    /// public half, base64url, from the pair the app's own push backend
+    /// holds. Only the web reads it (APNs and FCM identify the sender by
+    /// the app's registration), and without it `pushAvailable` answers
+    /// false there rather than offering a switch that cannot subscribe.
+    notification_push_key: []const u8 = "",
     /// The app's Apple icon: an Icon Composer bundle — the `.icon`
     /// *directory* Icon Composer exports, holding `icon.json` and its
     /// layer images. Requires `pkg` (the icon rides the tree the
@@ -251,7 +270,19 @@ fn checkServicesNeedPkg(hb: *std.Build, options: AppOptions, artifact: *std.Buil
     checkDeepLinkNeedsPkg(hb, options, artifact);
     checkOauthNeedsPkg(hb, options, artifact);
     checkIapNeedsPkg(hb, options, artifact);
+    checkNotificationNeedsPkg(hb, options, artifact);
     checkAppleIconNeedsPkg(hb, options, artifact);
+}
+
+/// notification without an identity has no channel to name, no
+/// AppUserModelID to derive, and no entitlement to key — three platforms'
+/// worth of identity, so linking it demands `.pkg`. secure_store's rule
+/// again, on the artifact the consumer builds.
+fn checkNotificationNeedsPkg(hb: *std.Build, options: AppOptions, artifact: *std.Build.Step.Compile) void {
+    if ((options.notification or options.notification_push) and options.pkg == null) {
+        const fail = hb.addFail("notification needs the app's identity — its Android channel, Windows AppUserModelID and Apple entitlement are keyed to the app id, so declare .pkg alongside .notification (docs/services.md)");
+        artifact.step.dependOn(&fail.step);
+    }
 }
 
 fn checkStoreNeedsPkg(hb: *std.Build, options: AppOptions, artifact: *std.Build.Step.Compile) void {
@@ -668,7 +699,13 @@ fn addWebSite(
     _ = wf.addCopyFile(wasm, web_wasm);
     // The live driver's browser half (docs/internals/dom-edition.md):
     // the page loads live.js alone, which imports the other two.
-    inline for (.{ "live.js", "live-worker.js", "services.js" }) |f| {
+    // sw.js rides the same copy: the notification service's web half is
+    // a *file the origin serves*, not a module import — a service worker
+    // has to be registerable by URL — so the site carries it whether or
+    // not this app links notifications. An unregistered worker costs a
+    // 404 the driver already swallows; a missing one would make the leg
+    // unimplementable after the fact (docs/internals/notifications.md).
+    inline for (.{ "live.js", "live-worker.js", "services.js", "sw.js" }) |f| {
         _ = wf.addCopyFile(hb.path("src/render/dom/" ++ f), f);
     }
     _ = wf.addCopyFile(emitStylesheet(hb), "style.css");
@@ -908,6 +945,19 @@ pub fn build(b: *std.Build) void {
     // the six targets (docs/internals/iap.md).
     const iap_opt = b.option(bool, "iap", "Link the iap service: StoreKit on Apple, Play Billing on Android, no store elsewhere (requires pkg_id)") orelse false;
 
+    // notification: "linking needs identity" for three platforms at once
+    // — Android names its channel after the app, Windows derives its
+    // AppUserModelID from the id, and Apple keys the entitlement to it —
+    // and it derives the first dangerous permission any service has asked
+    // for, POST_NOTIFICATIONS. Push is the second flag rather than a
+    // wider first one: local notifications derive one permission and no
+    // entitlement, and an app that only reminds locally should ship
+    // neither the entitlement nor the FCM declaration
+    // (docs/internals/notifications.md).
+    const notification_opt = b.option(bool, "notification", "Link the notification service: local notifications on all six platforms (requires pkg_id)") orelse false;
+    const notification_push_opt = b.option(bool, "notification_push", "Link notification with remote push: APNs, FCM, and web push (implies -Dnotification; requires pkg_id)") orelse false;
+    const notification_push_key = b.option([]const u8, "notification_push_key", "The VAPID application server key (public half, base64url) web push subscribes with; the web needs it, APNs and FCM ignore it") orelse "";
+
     // The linked-service set the -D options above describe, in the one
     // shape both the module wiring and the packaging emitters read —
     // appServices' twin for nokre's own build, stated once so the two
@@ -918,6 +968,9 @@ pub fn build(b: *std.Build) void {
         .oauth_schemes = oauth_schemes,
         .oauth_apple = oauth_apple,
         .iap = iap_opt,
+        .notification = notification_opt or notification_push_opt,
+        .notification_push = notification_push_opt,
+        .notification_push_key = notification_push_key,
     };
 
     // The kitchen sink on iOS: both static libraries plus the pkg tree
@@ -1034,6 +1087,17 @@ pub fn build(b: *std.Build) void {
         // policy layer with no leg behind it, and "the storeless build
         // still analyzes" is exactly what would rot unnoticed.
         addCheckObject(b, check_step, query, optimize, "nokre-check-iap", check_decl, .{ .iap = true });
+
+        // notification gets its own for iap's second reason, sharpened:
+        // it is the one service every target has a leg for, so what needs
+        // analyzing per OS tag is the *whole* surface — the install, the
+        // three boot probes, the post/cancel path and the wasm export —
+        // rather than a policy layer standing in for absent backends.
+        // Push is on, so the entitlement-and-FCM half compiles too.
+        addCheckObject(b, check_step, query, optimize, "nokre-check-notification", check_decl, .{
+            .notification = true,
+            .notification_push = true,
+        });
     }
 
     // ---- Web: the kitchen sink as a servable site. ----
@@ -1138,9 +1202,26 @@ pub fn build(b: *std.Build) void {
             // Only identity-carrying examples link secure_store —
             // hello alone today.
             .secure_store = ex.pkg != null,
+            // Same rule, same example: notifications need identity too
+            // (the channel, the AppUserModelID and the entitlement are
+            // all keyed to the app id). The kitchen sink stays at zero
+            // linked services by contract (docs/internals/contributing.md),
+            // so hello is where a service that links gets shown.
+            .notification = ex.pkg != null,
         });
         b.installArtifact(app.artifact);
-        const run = b.addRunArtifact(app.artifact);
+        // On macOS the run step drives the binary inside an assembled
+        // bundle: without one there is no bundle identifier, and a
+        // notification cannot be posted at all (addMacosBundle).
+        const run = if (target.result.os.tag == .macos and ex.pkg != null) blk: {
+            const inside = addMacosBundle(b, app.artifact, ex.pkg.?, .{
+                .secure_store = true,
+                .notification = true,
+            }, ex.name);
+            const r = std.Build.Step.Run.create(b, b.fmt("run {s}", .{ex.name}));
+            r.addFileArg(inside);
+            break :blk r;
+        } else b.addRunArtifact(app.artifact);
         const run_step = b.step(
             b.fmt("run-{s}", .{ex.name}),
             b.fmt("Run the {s} example", .{ex.name}),
@@ -1264,6 +1345,14 @@ fn addPkgTree(
     _ = wf.add("ios/Info.plist", packaging.iosInfoPlist(gpa, decl, services) catch @panic("OOM"));
     _ = wf.add("android/AndroidManifest.xml", packaging.androidManifest(gpa, decl, services, "nokre_app") catch @panic("OOM"));
     _ = wf.add("android/package.properties", packaging.androidProperties(gpa, decl) catch @panic("OOM"));
+    // macOS's bundle, which packaging emitted for nobody until a service
+    // needed it: UNUserNotificationCenter refuses to post for a binary
+    // with no bundle identifier, so an unbundled nokre app cannot own a
+    // notification at all (docs/internals/notifications.md). The
+    // executable name is the tree's one convention — `addMacosBundle`
+    // renames the artifact into place under it.
+    _ = wf.add("macos/Info.plist", packaging.macosInfoPlist(gpa, decl, services, macos_executable) catch @panic("OOM"));
+    _ = wf.add("macos/AppIcon.icns", packaging.icon.icns(gpa, decl.id) catch @panic("OOM"));
     _ = wf.add("web/manifest.webmanifest", packaging.webManifest(gpa, decl) catch @panic("OOM"));
     // The page and the two files it names. They are one artifact in
     // three pieces — the split is the page's policy, which admits no
@@ -1340,6 +1429,47 @@ fn refuseAppleIcon(b: *std.Build, wf: *std.Build.Step.WriteFile, message: []cons
     return false;
 }
 
+/// The executable name inside every nokre `.app`. Fixed rather than the
+/// artifact's own name so the emitted Info.plist is a pure function of
+/// the declaration — the same rule that keeps every other manifest a
+/// function of `pkg_*` alone.
+const macos_executable = "nokre_app";
+
+/// Assembles `Contents/{Info.plist,MacOS/<exe>,Resources/AppIcon.icns}`
+/// around a macOS artifact and returns the executable inside it.
+///
+/// This is what the notification service's macOS leg needs and what no
+/// other service ever did: a bundle identifier. `zig build run-…` runs
+/// the binary *inside* the bundle rather than the bare artifact, so the
+/// development loop matches a shipping app — the goldens' argument, one
+/// layer down. NSBundle resolves the bundle from the executable's own
+/// path, so no launcher and no `open(1)` is involved and stdout still
+/// attaches to the terminal that started it.
+///
+/// Signing is left alone deliberately: an ad-hoc signature changes every
+/// rebuild and buys nothing here (secure_store's dev-build note says what
+/// that costs and why it is dev-only posture, not contract).
+fn addMacosBundle(
+    b: *std.Build,
+    artifact: *std.Build.Step.Compile,
+    decl: PackageDecl,
+    services: packaging.Services,
+    app_name: []const u8,
+) std.Build.LazyPath {
+    const gpa = b.allocator;
+    const wf = b.addWriteFiles();
+    _ = wf.add("Contents/Info.plist", packaging.macosInfoPlist(gpa, decl, services, macos_executable) catch @panic("OOM"));
+    _ = wf.add("Contents/Resources/AppIcon.icns", packaging.icon.icns(gpa, decl.id) catch @panic("OOM"));
+    const exe = wf.addCopyFile(artifact.getEmittedBin(), "Contents/MacOS/" ++ macos_executable);
+    const install = b.addInstallDirectory(.{
+        .source_dir = wf.getDirectory(),
+        .install_dir = .prefix,
+        .install_subdir = b.fmt("{s}.app", .{app_name}),
+    });
+    b.getInstallStep().dependOn(&install.step);
+    return exe;
+}
+
 /// The linked-service set an `addApp` call implies, in the one shape
 /// both the module wiring and the packaging emitters read.
 fn appServices(options: AppOptions) packaging.Services {
@@ -1349,6 +1479,9 @@ fn appServices(options: AppOptions) packaging.Services {
         .oauth_schemes = options.oauth_schemes,
         .oauth_apple = options.oauth_apple,
         .iap = options.iap,
+        .notification = options.notification or options.notification_push,
+        .notification_push = options.notification_push,
+        .notification_push_key = options.notification_push_key,
     };
 }
 
@@ -1400,6 +1533,7 @@ fn addCheckObject(
     addDeepLink(b, mod, pkg, services.deep_link_domains.len != 0);
     addOauth(b, mod, pkg, services);
     addIap(b, mod, pkg, services.iap);
+    addNotification(b, mod, pkg, services);
     // An explicit target query is never "native", so zig adds no SDK
     // paths of its own — macos.m and the -framework args need them wired
     // by hand, the addIosApp way. Only the linked objects need it, and
@@ -1441,6 +1575,71 @@ fn configureServices(b: *std.Build, mod: *std.Build.Module, pkg: ?PackageDecl, s
     addDeepLink(b, mod, pkg, services.deep_link_domains.len != 0);
     addOauth(b, mod, pkg, services);
     addIap(b, mod, pkg, services.iap);
+    addNotification(b, mod, pkg, services);
+}
+
+// The options module is ALWAYS added (package_info's rule): an unlinked
+// call site must hit the curated @compileError in notification.zig, never
+// a missing-module error. Placement is split, and each half earns it.
+// Apple is oauth's: UNUserNotificationCenter's delegate is any object
+// rather than the app delegate, so one service-owned file serves both
+// Apple platforms instead of duplicating ~250 lines across two shells the
+// way the locale hook does. The other three native legs are deep_link's,
+// because there the object the OS calls back really is the shell's —
+// NokreActivity on Android, the window procedure and its COM activator on
+// Windows, and on Linux the very D-Bus connection the Wayland loop
+// already polls. Linking requires the identity: the Android channel is
+// named for the app, the Windows AppUserModelID is derived from its id,
+// and Apple's entitlement is keyed to it.
+fn addNotification(b: *std.Build, mod: *std.Build.Module, decl: ?PackageDecl, services: packaging.Services) void {
+    var enabled = services.notification;
+    if (enabled and decl == null) {
+        const fail = b.addFail("notification needs the app's identity — its Android channel, Windows AppUserModelID and Apple entitlement are keyed to the app id, so set .pkg_id alongside .notification. docs/services.md");
+        b.default_step.dependOn(&fail.step);
+        enabled = false;
+    }
+    const opts = b.addOptions();
+    opts.addOption(bool, "linked", enabled);
+    // Not decoration, iap's reason: an options module carrying only
+    // `linked` is byte-identical to deep_link's, and zig refuses one
+    // generated file in two modules.
+    opts.addOption([]const u8, "service", "notification");
+    // Gates the push half at comptime rather than at runtime: an app that
+    // ships no `aps-environment` entitlement would have `registerFor
+    // RemoteNotifications` fail on a real device, so the honest answer is
+    // `pushAvailable` false — decided here, where the entitlement is.
+    opts.addOption(bool, "push", enabled and services.notification_push);
+    opts.addOption([]const u8, "push_key", services.notification_push_key);
+    mod.addImport("nokre_notification_options", opts.createModule());
+    if (!enabled) return;
+    switch (mod.resolved_target.?.result.os.tag) {
+        .macos, .ios => {
+            // First-party, in the class of Security.framework and
+            // StoreKit: UNUserNotificationCenter is both halves on both
+            // platforms, and the push registration rides UIKit/AppKit,
+            // which the shells already link.
+            mod.linkFramework("UserNotifications", .{});
+            mod.linkFramework("Foundation", .{});
+            // macOS compiles apple.m here; iOS compiles the same file in
+            // the consumer's Xcode project beside shell.m, oauth's split
+            // and for oauth's reason — UIKit's headers do not survive
+            // zig's clang against a current iOS SDK. Framework headers
+            // exist only on a macOS host (secure_store's gate).
+            if (mod.resolved_target.?.result.os.tag == .macos and builtin.os.tag == .macos) {
+                mod.addCSourceFile(.{
+                    .file = b.path("src/services/notification/apple.m"),
+                    .flags = &.{ "-fobjc-arc", "-I", "src/services/notification" },
+                });
+                mod.linkFramework("AppKit", .{});
+            }
+        },
+        // Windows binds combase at first use inside the shell, the way
+        // the share pane already does since mingw ships no WinRT headers;
+        // Linux rides the shell's dbus-1; Android's half is Java compiled
+        // by the consumer's Gradle (secure_store's Android rule); and the
+        // web links nothing (services.js and the service worker carry it).
+        else => {},
+    }
 }
 
 // The declaration is always present — an unlinked call site must hit the

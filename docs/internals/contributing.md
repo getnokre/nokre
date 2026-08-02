@@ -122,6 +122,17 @@ The authoring rules that keep the shell/service split honest:
   value it can render). Either way core and the shells never depend on a
   service, and the kitchen-sink example runs with zero services linked
   and must keep running that way.
+- **A permission a user answers is never derived silently.** Every
+  permission nokre derived before `notification` was normal and
+  install-time — invisible at runtime, so the emitter could add it
+  without saying so anywhere a consumer reads
+  ([packaging.zig](../../src/packaging/packaging.zig)'s BILLING row
+  states that rule). A *dangerous* permission is not that: it is
+  prompted, refusable and revocable, and it changes what the app's users
+  see. A service that derives one states it in its consumer section, and
+  models the answer as a tri-state — not-determined, granted, denied —
+  because collapsing the first two makes "ask again" the app's most
+  tempting bug (`notification`'s `Status`).
 - **Web parity is part of the contract.** Each service defines its web
   behavior up front: a services.js implementation, an explicit "absent on
   web" (IAP), or an explicit weaker posture (secure storage → browser

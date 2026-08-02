@@ -8,6 +8,12 @@
 #include "../../services/open_url/open_url.h"
 #include "../../services/share/share.h"
 
+// The notification service's Apple half (src/services/notification/apple.m),
+// linked only when the app links the service — weak, so a shell built
+// with zero services still links and the delegate above checks first.
+extern void nokre_notification_apple_push_token(const uint8_t *bytes, size_t len)
+    __attribute__((weak_import));
+
 @interface NokreView : NSView <NSTextInputClient> {
   @public
     nokre_shell_config config;
@@ -289,6 +295,25 @@ static void nokre_deep_link_dispatch(NSURL *url);
 @implementation NokreAppDelegate
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)sender {
     return YES;
+}
+
+// The notification service's one line into this shell, iOS's verbatim and
+// for its reason: everything else is service-owned in
+// src/services/notification/apple.m, but an APNs token reaches the
+// *application* delegate and nowhere else
+// (docs/internals/notifications.md).
+- (void)application:(NSApplication *)application
+    didRegisterForRemoteNotificationsWithDeviceToken:(NSData *)deviceToken {
+    if (nokre_notification_apple_push_token != NULL) {
+        nokre_notification_apple_push_token(deviceToken.bytes, deviceToken.length);
+    }
+}
+
+- (void)application:(NSApplication *)application
+    didFailToRegisterForRemoteNotificationsWithError:(NSError *)error {
+    // One token lane and no failure lane: an app cannot act differently
+    // on "APNs is unreachable right now", and the next launch re-registers.
+    (void)error;
 }
 
 // Every way out — the close button (via the YES above), Cmd-Q, the Dock

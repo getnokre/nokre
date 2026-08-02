@@ -1,4 +1,6 @@
-//! The smallest complete nokre app: a heading, a paragraph, a counter.
+//! The smallest complete nokre app: a heading, a paragraph, a counter,
+//! and one notification — the identity-carrying example, so it is where
+//! the services that need identity are shown.
 const std = @import("std");
 const h = @import("nokre");
 
@@ -6,7 +8,10 @@ const State = struct {
     count: u32 = 0,
     app: *h.App = undefined,
     label_id: h.NodeId = .invalid,
+    note_id: h.NodeId = .invalid,
 };
+
+const N = h.services.notification;
 
 fn onIncrement(ctx: ?*anyopaque) void {
     const state: *State = @ptrCast(@alignCast(ctx.?));
@@ -22,6 +27,68 @@ fn onIncrement(ctx: ?*anyopaque) void {
     var digits_buf: [10]u8 = undefined;
     const digits = std.fmt.bufPrint(&digits_buf, "{d}", .{state.count}) catch return;
     h.services.secure_store.set(state.app, "count", digits) catch {};
+}
+
+/// The whole notification flow, in the order a real app runs it: ask
+/// only when the user pressed something, and post only once the answer
+/// is yes. The prompt has one answer per install, so an app that asks at
+/// boot gets the reflexive no it can never take back.
+fn onNotify(ctx: ?*anyopaque) void {
+    const state: *State = @ptrCast(@alignCast(ctx.?));
+    switch (N.status(state.app)) {
+        .not_determined => {
+            N.authorize(state.app) catch return;
+            note(state, "Asked. The answer arrives on the handler.");
+        },
+        // No platform re-prompts, so this is the app's to draw around —
+        // the same posture `share.available` false asks for.
+        .denied => note(state, "Notifications are off in system settings."),
+        .granted => post(state),
+    }
+    state.app.invalidate();
+}
+
+fn post(state: *State) void {
+    N.post(state.app, .{
+        .id = "hello.pressed",
+        .title = "Hello, nokre",
+        .body = "This came from the OS, not from the app's own chrome.",
+        // The tap hands this back — nokre's own route reference, never a
+        // URL (docs/routing.md).
+        .route = "home",
+    }) catch |err| {
+        note(state, switch (err) {
+            error.Unavailable => "This device has no notification system.",
+            else => "Could not post.",
+        });
+        return;
+    };
+    note(state, "Posted. Switch away to see it.");
+}
+
+/// The one lane: the prompt's answer, a tap, an arrival while the app is
+/// on screen, and a push token all land here (docs/services.md).
+fn onNotification(ctx: ?*anyopaque, event: N.Event) void {
+    const state: *State = @ptrCast(@alignCast(ctx.?));
+    switch (event) {
+        .authorized => |status| if (status == .granted) post(state) else note(state, "Notifications declined."),
+        // A tap can be the first thing that happens in a launch — the
+        // tap is what started the process — so this runs before anything
+        // the user does in this session.
+        .opened => |p| {
+            state.app.navigate(p.route) catch {};
+            note(state, "Opened from a notification.");
+        },
+        // No OS banner is drawn over an app that is on screen, so this
+        // event is the whole delivery.
+        .received => note(state, "One came due while you were here."),
+        .push_token => note(state, "A push token arrived; a real app ships it to its backend."),
+    }
+    state.app.invalidate();
+}
+
+fn note(state: *State, text: []const u8) void {
+    state.app.tree.setContent(state.note_id, text) catch {};
 }
 
 fn buildHome(ctx: ?*anyopaque, app: *h.App) !void {
@@ -54,6 +121,29 @@ fn buildHome(ctx: ?*anyopaque, app: *h.App) !void {
         .label = "Increment",
         .on_press = .{ .ctx = state, .call = onIncrement },
     } });
+
+    // notification service: three synchronous boot answers, so the row
+    // is drawn (or not) before anything is asked of the user. Registering
+    // the handler inside `build` is what makes a tap that launched the
+    // app land at all — it is buffered until this call.
+    _ = try app.tree.append(root, .{ .divider = .{} });
+    if (N.available(app)) {
+        N.setHandler(app, state, onNotification);
+        state.note_id = try app.tree.append(root, .{ .text = .{
+            .content = "Post a notification the OS draws, outside this window.",
+        } });
+        _ = try app.tree.append(root, .{ .button = .{
+            .label = "Notify me",
+            .on_press = .{ .ctx = state, .call = onNotify },
+        } });
+    } else {
+        // The honest degrade: a Linux session with no daemon on the bus,
+        // or a browser without the API. Draw no affordance rather than
+        // one that fails.
+        _ = try app.tree.append(root, .{ .text = .{
+            .content = "This device has no notification system.",
+        } });
+    }
 
     // package_info service: identity is declared once in build.zig (see
     // the examples table there); only the installer field is asked of

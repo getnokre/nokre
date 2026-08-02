@@ -274,3 +274,54 @@ test "flat fields stay small — the deflate is doing its one job" {
     defer std.testing.allocator.free(bytes);
     try std.testing.expect(bytes.len < 20 * 1024);
 }
+
+/// The mark as an `.icns` — macOS's icon container, and the one format
+/// that only exists because the app is a bundle now
+/// (docs/internals/notifications.md explains why there is one).
+///
+/// ICNS is a tagged container, not an image format: a 4-byte magic, a
+/// big-endian total length, then `(type, length, payload)` entries. Every
+/// type below takes a PNG payload on macOS 10.8 and newer, so the same
+/// `png` derivation every other platform gets is what goes in — nothing
+/// is resampled, re-encoded, or invented here. Integer math throughout,
+/// like the rest of packaging.
+///
+/// The five sizes are the ones Finder, the Dock and the notification
+/// centre actually ask for; `ic10` is the 1024 retina slot Apple wants a
+/// modern icon to carry.
+pub const icns_entries = [_]struct { tag: *const [4]u8, size: u32, cell: u32 }{
+    .{ .tag = "ic11", .size = 32, .cell = 4 },
+    .{ .tag = "ic12", .size = 64, .cell = 8 },
+    .{ .tag = "ic07", .size = 128, .cell = 16 },
+    .{ .tag = "ic13", .size = 256, .cell = 32 },
+    .{ .tag = "ic14", .size = 512, .cell = 64 },
+    .{ .tag = "ic10", .size = 1024, .cell = 128 },
+};
+
+pub fn icns(gpa: std.mem.Allocator, id: []const u8) error{OutOfMemory}![]u8 {
+    var body: std.ArrayList(u8) = .empty;
+    errdefer body.deinit(gpa);
+    for (icns_entries) |entry| {
+        const image = try png(gpa, id, entry.size, entry.cell);
+        defer gpa.free(image);
+        try body.appendSlice(gpa, entry.tag);
+        try body.appendSlice(gpa, &beU32(@intCast(image.len + 8)));
+        try body.appendSlice(gpa, image);
+    }
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(gpa);
+    try out.appendSlice(gpa, "icns");
+    try out.appendSlice(gpa, &beU32(@intCast(body.items.len + 8)));
+    try out.appendSlice(gpa, body.items);
+    body.deinit(gpa);
+    return out.toOwnedSlice(gpa);
+}
+
+fn beU32(v: u32) [4]u8 {
+    return .{
+        @intCast((v >> 24) & 0xFF),
+        @intCast((v >> 16) & 0xFF),
+        @intCast((v >> 8) & 0xFF),
+        @intCast(v & 0xFF),
+    };
+}

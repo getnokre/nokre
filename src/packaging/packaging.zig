@@ -142,6 +142,47 @@ pub const Services = struct {
     /// and the web derive nothing because they have no store to declare;
     /// `available` answers false there.
     iap: bool = false,
+
+    /// The notification service (docs/services.md). One artifact for the
+    /// local half, and it is the first *dangerous* permission any service
+    /// has derived: Android's `POST_NOTIFICATIONS`, prompted at runtime
+    /// from API 33, refusable, and revocable in Settings afterwards. The
+    /// BILLING row above states why a normal permission may be derived
+    /// silently; this one may not, which is why it is spelled out in the
+    /// consumer section rather than only here.
+    ///
+    /// Apple derives nothing for the local half — asking is
+    /// `UNUserNotificationCenter`'s runtime prompt, with no plist key and
+    /// no entitlement behind it. Windows derives nothing into a manifest
+    /// either: an unpackaged app's toast identity is an AppUserModelID
+    /// the shell registers at first run (docs/internals/notifications.md
+    /// records that narrowing of deep_link's registry refusal). Linux
+    /// derives nothing at all — org.freedesktop.Notifications is a bus
+    /// name, not a declaration. The web's one artifact, the service
+    /// worker, is emitted with the site whether or not this is linked,
+    /// because the page needs it to exist before it can ask.
+    notification: bool = false,
+
+    /// Remote push, on top of `notification`. Two more artifacts, on two
+    /// platforms: Apple's `aps-environment` entitlement — `development`,
+    /// because the value is a signing-time choice and the one a
+    /// developer's build actually uses is the honest default; Xcode
+    /// rewrites it to `production` for a distribution build — and
+    /// Android's FCM `<service>` declaration with its intent-filter.
+    /// Windows would need WNS and the packaged Store identity nokre does
+    /// not emit, and the Linux desktop has no push service at all, so
+    /// both answer `pushAvailable` false at runtime rather than deriving
+    /// anything (iap's shape, one roster row over).
+    notification_push: bool = false,
+
+    /// The VAPID application server key web push subscribes with. It
+    /// derives nothing into any manifest — it is not an identity the OS
+    /// checks, it is the sender's public half, which the browser only
+    /// ever compares against what the app's own backend signs with. It
+    /// rides this struct because the linked-service set is the one shape
+    /// both the module wiring and the emitters read, and the wiring needs
+    /// it.
+    notification_push_key: []const u8 = "",
 };
 
 /// The web build's third input, beside the declaration and the linked
@@ -207,6 +248,69 @@ pub fn validate(decl: Decl) Error!void {
         segments += 1;
     }
     if (segments < 2) return error.InvalidId;
+}
+
+/// macOS's Info.plist, and the reason there is a bundle at all.
+///
+/// A bare Mach-O executable has no bundle identifier, and without one
+/// `UNUserNotificationCenter` refuses to post: the notification centre
+/// keys everything to the bundle, so an unbundled binary cannot own a
+/// notification. That is the whole argument for assembling a `.app` —
+/// packaging emitted this plist for nobody until a service needed the
+/// bundle it describes (docs/internals/notifications.md).
+///
+/// Deliberately not iosInfoPlist: that one carries the scene manifest,
+/// which is UIKit's and means nothing here, and this one carries
+/// `NSHighResolutionCapable`, without which AppKit hands the shell a 1×
+/// backing store on a Retina display and every glyph resamples — the
+/// pixel model's own stake in the file. Keys alphabetical, like its
+/// sibling: determinism is a feature.
+///
+/// `executable` is the binary's filename inside `Contents/MacOS`, which
+/// build.zig knows and a declaration cannot — androidManifest takes its
+/// native library's name for the same reason.
+pub fn macosInfoPlist(gpa: std.mem.Allocator, decl: Decl, services: Services, executable: []const u8) error{OutOfMemory}![]u8 {
+    _ = services; // no macOS key derives from a service yet; stated, not implied
+    const name_xml = try xmlEscapedAlloc(gpa, decl.name);
+    defer gpa.free(name_xml);
+    const version_xml = try xmlEscapedAlloc(gpa, decl.version);
+    defer gpa.free(version_xml);
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(gpa);
+    try out.print(gpa,
+        \\<?xml version="1.0" encoding="UTF-8"?>
+        \\<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        \\<plist version="1.0">
+        \\<dict>
+        \\    <key>CFBundleDevelopmentRegion</key>
+        \\    <string>en</string>
+        \\    <key>CFBundleDisplayName</key>
+        \\    <string>{s}</string>
+        \\    <key>CFBundleExecutable</key>
+        \\    <string>{s}</string>
+        \\    <key>CFBundleIconFile</key>
+        \\    <string>AppIcon</string>
+        \\    <key>CFBundleIdentifier</key>
+        \\    <string>{s}</string>
+        \\    <key>CFBundleInfoDictionaryVersion</key>
+        \\    <string>6.0</string>
+        \\    <key>CFBundleName</key>
+        \\    <string>{s}</string>
+        \\    <key>CFBundlePackageType</key>
+        \\    <string>APPL</string>
+        \\    <key>CFBundleShortVersionString</key>
+        \\    <string>{s}</string>
+        \\    <key>CFBundleVersion</key>
+        \\    <string>{d}</string>
+        \\    <key>LSMinimumSystemVersion</key>
+        \\    <string>11.0</string>
+        \\    <key>NSHighResolutionCapable</key>
+        \\    <true/>
+        \\</dict>
+        \\</plist>
+        \\
+    , .{ name_xml, executable, decl.id, name_xml, version_xml, decl.build });
+    return out.toOwnedSlice(gpa);
 }
 
 /// The complete Info.plist — Xcode's own plist generation is turned off
@@ -362,6 +466,36 @@ pub fn androidManifest(gpa: std.mem.Allocator, decl: Decl, services: Services, n
             \\
         );
     }
+    // The exception to the rule the line above states, and the only one
+    // on the roster: POST_NOTIFICATIONS is *dangerous* — from API 33 it
+    // is prompted at runtime, the user can refuse it, and they can revoke
+    // it afterwards in Settings. So the derivation cannot be silent the
+    // way BILLING's is: an app that links this service gets a permission
+    // its users will see and answer, which is stated in docs/services.md
+    // where a consumer reads it, not only here where the emitter does.
+    // Declaring it is still what makes asking possible — the runtime
+    // request has nothing to request without the manifest entry.
+    if (services.notification) {
+        try out.appendSlice(gpa,
+            \\    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+            \\
+        );
+    }
+    // Two permissions scheduling could have derived and deliberately does
+    // not. USE_EXACT_ALARM and SCHEDULE_EXACT_ALARM ration the
+    // to-the-second alarm: Play polices the first to alarm-clock and
+    // calendar apps, and the second is user-revocable from API 33 — so
+    // deriving either would make every consumer justify nokre's choice to
+    // Google for a fire date that reads "remind me in the morning". The
+    // inexact alarm fires inside the OS's batching window, which is the
+    // right trade for a framework that draws no clock.
+    // RECEIVE_BOOT_COMPLETED is the other: alarms do not survive a reboot
+    // on Android, and re-arming them would mean nokre keeping its own
+    // durable copy of the schedule — a schedule nokre owns, which is the
+    // thing `schedule` exists *not* to be. So the honest answer is the
+    // stated posture in docs/services.md (a scheduled notification is
+    // lost to a reboot on Android alone), not a permission backing a
+    // receiver that would contradict the design.
     try out.print(gpa,
         \\    <application
         \\        android:label="{s}"
@@ -459,6 +593,45 @@ pub fn androidManifest(gpa: std.mem.Allocator, decl: Decl, services: Services, n
     }
     try out.appendSlice(gpa,
         \\        </activity>
+        \\
+    );
+    // Scheduling's receiver: Android is the one platform where the
+    // notification system does not hold a fire date itself, so an alarm
+    // wakes the smallest possible thing and that thing posts. Not
+    // exported — only the OS's own alarm, delivered to this package,
+    // may fire it, and an exported receiver would let any app on the
+    // device post a notification as this one.
+    if (services.notification) {
+        try out.appendSlice(gpa,
+            \\        <receiver
+            \\            android:name="dev.nokre.shell.NokreNotificationAlarm"
+            \\            android:exported="false" />
+            \\
+        );
+    }
+    // FCM's inbound half: a service the Firebase library binds to when a
+    // push arrives. Declared here rather than merged into NokreActivity
+    // because a push can arrive with no activity at all — that is the
+    // whole point of push — and the class is nokre's own
+    // (src/services/notification/java), on the source-set split iap
+    // established: the consumer adds the Maven coordinate to their own
+    // build.gradle, so the dependency's cost stays in the open.
+    // `exported="false"`: only the Firebase library in this process binds
+    // it, and an exported service would let any app on the device deliver
+    // a fake push to it.
+    if (services.notification_push) {
+        try out.appendSlice(gpa,
+            \\        <service
+            \\            android:name="dev.nokre.shell.NokrePushService"
+            \\            android:exported="false">
+            \\            <intent-filter>
+            \\                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            \\            </intent-filter>
+            \\        </service>
+            \\
+        );
+    }
+    try out.appendSlice(gpa,
         \\    </application>
         \\</manifest>
         \\
@@ -533,7 +706,7 @@ pub const placeholder_android_cert_sha256 = "REPLACE_WITH_YOUR_APP_SIGNING_CERT_
 /// app signs fine without one.
 pub fn iosEntitlements(gpa: std.mem.Allocator, decl: Decl, services: Services) error{OutOfMemory}!?[]u8 {
     _ = decl;
-    if (services.deep_link_domains.len == 0 and !services.oauth_apple) return null;
+    if (services.deep_link_domains.len == 0 and !services.oauth_apple and !services.notification_push) return null;
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(gpa);
     try out.appendSlice(gpa,
@@ -543,6 +716,20 @@ pub fn iosEntitlements(gpa: std.mem.Allocator, decl: Decl, services: Services) e
         \\<dict>
         \\
     );
+    // Remote push. `development` is the honest default: the value picks
+    // which APNs environment the app's token is minted against, a build
+    // *and signing* choice rather than a source one, and the build a
+    // developer runs from this tree is the development one. Xcode
+    // rewrites it to `production` for a distribution build, which is the
+    // one duplication Apple's signing machinery insists on owning — the
+    // PRODUCT_BUNDLE_IDENTIFIER bargain, restated. Alphabetically first.
+    if (services.notification_push) {
+        try out.appendSlice(gpa,
+            \\    <key>aps-environment</key>
+            \\    <string>development</string>
+            \\
+        );
+    }
     // Sign in with Apple. `Default` is the only value that exists — the
     // alternative, `Default with Apple Watch`, is for watchOS
     // companions, which nokre does not target. Alphabetically before
@@ -731,8 +918,8 @@ pub fn webBootJs(gpa: std.mem.Allocator, web: Web) error{OutOfMemory}![]u8 {
 /// The whole web host page, so a consumer authors no HTML at all: the
 /// title and the manifest come from the declaration, and the two files
 /// beside it — `page.css` and `boot.js`, emitted above — carry the
-/// column and the mount. live.js, services.js, live-worker.js, style.css
-/// and the fonts ride along in the same directory (build.zig's
+/// column and the mount. live.js, services.js, live-worker.js, sw.js,
+/// style.css and the fonts ride along in the same directory (build.zig's
 /// `addWebSite` writes the set); the page names only live.js's boot,
 /// which imports the rest itself. It is the only host page nokre has —
 /// the kitchen sink's own site is served from this same emitter — so
@@ -756,10 +943,16 @@ pub fn webBootJs(gpa: std.mem.Allocator, web: Web) error{OutOfMemory}![]u8 {
 ///   under any script-src Chrome and Firefox refuse it without this.
 ///   `'wasm-unsafe-eval'` and not `'unsafe-eval'` — nokre calls neither
 ///   `eval` nor `new Function`, and the narrow keyword says so.
-/// - `worker-src 'self'` — live-worker.js, the compute actor, which is
-///   the same module instantiated a second time (docs/services.md).
-///   Stated because worker-src falls back to child-src and then to
-///   default-src, which is 'none'.
+/// - `worker-src 'self'` — two of them, both the site's own files:
+///   live-worker.js, the compute actor, which is the same module
+///   instantiated a second time (docs/services.md), and sw.js, the
+///   service worker the notification service registers
+///   (docs/internals/notifications.md — Chrome for Android serves
+///   `showNotification` from nowhere else, and a push arrives with no
+///   page open at all). Stated because worker-src falls back to
+///   child-src and then to default-src, which is 'none'; the service
+///   worker's own execution context is governed by the headers its file
+///   is served with, not by this page's policy.
 /// - `style-src 'self' 'unsafe-inline'` with `style-src-elem 'self'` —
 ///   the generated stylesheet and this page's own are files, so no
 ///   `<style>` block is admitted anywhere. The inline part is

@@ -146,6 +146,26 @@ deep_link and routes on the fragment sees it twice — routing.md says to
 route on one or the other. The export exists only when the app linked
 the service, so a page that never claims a deep link pays nothing.
 
+notification's hooks
+([src/services/notification/notification.h](../../src/services/notification/notification.h))
+are the roster's only two-directional pair: the app asks the OS to show,
+schedule or take back a message, and the OS reports a decision, a tap, an
+arrival or a push token. Placement is split rather than uniform, and each
+half earns it — Apple's leg is service-owned like oauth's (a
+`UNUserNotificationCenter` delegate need not be the app delegate, so one
+file serves macOS and iOS both, and each shell carries only the APNs
+token line UIKit/AppKit hands nowhere else), while Android, Linux and
+Windows are shell-owned like deep_link's, because there the object the OS
+calls back really is the shell's: `NokreActivity` and `NokreView` on
+Android, the very D-Bus connection this Wayland loop already polls on
+Linux, and on Windows a COM activator the shell registers so a tap can
+reach a *closed* app. That Windows registration is a deliberate,
+recorded narrowing of deep_link's refusal to write the registry, scoped
+to two keys ([notifications.md](notifications.md)). The web has no C
+shell: services.js implements the imports and the site's own service
+worker carries what a page cannot — Chrome for Android refuses
+`new Notification()`, and a push arrives with no page open at all.
+
 One service on the roster deliberately asks the shells for *nothing*:
 `clock`. Wall time is a call every OS exposes to the process directly —
 `clock_gettime` on the POSIX family, `GetSystemTimePreciseAsFileTime` on

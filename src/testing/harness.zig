@@ -30,6 +30,7 @@ const locale = @import("../services/locale/locale.zig");
 const oauth = @import("../services/oauth/oauth.zig");
 const iap = @import("../services/iap/iap.zig");
 const share = @import("../services/share/share.zig");
+const notification = @import("../services/notification/notification.zig");
 
 /// The two ends of the back gesture's threshold, for asserting against
 /// `knocks()`. Re-exported here and nowhere else: the haptic service has
@@ -75,6 +76,7 @@ pub const InitOptions = struct {
     oauth: oauth.Mock.Config = .{}, // the PKCE seeds, and optionally what the browser does
     iap: iap.Mock.Config = .{}, // the store's shelf, and whether there is a store at all
     share: share.Mock.Config = .{}, // whether this boot has a share sheet at all
+    notification: notification.Mock.Config = .{}, // the authorization state at boot, and whether this device notifies or pushes at all
 };
 
 pub const Harness = struct {
@@ -107,6 +109,7 @@ pub const Harness = struct {
                     .oauth = .mock(opts.oauth),
                     .iap = .mock(opts.iap),
                     .share = .mock(opts.share),
+                    .notification = .mock(opts.notification),
                 },
             }),
             .store = undefined,
@@ -463,6 +466,64 @@ pub const Harness = struct {
     /// was wired to route yet).
     pub fn deepLinksReceived(self: *const Harness) []const []u8 {
         return self.app.services.deep_link.received();
+    }
+
+    // ---- notifications ----
+    // Two directions, like the service: what the app asked the OS to do
+    // is journaled and asserted; what the *user* did is a verb the test
+    // fires. Boot state — whether this device notifies or pushes at all,
+    // and whether permission was already granted — is `InitOptions
+    // .notification`, seeded inside App.init so the first `build` reads
+    // the real answer (the locale tag's rule).
+
+    /// The user allowed notifications: by answering a prompt the app
+    /// raised, or by turning them on in Settings. Routes to the
+    /// registered handler on this thread, then emits a trace step and
+    /// re-audits — a notification handler commonly navigates, and that
+    /// reaches the tree.
+    pub fn grantNotifications(self: *Harness) !void {
+        self.app.services.notification.grant();
+        try self.afterStep("notifications granted", .{});
+    }
+
+    /// The user refused, or revoked in Settings while the app ran.
+    pub fn denyNotifications(self: *Harness) !void {
+        self.app.services.notification.deny();
+        try self.afterStep("notifications denied", .{});
+    }
+
+    /// The user tapped a notification — including the tap that launched
+    /// the app, which a test writes by calling this first.
+    pub fn deliverNotificationTap(self: *Harness, id: []const u8, route: []const u8) !void {
+        self.app.services.notification.open(id, route);
+        try self.afterStep("notification tapped {s}", .{id});
+    }
+
+    /// A notification came due with the app on screen — a scheduled one
+    /// firing mid-session, or a push arriving during use. No OS banner is
+    /// drawn for it, so the event is the whole delivery.
+    pub fn deliverNotification(self: *Harness, id: []const u8, route: []const u8) !void {
+        self.app.services.notification.arrive(id, route);
+        try self.afterStep("notification arrived {s}", .{id});
+    }
+
+    /// The push transport minted (or rotated) this device's token.
+    pub fn deliverPushToken(self: *Harness, token: []const u8) !void {
+        self.app.services.notification.deliverToken(token);
+        try self.afterStep("push token delivered", .{});
+    }
+
+    /// Everything the app asked the OS to do, in order — posts,
+    /// schedules, cancels, the permission prompt, and the token request.
+    /// A refused call journals nothing, because the OS was never asked.
+    pub fn notificationsRequested(self: *const Harness) []const notification.Entry {
+        return self.app.services.notification.entries();
+    }
+
+    /// Whether the app ever raised the permission prompt — the assertion
+    /// behind "this screen posted without asking".
+    pub fn askedToNotify(self: *const Harness) bool {
+        return self.app.services.notification.askedForAuthorization();
     }
 
     // ---- device locale ----

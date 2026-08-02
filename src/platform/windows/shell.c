@@ -16,6 +16,7 @@
 #include "../shell.h"
 #include "../../services/deep_link/deep_link.h"
 #include "../../services/locale/locale.h"
+#include "../../services/notification/notification.h"
 #include "../../services/open_url/open_url.h"
 #include "../../services/share/share.h"
 
@@ -941,6 +942,666 @@ void nokre_locale_uninstall(void) {
     // per-app state the app has already freed.
     g_locale_ctx = NULL;
     g_locale_cb = NULL;
+}
+
+// ---- notification service (docs/internals/notifications.md) ----
+// Toasts through WinRT, reached the way the share pane above is reached:
+// mingw ships no Windows.UI.Notifications header and no combase import
+// library, so the entry points bind at first use and the interfaces are
+// declared here against the SDK IDL, uuids copied digit-for-digit. The
+// share pane's two costs, paid once more — and, unlike the share pane,
+// one cost that is nokre's own.
+//
+// **This shell registers itself, and that is a narrowing of deep_link's
+// refusal.** An unpackaged Win32 app has no toast identity: Windows keys
+// notifications to an AppUserModelID, and a tap can only reach a
+// *closed* app through a COM server registered under a CLSID. deep_link
+// declined to write `HKCU\Software\Classes` and said the registration
+// belongs to the app or its installer — which is right for a URL scheme
+// any app may claim, and wrong here, because this identity is the app's
+// own name for its own notifications and nothing else can claim it. The
+// reversal is recorded, owner-decided, in docs/internals/notifications.md,
+// and it is scoped to exactly these two keys: a shell that grows a third
+// registration is a bug.
+//
+// The activator is what makes the tap work when the app is closed, and
+// it is also why no `Activated` event handler is attached to individual
+// toasts: Windows delivers a tap to the registered callback whether the
+// process is running or not, so one path serves both.
+
+typedef struct {
+    __int64 UniversalTime;
+} NokreDateTime;
+
+static const GUID nokre_iid_inspectable = {
+    0xAF86E2E0, 0xB12D, 0x4C6A, {0x9C, 0x5A, 0xD7, 0xAA, 0x65, 0x10, 0x1E, 0x90}};
+static const GUID nokre_iid_class_factory = {
+    0x00000001, 0x0000, 0x0000, {0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46}};
+static const GUID nokre_iid_notification_activation_callback = {
+    0x53E31837, 0x6600, 0x4A81, {0x93, 0x95, 0x75, 0xCF, 0xFE, 0x74, 0x6F, 0x94}};
+static const GUID nokre_iid_toast_manager_statics = {
+    0x50AC103F, 0xD235, 0x4598, {0xBB, 0xEF, 0x98, 0xFE, 0x4D, 0x1A, 0x3A, 0xD4}};
+static const GUID nokre_iid_toast_notifier = {
+    0x75927B93, 0x03F3, 0x41EC, {0x91, 0xD3, 0x6E, 0x5B, 0xAC, 0x1B, 0x38, 0xE7}};
+static const GUID nokre_iid_toast_factory = {
+    0x04124B20, 0x82C6, 0x4229, {0xB1, 0x09, 0xFD, 0x9E, 0xD4, 0x66, 0x2B, 0x53}};
+static const GUID nokre_iid_scheduled_toast_factory = {
+    0xE7B7CE3D, 0xA8DA, 0x45BD, {0x9F, 0x0C, 0x5D, 0xBC, 0x3A, 0x6D, 0x0F, 0xD3}};
+static const GUID nokre_iid_xml_document_io = {
+    0x6CD0E74E, 0xEE65, 0x4489, {0x9E, 0xBF, 0xCA, 0x43, 0xE8, 0x7B, 0xA6, 0x37}};
+
+// nokre's own activator CLSID. A fixed uuid rather than one derived from
+// the app id: the CLSID names *this shell's* callback implementation,
+// which is the same code in every nokre app, and the AppUserModelID —
+// which is the app's — is what keeps two nokre apps' notifications
+// apart. Windows looks the callback up by CLSID only after matching the
+// AUMID, so one is an implementation and the other is the identity.
+static const GUID nokre_clsid_activator = {
+    0x6E6F6B72, 0x6531, 0x4E6F, {0x74, 0x69, 0x66, 0x79, 0x41, 0x63, 0x74, 0x76}};
+
+// Only the slots this leg calls are typed; the rest are position-holding
+// void pointers, because a vtable is an array and the array's shape is
+// the whole contract (the share pane's rule).
+typedef struct NokreXmlDoc NokreXmlDoc;
+typedef struct {
+    void *QueryInterface, *AddRef;
+    ULONG(STDMETHODCALLTYPE *Release)(NokreXmlDoc *);
+    void *GetIids, *GetRuntimeClassName, *GetTrustLevel;
+    HRESULT(STDMETHODCALLTYPE *LoadXml)(NokreXmlDoc *, NokreHstring);
+} NokreXmlDocIoVtbl;
+struct NokreXmlDoc {
+    const NokreXmlDocIoVtbl *vtbl;
+};
+
+typedef struct NokreToast NokreToast;
+struct NokreToast {
+    void *vtbl;
+};
+
+typedef struct NokreToastFactory NokreToastFactory;
+typedef struct {
+    void *QueryInterface, *AddRef;
+    ULONG(STDMETHODCALLTYPE *Release)(NokreToastFactory *);
+    void *GetIids, *GetRuntimeClassName, *GetTrustLevel;
+    HRESULT(STDMETHODCALLTYPE *CreateToastNotification)(NokreToastFactory *, void *, NokreToast **);
+} NokreToastFactoryVtbl;
+struct NokreToastFactory {
+    const NokreToastFactoryVtbl *vtbl;
+};
+
+typedef struct NokreSchedFactory NokreSchedFactory;
+typedef struct {
+    void *QueryInterface, *AddRef;
+    ULONG(STDMETHODCALLTYPE *Release)(NokreSchedFactory *);
+    void *GetIids, *GetRuntimeClassName, *GetTrustLevel;
+    HRESULT(STDMETHODCALLTYPE *CreateScheduledToastNotification)(NokreSchedFactory *, void *,
+                                                                 NokreDateTime, NokreToast **);
+} NokreSchedFactoryVtbl;
+struct NokreSchedFactory {
+    const NokreSchedFactoryVtbl *vtbl;
+};
+
+typedef struct NokreToastManager NokreToastManager;
+typedef struct {
+    void *QueryInterface, *AddRef;
+    ULONG(STDMETHODCALLTYPE *Release)(NokreToastManager *);
+    void *GetIids, *GetRuntimeClassName, *GetTrustLevel;
+    void *CreateToastNotifier;
+    HRESULT(STDMETHODCALLTYPE *CreateToastNotifierWithId)(NokreToastManager *, NokreHstring,
+                                                          void **);
+    void *GetTemplateContent;
+} NokreToastManagerVtbl;
+struct NokreToastManager {
+    const NokreToastManagerVtbl *vtbl;
+};
+
+typedef struct NokreNotifier NokreNotifier;
+typedef struct {
+    void *QueryInterface, *AddRef;
+    ULONG(STDMETHODCALLTYPE *Release)(NokreNotifier *);
+    void *GetIids, *GetRuntimeClassName, *GetTrustLevel;
+    HRESULT(STDMETHODCALLTYPE *Show)(NokreNotifier *, NokreToast *);
+    HRESULT(STDMETHODCALLTYPE *Hide)(NokreNotifier *, NokreToast *);
+    void *get_Setting;
+    HRESULT(STDMETHODCALLTYPE *AddToSchedule)(NokreNotifier *, NokreToast *);
+    HRESULT(STDMETHODCALLTYPE *RemoveFromSchedule)(NokreNotifier *, NokreToast *);
+    void *GetScheduledToastNotifications;
+} NokreNotifierVtbl;
+struct NokreNotifier {
+    const NokreNotifierVtbl *vtbl;
+};
+
+// One live notification per id, so `cancel` has something to Hide and a
+// repeat post replaces rather than stacks. 32 is the Linux table's
+// number and the same argument: more than this showing at once is a
+// notification centre, not a slot shortage.
+#define NOKRE_NOTE_SLOTS 32
+
+static struct {
+    int tried;
+    HRESULT(WINAPI *ro_get_activation_factory)(NokreHstring, const GUID *, void **);
+    HRESULT(WINAPI *ro_activate_instance)(NokreHstring, void **);
+    NokreNotifier *notifier;
+    void *ctx;
+    nokre_notification_cb cb;
+    WCHAR aumid[128];
+    DWORD registration; // CoRegisterClassObject cookie, 0 = not registered
+    struct {
+        char id[64];
+        size_t id_len;
+        NokreToast *toast;
+        int scheduled;
+    } live[NOKRE_NOTE_SLOTS];
+    // The tap that started the process: Windows activates the COM server
+    // before nokre_shell_run has reached the app's first build, so the
+    // event waits here — the deep_link launch-URL buffer, one service
+    // over.
+    char pending_id[64];
+    size_t pending_id_len;
+    char pending_route[256];
+    size_t pending_route_len;
+    int has_pending;
+} g_note;
+
+static void note_dispatch(int32_t kind, int32_t status, const char *a, size_t a_len, const char *b,
+                          size_t b_len) {
+    if (g_note.cb == NULL) {
+        if (kind != NOKRE_NOTIFICATION_OPENED) return;
+        if (a_len >= sizeof g_note.pending_id || b_len >= sizeof g_note.pending_route) return;
+        memcpy(g_note.pending_id, a, a_len);
+        g_note.pending_id_len = a_len;
+        memcpy(g_note.pending_route, b, b_len);
+        g_note.pending_route_len = b_len;
+        g_note.has_pending = 1;
+        return;
+    }
+    g_note.cb(g_note.ctx, kind, status, a, a_len, b, b_len);
+}
+
+// The toast's `launch` string, parsed back: "<id>\x1f<route>". A unit
+// separator rather than a URL query, because neither half is a URL and
+// percent-encoding a route reference would be inventing a format for a
+// string that crosses only nokre's own two ends.
+static void note_activated(const WCHAR *args) {
+    if (args == NULL) return;
+    char utf8[512];
+    int len = WideCharToMultiByte(CP_UTF8, 0, args, -1, utf8, (int)sizeof utf8, NULL, NULL);
+    if (len <= 1) return;
+    size_t total = (size_t)len - 1; // drop the NUL WideCharToMultiByte wrote
+    const char *sep = memchr(utf8, 0x1F, total);
+    size_t id_len = sep == NULL ? total : (size_t)(sep - utf8);
+    const char *route = sep == NULL ? utf8 + total : sep + 1;
+    size_t route_len = sep == NULL ? 0 : total - id_len - 1;
+    note_dispatch(NOKRE_NOTIFICATION_OPENED, NOKRE_NOTIFICATION_GRANTED, utf8, id_len, route,
+                  route_len);
+    // The tap may have started this process, in which case there is no
+    // window yet and the frame request is a no-op; when there is one, the
+    // handler routed and invalidated like any action.
+    nokre_shell_request_frame(NULL);
+}
+
+// INotificationActivationCallback: the whole reason the CLSID exists.
+// Windows calls this for a tap whether the app is running (in-process,
+// through the class object registered below) or closed (a fresh process,
+// started from LocalServer32).
+typedef struct NokreActivator NokreActivator;
+typedef struct {
+    HRESULT(STDMETHODCALLTYPE *QueryInterface)(NokreActivator *, const GUID *, void **);
+    ULONG(STDMETHODCALLTYPE *AddRef)(NokreActivator *);
+    ULONG(STDMETHODCALLTYPE *Release)(NokreActivator *);
+    HRESULT(STDMETHODCALLTYPE *Activate)(NokreActivator *, LPCWSTR, LPCWSTR, const void *, ULONG);
+} NokreActivatorVtbl;
+struct NokreActivator {
+    const NokreActivatorVtbl *vtbl;
+};
+
+static HRESULT STDMETHODCALLTYPE activator_qi(NokreActivator *self, const GUID *iid, void **out) {
+    if (out == NULL) return E_POINTER;
+    if (IsEqualGUID(iid, &nokre_iid_iunknown) ||
+        IsEqualGUID(iid, &nokre_iid_notification_activation_callback)) {
+        *out = self;
+        return S_OK;
+    }
+    *out = NULL;
+    return E_NOINTERFACE;
+}
+
+// Static lifetime, like the share handler's: refcounts that never reach
+// zero are the honest answer for an object that lives as long as the
+// process and is owned by this file.
+static ULONG STDMETHODCALLTYPE activator_addref(NokreActivator *self) {
+    (void)self;
+    return 2;
+}
+
+static ULONG STDMETHODCALLTYPE activator_release(NokreActivator *self) {
+    (void)self;
+    return 1;
+}
+
+static HRESULT STDMETHODCALLTYPE activator_activate(NokreActivator *self, LPCWSTR app_id,
+                                                    LPCWSTR args, const void *data, ULONG count) {
+    (void)self;
+    (void)app_id;
+    (void)data;
+    (void)count; // no input fields: nokre draws no text box in a toast
+    note_activated(args);
+    return S_OK;
+}
+
+static const NokreActivatorVtbl g_activator_vtbl = {activator_qi, activator_addref,
+                                                    activator_release, activator_activate};
+static NokreActivator g_activator = {&g_activator_vtbl};
+
+// The class object COM asks for the activator through.
+typedef struct NokreActivatorFactory NokreActivatorFactory;
+typedef struct {
+    HRESULT(STDMETHODCALLTYPE *QueryInterface)(NokreActivatorFactory *, const GUID *, void **);
+    ULONG(STDMETHODCALLTYPE *AddRef)(NokreActivatorFactory *);
+    ULONG(STDMETHODCALLTYPE *Release)(NokreActivatorFactory *);
+    HRESULT(STDMETHODCALLTYPE *CreateInstance)(NokreActivatorFactory *, IUnknown *, const GUID *,
+                                               void **);
+    HRESULT(STDMETHODCALLTYPE *LockServer)(NokreActivatorFactory *, BOOL);
+} NokreActivatorFactoryVtbl;
+struct NokreActivatorFactory {
+    const NokreActivatorFactoryVtbl *vtbl;
+};
+
+static HRESULT STDMETHODCALLTYPE factory_qi(NokreActivatorFactory *self, const GUID *iid,
+                                            void **out) {
+    if (out == NULL) return E_POINTER;
+    if (IsEqualGUID(iid, &nokre_iid_iunknown) || IsEqualGUID(iid, &nokre_iid_class_factory)) {
+        *out = self;
+        return S_OK;
+    }
+    *out = NULL;
+    return E_NOINTERFACE;
+}
+
+static ULONG STDMETHODCALLTYPE factory_addref(NokreActivatorFactory *self) {
+    (void)self;
+    return 2;
+}
+
+static ULONG STDMETHODCALLTYPE factory_release(NokreActivatorFactory *self) {
+    (void)self;
+    return 1;
+}
+
+static HRESULT STDMETHODCALLTYPE factory_create(NokreActivatorFactory *self, IUnknown *outer,
+                                                const GUID *iid, void **out) {
+    (void)self;
+    if (outer != NULL) return CLASS_E_NOAGGREGATION;
+    return activator_qi(&g_activator, iid, out);
+}
+
+static HRESULT STDMETHODCALLTYPE factory_lock(NokreActivatorFactory *self, BOOL lock) {
+    (void)self;
+    (void)lock;
+    return S_OK;
+}
+
+static const NokreActivatorFactoryVtbl g_factory_vtbl = {factory_qi, factory_addref, factory_release,
+                                                         factory_create, factory_lock};
+static NokreActivatorFactory g_factory = {&g_factory_vtbl};
+
+// The two registry keys, and the only two this shell will ever write.
+// Both under HKCU, so no elevation and no machine-wide state: the
+// notifications belong to this user's copy of this app.
+//   Software\Classes\AppUserModelId\<aumid>  — the identity Windows keys
+//       notifications to, plus the CLSID of the callback a tap reaches.
+//   Software\Classes\CLSID\{clsid}\LocalServer32 — the exe to start when
+//       a tap arrives and nothing is running.
+// Written on every run rather than once: an app that moved on disk has a
+// stale LocalServer32, and rewriting two small values costs less than
+// the bug of a tap that starts the wrong binary.
+static void note_register(const WCHAR *aumid, const WCHAR *display) {
+    WCHAR clsid_text[64];
+    if (StringFromGUID2(&nokre_clsid_activator, clsid_text,
+                        (int)(sizeof clsid_text / sizeof clsid_text[0])) == 0)
+        return;
+
+    WCHAR key[512];
+    HKEY h = NULL;
+    _snwprintf(key, sizeof key / sizeof key[0], L"Software\\Classes\\AppUserModelId\\%ls", aumid);
+    if (RegCreateKeyExW(HKEY_CURRENT_USER, key, 0, NULL, 0, KEY_WRITE, NULL, &h, NULL) ==
+        ERROR_SUCCESS) {
+        RegSetValueExW(h, L"DisplayName", 0, REG_SZ, (const BYTE *)display,
+                       (DWORD)((wcslen(display) + 1) * sizeof(WCHAR)));
+        RegSetValueExW(h, L"CustomActivator", 0, REG_SZ, (const BYTE *)clsid_text,
+                       (DWORD)((wcslen(clsid_text) + 1) * sizeof(WCHAR)));
+        RegCloseKey(h);
+    }
+
+    WCHAR exe[MAX_PATH];
+    DWORD exe_len = GetModuleFileNameW(NULL, exe, MAX_PATH);
+    if (exe_len == 0 || exe_len >= MAX_PATH) return;
+    _snwprintf(key, sizeof key / sizeof key[0], L"Software\\Classes\\CLSID\\%ls\\LocalServer32",
+               clsid_text);
+    if (RegCreateKeyExW(HKEY_CURRENT_USER, key, 0, NULL, 0, KEY_WRITE, NULL, &h, NULL) ==
+        ERROR_SUCCESS) {
+        RegSetValueExW(h, NULL, 0, REG_SZ, (const BYTE *)exe,
+                       (DWORD)((wcslen(exe) + 1) * sizeof(WCHAR)));
+        RegCloseKey(h);
+    }
+}
+
+// One-time setup: the AUMID, the two keys, the class object, and the
+// notifier. A NULL notifier afterwards means some step refused and this
+// session posts nothing — xdg-open's failure signal, which `available`
+// reports before an app draws anything.
+static NokreNotifier *note_notifier(void) {
+    if (g_note.tried) return g_note.notifier;
+    g_note.tried = 1;
+
+    // The AUMID is the declared app id. An app with no identity gets no
+    // notifications rather than a made-up name: two unidentified apps
+    // sharing one AUMID would share each other's notification settings.
+    if (g.config.app_id == NULL) return NULL;
+    if (MultiByteToWideChar(CP_UTF8, 0, g.config.app_id, -1, g_note.aumid,
+                            (int)(sizeof g_note.aumid / sizeof g_note.aumid[0])) == 0)
+        return NULL;
+
+    HMODULE shell32 = LoadLibraryW(L"shell32.dll");
+    if (shell32 != NULL) {
+        HRESULT(WINAPI * set_aumid)(PCWSTR) = (HRESULT(WINAPI *)(PCWSTR))(void *)GetProcAddress(
+            shell32, "SetCurrentProcessExplicitAppUserModelID");
+        if (set_aumid != NULL) set_aumid(g_note.aumid);
+    }
+
+    WCHAR name[128];
+    // The window title is the app's display name here — the same string
+    // the taskbar shows — and the shell already has it.
+    if (g.config.title == NULL ||
+        MultiByteToWideChar(CP_UTF8, 0, g.config.title, -1, name,
+                            (int)(sizeof name / sizeof name[0])) == 0) {
+        wcscpy(name, g_note.aumid);
+    }
+    note_register(g_note.aumid, name);
+
+    // In-process activation while the app runs. Failure is not fatal: the
+    // LocalServer32 registration still carries a tap to a fresh process,
+    // which is the harder half.
+    CoRegisterClassObject(&nokre_clsid_activator, (IUnknown *)&g_factory, CLSCTX_LOCAL_SERVER,
+                          REGCLS_MULTIPLEUSE, &g_note.registration);
+
+    HMODULE combase = LoadLibraryW(L"combase.dll");
+    if (combase == NULL) return NULL;
+    g_note.ro_get_activation_factory =
+        (HRESULT(WINAPI *)(NokreHstring, const GUID *, void **))(void *)GetProcAddress(
+            combase, "RoGetActivationFactory");
+    g_note.ro_activate_instance = (HRESULT(WINAPI *)(NokreHstring, void **))(void *)GetProcAddress(
+        combase, "RoActivateInstance");
+    if (!g_note.ro_get_activation_factory || !g_note.ro_activate_instance) return NULL;
+    // The share pane's binder already ran RoInitialize if it was used;
+    // running it again is S_FALSE, and the two legs share one apartment.
+    if (share_dtm() == NULL && g_share.ro_initialize == NULL) {
+        HMODULE cb2 = LoadLibraryW(L"combase.dll");
+        HRESULT(WINAPI * ro_init)(int) =
+            (HRESULT(WINAPI *)(int))(void *)GetProcAddress(cb2, "RoInitialize");
+        if (ro_init != NULL) {
+            HRESULT hr = ro_init(0 /* RO_INIT_SINGLETHREADED */);
+            if (FAILED(hr) && hr != RPC_E_CHANGED_MODE) return NULL;
+        }
+    }
+
+    static const WCHAR manager_class[] = L"Windows.UI.Notifications.ToastNotificationManager";
+    NokreHstring class_h = NULL;
+    if (!g_share.windows_create_string) return NULL;
+    if (FAILED(g_share.windows_create_string(manager_class, (UINT32)wcslen(manager_class),
+                                             &class_h)))
+        return NULL;
+    NokreToastManager *manager = NULL;
+    HRESULT hr =
+        g_note.ro_get_activation_factory(class_h, &nokre_iid_toast_manager_statics, (void **)&manager);
+    g_share.windows_delete_string(class_h);
+    if (FAILED(hr) || manager == NULL) return NULL;
+
+    NokreHstring aumid_h = NULL;
+    if (SUCCEEDED(g_share.windows_create_string(g_note.aumid, (UINT32)wcslen(g_note.aumid),
+                                                &aumid_h))) {
+        NokreNotifier *notifier = NULL;
+        if (SUCCEEDED(manager->vtbl->CreateToastNotifierWithId(manager, aumid_h,
+                                                               (void **)&notifier)))
+            g_note.notifier = notifier;
+        g_share.windows_delete_string(aumid_h);
+    }
+    manager->vtbl->Release(manager);
+    return g_note.notifier;
+}
+
+// XML escaping into the toast payload. The four that matter in element
+// text and attribute values; the payload is UTF-16 by the time it gets
+// here, and the caps ran in Zig, so this only has to be correct.
+static size_t note_xml_append(WCHAR *out, size_t cap, size_t at, const WCHAR *src) {
+    for (; *src != L'\0' && at + 8 < cap; src++) {
+        const WCHAR *rep = NULL;
+        switch (*src) {
+        case L'&': rep = L"&amp;"; break;
+        case L'<': rep = L"&lt;"; break;
+        case L'>': rep = L"&gt;"; break;
+        case L'"': rep = L"&quot;"; break;
+        default: out[at++] = *src; continue;
+        }
+        for (const WCHAR *r = rep; *r != L'\0'; r++) out[at++] = *r;
+    }
+    out[at] = L'\0';
+    return at;
+}
+
+static WCHAR *note_widen(const char *utf8, size_t len, WCHAR *out, size_t cap) {
+    int n = MultiByteToWideChar(CP_UTF8, 0, utf8, (int)len, out, (int)cap - 1);
+    out[n < 0 ? 0 : n] = L'\0';
+    return out;
+}
+
+static int note_slot_of(const char *id, size_t len) {
+    for (int i = 0; i < NOKRE_NOTE_SLOTS; i++) {
+        if (g_note.live[i].toast != NULL && g_note.live[i].id_len == len &&
+            memcmp(g_note.live[i].id, id, len) == 0)
+            return i;
+    }
+    return -1;
+}
+
+void nokre_notification_install(void *ctx, nokre_notification_cb cb) {
+    g_note.ctx = ctx;
+    g_note.cb = cb;
+    if (g_note.has_pending) {
+        g_note.has_pending = 0;
+        cb(ctx, NOKRE_NOTIFICATION_OPENED, NOKRE_NOTIFICATION_GRANTED, g_note.pending_id,
+           g_note.pending_id_len, g_note.pending_route, g_note.pending_route_len);
+    }
+}
+
+void nokre_notification_uninstall(void) {
+    g_note.ctx = NULL;
+    g_note.cb = NULL;
+}
+
+int32_t nokre_notification_available(void) { return note_notifier() != NULL ? 1 : 0; }
+
+int32_t nokre_notification_push_available(void) {
+    // WNS needs a package identity and a Store-registered app — the MSIX
+    // model nokre does not emit, which is why iap answers false here too.
+    return 0;
+}
+
+int32_t nokre_notification_schedule_available(void) {
+    // AddToSchedule holds the date in the platform's own notification
+    // queue, so it survives the app closing.
+    return note_notifier() != NULL ? 1 : 0;
+}
+
+int32_t nokre_notification_status(void) {
+    // Windows has no prompt and no per-app permission an app may ask
+    // for: notifications are on unless the user turned them off in
+    // Settings, and `IToastNotifier.Setting` reports that only as a
+    // best-effort hint. So a working notifier is granted, and there is
+    // never a prompt for the app to draw.
+    return note_notifier() != NULL ? NOKRE_NOTIFICATION_GRANTED
+                                   : NOKRE_NOTIFICATION_NOT_DETERMINED;
+}
+
+void nokre_notification_authorize(void) {
+    // Nothing to ask. Reporting the state keeps the app's one path
+    // working — it asked, and an answer arrives, as everywhere else.
+    if (g_note.cb == NULL) return;
+    g_note.cb(g_note.ctx, NOKRE_NOTIFICATION_AUTHORIZED, nokre_notification_status(), "", 0, "", 0);
+}
+
+void nokre_notification_post(const char *id, size_t id_len, const char *title, size_t title_len,
+                             const char *body, size_t body_len, const char *route, size_t route_len,
+                             int32_t important, int64_t at_millis) {
+    NokreNotifier *notifier = note_notifier();
+    if (notifier == NULL || id_len >= 64) return;
+
+    WCHAR wid[64], wtitle[256], wbody[1024], wroute[512];
+    note_widen(id, id_len, wid, sizeof wid / sizeof wid[0]);
+    note_widen(title, title_len, wtitle, sizeof wtitle / sizeof wtitle[0]);
+    note_widen(body, body_len, wbody, sizeof wbody / sizeof wbody[0]);
+    note_widen(route, route_len, wroute, sizeof wroute / sizeof wroute[0]);
+
+    // ToastGeneric with two text lines, and `launch` carrying what the
+    // activator hands back. `scenario="reminder"` is deliberately not
+    // used for `important`: it demands dismissal and survives Focus
+    // Assist, which is more than "this one may interrupt" asks for — the
+    // Linux leg refuses `urgency=critical` for the same reason.
+    WCHAR xml[4096];
+    size_t at = 0;
+    static const WCHAR head[] = L"<toast launch=\"";
+    for (const WCHAR *p = head; *p; p++) xml[at++] = *p;
+    at = note_xml_append(xml, sizeof xml / sizeof xml[0], at, wid);
+    xml[at++] = 0x1F; // the unit separator note_activated splits on
+    at = note_xml_append(xml, sizeof xml / sizeof xml[0], at, wroute);
+    static const WCHAR mid1[] = L"\"><visual><binding template=\"ToastGeneric\"><text>";
+    for (const WCHAR *p = mid1; *p; p++) xml[at++] = *p;
+    at = note_xml_append(xml, sizeof xml / sizeof xml[0], at, wtitle);
+    static const WCHAR mid2[] = L"</text><text>";
+    for (const WCHAR *p = mid2; *p; p++) xml[at++] = *p;
+    at = note_xml_append(xml, sizeof xml / sizeof xml[0], at, wbody);
+    static const WCHAR tail[] = L"</text></binding></visual></toast>";
+    for (const WCHAR *p = tail; *p; p++) xml[at++] = *p;
+    xml[at] = L'\0';
+    (void)important;
+
+    static const WCHAR xml_class[] = L"Windows.Data.Xml.Dom.XmlDocument";
+    NokreHstring class_h = NULL;
+    if (FAILED(g_share.windows_create_string(xml_class, (UINT32)wcslen(xml_class), &class_h)))
+        return;
+    void *doc_unknown = NULL;
+    HRESULT hr = g_note.ro_activate_instance(class_h, &doc_unknown);
+    g_share.windows_delete_string(class_h);
+    if (FAILED(hr) || doc_unknown == NULL) return;
+
+    NokreXmlDoc *io = NULL;
+    IUnknown *unk = (IUnknown *)doc_unknown;
+    hr = unk->lpVtbl->QueryInterface(unk, &nokre_iid_xml_document_io, (void **)&io);
+    if (FAILED(hr) || io == NULL) {
+        unk->lpVtbl->Release(unk);
+        return;
+    }
+    NokreHstring xml_h = NULL;
+    if (SUCCEEDED(g_share.windows_create_string(xml, (UINT32)at, &xml_h))) {
+        hr = io->vtbl->LoadXml(io, xml_h);
+        g_share.windows_delete_string(xml_h);
+    } else {
+        hr = E_FAIL;
+    }
+    io->vtbl->Release(io);
+    if (FAILED(hr)) {
+        unk->lpVtbl->Release(unk);
+        return;
+    }
+
+    NokreToast *toast = NULL;
+    static const WCHAR toast_class[] = L"Windows.UI.Notifications.ToastNotification";
+    NokreHstring toast_class_h = NULL;
+    if (SUCCEEDED(g_share.windows_create_string(toast_class, (UINT32)wcslen(toast_class),
+                                                &toast_class_h))) {
+        if (at_millis == 0) {
+            NokreToastFactory *factory = NULL;
+            if (SUCCEEDED(g_note.ro_get_activation_factory(toast_class_h, &nokre_iid_toast_factory,
+                                                           (void **)&factory)) &&
+                factory != NULL) {
+                factory->vtbl->CreateToastNotification(factory, doc_unknown, &toast);
+                factory->vtbl->Release(factory);
+            }
+        } else {
+            static const WCHAR sched_class[] = L"Windows.UI.Notifications.ScheduledToastNotification";
+            NokreHstring sched_h = NULL;
+            if (SUCCEEDED(g_share.windows_create_string(sched_class, (UINT32)wcslen(sched_class),
+                                                        &sched_h))) {
+                NokreSchedFactory *factory = NULL;
+                if (SUCCEEDED(g_note.ro_get_activation_factory(
+                        sched_h, &nokre_iid_scheduled_toast_factory, (void **)&factory)) &&
+                    factory != NULL) {
+                    // Unix milliseconds to a FILETIME-based DateTime: 100ns
+                    // ticks since 1601-01-01, which is 11644473600 seconds
+                    // before the Unix epoch.
+                    NokreDateTime when = {(__int64)at_millis * 10000 + 116444736000000000LL};
+                    factory->vtbl->CreateScheduledToastNotification(factory, doc_unknown, when,
+                                                                    &toast);
+                    factory->vtbl->Release(factory);
+                }
+                g_share.windows_delete_string(sched_h);
+            }
+        }
+        g_share.windows_delete_string(toast_class_h);
+    }
+    unk->lpVtbl->Release(unk);
+    if (toast == NULL) return;
+
+    // Replace rather than stack, the contract's rule: an id already
+    // showing is hidden first, and its slot is reused.
+    int slot = note_slot_of(id, id_len);
+    if (slot >= 0) {
+        IUnknown *old = (IUnknown *)g_note.live[slot].toast;
+        if (g_note.live[slot].scheduled)
+            notifier->vtbl->RemoveFromSchedule(notifier, g_note.live[slot].toast);
+        else
+            notifier->vtbl->Hide(notifier, g_note.live[slot].toast);
+        old->lpVtbl->Release(old);
+        g_note.live[slot].toast = NULL;
+    } else {
+        for (int i = 0; i < NOKRE_NOTE_SLOTS; i++) {
+            if (g_note.live[i].toast == NULL) {
+                slot = i;
+                break;
+            }
+        }
+    }
+    HRESULT shown = at_millis == 0 ? notifier->vtbl->Show(notifier, toast)
+                                   : notifier->vtbl->AddToSchedule(notifier, toast);
+    if (FAILED(shown) || slot < 0) {
+        IUnknown *t = (IUnknown *)toast;
+        t->lpVtbl->Release(t);
+        return;
+    }
+    memcpy(g_note.live[slot].id, id, id_len);
+    g_note.live[slot].id_len = id_len;
+    g_note.live[slot].toast = toast;
+    g_note.live[slot].scheduled = at_millis != 0;
+}
+
+void nokre_notification_cancel(const char *id, size_t id_len) {
+    NokreNotifier *notifier = note_notifier();
+    if (notifier == NULL) return;
+    int slot = note_slot_of(id, id_len);
+    if (slot < 0) return; // never posted, or already gone: idempotent
+    if (g_note.live[slot].scheduled)
+        notifier->vtbl->RemoveFromSchedule(notifier, g_note.live[slot].toast);
+    else
+        notifier->vtbl->Hide(notifier, g_note.live[slot].toast);
+    IUnknown *t = (IUnknown *)g_note.live[slot].toast;
+    t->lpVtbl->Release(t);
+    g_note.live[slot].toast = NULL;
+}
+
+void nokre_notification_request_push(const char *key, size_t key_len) {
+    (void)key;
+    (void)key_len;
+    // No push transport here; push_available already answered 0.
 }
 
 int32_t nokre_shell_run(const nokre_shell_config *config) {

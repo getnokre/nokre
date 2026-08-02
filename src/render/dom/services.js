@@ -25,6 +25,14 @@ export function silentHooks() {
     // A compute instance has no sheet to show, so its boot probe says
     // none — only the page's instance asks the real navigator.
     nokre_share_available: () => 0,
+    nokre_notification_available: () => 0,
+    nokre_notification_push_available: () => 0,
+    nokre_notification_schedule_available: () => 0,
+    nokre_notification_status: () => 0,
+    nokre_notification_authorize: () => {},
+    nokre_notification_post: () => {},
+    nokre_notification_cancel: () => {},
+    nokre_notification_request_push: () => {},
     nokre_shell_write_route: () => {},
     nokre_worker_js_spawn: () => {},
     nokre_worker_js_send: () => {},
@@ -55,6 +63,17 @@ export function silentHooks() {
     // A compute instance lays nothing out, so it never asks.
     nokre_dom_measure: () => 0,
   };
+}
+
+/// Registers the site's service worker. Called by live.js before boot:
+/// `showNotification` needs a registration on Chrome for Android, and a
+/// push subscription needs one everywhere. Failure is silence — an origin
+/// that cannot register one (no HTTPS, no worker file) is one where
+/// `nokre_notification_available`'s answer stops mattering, because
+/// nothing will ever subscribe.
+export function registerServiceWorker() {
+  if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
+  navigator.serviceWorker.register("sw.js").catch(() => {});
 }
 
 // ---- the oauth popup's landing page (docs/internals/oauth.md) ----
@@ -179,6 +198,58 @@ export function appHooks({ nk, memory, workerUrl, wasmUrl, onWork, onMetrics }) 
     compute.delete(slot);
     nk().nokre_worker_died(slot);
     onWork();
+  }
+
+  // The notification lane into wasm: one landing buffer holding both
+  // strings, a-then-b, and one call with the two lengths — the http
+  // transport's three beats, halved because a tap's id and route arrive
+  // together (src/services/notification/web.zig).
+  function notificationEvent(kind, status, a, b) {
+    const ab = bytes.encode(a || "");
+    const bb = bytes.encode(b || "");
+    const ptr = nk().nokre_notification_scratch?.(ab.length + bb.length);
+    if (!ptr) return; // the app links no notification service, or it will not fit
+    memory().set(ab, ptr);
+    memory().set(bb, ptr + ab.length);
+    nk().nokre_notification_receive(kind, status, ab.length, bb.length);
+    onWork();
+  }
+
+  // The service worker is the only thing that can carry a tap when no page
+  // is open, so it does the carrying always — one path rather than two.
+  // Its messages arrive here and cross into wasm unchanged; routing stays
+  // the app's, as it is for a deep link.
+  if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
+    navigator.serviceWorker.addEventListener("message", (event) => {
+      const m = event.data;
+      if (!m || typeof m.nokre !== "string") return;
+      if (m.nokre === "opened") notificationEvent(1, 1, m.id, m.route);
+      else if (m.nokre === "received") notificationEvent(3, 1, m.id, m.route);
+    });
+  }
+
+  // base64url → the Uint8Array `applicationServerKey` wants. The VAPID
+  // public half is a build declaration (docs/services.md), so this runs
+  // once per subscribe and never on a value a page supplied.
+  function vapidKey(b64) {
+    const padded = (b64 + "=".repeat((4 - (b64.length % 4)) % 4)).replace(/-/g, "+").replace(/_/g, "/");
+    const raw = atob(padded);
+    const out = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+    return out;
+  }
+
+  let pushKey = "";
+
+  async function subscribePush(reg) {
+    if (!pushKey) return null; // pushAvailable already answered false
+    return reg.pushManager.subscribe({
+      // Required by every browser that implements push, and the contract
+      // agrees with it: nokre refuses the silent data push, so every
+      // message this app can receive is one the user will see.
+      userVisibleOnly: true,
+      applicationServerKey: vapidKey(pushKey),
+    });
   }
 
   function httpFail(index, gen, name) {
@@ -328,6 +399,97 @@ export function appHooks({ nk, memory, workerUrl, wasmUrl, onWork, onMetrics }) 
     nokre_share_show: (ptr, len) => {
       const text = utf8.decode(memory().subarray(ptr, ptr + len));
       navigator.share?.({ text }).catch(() => {});
+    },
+
+    // ---- notification (docs/services.md) ----
+    // The boot probes App.init reads once, all three synchronous so the
+    // first build answers without waiting. `Notification` exists on
+    // secure contexts; push needs a service worker *and* PushManager, and
+    // its absence is the honest "no push here" — iap's runtime answer.
+    // Scheduling is flatly 0: the web's scheduling trigger never shipped,
+    // and nothing else here would hold a date past the tab closing.
+    nokre_notification_available: () => (typeof Notification !== "undefined" ? 1 : 0),
+    nokre_notification_push_available: () =>
+      typeof Notification !== "undefined" && "serviceWorker" in navigator && "PushManager" in window
+        ? 1
+        : 0,
+    nokre_notification_schedule_available: () => 0,
+    nokre_notification_status: () => {
+      if (typeof Notification === "undefined") return 0;
+      // The browser's three words are the contract's three states, and
+      // "default" really does mean not determined — asking is still legal.
+      return Notification.permission === "granted"
+        ? 1
+        : Notification.permission === "denied"
+          ? 2
+          : 0;
+    },
+    // The prompt. Fire-and-forget, and the answer rides the one lane:
+    // requestPermission resolves with the same three words, and a browser
+    // that refuses the call outright (no user activation) leaves the
+    // state where it was, which is what the app already reads.
+    nokre_notification_authorize: () => {
+      if (typeof Notification === "undefined") return;
+      Notification.requestPermission()
+        .then((p) => notificationEvent(0, p === "granted" ? 1 : p === "denied" ? 2 : 0, "", ""))
+        .catch(() => {});
+    },
+    // showNotification through the registration, never `new Notification`:
+    // Chrome on Android refuses the constructor, so the page path would
+    // work on desktop and silently not where it matters (sw.js says the
+    // same at more length). `at_millis` never arrives non-zero — Zig
+    // refuses a fire date wherever schedule_available answered 0.
+    nokre_notification_post: (
+      idPtr,
+      idLen,
+      titlePtr,
+      titleLen,
+      bodyPtr,
+      bodyLen,
+      routePtr,
+      routeLen,
+      important,
+      atMillis,
+    ) => {
+      void atMillis;
+      const id = utf8.decode(memory().subarray(idPtr, idPtr + idLen));
+      const title = utf8.decode(memory().subarray(titlePtr, titlePtr + titleLen));
+      const body = utf8.decode(memory().subarray(bodyPtr, bodyPtr + bodyLen));
+      const route = utf8.decode(memory().subarray(routePtr, routePtr + routeLen));
+      navigator.serviceWorker?.ready
+        .then((reg) =>
+          reg.showNotification(title, {
+            body,
+            // The tag is the contract's id, which is what makes posting
+            // the same id replace rather than stack.
+            tag: id,
+            data: { id, route },
+            requireInteraction: important !== 0,
+          }),
+        )
+        .catch(() => {});
+    },
+    nokre_notification_cancel: (ptr, len) => {
+      const id = utf8.decode(memory().subarray(ptr, ptr + len));
+      navigator.serviceWorker?.ready
+        .then(async (reg) => {
+          for (const n of await reg.getNotifications({ tag: id })) n.close();
+        })
+        .catch(() => {});
+    },
+    // The subscription is the web's device token, handed over whole as
+    // JSON: it carries the endpoint and the two keys a sender needs, and
+    // nokre parses none of it — the app ships it to its own backend, which
+    // is where push stops on every platform.
+    nokre_notification_request_push: (keyPtr, keyLen) => {
+      pushKey = utf8.decode(memory().subarray(keyPtr, keyPtr + keyLen));
+      navigator.serviceWorker?.ready
+        .then(async (reg) => {
+          const existing = await reg.pushManager.getSubscription();
+          const sub = existing || (await subscribePush(reg));
+          if (sub) notificationEvent(2, 1, JSON.stringify(sub.toJSON()), "");
+        })
+        .catch(() => {});
     },
 
     // ---- workers (docs/internals/workers.md) ----
