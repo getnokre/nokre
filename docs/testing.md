@@ -640,6 +640,13 @@ RGB for the one colored mark nokre draws (the Google G — see
 [internals/pixel-model.md](internals/pixel-model.md)); everything else
 is r=g=b, so diffs read like the gray ones did.
 
+Goldens need the Skia prebuilt linked into the *test* binary — a link
+`addApp` does not make, because a test binary is not the app binary. One
+line of `build.zig` does it (`nokre.linkSkia`), and the whole recipe —
+that line, the `-Dgolden` / `-Dupdate-goldens` options, and the module
+that carries them — is
+[getting-started.md](getting-started.md#part-12--proof-tree-snapshots-step-traces-goldens).
+
 ```zig
 var surface = try nok.render.skia.Surface.init(480, 640, 1);
 defer surface.deinit();

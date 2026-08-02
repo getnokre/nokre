@@ -135,7 +135,11 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const app = nokre.addApp(b.dependency("nokre", .{}), .{
+    // Named, not inlined: Part 12's golden tests need the dependency
+    // again to link Skia onto their own binary.
+    const nokre_dep = b.dependency("nokre", .{});
+
+    const app = nokre.addApp(nokre_dep, .{
         .name = "notes",
         .root_source_file = b.path("src/main.zig"),
         .target = target,
@@ -1578,10 +1582,23 @@ through the production renderer, numbering matched file-for-file.)
 
 Third, **golden screenshot tests**: byte-exact frames, no tolerance, no
 perceptual diffing — the pixel model makes exactness cheap, so any
-variance is a bug by definition. Goldens render through the production
-renderer, which needs the Skia prebuilt, so they live in their own test
-module; importing the *app's* module (not just `app.nokre`) carries the
-Skia link with it. In `build.zig`:
+variance is a bug by definition.
+
+Goldens render through the production renderer, which needs the Skia
+prebuilt — and that is a **link**. A test binary is not the app binary,
+so `addApp`'s wiring never reaches it and `nok.render.skia.Surface` comes
+back as `undefined symbol: _hsk_text_width`.
+`nokre.linkSkia(nokre_dep, golden_tests)` is the line that fixes it: the
+same wiring nokre's own goldens take, so the two cannot drift. There is
+nothing to enable on the dependency — `.skia = true` in `b.dependency`
+configures nokre's *own* steps and has never meant anything to yours.
+
+The other two flags are yours, because it is your test suite. `-Dgolden`
+decides whether the golden tests join the `test` step at all — they need
+the prebuilt fetched, so they are opt-in — and `-Dupdate-goldens` reaches
+`nok.testing.golden.update` through an options module, the only road it
+has, which is what keeps CI from minting baselines. In `build.zig`,
+beside the `addApp` call from Part 1:
 
 ```zig
     const golden = b.option(bool, "golden", "Run golden screenshot tests (needs the Skia prebuilt)") orelse false;
@@ -1600,11 +1617,16 @@ Skia link with it. In `build.zig`:
         golden_opts.addOption(bool, "update_goldens", update_goldens);
         golden_mod.addOptions("build_options", golden_opts);
         const golden_tests = b.addTest(.{ .root_module = golden_mod });
+        nokre.linkSkia(nokre_dep, golden_tests); // the Skia link, on the test binary
         const run_golden = b.addRunArtifact(golden_tests);
         run_golden.setCwd(b.path(".")); // goldens resolve against the project root
         test_step.dependOn(&run_golden.step);
     }
 ```
+
+Run `tools/fetch-deps.sh` once inside the dependency before the first
+golden. Without it the build step fails naming that command, rather than
+failing at link time with a list of missing symbols.
 
 `src/golden_test.zig`:
 
@@ -1637,7 +1659,7 @@ test "golden: the sign-in screen" {
 **Checkpoint:** `zig build test -Dgolden` fails, reporting that
 `tests/goldens/signin.ppm` is *missing* — baselines are never created
 implicitly. Rerun with `-Dupdate-goldens` to create it, open the PPM
-(almost any image tool reads P5), review it, commit it; the plain run
+(almost any image tool reads P6), review it, commit it; the plain run
 now passes byte-exact, and every run after that proves the pixels never
 drifted. On a mismatch the runner writes `<name>.actual.ppm` next to
 the golden for eyeball diffing; if the change was intended, rerun with

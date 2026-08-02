@@ -114,6 +114,36 @@ pub fn addApp(nokre_dep: *std.Build.Dependency, options: AppOptions) App {
     return addAppTo(nokre_dep.builder, options);
 }
 
+/// The second consumer entry point, and the only other one: the Skia
+/// link wiring for a **test** artifact, so `nokre.render.skia.Surface`
+/// resolves and golden screenshots can be taken
+/// (docs/getting-started.md, docs/testing.md).
+///
+/// It is a separate call rather than an option on `addApp` because a
+/// test binary is a separate *link*. `addApp` wires the app's own
+/// executable and hands back its modules; the module a consumer's tests
+/// are built from is one they create, and nothing links into a module
+/// that does not exist yet. There is deliberately no `skia` bool to
+/// forward either: `addApp` already links Skia into every windowed app
+/// it builds — a nokre app draws through it — so a flag there would name
+/// a choice no app makes, and setting `.skia = true` on the dependency
+/// only ever configured nokre's *own* steps.
+///
+/// Everything else about goldens is the consumer's own build option,
+/// because it is their test suite: `-Dgolden` deciding whether the
+/// golden tests are in the `test` step at all, and `-Dupdate-goldens`
+/// reaching `nokre.testing.golden.update` through an options module they
+/// pass to their test module. nokre's own build does exactly that
+/// (`tests/golden.zig`), and the recipe is in getting-started.md.
+///
+/// Needs the Skia prebuilt in the nokre checkout's deps/ —
+/// tools/fetch-deps.sh, run once inside the dependency — and fails the
+/// test artifact's build step with the command to run when it is absent,
+/// exactly as `addApp` does.
+pub fn linkSkia(nokre_dep: *std.Build.Dependency, tests: *std.Build.Step.Compile) void {
+    linkSkiaTo(nokre_dep.builder, tests);
+}
+
 /// The web target: bare wasm32. There is no C++ archive to match
 /// features with any more — the web's edition is the DOM one, which
 /// links no Skia and no emscripten — so this is the plain query, and
@@ -271,7 +301,7 @@ fn addDesktopApp(hb: *std.Build, options: AppOptions) App {
     if (depMissing(hb, exe, "deps/accesskit/include/accesskit.h", "deps/accesskit not found — run tools/fetch-deps.sh first")) return app;
 
     app_mod.linkLibrary(desktopSkiaShim(hb, target, is_msvc));
-    linkSkia(hb, app_mod, os_tag);
+    linkSkiaPrebuilt(hb, app_mod, os_tag);
 
     const ak_mod = hb.createModule(.{
         .target = target,
@@ -588,7 +618,35 @@ fn desktopSkiaShim(hb: *std.Build, target: std.Build.ResolvedTarget, is_msvc: bo
     return shim;
 }
 
-fn linkSkia(hb: *std.Build, mod: *std.Build.Module, os: std.Target.Os.Tag) void {
+/// The shim plus the prebuilt, onto one artifact's root module — the
+/// pair `addDesktopApp` spends on an executable, spent on a test binary
+/// instead. Public as `linkSkia`; nokre's own golden tests take the same
+/// road, so the consumer path is exercised by every `-Dgolden` run here.
+///
+/// The two ways it can't work are refused on the artifact the consumer
+/// will actually build, `addApp`'s rule: an unfetched prebuilt, and the
+/// Windows ABI mismatch (the prebuilt is MSVC clang-cl, so a test binary
+/// linking it must be too).
+fn linkSkiaTo(hb: *std.Build, artifact: *std.Build.Step.Compile) void {
+    const mod = artifact.root_module;
+    const target = mod.resolved_target orelse {
+        const fail = hb.addFail("nokre.linkSkia needs a test module with a resolved target — pass .target to createModule (docs/getting-started.md)");
+        artifact.step.dependOn(&fail.step);
+        return;
+    };
+    const os_tag = target.result.os.tag;
+    const is_msvc = target.result.abi == .msvc;
+    if (os_tag == .windows and !is_msvc) {
+        const fail = hb.addFail("goldens on Windows link the MSVC-ABI Skia prebuilt — build with -Dtarget=x86_64-windows-msvc");
+        artifact.step.dependOn(&fail.step);
+        return;
+    }
+    if (depMissing(hb, artifact, skia_probe, "deps/skia not found — run tools/fetch-deps.sh first")) return;
+    mod.linkLibrary(desktopSkiaShim(hb, target, is_msvc));
+    linkSkiaPrebuilt(hb, mod, os_tag);
+}
+
+fn linkSkiaPrebuilt(hb: *std.Build, mod: *std.Build.Module, os: std.Target.Os.Tag) void {
     switch (os) {
         .windows => {
             // Unlike its filename suggests, skia.lib is the same
@@ -929,8 +987,10 @@ pub fn build(b: *std.Build) void {
         golden_opts.addOption(bool, "update_goldens", update_goldens);
         golden_mod.addOptions("build_options", golden_opts);
         const golden_tests = b.addTest(.{ .root_module = golden_mod });
-        golden_mod.linkLibrary(desktopSkiaShim(b, target, is_msvc));
-        linkSkia(b, golden_mod, target.result.os.tag);
+        // Through the consumer path, like the examples above: nokre's
+        // own goldens are the exercise for the wiring `linkSkia` hands a
+        // consumer, so the two cannot drift.
+        linkSkiaTo(b, golden_tests);
         const run_golden = b.addRunArtifact(golden_tests);
         run_golden.setCwd(b.path("."));
         test_step.dependOn(&run_golden.step);
