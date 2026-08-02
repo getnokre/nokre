@@ -118,7 +118,12 @@ A value that doesn't fit is a document, and documents are refused.
 Store the refresh token or the session id, not the fat JWT: a JWT
 balloons with its claims and expires anyway, while the small
 credential you re-derive everything else from is exactly what belongs
-in a keychain.
+in a keychain. The entry count answers to the same rule: a store whose
+size tracks the user's graph — an entry per channel, per contact, per
+device — has stopped being a pouch, and the way out is one secret with
+the rest derived from it, never a bigger cap. Why neither number moves,
+and what each route past them would cost, is
+[internals/secure_store.md](internals/secure_store.md).
 
 The ceiling is the weakest platform's, and this is which — what each
 backend actually bounds, by the API it calls:

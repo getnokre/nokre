@@ -251,7 +251,7 @@ pub const Op = union(enum) {
 pub const Service = if (builtin.is_test) Mock else CountCache;
 
 /// The cap's bookkeeping, cached so `set` need not enumerate + sort
-/// the whole namespace (74 KiB of frame in native.list, plus a
+/// the whole namespace (72 KiB of frame in native.list, plus a
 /// ListBuf) on every insert: seeded by one enumeration on the first insert,
 /// adjusted on each successful insert and present-key delete. A
 /// cross-process writer under the same namespace can drift it — but

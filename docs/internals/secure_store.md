@@ -59,7 +59,7 @@ that is *ours*, and the naming.
 - **128-byte keys, 256 entries.** No backend counts entries, so the
   entry cap is nothing but what the caller-owned buffers hold:
   `ListBuf` is 36 KiB (32 KiB of key bytes + 4 KiB of slices),
-  `native.list` spends 74 KiB more of its own frame (the packing
+  `native.list` spends 72 KiB more of its own frame (the packing
   scratch plus the slice array it sorts), and the wasm table is
   256 × (128 + 2560) ≈ 673 KiB of linear memory. Frame- and .bss-sized,
   none of it allocated, against a 1 MiB stack at the tightest (iOS,
@@ -72,6 +72,35 @@ that is *ours*, and the naming.
   entries, refused by a 64-entry store. 256 carries 85 such triples.
   Past that the thing being stored has stopped being a pouch of
   secrets, and no ceiling nokre picks would make it one.
+- **Why not more than 256.** Every entry of headroom is bought three
+  times: 144 bytes in the caller's `ListBuf` (a key slot plus its
+  slice), 290 in `native.list`'s frame (the doubled scratch and the
+  slice array it sorts), and 2,692 in the wasm table, which is sized
+  entry × (key + value) whether or not a value is ever that big —
+  ~3.1 KiB per entry, of which 2.6 KiB is paid by every linked web
+  build at boot. 1024 entries is a 144 KiB caller buffer, a 290 KiB
+  frame under it on the 1 MiB stacks iOS and Windows give, and a
+  2.6 MiB table. The shapes that would bend that curve each cost more
+  than the capacity is worth: `list` over a caller-sized buffer with a
+  there-was-more flag turns the one verb that must be total into a
+  partial one — and the count `StoreFull` consults is seeded from
+  `list`'s length, so a partial listing is a partial cap; a byte-arena
+  web table decouples entries from the value cap only by making
+  `StoreFull` fire on total bytes, so whether a `set` succeeds would
+  depend on the sizes of unrelated values, and would stop meaning the
+  same thing on every platform; shortening the key cap buys entries in
+  the two key-sized buffers and nothing at all in the table, where the
+  value dominates. An allocator would break all three at once, and it
+  would be the only one in the service.
+- **The pressure to raise it, named.** What would ask for 1024 is the
+  shape the bullet above refuses — an entry count tracking the user's
+  graph — and 1024 postpones it by 4× while charging every app the
+  table. The answer is the one this service already gives values: keep
+  one secret and derive the per-channel material from it. That the derived
+  material then needs somewhere to live is a real gap — nokre ships no
+  general local store — but it is a gap for another service to fill.
+  Inflating the pouch is not how it gets filled: every linked app would
+  pay the table, and only one shape of app would spend it.
 - **StoreFull is the service's line, not the OS's.** `set` of a
   possibly-new key probes for presence; an insert consults the app's
   cached count — seeded by one `list` enumeration on the first insert,
@@ -197,7 +226,57 @@ is not a shape any consumer has asked for, and a bigger one is a
 document. So the ceiling is stated instead of engineered around, and
 windows.c `#error`s if the C copy of it drifts.
 
-One sharp edge, recorded because it reads like a bug: that number is
+**Chunking, weighed and worse.** Splitting one logical value across
+several credentials — `ns/key`, `ns/key/1`, … on the same `/` join that
+already cannot alias — meets those objections worse than the file does,
+on every one of them. `CredWriteW` is atomic per blob and nothing is
+atomic across blobs: a crash or a refusal between chunks leaves a value
+no `set` ever wrote, and a torn secret is the one torn value worse than
+absence — half an old key and half a new one decrypts nothing and reads
+as corruption. Making it whole again needs a generation counter and a
+commit record, which is the file format back, now smeared across the OS
+store instead of confined to one file. The panel fares worse, not
+better: DPAPI-over-a-file drops the entry out of the panel, where
+chunking puts N rows into it and makes each separately revocable — a
+user who revokes one chunk has revoked half a secret, and the orphaned
+rest is garbage nothing collects. The property CredMan was chosen *for*
+— revoke means signed out — is the first thing to break. `list` would
+then have to hide the chunk rows, since it may never show a key `get`
+could not be asked for, so the panel and `list` would stop agreeing in
+the direction the contract has no name for. And the entry cap divides:
+chunks consume credentials, so either the count cache counts what
+`list` hides, or `StoreFull` fires at a different entry number on
+Windows than everywhere else — the one error whose whole point is that
+no platform gets a vote. Against all of which it rewrites the backend
+no gate here executes, and unlike the file it does not stop at the C:
+`native.list` and the count cache are shared Zig, so the untestable
+surface grows rather than staying put.
+
+The one variant that survives the atomicity and panel objections is
+worth naming, because it looks like the answer and is not. A credential
+carries up to `CRED_MAX_ATTRIBUTES` (64) attributes of
+`CRED_MAX_VALUE_SIZE` (256) bytes — 16 KiB more, written by the same
+single `CredWriteW`, showing as one panel row with one revoke. It dies
+elsewhere: `CredentialBlob` is the field Windows documents as the
+protected secret, an attribute is metadata, and an attribute's at-rest
+protection is documented nowhere. Splitting a secret across one field
+known to be encrypted and 64 whose protection is unstated is a weaker
+boundary sold as a bigger cap — the opposite of the trade this service
+makes everywhere else. It would also rest on composing two constants
+into behavior neither documents and no gate here can measure: the caps
+that landed came from measurement or from the constant the API itself
+enforces, and `check-targets` compiles Windows without ever running it.
+
+Nor does the ceiling become Windows-only. A cap of 2560 there and
+unbounded elsewhere makes `ValueTooLarge` a fact about the developer's
+laptop: an app that stores fine all through development fails at a
+user's first `set`, and the one property the whole cap doctrine buys —
+one number, one meaning, every platform — is what pays for it. Every
+route past 2560 spends something the store's own users can see: the
+panel, the atomic write, or the single meaning of `StoreFull`. The
+value that does not fit is still a document.
+
+One sharp edge, recorded because it reads like a bug: 2560 is
 written out in windows.c rather than taken from the header in scope,
 because the headers disagree. Vista raised
 `CRED_MAX_CREDENTIAL_BLOB_SIZE` to 5 × 512 and the Windows SDK says so,
