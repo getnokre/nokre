@@ -185,6 +185,63 @@ test "e2e: a switch with work in flight takes no press and loses no place" {
     try h.expectChecked("Push to phone", true);
 }
 
+test "e2e: pending notices are assertable where the snapshot cannot see them" {
+    var ctx: TodoCtx = .{};
+    var h = try Harness.init(testing.allocator, .{ .w = 480, .h = 640 }, &ctx, buildTodo);
+    defer h.deinit();
+
+    // Quiet: nothing but the indicator appears, so the only trace on
+    // screen is a button named for the *chrome*, not for the notice.
+    try h.app.notify(.{ .title = "Draft saved", .description = "Kept locally." });
+    try h.expectNotified("Draft saved");
+    try h.expectAbsent("Draft saved"); // …and no element says so
+    _ = try h.getByLabel("Show notices");
+
+    // Important notices go in front of quiet ones, whatever order they
+    // were raised in, and the banner is always the front one.
+    try h.app.notify(.{ .title = "Sync failed", .route = "home", .important = true });
+    const pending = h.noticesPending();
+    try testing.expectEqual(@as(usize, 2), pending.len);
+    try testing.expectEqualStrings("Sync failed", pending[0].title);
+    try testing.expect(pending[0].important);
+    try testing.expectEqualStrings("home", pending[0].route);
+    try testing.expectEqualStrings("Draft saved", pending[1].title);
+    try testing.expect(!pending[1].important);
+    try testing.expectEqualStrings("Kept locally.", pending[1].description);
+
+    // A duplicate title is dropped, and leaves no mark anywhere else:
+    // the second call is silent, so the count is the only witness.
+    try h.app.notify(.{ .title = "Sync failed", .description = "…again", .important = true });
+    try testing.expectEqual(@as(usize, 2), h.noticesPending().len);
+    try testing.expectEqualStrings("", h.noticesPending()[0].description);
+
+    // Dismissing by title, app-side: the front one goes and the quiet
+    // one behind it does not inherit the banner (notices.zig).
+    try h.dismissNotice("Sync failed");
+    try testing.expectEqual(@as(usize, 1), h.noticesPending().len);
+    try h.expectNotified("Draft saved");
+    _ = try h.getByLabel("Show notices");
+
+    // …and dismiss-all empties the list and takes the chrome with it.
+    try h.dismissAllNotices();
+    try testing.expectEqual(@as(usize, 0), h.noticesPending().len);
+    try h.expectAbsent("Show notices");
+}
+
+test "e2e: the notice verbs fail loudly when the title is not pending" {
+    var ctx: TodoCtx = .{};
+    var h = try Harness.init(testing.allocator, .{ .w = 480, .h = 640 }, &ctx, buildTodo);
+    defer h.deinit();
+    try h.app.notify(.{ .title = "Draft saved" });
+
+    diag.quiet = true;
+    defer diag.quiet = false;
+    try testing.expectError(error.NoticeMismatch, h.expectNotified("Sync failed"));
+    try testing.expectError(error.NoticeMismatch, h.dismissNotice("Sync failed"));
+    // The one that is pending is untouched by either failure.
+    try testing.expectEqual(@as(usize, 1), h.noticesPending().len);
+}
+
 test "e2e: harness rejects screens that fail the audit" {
     const bad = struct {
         fn build(_: ?*anyopaque, app: *App) anyerror!void {

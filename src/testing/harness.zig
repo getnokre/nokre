@@ -17,6 +17,7 @@ const geometry = @import("../core/geometry.zig");
 const text = @import("../core/text.zig");
 const router_mod = @import("../core/router.zig");
 const nav_mod = @import("../core/nav.zig");
+const notices_mod = @import("../core/notices.zig");
 const renderer = @import("../render/renderer.zig");
 const canvas_mod = @import("../render/canvas.zig");
 const semantics = @import("../a11y/semantics.zig");
@@ -55,6 +56,12 @@ pub const BuildFn = *const fn (ctx: ?*anyopaque, app: *App) anyerror!void;
 pub const HttpOutcome = http.Outcome;
 pub const HttpHandler = http.Handler;
 pub const HttpOp = http.Op;
+
+/// One pending notice as the app holds it — title, description, route,
+/// icon, and whether it is important. Re-exported so a test asserting on
+/// `noticesPending()` reads one import, `Knock`'s rationale for a type
+/// only tests name.
+pub const PendingNotice = notices_mod.OwnedNotice;
 
 pub const InitOptions = struct {
     ctx: ?*anyopaque = null,
@@ -677,6 +684,66 @@ pub const Harness = struct {
     pub fn setStoreAvailable(self: *Harness, available: bool) !void {
         self.store.available = available;
         try self.afterStep("store available {}", .{available});
+    }
+
+    // ---- notices (docs/elements.md) ----
+    // The one piece of app state the a11y snapshot cannot speak for.
+    // What is *shown* it covers exactly — the banner, the pane's rows,
+    // the indicator are all elements — but a quiet notice behind that
+    // indicator is pending and unrendered, a title `notify` dropped as a
+    // duplicate leaves no mark at all, and dismiss-all is asserted by an
+    // absence. So these read the App's own list, the way `knocks()` and
+    // `urlsOpened()` read a mock's journal, and for the same reason: it
+    // is the whole observable effect.
+
+    /// Every notice pending right now — important ones in front, arrival
+    /// order within each group: the order the banner takes its front
+    /// from and the pane groups its rows in (`App.notify`). Borrowed
+    /// from the app, so it lives until the next notice call.
+    pub fn noticesPending(self: *const Harness) []const PendingNotice {
+        return self.app.notices.items;
+    }
+
+    /// Assert a notice with this title is pending. Titles are the
+    /// identity — `notify` dedups on them — so this is the whole of
+    /// "was it raised", whether it is showing as the banner, listed in
+    /// the pane, or waiting quietly behind the indicator.
+    pub fn expectNotified(self: *Harness, title: []const u8) !void {
+        for (self.app.notices.items) |n| {
+            if (std.mem.eql(u8, n.title, title)) return;
+        }
+        diag.print("expected a notice titled \"{s}\", but the pending ones are:\n", .{title});
+        if (self.app.notices.items.len == 0) diag.print("  (none)\n", .{});
+        for (self.app.notices.items) |n| {
+            diag.print("  {s} \"{s}\"\n", .{ if (n.important) "important" else "quiet    ", n.title });
+        }
+        return error.NoticeMismatch;
+    }
+
+    /// The app dismissed one notice, by title — `App.dismissNoticeAt`
+    /// reached the way a test can name it. Named, never indexed: an
+    /// index is a position in a list the user does not perceive, and the
+    /// titles are already unique. Dismissing a notice a *user* would
+    /// dismiss is a press like any other — `tapLabel("Dismiss: …")` on
+    /// the control the chrome puts on every notice — and this is its
+    /// app-side twin, the notice that clears itself when the state
+    /// behind it resolves. Emits a trace step and re-audits, so the
+    /// chrome the dismissal reshaped is asserted like any other screen.
+    pub fn dismissNotice(self: *Harness, title: []const u8) !void {
+        for (self.app.notices.items, 0..) |n, i| {
+            if (!std.mem.eql(u8, n.title, title)) continue;
+            self.app.dismissNoticeAt(i);
+            return self.afterStep("dismiss notice {s}", .{title});
+        }
+        diag.print("expected to dismiss a notice titled \"{s}\", but no such notice is pending\n", .{title});
+        return error.NoticeMismatch;
+    }
+
+    /// The app cleared the lot — `App.dismissAllNotices`, the header
+    /// control's twin. A no-op with nothing pending, like the app call.
+    pub fn dismissAllNotices(self: *Harness) !void {
+        self.app.dismissAllNotices();
+        try self.afterStep("dismiss all notices", .{});
     }
 
     // ---- assertions ----

@@ -484,6 +484,56 @@ A bare test constructs the same fake directly: `.services = .{ .iap =
 .mock(.{}) }`, with `app.services.iap.deliverPurchase(p)` as the untraced
 verb (followed by `app.runtime.pumpAll()`).
 
+## Notices
+
+Notices are the one piece of app state the a11y snapshot cannot speak
+for. What is *shown* it covers exactly — the banner, the pane's rows and
+the indicator are elements, and `getByLabel` reaches all three — but a
+**quiet** notice is pending and unrendered, a title `notify` dropped as a
+duplicate leaves no mark at all, and dismiss-all is asserted by an
+absence. So these verbs read the app's own pending list, the way
+`knocks()` and `urlsOpened()` read a mock's journal: it is the whole
+observable effect ([elements.md](elements.md#notice)).
+
+```zig
+try t.tapLabel("Sync");
+try t.failHttp("FetchFailed");            // the app raised a notice
+
+try t.expectNotified("Sync failed");      // raised — banner, pane, or quiet
+_ = try t.getByLabel("Sync failed");      // …and this one is on screen
+
+// Quiet notices never claim the banner: the only thing rendered is the
+// chrome's own indicator, so the title is assertable *only* here.
+try t.expectNotified("Draft saved");
+try t.expectAbsent("Draft saved");
+_ = try t.getByLabel("Show notices");
+
+const pending = t.noticesPending();        // important first, then arrival
+try std.testing.expectEqualStrings("Sync failed", pending[0].title);
+try std.testing.expect(pending[0].important);
+try std.testing.expectEqualStrings("Changes kept locally.", pending[0].description);
+try std.testing.expectEqualStrings("home", pending[0].route);
+```
+
+`expectNotified(title)` is the whole of "was it raised": titles are the
+identity — `notify` dedups on them — so a second `notify` under a title
+already pending is dropped in silence, and the count is the only witness
+that it was:
+
+```zig
+try std.testing.expectEqual(@as(usize, 1), t.noticesPending().len);
+```
+
+`dismissNotice(title)` and `dismissAllNotices()` are the **app-side**
+dismissals — `App.dismissNoticeAt` and `App.dismissAllNotices`, the
+notice that clears itself when the state behind it resolves. Both trace
+and re-audit, so the chrome the dismissal reshaped is asserted like any
+other screen. A dismissal a *user* performs is a press like any other and
+stays one: `tapLabel("Dismiss: Sync failed")` on the control the chrome
+puts on every notice, `tapLabel("Dismiss all notices")` in the pane's
+header. Dismissing by title and never by index is the query rule again —
+an index is a position in a list nobody perceives.
+
 ## Assertions
 
 State assertions read the **a11y snapshot**, not element internals: if an
