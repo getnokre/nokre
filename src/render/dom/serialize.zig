@@ -581,6 +581,14 @@ pub fn node(em: *Emitter, id: NodeId) anyerror!void {
                 try em.stop(id);
                 try em.raw(">");
             }
+            // The leading mark takes the *square* box while the trailing
+            // chevron below takes the mark box, in the same row. They are
+            // not the same kind of glyph: the chevron is a mark inside a
+            // control, costing its own advance, while the leading one is
+            // a band a column of rows share, so it costs `lineHeight`
+            // whatever glyph it holds (`layout.tileIconBand`). The row's
+            // flex gap spends `icon_gap` on each of them.
+            if (t.icon) |name| try icon(em, name, "", .ink, .body, .square);
             try em.raw("<span class=\"tile-text\"><span class=\"tile-label\">");
             try em.text(t.label);
             try em.raw("</span>");
@@ -940,9 +948,13 @@ fn choice(
 /// A `mark` is a glyph inside a control — a button's leading icon, a
 /// destination's, a tile's chevron — and every place layout measures one
 /// it costs the glyph's own advance plus `icon_gap` and nothing else
-/// (`navItemWidth`, `intrinsicSize`). A `square` is the `icon` element
-/// standing on its own, which `intrinsicSize` gives a `lineHeight` box on
-/// both axes so it lines up with same-scale text beside it.
+/// (`navItemWidth`, `intrinsicSize`). A `square` is a `lineHeight` box on
+/// both axes: the `icon` element standing on its own, which
+/// `intrinsicSize` sizes that way so it lines up with same-scale text
+/// beside it, and the two *leading* marks that head a row — a `notice`'s
+/// and a `tile`'s (`noticeTextBand`, `tileIconBand`). Those take the box
+/// rather than the advance because a band that varied with the glyph
+/// would start each row's words on a different column.
 ///
 /// The distinction has to reach the markup because CSS cannot see which
 /// one it is holding, and getting it wrong is not a visual nit: a mark in

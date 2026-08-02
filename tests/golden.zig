@@ -551,6 +551,28 @@ test "golden: tile group with focused row, details, chevrons, and description" {
     try renderGolden(&harness, "tiles");
 }
 
+fn buildMarkedTiles(_: ?*anyopaque, app: *h.App) !void {
+    // A settings screen is a list of destinations, and a destination
+    // wears a mark: the case the field exists for. Every row carries one
+    // (`append` allows no mix), the glyphs differ in width, and the row
+    // with a detail line is in the set — so the golden pins the two
+    // things the band is for: words on one column whatever the glyph,
+    // and a mark centred on the *row* rather than on the title's line.
+    const tree = &app.tree;
+    const root = tree.rootId();
+    _ = try tree.append(root, .{ .heading = .{ .content = "Settings", .level = .h1 } });
+    const group = try tree.append(root, .{ .tile_group = .{} });
+    _ = try tree.append(group, .{ .tile = .{ .label = "Members", .detail = "12 people", .route = "members", .icon = .users } });
+    _ = try tree.append(group, .{ .tile = .{ .label = "Invites", .route = "invites", .icon = .mail } });
+    _ = try tree.append(group, .{ .tile = .{ .label = "Leave circle", .on_press = .{ .call = noopPress }, .icon = .log_out } });
+}
+
+test "golden: a tile group's marks share one leading band" {
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 220 }, null, buildMarkedTiles);
+    defer harness.deinit();
+    try renderGolden(&harness, "tiles-marked");
+}
+
 fn buildRadioGroup(_: ?*anyopaque, app: *h.App) !void {
     const tree = &app.tree;
     const root = tree.rootId();
@@ -1122,7 +1144,8 @@ test "golden: Persian text is shaped, reordered, and right-aligned" {
 fn buildPersianRtl(_: ?*anyopaque, app: *h.App) !void {
     // The same evidence, now with the chrome mirrored (setDirection):
     // labels lead from the right, the toggle knob and track sit at the
-    // trailing edge, the tile chevron points back, the segmented runs
+    // trailing edge, the tile chevron points back, the tile's leading
+    // mark leads from the right with its band, the segmented runs
     // right-to-left — while the paragraph still aligns by its own bytes.
     app.setDirection(.rtl);
     const tree = &app.tree;
@@ -1132,7 +1155,7 @@ fn buildPersianRtl(_: ?*anyopaque, app: *h.App) !void {
     _ = try tree.append(root, .{ .toggle = .{ .label = "اعلان‌ها", .on = true } });
     _ = try tree.append(root, .{ .segmented = .{ .label = "نما", .options = &.{ "فهرست", "شبکه" }, .selected = 0 } });
     const group = try tree.append(root, .{ .tile_group = .{} });
-    _ = try tree.append(group, .{ .tile = .{ .label = "حساب کاربری", .route = "account" } });
+    _ = try tree.append(group, .{ .tile = .{ .label = "حساب کاربری", .route = "account", .icon = .user } });
     _ = try tree.append(root, .{ .button = .{ .label = "ذخیره" } });
     _ = try tree.append(root, .{ .text = .{ .content = "English keeps its own left-aligned paragraph beside them." } });
 }

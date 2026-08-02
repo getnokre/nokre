@@ -637,6 +637,23 @@ pub const Tile = struct {
     detail: []const u8 = "",
     route: []const u8 = "",
     on_press: Action = .{},
+    /// Leading mark on the row, decorative: the `label` stays the
+    /// accessible name, exactly as a `notice`'s icon stands down for its
+    /// title. A row whose glyph were also announced would say its own
+    /// name twice, and the second saying would be a guess — no glyph
+    /// means one thing, which is why the standalone `icon` element makes
+    /// naming a mark deliberate (`Icon.label`) rather than automatic.
+    ///
+    /// A field, not a child node, for the reason `Notice.icon` is one: it
+    /// takes no focus and answers no press, so it must not exist where
+    /// focus and hit testing look. It is sized as the `icon` element is,
+    /// a `lineHeight` square (`layout.tileIconBand`) — the same box for
+    /// every glyph, so a group's rows start their words on one column the
+    /// way a `list`'s marker band makes its items do.
+    ///
+    /// All the rows of a group or none of them: `append` rejects a mixed
+    /// group (`error.TileGroupMixedIcons`).
+    icon: ?IconName = null,
 };
 
 /// The same exclusive-choice semantics as `segmented`, presented as a

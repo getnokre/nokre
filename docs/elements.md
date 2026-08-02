@@ -723,6 +723,28 @@ is never called, and with neither the row is a tab stop that answers
 nothing. Focus is the picker's pattern — a heavier stroke hugging the
 row — because an outset ring would collide with the separators.
 
+An optional `icon` (any [`IconName`](#icon)) leads the row. It is
+**decorative**: the `label` stays the accessible name, and the glyph
+enters no accessibility tree at all — it is a field on the tile, not a
+child node, the shape a `notice`'s icon has and for the same reason
+(nothing there takes focus or answers a press). A row that announced
+both would say its own name twice, and the second saying would be a
+guess: no glyph means one thing, which is why naming a mark is
+deliberate on the standalone `icon` element (its `label`) rather than
+inferred anywhere. Ink and size are the row's — `.ink`, one body line —
+so a mark adds no styling surface and nothing new for the contrast gate
+to prove.
+
+**All the rows of a group carry one or none**; a mixed group is rejected
+at `append` (`TileGroupMixedIcons`), beside the destination rule. The
+mark takes a fixed leading band — a `lineHeight` square plus the icon
+gap, the same box whatever glyph it holds — so a group's words start on
+one column, exactly as a `list`'s marker band makes its items do. Give
+the band to some rows and not others and the column goes ragged, with
+the rows that stepped in reading as subordinate to the ones that did
+not. A `list` cannot have that bug because its markers are derived; a
+tile group's are authored, so the check has to exist.
+
 Reach for tiles where a screen is a list of destinations or row-shaped
 actions (settings screens, detail screens). For an exclusive choice
 among options, that is `radio_group`, not a tile group.

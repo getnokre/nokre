@@ -394,6 +394,16 @@ pub fn radioRowY(i: usize) i32 {
         @as(i32, @intCast(i)) * (radioRowHeight() + metrics.border);
 }
 
+/// What a tile's leading mark takes from its words: a `lineHeight`
+/// square plus `icon_gap`, zero when the row carries none. The same box
+/// `noticeTextBand` reserves, and for the same reason — a fixed band,
+/// not the glyph's own advance, so every row of a group starts its words
+/// on one column whatever glyphs it was given. The DOM edition spends
+/// the same two numbers as a `.icon.square` in the row's flex gap.
+pub fn tileIconBand(has_icon: bool) i32 {
+    return if (has_icon) text.Scale.body.lineHeight() + metrics.icon_gap else 0;
+}
+
 /// Height a description adds beneath a tile group's border: a label gap
 /// plus the wrapped small text, zero when there is none. Layout and the
 /// renderer both split the rect into border box and description with

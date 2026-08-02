@@ -348,6 +348,24 @@ test "a tile with a route is a link; one with an action is a button" {
     );
 }
 
+test "a tile's leading mark is a hidden square; its chevron stays a mark" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    const group = try app.tree.append(app.tree.rootId(), .{ .tile_group = .{} });
+    _ = try app.tree.append(group, .{ .tile = .{ .label = "Members", .route = "members", .icon = .users } });
+
+    const html = try render(&app);
+    defer testing.allocator.free(html);
+    // The band a column of rows shares takes the `lineHeight` box; the
+    // chevron inside the same row is a mark and takes its own advance.
+    try expectContains(html, "<a class=\"tile\" href=\"#members\">" ++
+        "<span class=\"icon square\" aria-hidden=\"true\">&#xE1A4;</span>" ++
+        "<span class=\"tile-text\"><span class=\"tile-label\">Members</span></span>");
+    try expectContains(html, "<span class=\"icon\" aria-hidden=\"true\">&#xE06F;</span></a>");
+    // Decorative, so the row keeps saying its name once.
+    try testing.expect(std.mem.indexOf(u8, html, "aria-label=\"Members\"") == null);
+}
+
 test "stateful controls carry their state, not just their label" {
     var app = try test_app.init(400, 400);
     defer app.deinit();

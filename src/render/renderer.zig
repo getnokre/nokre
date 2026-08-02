@@ -726,8 +726,22 @@ fn drawTile(app: *App, canvas: Painter, id: NodeId, r: Rect, t: element_mod.Tile
         const bottom_radius: i32 = if (r.bottom() == group.bottom() - desc_h - metrics.border) outer else metrics.radius;
         strokeMixedRect(canvas, r, top_radius, bottom_radius, metrics.focus_stroke, .ink);
     }
-    const tx = r.x + metrics.tile_pad_h;
-    const inner_w = r.w - 2 * metrics.tile_pad_h;
+    // The mark is decorative and sized like the row's text, so it takes
+    // no ink of its own: it is the label's `.ink` in the label's line
+    // height. What it does take is a fixed leading band — the same box
+    // for every glyph, so a group's rows start their words on one column
+    // (`layout.tileIconBand`). It centres on the *row*, not on the
+    // title's first line: a two-line row is one row, and the DOM
+    // edition's `align-items: center` says the same thing.
+    const band = layout.tileIconBand(t.icon != null);
+    if (t.icon) |name| {
+        const box = text.Scale.body.lineHeight();
+        const ix = if (mirrored(app)) r.right() - metrics.tile_pad_h - box else r.x + metrics.tile_pad_h;
+        drawIcon(app, canvas, .{ .x = ix, .y = r.y, .w = box, .h = r.h }, .{ .name = name });
+    }
+    const indent: i32 = if (mirrored(app)) 0 else band;
+    const tx = r.x + metrics.tile_pad_h + indent;
+    const inner_w = r.w - 2 * metrics.tile_pad_h - band;
     const ty = r.y + metrics.tile_pad_v + text.Scale.body.baseline();
     drawLeading(app, canvas, tx, inner_w, ty, .prose, text.Scale.body.px(), t.label, .ink);
     if (t.detail.len > 0) {

@@ -549,6 +549,22 @@ pub const Tree = struct {
                 const pressable = t.on_press.call != null;
                 if (t.route.len != 0 and pressable) return error.TileHasOneDestination;
                 if (t.route.len == 0 and !pressable) return error.TileNeedsDestination;
+                // A row's mark is a fixed-width leading band, so the
+                // words of a group with marks all start one band in.
+                // Give the band to some rows and not others and the
+                // column is ragged — the words step in and out down the
+                // group with nothing saying why, and the rows that
+                // stepped in look subordinate to the ones that did not.
+                // A `list` cannot have this bug because its markers are
+                // derived; a tile group's are authored, so the check has
+                // to be here. Whichever way the first row went, the rest
+                // of them go.
+                var sibs = self.children(parent);
+                if (sibs.next()) |first| {
+                    if ((self.getConst(first).?.tile.icon != null) != (t.icon != null)) {
+                        return error.TileGroupMixedIcons;
+                    }
+                }
             },
             .list_item => if (parent_role != .list) return error.ListItemOutsideList,
             // The depth cap is a construction rule, not a rendering

@@ -444,6 +444,30 @@ test "append holds a tile to exactly one destination, as it holds a link" {
     try std.testing.expectEqual(@as(usize, 2), tree.childCount(group));
 }
 
+test "append holds a tile group to all marks or none" {
+    var tree = try Tree.init(std.testing.allocator);
+    defer tree.deinit();
+    const root = tree.rootId();
+
+    // The first row decides; the ragged column is what the rest are held
+    // to, in both directions.
+    const marked = try tree.append(root, .{ .tile_group = .{} });
+    _ = try tree.append(marked, .{ .tile = .{ .label = "Members", .route = "members", .icon = .users } });
+    try std.testing.expectError(error.TileGroupMixedIcons, tree.append(marked, .{
+        .tile = .{ .label = "Invites", .route = "invites" },
+    }));
+    _ = try tree.append(marked, .{ .tile = .{ .label = "Invites", .route = "invites", .icon = .mail } });
+
+    const bare = try tree.append(root, .{ .tile_group = .{} });
+    _ = try tree.append(bare, .{ .tile = .{ .label = "Members", .route = "members" } });
+    try std.testing.expectError(error.TileGroupMixedIcons, tree.append(bare, .{
+        .tile = .{ .label = "Invites", .route = "invites", .icon = .mail },
+    }));
+
+    try std.testing.expectEqual(@as(usize, 2), tree.childCount(marked));
+    try std.testing.expectEqual(@as(usize, 1), tree.childCount(bare));
+}
+
 test "append rejects malformed list structure" {
     var tree = try Tree.init(std.testing.allocator);
     defer tree.deinit();

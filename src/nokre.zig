@@ -110,6 +110,11 @@ pub const App = app.App;
 pub const Tree = tree.Tree;
 pub const NodeId = tree.NodeId;
 pub const Element = element.Element;
+/// Every Lucide glyph a consumer can place, named. Daily now that a
+/// `tile` carries a mark as well as a button, a notice and a
+/// destination: an app that picks its glyphs once, by meaning, in one
+/// module writes this type on every line of it.
+pub const IconName = element.IconName;
 /// A nav destination as consumers declare it: a route and a glyph. The
 /// label is the route's own `RouteDef.title` (`App.setNav`).
 pub const Destination = @import("core/nav.zig").Destination;

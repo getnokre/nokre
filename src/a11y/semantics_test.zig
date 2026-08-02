@@ -476,6 +476,35 @@ test "tiles map to links or buttons; the group is a group" {
     try testing.expectEqualStrings("Ends the session", ac.value);
 }
 
+test "a tile's leading mark stands down for the label" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    const group = try app.tree.append(app.tree.rootId(), .{ .tile_group = .{} });
+    const row = try app.tree.append(group, .{ .tile = .{ .label = "Members", .route = "members", .icon = .users } });
+
+    var snap = try snapshot(testing.allocator, &app);
+    defer snap.deinit();
+
+    // The mark is a field, not a node, so there is nothing in the tree
+    // for it to be announced from — the row is one node saying one name,
+    // the same standing-down `Notice.icon` does for its title and the
+    // standalone `icon` element does with an empty label.
+    const nv = snap.find(row).?;
+    try testing.expectEqualStrings("Members", nv.label);
+    try testing.expectEqual(A11yRole.link, nv.role);
+    for (snap.nodes.items) |n| try testing.expect(n.role != .image);
+
+    // Same node count as the row without one: the glyph adds nothing an
+    // adapter could read out beside the label it already read.
+    var bare = try test_app.init(400, 400);
+    defer bare.deinit();
+    const bare_group = try bare.tree.append(bare.tree.rootId(), .{ .tile_group = .{} });
+    _ = try bare.tree.append(bare_group, .{ .tile = .{ .label = "Members", .route = "members" } });
+    var bare_snap = try snapshot(testing.allocator, &bare);
+    defer bare_snap.deinit();
+    try testing.expectEqual(bare_snap.nodes.items.len, snap.nodes.items.len);
+}
+
 test "a list maps to list/listitem and never announces its own marker" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
