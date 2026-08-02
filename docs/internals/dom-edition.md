@@ -30,9 +30,10 @@ there is only one tree.
 
 The other half is what Skia was buying. What makes nokre's layout
 deterministic is core's integer math and HarfBuzz's advances, not the
-rasterizer — [pixel-model.md](pixel-model.md) says so outright: "the gap
-is now rasterization alone". Skia rasterizes text, axis-aligned lines
-and rounded boxes. A browser already rasterizes those.
+rasterizer — [pixel-model.md](pixel-model.md) says so outright:
+everything upstream of the scaler is identical everywhere, and platforms
+disagree only about the ink inside a glyph's box. Skia rasterizes text,
+axis-aligned lines and rounded boxes. A browser already rasterizes those.
 
 What a browser also gives, and a canvas forfeits: text selection,
 find-in-page, translation, reader mode, print, native IME in a real

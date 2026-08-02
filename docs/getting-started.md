@@ -90,9 +90,9 @@ Three platform notes before your own project starts:
   Tools — the Skia prebuilt is MSVC-ABI, and build.zig targets
   `x86_64-windows-msvc` automatically. Text rasterizes through FreeType,
   so pixels match the Linux and Android builds rather than macOS/iOS
-  ([internals/skia-build.md](internals/skia-build.md)); the golden suite
-  reflects CoreText until nokre-owned builds land. Narrator, NVDA, and
-  JAWS are wired via the same AccessKit binding as VoiceOver.
+  ([internals/skia-build.md](internals/skia-build.md)); the committed
+  golden suite is CoreText's, so regenerate your own here. Narrator,
+  NVDA, and JAWS are wired via the same AccessKit binding as VoiceOver.
 - **Linux:** the shell is Wayland, and the build wants the usual dev
   packages beside it: `wayland-protocols` plus the `wayland-client`,
   `libxkbcommon`, `dbus-1`, and `libsecret-1` headers. FreeType again,
@@ -1695,11 +1695,11 @@ now passes byte-exact, and every run after that proves the pixels never
 drifted. On a mismatch the runner writes `<name>.actual.ppm` next to
 the golden for eyeball diffing; if the change was intended, rerun with
 `-Dupdate-goldens` to rewrite the golden in place and review the diff.
-CI runs without `-Dupdate-goldens`, so a lost baseline fails instead of
-silently re-minting — and it must run on the platform that created the
-goldens: byte-identity is per-platform today, so a CI box on any other
-platform fails by design until nokre-owned Skia builds land
-([internals/skia-build.md](internals/skia-build.md)).
+A checking run goes without `-Dupdate-goldens`, so a lost baseline fails
+instead of silently re-minting — and it has to run on the platform that
+created the goldens: byte-identity is per-platform by design, so the same
+suite on another platform fails on purpose
+([internals/pixel-model.md](internals/pixel-model.md)).
 
 ## Part 13 — Every platform
 
@@ -1976,9 +1976,9 @@ web's price rather than a gap to be closed
   whatever the reader has.
 
 Text on Windows and Android rasterizes through FreeType rather than
-CoreText, and byte-identity today is per-platform, not across
-platforms — your goldens reflect the platform that created them
-([internals/skia-build.md](internals/skia-build.md)). The `worker`
+CoreText, and byte-identity is per-platform rather than across them by
+design — your goldens reflect the platform that created them
+([internals/pixel-model.md](internals/pixel-model.md)). The `worker`
 and `http` services need no porting anywhere: the same app code runs on
 a `std.Thread` or a Web Worker, `std.http.Client` or `fetch`.
 

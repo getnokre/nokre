@@ -63,8 +63,8 @@ you need them.
 
 **Project**
 
-- [roadmap.md](roadmap.md) — what's built and what remains: the web
-  edition's remainder, nokre-owned Skia builds, tooling.
+- [roadmap.md](roadmap.md) — what's built and what remains: the editions
+  a semantic tree still deserves, tooling, Skia packaging.
 
 ## Work on nokre (contributor)
 

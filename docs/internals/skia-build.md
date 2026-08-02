@@ -78,12 +78,16 @@ system libpng that Android lacks. The example's CMake
 compiles the shim with the same NDK and links everything, reusing the
 nocodec stub.
 
-## The determinism caveat
+## Which scaler, and why it is not one scaler
 
 These prebuilts use the platform font manager (CoreText on macOS,
 FreeType on Linux/Windows). Glyph rasterization therefore matches across
-runs and machines *per platform*, but not yet *across* platforms — the
-one open gap in the pixel model ([pixel-model.md](pixel-model.md)).
+runs and machines *per platform*, and differs across platforms — which is
+where the pixel model's guarantee stops on purpose, not a gap it is
+waiting to close ([pixel-model.md](pixel-model.md)). Text that looks like
+the platform's text is text the platform's users can read; a build that
+imposed one rasterizer everywhere would buy an identity nobody asked for
+at the cost of the only thing the device knows better.
 
 Text *shaping* is deliberately not Skia's problem: every build above
 keeps `skia_use_harfbuzz=false`, `skia_enable_skshaper=false`, and
@@ -92,21 +96,23 @@ and compiled straight into the shim as one amalgamated translation unit
 wherever `nokre_skia.cpp` is compiled — build.zig for desktop and iOS,
 the kitchen sink's CMakeLists for the NDK. That keeps the pinned Skia archives untouched, gives shaping
 one code path on every platform, and makes glyph choice and advances
-(integer 26.6 math) platform-identical even while rasterization still
-differs per scaler.
+(integer 26.6 math) platform-identical while rasterization stays each
+scaler's own.
 
 ## Next: nokre-owned builds
 
-The plan, in order:
+A packaging errand ([../roadmap.md](../roadmap.md)): the desktop targets
+depend on someone else's release cadence for an archive carrying far more
+Skia than the shim asks for, while iOS and Android already compile the
+minimal profile from source. The plan, in order:
 
-1. Build Skia ourselves per target with **FreeType on every platform**
-   (including macOS/iOS) so glyph rasterization has a single code path —
-   Android's build above is this, for one platform.
-2. Strip to the minimum: CPU raster, no GPU (`skia_use_gl=false` etc.),
-   no image codecs beyond none, no platform fontmgr — fonts load from
-   memory only.
-3. Publish as GitHub release artifacts; point `fetch-deps.sh` at them.
-4. Regenerate all goldens once; from then on one golden set serves every
-   platform.
+1. Build the same minimal profile for the remaining targets — macOS and
+   Windows — stripped to CPU raster, no GPU (`skia_use_gl=false` etc.),
+   no image codecs, keeping each target's existing font backend.
+2. Publish as GitHub release artifacts; point `fetch-deps.sh` at them.
+3. Regenerate the golden set once, on macOS, if the new archive moves a
+   byte.
 
-The shim API does not change at any step.
+The shim API does not change at any step, and neither does the scaler
+question above: this is about what nokre ships, not about making every
+platform draw the same picture.

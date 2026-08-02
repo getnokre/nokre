@@ -1,8 +1,10 @@
 # The pixel model
 
-nokre's promise: **same logical viewport ⇒ same bytes**, on every platform.
-Why that promise is worth making is [introduction.md](../introduction.md)'s
-story; this document is the normative contract that makes it true.
+nokre's promise: **same logical viewport ⇒ same bytes**, every run and
+every machine, on the platform that drew them. Why that promise is worth
+making — and why it deliberately stops at the platform's edge — is
+[introduction.md](../introduction.md)'s story; this document is the
+normative contract that makes it true.
 
 ## Logical pixels, integer scale
 
@@ -214,17 +216,30 @@ Fixed, from [src/core/text.zig](../../src/core/text.zig):
 Word wrap is greedy at spaces, honors `\n`, never hyphenates; over-long
 words overflow their box rather than break (deterministic and obvious).
 
-## What can still vary today
+## Where the guarantee stops, and why there
 
 Text glyph rasterization is determined by the font binary **and the Skia
-build**. The bootstrap prebuilts use the platform font backend (CoreText on
-macOS), so cross-*platform* byte-identity for text is not yet guaranteed —
-cross-*run* and cross-*machine* identity on the same platform is. The fix
-(nokre-owned Skia builds with FreeType everywhere) is tracked in
-[skia-build.md](skia-build.md). The gap is now rasterization alone:
+build**, and each platform links the font backend it has (CoreText on
+macOS and iOS, FreeType elsewhere). So the promise above is a
+per-platform one: cross-*run* and cross-*machine* identity, not
+cross-*platform*. That boundary is chosen, not pending. A tree carries no
+visual intent, an edition is entitled to draw it as its device draws
+things ([renderer-editions.md](renderer-editions.md)), and a library that
+forced one rasterization onto every screen would be overruling the only
+party that knows what the screen is — the same argument that lets the DOM
+edition wrap text where the reader's settings say and not where a golden
+says.
+
+What *is* identical everywhere is everything upstream of the scaler:
 shaping, glyph choice, advances, and therefore all layout come from
-HarfBuzz's integer math on the bundled binaries and are already
-byte-identical across platforms.
+HarfBuzz's integer math over the bundled binaries. Two platforms
+disagree about the ink inside a glyph's box; they do not disagree about
+where the box is, what wrapped, or what a screen reader is told.
+
+Goldens follow from that: a golden set belongs to the platform that
+generated it. The committed set is macOS-generated, so `-Dgolden` on
+Windows or Linux mismatches by design and a shell validates against its
+own regenerated set ([../testing.md](../testing.md)).
 
 ## Enforcement
 

@@ -366,8 +366,8 @@ of the same contract — plain C, message loop, no framework. Its twists:
   target `x86_64-windows-msvc` (build.zig defaults the ABI; Visual
   Studio's C++ Build Tools required) and text rasterizes through the
   prebuilt's FreeType from memory — pixels match the Linux and Android
-  builds, not yet the CoreText platforms
-  ([skia-build.md](skia-build.md)). Two
+  builds, not the CoreText platforms, which is the intended shape
+  ([pixel-model.md](pixel-model.md)). Two
   consequences wired in build.zig: AccessKit's Rust static library
   supplies the compiler intrinsics zig's compiler-rt would duplicate,
   and FreeType's gzip references resolve to a never-runs stub
@@ -655,8 +655,7 @@ path, so an omission is an unresolved symbol rather than a missing
 feature (the contract, including the fire-before-you-return clause, is
 above). Then run the kitchen-sink example and the golden suite; if
 goldens pass, the platform renders byte-identically and the job is done
-— with today's caveat that byte-identity is per-platform
+— remembering that byte-identity is per-platform by design
 ([pixel-model.md](pixel-model.md)): the committed goldens are
 macOS-generated, so a new shell validates against its own regenerated
-set until nokre-owned Skia builds close the gap
-([../roadmap.md](../roadmap.md)).
+set, permanently, rather than waiting for one set to serve everything.

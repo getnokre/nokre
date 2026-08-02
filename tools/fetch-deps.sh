@@ -7,10 +7,10 @@
 #     untouched.
 #
 # Skia bootstrap source: aseprite/skia prebuilts (m124). These are
-# per-platform builds (CoreText on macOS), which is fine for development
-# but not yet cross-platform pixel-identical for text — see
-# docs/internals/skia-build.md for the plan to publish nokre's own
-# FreeType-everywhere builds.
+# per-platform builds (CoreText on macOS), so text rasterizes per
+# platform — by design, not pending (docs/internals/pixel-model.md).
+# What is pending is packaging: docs/internals/skia-build.md plans
+# nokre-published minimal archives to replace this download.
 set -euo pipefail
 
 # SKIA_TAG and the per-platform SKIA_SHA256_* pins live in versions.sh,

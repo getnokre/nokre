@@ -23,11 +23,11 @@ verified at construction is caught by an automatic audit. The full
 contract is [accessibility.md](accessibility.md).
 
 **Deterministic to the pixel.** Same logical viewport ⇒ same bytes,
-across runs, machines, and (once nokre ships its own Skia builds)
-platforms. This one is the *Skia edition's* promise — the five native
-shells. On the web the tree is rendered as markup and the browser
-draws it, which trades these bytes for an accessibility tree that is
-the page rather than a copy of it
+across runs and machines, on the platform that drew them. This one is the
+*Skia edition's* promise — the five native shells — and it stops at the
+platform's edge on purpose (the section below). On the web the tree is
+rendered as markup and the browser draws it, which trades these bytes for
+an accessibility tree that is the page rather than a copy of it
 ([internals/dom-edition.md](internals/dom-edition.md)).
 Layout is integer math; rendering has no GPU, no hinting, no subpixel
 tricks. Screenshots are therefore *tests* — byte-exact, no tolerance, no
@@ -41,6 +41,33 @@ pipeline; assertions read the screen reader's snapshot. End to end means
 your whole app: the harness stops at the platform shell, which is the
 boundary that buys the determinism —
 [testing.md](testing.md#where-the-harness-stops) names it exactly.
+
+## The tree travels; the drawing is local
+
+An app authors no pictures. It appends semantic elements — a heading is
+structure, a button is a button — and what turns that tree into something
+you can see is an *edition*: the Skia one rasterizes grayscale frames, the
+DOM one hands the tree to the browser and lets it wrap where the reader's
+text size says
+([internals/renderer-editions.md](internals/renderer-editions.md)).
+
+So byte-identity *across* platforms is not a promise nokre is working
+toward — it is one it declines. Making an e-reader and a phone produce
+the same picture means overruling each device about its own screen, and
+the device is better informed. The tree is what travels; the drawing is
+local, and a golden set belongs to the platform that generated it. The
+horizon is therefore more editions rather than one rendering — e-ink
+panels that refresh a row at a time, terminals, watches, monochrome
+heads-up displays ([roadmap.md](roadmap.md)) — each free to be as
+opinionated as its device deserves, and none of them able to lose a
+label, a role, or a focus stop on the way.
+
+What an edition inherits instead of a look is a temperament. nokre's
+visual decisions come from thinking of software as a calm, respectful
+tool: it holds still, it says one thing at a time, it asks for attention
+only when it has something to say, and it never performs. That is why the
+refusals below read as a design rather than as a list of things not yet
+built.
 
 ## What nokre refuses to do
 
@@ -165,7 +192,7 @@ What a consumer actually touches is small:
 
 nokre suits tools, dashboards, settings-heavy utilities, readers,
 forms — apps whose value is *what they say and do*, and which want
-accessibility, cross-platform pixel fidelity, and real e2e tests more
+accessibility, pixel-exact repeatability, and real e2e tests more
 than they want brand expression.
 
 If the product needs color, motion, media, custom visual identity, or
