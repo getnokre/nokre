@@ -79,7 +79,32 @@ have already told you so.
 
 `tap(id)`, `tapLabel`, `tapLink(stop)`, `pressKey`, `typeText`,
 `composeText(composition, committed)` (full IME start→update→commit
-sequence), `scroll(id, delta)`, `focusVia(id)`, `edgePanBack()`.
+sequence), `selectOption(group_label, option)`, `scroll(id, delta)`,
+`focusVia(id)`, `edgePanBack()`.
+
+`selectOption` makes an exclusive choice in a `segmented`, a
+`radio_group`, or a `select`, both ends named — the control by its label,
+the option by the words on it, never by index:
+
+```zig
+try t.selectOption("View", "Compact");     // a track
+try t.selectOption("Delivery", "Email");   // a radio group
+try t.selectOption("Country", "Japan");    // a select: opens the picker,
+                                           // then chooses in it
+try t.expectValue("Country", "Japan");
+```
+
+It takes the **keyboard** route for all three, and that is the point: a
+chip scrolled out of an overflowing track and a picker row below the fold
+are both unreachable by a tap at their center, and both are reached by
+stepping, because stepping is what scrolls them into view. Every step
+goes through real dispatch and commits like a user's, so a handler
+watching for `on_select` sees exactly what it would in the app. Choosing
+the option already chosen is the no-op it is for a user. The refusals are
+the usual ones: `error.NotKeyboardReachable` if Tab can't get to the
+control, `error.NotAChoiceControl` if it has no options to choose among
+(tap that one instead), and `error.NoSuchOption` — whose diagnostic lists
+the options that *are* there, so a renamed option reads as a rename.
 
 `edgePanBack` is the whole back gesture — in from the leading edge, past
 the threshold, released ([routing.md](routing.md#the-back-gesture)). A

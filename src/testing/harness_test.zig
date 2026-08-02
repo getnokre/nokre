@@ -185,6 +185,114 @@ test "e2e: a switch with work in flight takes no press and loses no place" {
     try h.expectChecked("Push to phone", true);
 }
 
+const ChoiceCtx = struct {
+    view: usize = 0,
+    delivery: usize = 0,
+    country: usize = 0,
+
+    fn onView(ctx: ?*anyopaque, i: usize) void {
+        @as(*ChoiceCtx, @ptrCast(@alignCast(ctx.?))).view = i;
+    }
+    fn onDelivery(ctx: ?*anyopaque, i: usize) void {
+        @as(*ChoiceCtx, @ptrCast(@alignCast(ctx.?))).delivery = i;
+    }
+    fn onCountry(ctx: ?*anyopaque, i: usize) void {
+        @as(*ChoiceCtx, @ptrCast(@alignCast(ctx.?))).country = i;
+    }
+};
+
+/// One of each exclusive choice, and the select's list long enough to
+/// earn the picker's filter field (`overlays.picker_filter_min`) — the
+/// shape where focus lands on the filter rather than on a row, and the
+/// one a verb that only knew about rows would fall over on.
+fn buildChoices(ctx: ?*anyopaque, app: *App) anyerror!void {
+    const data: *ChoiceCtx = @ptrCast(@alignCast(ctx.?));
+    const root = app.tree.rootId();
+    _ = try app.tree.append(root, .{ .heading = .{ .content = "Preferences", .level = .h1 } });
+    _ = try app.tree.append(root, .{ .segmented = .{
+        .label = "View",
+        .options = &.{ "List", "Grid", "Compact" },
+        .on_select = .{ .ctx = data, .call = ChoiceCtx.onView },
+    } });
+    _ = try app.tree.append(root, .{ .radio_group = .{
+        .label = "Delivery",
+        .options = &.{ "Email", "SMS", "Post" },
+        .selected = 2,
+        .on_select = .{ .ctx = data, .call = ChoiceCtx.onDelivery },
+    } });
+    _ = try app.tree.append(root, .{ .select = .{
+        .label = "Country",
+        .options = &.{ "Brazil", "Canada", "Denmark", "Egypt", "France", "Ghana", "Hungary", "Iceland", "Japan" },
+        .on_select = .{ .ctx = data, .call = ChoiceCtx.onCountry },
+    } });
+}
+
+test "e2e: selectOption names the option in all three exclusive controls" {
+    var ctx: ChoiceCtx = .{};
+    var h = try Harness.init(testing.allocator, .{ .w = 480, .h = 640 }, &ctx, buildChoices);
+    defer h.deinit();
+
+    // A track: forward along the chips, committing at each step like the
+    // arrows a user presses.
+    try h.selectOption("View", "Compact");
+    try h.expectValue("View", "Compact");
+    try testing.expectEqual(@as(usize, 2), ctx.view);
+
+    // A radio group, and backwards this time — the walk goes either way.
+    try h.selectOption("Delivery", "Email");
+    try h.expectValue("Delivery", "Email");
+    try testing.expectEqual(@as(usize, 0), ctx.delivery);
+
+    // A select opens its modal picker and chooses in there; the row is
+    // below the fold and behind a filter field, and stepping to it is
+    // what scrolls it into view.
+    try h.selectOption("Country", "Japan");
+    try h.expectValue("Country", "Japan");
+    try testing.expectEqual(@as(usize, 8), ctx.country);
+    // The picker closed behind the choice, and focus came back to the
+    // field that opened it.
+    try h.expectAbsent("Filter");
+    try h.expectFocused("Country");
+
+    // Choosing what is already chosen is the no-op it is for a user: no
+    // callback, no move.
+    ctx.view = 99;
+    try h.selectOption("View", "Compact");
+    try h.expectValue("View", "Compact");
+    try testing.expectEqual(@as(usize, 99), ctx.view);
+}
+
+test "e2e: selectOption walks a mirrored track the way it looks" {
+    var ctx: ChoiceCtx = .{};
+    var h = try Harness.init(testing.allocator, .{ .w = 480, .h = 640 }, &ctx, buildChoices);
+    defer h.deinit();
+    // Under mirrored chrome the chips lay right-to-left and ←/→ swap
+    // roles with them, so the verb asks the app which way forward is
+    // rather than assuming. The vertical axis never mirrors, so the
+    // radio group's walk is the same in both.
+    h.app.setDirection(.rtl);
+    try h.selectOption("View", "Compact");
+    try h.expectValue("View", "Compact");
+    try h.selectOption("Delivery", "Email");
+    try h.expectValue("Delivery", "Email");
+}
+
+test "e2e: selectOption refuses what a user could not choose" {
+    var ctx: ChoiceCtx = .{};
+    var h = try Harness.init(testing.allocator, .{ .w = 480, .h = 640 }, &ctx, buildChoices);
+    defer h.deinit();
+
+    diag.quiet = true;
+    defer diag.quiet = false;
+    // An option nothing offers: the diagnostic lists what is actually
+    // there, so a renamed option reads as a rename and not a mystery.
+    try testing.expectError(error.NoSuchOption, h.selectOption("View", "Gallery"));
+    // A control with no options at all — tapping is what that one takes.
+    try testing.expectError(error.NotAChoiceControl, h.selectOption("Preferences", "List"));
+    // Nothing moved on the way out of either refusal.
+    try h.expectValue("View", "List");
+}
+
 test "e2e: pending notices are assertable where the snapshot cannot see them" {
     var ctx: TodoCtx = .{};
     var h = try Harness.init(testing.allocator, .{ .w = 480, .h = 640 }, &ctx, buildTodo);

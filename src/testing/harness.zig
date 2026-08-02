@@ -321,6 +321,16 @@ pub const Harness = struct {
         return self.app.services.haptic.fired();
     }
 
+    /// Chooses an option in a `segmented`, `radio_group`, or `select`,
+    /// both named: the control by its label, the option by the words on
+    /// it. The keyboard route, through real dispatch — see
+    /// `driver.selectOption` for why that one and not a tap.
+    pub fn selectOption(self: *Harness, group_label: []const u8, option: []const u8) !void {
+        const id = try self.getByLabel(group_label);
+        try driver.selectOption(&self.app, id, option);
+        try self.afterStep("select {s}", .{option});
+    }
+
     pub fn focusVia(self: *Harness, id: NodeId) !void {
         try driver.focusVia(&self.app, id);
         try self.afterStep("focus {s}", .{self.labelOf(id)});

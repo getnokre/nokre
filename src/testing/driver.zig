@@ -101,6 +101,108 @@ pub fn pressKey(app: *App, key: event_mod.Key, mods: event_mod.Modifiers) !void 
     try app.dispatch(.{ .key_down = .{ .key = key, .mods = mods } });
 }
 
+/// Chooses `option` in a choice control — `segmented`, `radio_group`, or
+/// `select` — by the name on it, never by index: an option's position is
+/// not something a user perceives, and it is the first thing a reordered
+/// list breaks.
+///
+/// It takes the **keyboard** route, for all three and in every case,
+/// because it is the one route that always exists. A chip scrolled out
+/// of an overflowing track and a picker row below the fold are both
+/// unreachable by a synthetic tap at their center — and both are reached
+/// by stepping, because stepping is what scrolls them into view
+/// (`input.revealFocused`). A verb that worked until the track got one
+/// option too long would be worse than no verb.
+///
+/// The refusals are the driver's usual ones: the control must be
+/// keyboard-reachable (`error.NotKeyboardReachable`, straight out of
+/// `focusVia`), it must be a control that has options at all
+/// (`error.NotAChoiceControl`), and the option must be one of them
+/// (`error.NoSuchOption`, which lists what is there).
+pub fn selectOption(app: *App, id: NodeId, option: []const u8) !void {
+    app.performLayout();
+    const el = app.tree.getConst(id) orelse return error.InvalidNode;
+    const opts = optionsOf(el.*) orelse {
+        diag.print("selectOption: \"{s}\" is a {s}, which has no options to choose among — tap it instead\n", .{ el.label(), @tagName(el.role()) });
+        return error.NotAChoiceControl;
+    };
+    const want = indexOfOption(opts, option) orelse {
+        diag.print("selectOption: \"{s}\" has no option named \"{s}\"; its options are:\n", .{ el.label(), option });
+        for (opts) |o| diag.print("  \"{s}\"\n", .{o});
+        return error.NoSuchOption;
+    };
+    const role = el.role();
+    try focusVia(app, id);
+    if (role == .select) {
+        // Activation opens the modal picker, exactly as Enter on the
+        // field does for a user; the choice is then made in there, on
+        // the row that carries the option's own name.
+        try pressKey(app, .enter, .{});
+        const row = queries.queryByRole(&app.tree, .picker_item, option) orelse {
+            diag.print("selectOption: the picker for \"{s}\" opened without a row for \"{s}\"\n", .{ option, option });
+            return error.NoSuchOption;
+        };
+        // Tab reveals as it moves, so a row below the fold is scrolled
+        // to rather than tapped at coordinates it does not occupy.
+        try focusVia(app, row);
+        return pressKey(app, .enter, .{});
+    }
+    return stepSelection(app, id, role, want, option);
+}
+
+/// Walks an exclusive choice to `want` one arrow at a time — the keys a
+/// user presses, through real dispatch, so each step commits like theirs
+/// does. ↑/↓ in a radio group are direction-blind; ←/→ on a track swap
+/// roles with mirrored chrome, so the forward key is asked of the app's
+/// own direction rather than assumed (input.zig).
+fn stepSelection(app: *App, id: NodeId, role: element_mod.Role, want: usize, option: []const u8) !void {
+    var steps: usize = 0;
+    // One step per option is a whole traversal of the list and then
+    // some; past that the control is not taking the key.
+    const limit = (optionsOf(app.tree.getConst(id).?.*) orelse return error.NotAChoiceControl).len;
+    while (steps <= limit) : (steps += 1) {
+        const el = app.tree.getConst(id) orelse return error.InvalidNode;
+        const at = selectedOf(el.*) orelse return error.NotAChoiceControl;
+        if (at == want) return;
+        const forward = want > at;
+        try pressKey(app, switch (role) {
+            .radio_group => if (forward) .down else .up,
+            else => if (forward != (app.direction == .rtl)) .right else .left,
+        }, .{});
+        const moved = selectedOf((app.tree.getConst(id) orelse return error.InvalidNode).*) orelse return error.NotAChoiceControl;
+        if (moved == at) {
+            diag.print("selectOption: stepping toward \"{s}\" did not move the selection — the control did not take the key\n", .{option});
+            return error.NotInteractive;
+        }
+    }
+    return error.NotInteractive;
+}
+
+fn optionsOf(el: element_mod.Element) ?[]const []const u8 {
+    return switch (el) {
+        .segmented => |s| s.options,
+        .radio_group => |rg| rg.options,
+        .select => |s| s.options,
+        else => null,
+    };
+}
+
+fn selectedOf(el: element_mod.Element) ?usize {
+    return switch (el) {
+        .segmented => |s| s.selected,
+        .radio_group => |rg| rg.selected,
+        .select => |s| s.selected,
+        else => null,
+    };
+}
+
+fn indexOfOption(opts: []const []const u8, option: []const u8) ?usize {
+    for (opts, 0..) |o, i| {
+        if (std.mem.eql(u8, o, option)) return i;
+    }
+    return null;
+}
+
 /// Types committed text into whatever is focused.
 pub fn typeText(app: *App, bytes: []const u8) !void {
     try app.dispatch(.{ .text = .{ .bytes = bytes } });
