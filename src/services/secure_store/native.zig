@@ -48,12 +48,13 @@ pub fn delete(key: []const u8) error{Unavailable}!void {
 }
 
 pub fn list(buf: *ListBuf) error{Unavailable}![]const []const u8 {
-    // 256 packed entries of scratch (33 KiB, this frame only): sort
-    // must see everything before truncating to 64, or "the first 64 in
-    // sorted order" would depend on OS enumeration order. Beyond 256
-    // externally-written entries the subset is unspecified — the OS
-    // itself cannot make that deterministic.
-    const scratch_entries = 256;
+    // Twice max_entries of scratch (66 KiB, this frame only): sort must
+    // see everything before truncating, or "the first max_entries in
+    // sorted order" would depend on OS enumeration order. Our own
+    // writes can never exceed max_entries, so the doubling is headroom
+    // against external writers; past it the subset is unspecified — the
+    // OS itself cannot make that deterministic.
+    const scratch_entries = 2 * max_entries;
     var scratch: [scratch_entries * (1 + max_key_bytes)]u8 = undefined;
     const rc = nokre_ss_list(ns.ptr, ns.len, &scratch, scratch.len);
     if (rc < 0) return error.Unavailable;
@@ -62,7 +63,7 @@ pub fn list(buf: *ListBuf) error{Unavailable}![]const []const u8 {
     var n: usize = 0;
     var off: usize = 0;
     // The C side caps the packing by scratch BYTES, not by entry count
-    // (macos.m's list_once), so `rc` can exceed scratch_entries when the
+    // (macos.m's list_once), so `rc` can exceed `scratch_entries` when the
     // keys are short — thousands of two-byte keys fit the byte budget.
     // `found` is entry-indexed, so this walk must stop at whichever
     // limit lands first; trusting `rc` alone would let any process

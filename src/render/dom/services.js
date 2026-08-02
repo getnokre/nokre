@@ -91,7 +91,7 @@ export function reportAuthToOpener() {
 // wasm that has not booted when the snapshot is taken; wasm filters to
 // its own entries. sessionStorage holds UTF-16 strings and secrets are
 // bytes; base64 is the lossless bridge both ways. atob/btoa speak one
-// byte per code unit, and values cap at 2048 bytes, so char-at-a-time
+// byte per code unit, and values cap at 2560 bytes, so char-at-a-time
 // costs nothing.
 const SS_PREFIX = "nokre.ss.";
 

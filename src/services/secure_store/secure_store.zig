@@ -11,9 +11,13 @@
 //! read at app boot is one call, inside build, no handshake.
 //!
 //! The caps below are the contract that makes outcomes equal on every
-//! platform: the Windows credential blob (2560 bytes) is the tightest
-//! native bound, and every platform enforces the same smaller number
-//! on the Zig side, so ValueTooLarge means one thing everywhere.
+//! platform. The value ceiling is a platform's — Windows' credential
+//! blob, the one native bound tighter than a keychain's — and every
+//! platform enforces that same number on the Zig side, so
+//! ValueTooLarge means one thing everywhere. The entry cap is nokre's
+//! own: no backend counts entries, so what bounds it is the
+//! caller-owned buffers a listing lands in. Both are derived, not
+//! rounded (docs/services.md's per-platform table).
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -42,11 +46,35 @@ const native_os = switch (builtin.os.tag) {
 };
 
 pub const max_key_bytes = 128;
-pub const max_value_bytes = 2048;
-pub const max_entries = 64;
 
+/// Exactly Windows' `CRED_MAX_CREDENTIAL_BLOB_SIZE` (wincred.h,
+/// `5 * 512`) — the tightest bound any linked backend imposes, so it
+/// sets the ceiling for all of them; windows.c `#error`s if the two
+/// ever part company. Not rounded down to a power of two: a ceiling
+/// that is the platform's own number says where the line honestly
+/// falls, and 512 bytes of secret is 512 bytes of secret.
+pub const max_value_bytes = 2560;
+
+/// nokre's number, not any platform's — no backend counts entries (a
+/// keychain is a SQLite table, CredMan a folder, SharedPreferences a
+/// map), so what bounds this is the caller-owned buffers a listing
+/// lands in. Sized from the first real consumer: three entries per
+/// (cycle, channel) pair, and a user in a dozen circles plus a dozen
+/// connections is 24 pairs — 72 entries, which is why 64 refused. 256
+/// carries 85 such triples; past that the shape being stored is a
+/// document store, not a pouch (docs/internals/secure_store.md).
+pub const max_entries = 256;
+
+/// One value, caller-owned: 2.5 KiB of frame, the shape every verb
+/// takes.
 pub const ValueBuf = [max_value_bytes]u8;
 
+/// A whole listing, caller-owned: 36 KiB at the caps — 32 KiB of key
+/// bytes plus 4 KiB of slices. Frame-sized, not a stack hazard (the
+/// tightest main thread nokre ships to is 1 MiB), but big enough to be
+/// worth one declaration per action rather than one per loop. It stays
+/// a caller buffer: an allocator here would be the only one in the
+/// service, and `list` is not where nokre starts allocating.
 pub const ListBuf = struct {
     bytes: [max_entries * max_key_bytes]u8 = undefined,
     slices: [max_entries][]const u8 = undefined,
@@ -100,8 +128,8 @@ pub fn get(app: *App, key: []const u8, buf: *ValueBuf) GetError!?[]const u8 {
 }
 
 /// Upsert; caps are checked before the OS is asked. Writing an
-/// existing key never fails with StoreFull; a 65th distinct key does
-/// — on every platform, because the count check runs here, not
+/// existing key never fails with StoreFull; the key past `max_entries`
+/// does — on every platform, because the count check runs here, not
 /// natively. Both slices are borrowed only for the call.
 pub fn set(app: *App, key: []const u8, value: []const u8) SetError!void {
     checkLinked();
@@ -115,8 +143,8 @@ pub fn set(app: *App, key: []const u8, value: []const u8) SetError!void {
     if (comptime native_os) {
         // A targeted probe classifies the write as insert or overwrite
         // (an existing key never fails with StoreFull); only an insert
-        // consults the count, so the 65th distinct key fails on the
-        // Zig side — identically on a keychain, in CredMan, in the
+        // consults the count, so the key past `max_entries` fails on
+        // the Zig side — identically on a keychain, in CredMan, in the
         // Android Keystore store, in the web table, and in the Fake.
         // The count is the app's cache (see `CountCache`), seeded by
         // one enumeration on the first insert instead of a full
@@ -217,14 +245,14 @@ pub const Op = union(enum) {
 };
 
 /// What the App carries for this service: the mock under `zig test`;
-/// otherwise the cached entry count behind the 64-entry cap — the one
+/// otherwise the cached entry count behind the entry cap — the one
 /// piece of per-app release state this service keeps. (The web leg
 /// never reads it: its in-process table answers `count()` directly.)
 pub const Service = if (builtin.is_test) Mock else CountCache;
 
 /// The cap's bookkeeping, cached so `set` need not enumerate + sort
-/// the whole namespace (33 KiB of stack scratch in native.list) on
-/// every insert: seeded by one enumeration on the first insert,
+/// the whole namespace (74 KiB of frame in native.list, plus a
+/// ListBuf) on every insert: seeded by one enumeration on the first insert,
 /// adjusted on each successful insert and present-key delete. A
 /// cross-process writer under the same namespace can drift it — but
 /// the enumerate-then-set it replaces was not atomic against one
@@ -300,7 +328,7 @@ pub const Fake = struct {
     /// Behavior injection — only Unavailable is injectable,
     /// because the other three errors are pure functions of the
     /// arguments: produce InvalidKey by passing "Bad Key!",
-    /// StoreFull by seeding 64 entries. Closed knobs, no callbacks.
+    /// StoreFull by seeding `max_entries`. Closed knobs, no callbacks.
     available: bool = true, // false: every call Unavailable
     fail_writes: bool = false, // reads fine; set/delete Unavailable
     fail_next: u32 = 0, // next N calls Unavailable, then clears

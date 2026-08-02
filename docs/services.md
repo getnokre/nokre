@@ -73,7 +73,7 @@ screen with no handshake.
 
 Like `package_info` — and unlike `http` — the service links: linking
 costs something real (Security.framework on Apple, advapi32 on
-Windows, a ~139 KiB static table on wasm), and a store is meaningless
+Windows, a ~673 KiB static table on wasm), and a store is meaningless
 without an identity to namespace it, so it requires `pkg_id`:
 
 ```zig
@@ -111,14 +111,32 @@ any path, on any platform. The caps are contract, not configuration:
 | Cap | Value | Why this number |
 | --- | --- | --- |
 | key | 1–128 bytes of `[a-z0-9._-]` | lowercase-only because Windows credential lookup is case-insensitive — `"Token"` and `"token"` would be one entry there and two everywhere else; the set also survives verbatim as a Keychain account, a CredMan target segment, a libsecret attribute, and a JS storage key — one namespace rule, zero escaping |
-| value | ≤ 2048 bytes | the largest power of two under the Windows credential blob limit (`CRED_MAX_CREDENTIAL_BLOB_SIZE`, 2560) — the tightest native bound, enforced on the Zig side everywhere, so `ValueTooLarge` means one thing on every platform |
-| entries | 64 per app | a pouch, not a database — small enough that every buffer is a stack array and browser quota is unreachable by construction |
+| value | ≤ 2560 bytes | Windows sets it: `CRED_MAX_CREDENTIAL_BLOB_SIZE` (5 × 512) is the largest credential blob `CredWriteW` accepts, and no other backend bounds a value anywhere near it. Enforced on the Zig side everywhere, so `ValueTooLarge` means one thing on every platform — the platform's own number, not rounded down to a power of two |
+| entries | 256 per app | nokre's number, not a platform's: no backend counts entries, so the line falls where a whole listing stops fitting a caller's buffer — 256 keys is a 36 KiB `ListBuf`. Sized from a real app's shape (three entries per conversation channel, so ~85 channels), which is also what retired the 64 that came before |
 
 A value that doesn't fit is a document, and documents are refused.
 Store the refresh token or the session id, not the fat JWT: a JWT
 balloons with its claims and expires anyway, while the small
 credential you re-derive everything else from is exactly what belongs
 in a keychain.
+
+The ceiling is the weakest platform's, and this is which — what each
+backend actually bounds, by the API it calls:
+
+| Platform | Backend | What bounds a value | What bounds the entry count |
+| --- | --- | --- | --- |
+| Windows | Credential Manager — `CredWriteW`, `CRED_TYPE_GENERIC` | **2560 bytes**: `CRED_MAX_CREDENTIAL_BLOB_SIZE`; a larger `CredentialBlobSize` is `ERROR_INVALID_PARAMETER` | nothing documented |
+| macOS / iOS | Keychain — `SecItemAdd`, `kSecClassGenericPassword` | nothing: `kSecValueData` is a `CFData`, and 16 MiB stores and reads back byte-exact (measured, macOS 26) | nothing: 1000 items under one `kSecAttrService` all store and enumerate (measured) |
+| Android | AES-GCM key in the AndroidKeyStore over app-private `SharedPreferences` | nothing: the ciphertext is a base64 string in a prefs map | nothing: prefs is a map |
+| Linux | Secret Service via libsecret — `secret_password_store_sync` | nothing: a secret is a D-Bus byte array (hex-encoded here) | nothing |
+| Web | a table inside the wasm module, shadowed to `sessionStorage` | nokre's table, sized to the contract | nokre's table; the shadow's ~5 MB origin quota is best-effort and can never fail a `set` |
+
+So Windows is the binding constraint, and it binds because of an API
+choice nokre stands by: Credential Manager ships the whole CRUD and
+lists entries in a panel where the user can inspect and revoke them,
+where DPAPI over a private file would have no ceiling and the same
+protection boundary — and would cost both of those. The trade and its
+price are [internals/secure_store.md](internals/secure_store.md).
 
 Errors are closed and per-operation — `get` can never return
 `ValueTooLarge`; each signature states exactly what can go wrong:
@@ -127,7 +145,7 @@ Errors are closed and per-operation — `get` can never return
 | --- | --- | --- |
 | `InvalidKey` | get, set, delete | everywhere, identically — a pure function of the argument, checked before any OS call |
 | `ValueTooLarge` | set | everywhere, identically — the cap is the service's, checked on the Zig side |
-| `StoreFull` | set | everywhere, identically — the 65th *distinct* key; overwriting an existing key never fails with it |
+| `StoreFull` | set | everywhere, identically — the *distinct* key past the entry cap; overwriting an existing key never fails with it |
 | `Unavailable` | all four | platform posture: a locked or denying keychain on Apple, a dead logon session on Windows, a Keystore/crypto fault on Android, a locked or absent Secret Service on Linux — and never on the web |
 
 Only `Unavailable` is environmental, and only `Unavailable` is

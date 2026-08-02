@@ -35,8 +35,11 @@ extern fn nokre_ss_mirror_set(k_ptr: [*]const u8, k_len: usize, v_ptr: [*]const 
 extern fn nokre_ss_mirror_del(k_ptr: [*]const u8, k_len: usize) void;
 
 // One wasm instance is one app, so the table is per-App by
-// construction — zero cross-app module state. 64 × (128 + 2048)
-// ≈ 139 KiB, the price of a store that answers synchronously; present
+// construction — zero cross-app module state. 256 × (128 + 2560)
+// ≈ 673 KiB of linear memory (.bss, so nothing in the download), the
+// price of a store that answers synchronously *and* keeps answering
+// when sessionStorage is blocked — the table is the truth, the shadow
+// is optional, which is why the web leg has no Unavailable. Present
 // only when linked, because only linked builds analyze this file.
 const Entry = struct {
     key_len: u8,

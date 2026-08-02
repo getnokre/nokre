@@ -34,12 +34,6 @@
 
 #include "secure_store.h"
 
-enum {
-    // Mirrors max_key_bytes in secure_store.zig: the [len:u8] packing
-    // in nokre_ss_list can only represent what the contract allows.
-    NOKRE_SS_MAX_KEY_BYTES = 128,
-};
-
 static NSMutableDictionary *base_query(const uint8_t *ns, size_t ns_len,
                                        const uint8_t *key, size_t key_len,
                                        BOOL data_protection) {

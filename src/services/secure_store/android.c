@@ -25,12 +25,9 @@
 #include "secure_store.h"
 
 enum {
-    // Mirrors max_key_bytes in secure_store.zig: the [len:u8] packing in
-    // nokre_ss_list can only represent what the contract allows.
-    NOKRE_SS_MAX_KEY_BYTES = 128,
     // ns + NUL and key + NUL as a C string for NewStringUTF. ns and key
-    // are ASCII [a-z0-9._-] (Zig-validated), keys capped at 128 and
-    // reverse-DNS ids short; a longer ns is out of contract by
+    // are ASCII [a-z0-9._-] (Zig-validated), keys capped by the contract
+    // and reverse-DNS ids short; a longer ns is out of contract by
     // construction, refused here rather than heaped.
     NOKRE_SS_STR_CAP = 256,
 };

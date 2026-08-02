@@ -5,19 +5,37 @@
 // location, locking, corruption recovery), which is state, and the
 // native side holds none. CredMan blobs are DPAPI-encrypted at rest
 // anyway, and entries appear in the OS's own Credential Manager panel
-// where a user can inspect and revoke them.
+// where a user can inspect and revoke them. The trade has a price,
+// paid in the open: CredMan's blob ceiling is what caps a value on
+// every platform (docs/services.md's per-platform table), where a
+// DPAPI file would have no ceiling at all.
 #include <windows.h>
 #include <wincred.h>
 #include <string.h>
 
 #include "secure_store.h"
 
+// Windows is the platform that *sets* the value ceiling, so this is
+// where the contract meets its source: CredWriteW refuses a blob past
+// CRED_MAX_CREDENTIAL_BLOB_SIZE with ERROR_INVALID_PARAMETER, and no
+// other linked backend bounds a value anywhere near it.
+//
+// The number is written out rather than taken from the header in
+// scope, because the headers disagree: Vista raised the ceiling to
+// 5 * 512 and the Windows SDK says so, but mingw-w64's wincred.h —
+// what `zig build check-targets` cross-compiles this file against —
+// still carries the pre-Vista 512. nokre ships no pre-Vista target, so
+// 2560 is the number the contract is derived from, and the #error
+// below is the gate that keeps secure_store.h's copy from drifting off
+// it without someone reading this paragraph first.
+#define NOKRE_SS_CRED_BLOB_MAX 2560 /* CRED_MAX_CREDENTIAL_BLOB_SIZE, Vista and later */
+#if NOKRE_SS_MAX_VALUE_BYTES > NOKRE_SS_CRED_BLOB_MAX
+#error "secure_store's value cap exceeds CRED_MAX_CREDENTIAL_BLOB_SIZE: CredWriteW would refuse it"
+#endif
+
 enum {
-    // Mirrors max_key_bytes in secure_store.zig: the [len:u8] packing
-    // in nokre_ss_list can only represent what the contract allows.
-    NOKRE_SS_MAX_KEY_BYTES = 128,
-    // ns + "/" + key + NUL, in UTF-16 units. Keys are capped at 128 by
-    // the contract and reverse-DNS ids are short; a target that cannot
+    // ns + "/" + key + NUL, in UTF-16 units. Keys are capped by the
+    // contract and reverse-DNS ids are short; a target that cannot
     // fit is by construction out of contract, and refusing it here is
     // cheaper than a heap the native side is forbidden to have.
     NOKRE_SS_TARGET_CAP = 512,

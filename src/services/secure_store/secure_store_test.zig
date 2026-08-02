@@ -67,6 +67,53 @@ test "caps hold organically: InvalidKey and ValueTooLarge are argument errors" {
     try std.testing.expectEqual(secure_store.max_value_bytes, (try secure_store.get(&t.app, "k", &buf)).?.len);
 }
 
+test "design proof: the value ceiling is a platform's number, the entry cap is nokre's" {
+    // 2560 is not a round number by choice: it is exactly Windows'
+    // CRED_MAX_CREDENTIAL_BLOB_SIZE, the tightest bound any linked
+    // backend imposes on a value. windows.c `#error`s if the C copy
+    // ever drifts off it; this pins the Zig half of the same fact, so
+    // a number changed here has to be argued against the platform that
+    // set it (docs/services.md's per-platform table).
+    try std.testing.expectEqual(5 * 512, secure_store.max_value_bytes);
+
+    // The entry cap answers to no platform — no backend counts entries
+    // — so what makes it a number at all is the caller-owned buffer a
+    // listing lands in: ListBuf holds exactly one full store of
+    // longest-legal keys, and the test below spends it.
+    const lb: secure_store.ListBuf = undefined;
+    try std.testing.expectEqual(secure_store.max_entries * secure_store.max_key_bytes, lb.bytes.len);
+    try std.testing.expectEqual(secure_store.max_entries, lb.slices.len);
+}
+
+test "the caps fit the caller's buffers: a full store of longest keys and largest values" {
+    const gpa = std.testing.allocator;
+    var t = try Bare.init(gpa);
+    defer t.deinit();
+    var buf: secure_store.ValueBuf = undefined;
+    var lb: secure_store.ListBuf = undefined;
+
+    // Every key the longest legal one, distinct by its tail, and every
+    // value the largest legal one: the store at its worst case, which
+    // is the case the two buffers are sized for.
+    var key_buf: [secure_store.max_key_bytes]u8 = undefined;
+    const value = "v" ** secure_store.max_value_bytes;
+    for (0..secure_store.max_entries) |i| {
+        @memset(&key_buf, 'k');
+        _ = try std.fmt.bufPrint(key_buf[key_buf.len - 3 ..], "{d:0>3}", .{i});
+        try secure_store.set(&t.app, &key_buf, value);
+    }
+    try std.testing.expectError(error.StoreFull, secure_store.set(&t.app, "over", "v"));
+
+    const keys = try secure_store.list(&t.app, &lb);
+    try std.testing.expectEqual(secure_store.max_entries, keys.len);
+    for (keys, 0..) |k, i| {
+        try std.testing.expectEqual(secure_store.max_key_bytes, k.len);
+        if (i > 0) try std.testing.expect(std.mem.lessThan(u8, keys[i - 1], k));
+    }
+    // And a largest-legal value round-trips through ValueBuf.
+    try std.testing.expectEqualStrings(value, (try secure_store.get(&t.app, keys[0], &buf)).?);
+}
+
 test "absence is null; an empty value is present and empty" {
     const gpa = std.testing.allocator;
     var t = try Bare.init(gpa);
@@ -92,7 +139,7 @@ test "delete is idempotent: the postcondition, not the transition" {
     try std.testing.expectEqual(null, try secure_store.get(&t.app, "token", &buf));
 }
 
-test "set upserts — never StoreFull on an existing key; the 65th distinct key fails" {
+test "set upserts — never StoreFull on an existing key; the one past the cap fails" {
     const gpa = std.testing.allocator;
     var t = try Bare.init(gpa);
     defer t.deinit();
@@ -100,14 +147,14 @@ test "set upserts — never StoreFull on an existing key; the 65th distinct key 
 
     var name_buf: [8]u8 = undefined;
     for (0..secure_store.max_entries) |i| {
-        const name = try std.fmt.bufPrint(&name_buf, "k{d:0>2}", .{i});
+        const name = try std.fmt.bufPrint(&name_buf, "k{d:0>3}", .{i});
         try t.fake.seed(name, "v");
     }
-    try secure_store.set(&t.app, "k00", "rewritten"); // full store, existing key: fine
-    try std.testing.expectEqualStrings("rewritten", (try secure_store.get(&t.app, "k00", &buf)).?);
-    try std.testing.expectError(error.StoreFull, secure_store.set(&t.app, "k64", "v"));
-    try secure_store.delete(&t.app, "k00");
-    try secure_store.set(&t.app, "k64", "v"); // room again
+    try secure_store.set(&t.app, "k000", "rewritten"); // full store, existing key: fine
+    try std.testing.expectEqualStrings("rewritten", (try secure_store.get(&t.app, "k000", &buf)).?);
+    try std.testing.expectError(error.StoreFull, secure_store.set(&t.app, "over", "v"));
+    try secure_store.delete(&t.app, "k000");
+    try secure_store.set(&t.app, "over", "v"); // room again
     try std.testing.expectEqual(secure_store.max_entries, t.fake.count());
 }
 
@@ -121,12 +168,12 @@ test "the cap holds when the store is filled through set alone" {
     // room again the moment a delete lands.
     var name_buf: [8]u8 = undefined;
     for (0..secure_store.max_entries) |i| {
-        const name = try std.fmt.bufPrint(&name_buf, "k{d:0>2}", .{i});
+        const name = try std.fmt.bufPrint(&name_buf, "k{d:0>3}", .{i});
         try secure_store.set(&t.app, name, "v");
     }
-    try std.testing.expectError(error.StoreFull, secure_store.set(&t.app, "k64", "v"));
-    try secure_store.delete(&t.app, "k10");
-    try secure_store.set(&t.app, "k64", "v");
+    try std.testing.expectError(error.StoreFull, secure_store.set(&t.app, "over", "v"));
+    try secure_store.delete(&t.app, "k010");
+    try secure_store.set(&t.app, "over", "v");
     try std.testing.expectEqual(secure_store.max_entries, t.fake.count());
 }
 
@@ -165,7 +212,7 @@ test "journal: program order, validation failures excluded, knob failures includ
     // InvalidKey / ValueTooLarge never reach the store on any
     // platform, so they leave no journal entry either.
     try std.testing.expectError(error.InvalidKey, secure_store.get(&t.app, "NOPE", &buf));
-    try std.testing.expectError(error.ValueTooLarge, secure_store.set(&t.app, "k", "x" ** 2049));
+    try std.testing.expectError(error.ValueTooLarge, secure_store.set(&t.app, "k", "x" ** (secure_store.max_value_bytes + 1)));
     try std.testing.expectEqual(0, t.fake.journal().len);
 
     _ = try secure_store.get(&t.app, "boot.token", &buf);
@@ -197,12 +244,12 @@ test "a StoreFull set reached the store: journaled, and nothing was written" {
 
     var name_buf: [8]u8 = undefined;
     for (0..secure_store.max_entries) |i| {
-        const name = try std.fmt.bufPrint(&name_buf, "k{d:0>2}", .{i});
+        const name = try std.fmt.bufPrint(&name_buf, "k{d:0>3}", .{i});
         try t.fake.seed(name, "v");
     }
-    try std.testing.expectError(error.StoreFull, secure_store.set(&t.app, "k64", "v"));
+    try std.testing.expectError(error.StoreFull, secure_store.set(&t.app, "over", "v"));
     try std.testing.expectEqual(1, t.fake.journal().len);
-    try std.testing.expectEqual(null, t.fake.peek("k64"));
+    try std.testing.expectEqual(null, t.fake.peek("over"));
 }
 
 test "availability knobs: available, fail_writes, fail_next" {

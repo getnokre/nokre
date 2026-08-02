@@ -8,9 +8,9 @@
 // entry-count line) already ran Zig-side.
 //
 // libsecret's password API stores a NUL-terminated string, but a
-// secure_store value is arbitrary bytes up to 2048 (embedded NULs
-// included), so values are hex-encoded on the way in and decoded on the
-// way out — the round-trip is exact and the stored form stays a clean C
+// secure_store value is arbitrary bytes up to the value cap (embedded
+// NULs included), so values are hex-encoded on the way in and decoded
+// on the way out — the round-trip is exact and the stored form stays a clean C
 // string, the way the Windows leg widens keys per-unit. Two indexed
 // attributes, "namespace" and "key", scope every entry; search by
 // "namespace" alone backs list.
@@ -20,8 +20,6 @@
 #include "secure_store.h"
 
 enum {
-    NOKRE_SS_MAX_KEY_BYTES = 128, // mirrors max_key_bytes in secure_store.zig
-    NOKRE_SS_MAX_VALUE_BYTES = 2048, // mirrors max_value_bytes
     NOKRE_SS_NS_CAP = 256, // reverse-DNS ids are short; longer is out of contract
 };
 
