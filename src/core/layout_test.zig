@@ -475,7 +475,7 @@ test "layout: an overflowing row folds its tail, one action deeper than the over
         x += r.w + 8;
     }
     // The three that stayed leave room for the control beside them.
-    try testing.expect(x - 16 + layout.moreSize(text.Measurer.fixed).w <= 368);
+    try testing.expect(x - 16 + layout.moreSize(text.Measurer.fixed, element.default_chrome.more).w <= 368);
 }
 
 test "layout: the folded tail's control stands where the first folded button did" {
@@ -487,7 +487,7 @@ test "layout: the folded tail's control stands where the first folded button did
     const more = try tree.append(row, .{ .more = .{} });
     compute(&tree, text.Measurer.fixed, .{ .w = 400, .h = 480 });
 
-    const size = layout.moreSize(text.Measurer.fixed);
+    const size = layout.moreSize(text.Measurer.fixed, element.default_chrome.more);
     // 16 root pad + "One" 61 + 8 + "Two" 61 + 8 + "Three" 79 + 8.
     try testing.expectEqual(@as(i32, 241), tree.rectOf(more).x);
     try testing.expectEqual(size.w, tree.rectOf(more).w);
@@ -501,7 +501,7 @@ test "layout rtl: the folded tail keeps the row's leading three and its trailing
     defer tree.deinit();
     const row = try buildButtonRow(&tree, 8);
     const more = try tree.append(row, .{ .more = .{} });
-    _ = layout.computeScrolled(&tree, text.Measurer.fixed, .{ .w = 400, .h = 480 }, 0, 0, .rtl);
+    _ = layout.computeScrolled(&tree, text.Measurer.fixed, .{ .w = 400, .h = 480 }, 0, 0, .rtl, element.default_chrome.more);
 
     // Mirrored, document order runs right-to-left: "One" holds the
     // right end and the row grows leftward, so the control ends up at
@@ -912,7 +912,7 @@ test "layout: safe_bottom anchors chrome above the band and shrinks content" {
     const nav = try appendNav(&tree);
     const body = try tree.append(tree.rootId(), .{ .text = .{ .content = "content" } });
     const inset = 34;
-    _ = layout.computeScrolled(&tree, text.Measurer.fixed, .{ .w = 400, .h = 600 }, 0, inset, .ltr);
+    _ = layout.computeScrolled(&tree, text.Measurer.fixed, .{ .w = 400, .h = 600 }, 0, inset, .ltr, element.default_chrome.more);
 
     // The bar sits above the band; no rect enters it. With a home
     // indicator below, the band *is* the bar's clear space, so the
@@ -1016,7 +1016,7 @@ test "layout: a page with bottom chrome ends a clear band above it" {
     _ = try appendNav(&tree);
     const body = try tree.append(tree.rootId(), .{ .text = .{ .content = "line" } });
     const viewport: geometry.Size = .{ .w = 400, .h = 600 };
-    const content_h = layout.computeScrolled(&tree, text.Measurer.fixed, viewport, 0, 34, .ltr);
+    const content_h = layout.computeScrolled(&tree, text.Measurer.fixed, viewport, 0, 34, .ltr, element.default_chrome.more);
 
     // Nothing hides what passes behind the items, so the page reserves
     // the band itself: its own top margin, its words, then 24px of air
@@ -1029,9 +1029,9 @@ test "layout: a page with bottom chrome ends a clear band above it" {
     // of the page behind them.
     var i: usize = 0;
     while (i < 40) : (i += 1) _ = try tree.append(tree.rootId(), .{ .text = .{ .content = "line" } });
-    const long_h = layout.computeScrolled(&tree, text.Measurer.fixed, viewport, 0, 34, .ltr);
+    const long_h = layout.computeScrolled(&tree, text.Measurer.fixed, viewport, 0, 34, .ltr, element.default_chrome.more);
     const area = layout.contentArea(&tree, viewport, 34);
-    _ = layout.computeScrolled(&tree, text.Measurer.fixed, viewport, long_h - area.h, 34, .ltr);
+    _ = layout.computeScrolled(&tree, text.Measurer.fixed, viewport, long_h - area.h, 34, .ltr, element.default_chrome.more);
 
     var last: NodeId = body;
     var it = tree.children(tree.rootId());
@@ -1305,7 +1305,7 @@ test "a blockquote indents past its rule and consumes the advised margin" {
 // ---- RTL chrome mirroring (App.setDirection(.rtl)) -------------------------
 
 fn computeRtl(tree: *Tree, viewport: geometry.Size) void {
-    _ = layout.computeScrolled(tree, text.Measurer.fixed, viewport, 0, 0, .rtl);
+    _ = layout.computeScrolled(tree, text.Measurer.fixed, viewport, 0, 0, .rtl, element.default_chrome.more);
 }
 
 test "layout rtl: an intrinsic block snaps to the right edge" {

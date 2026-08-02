@@ -18,7 +18,9 @@
 //! layout reserves for the control (`layout.moreSize`) is the same
 //! whether the control is standing there yet or not, so the second pass
 //! reaches the fold the first one decided and the shape cannot flicker
-//! between them.
+//! between them — the same word both times, too: `App.flow` hands layout
+//! `App.chrome.more` for the pass with no node to read it from, and the
+//! control installed here carries a copy for the pass that has one.
 
 const std = @import("std");
 const app_mod = @import("app.zig");
@@ -59,7 +61,7 @@ pub fn syncOverflowChrome(app: *App) bool {
     var it = app.tree.dfs();
     while (it.next()) |id| {
         if (!needsControl(app, id)) continue;
-        _ = app.tree.append(id, .{ .more = .{} }) catch continue;
+        _ = app.tree.append(id, .{ .more = .{ .label = app.chrome.more } }) catch continue;
         changed = true;
     }
     // Same courtesy in the other direction, and checked last rather than
@@ -235,7 +237,7 @@ fn lastAction(app: *const App, row: ?NodeId) ?focus.Focus {
 /// it can be pressed at all.
 pub fn presentMoreSheet(app: *App, control: NodeId) !void {
     const row = app.tree.parentOf(control) orelse return;
-    const sheet = try overlays.presentSheet(app, element_mod.more_label);
+    const sheet = try overlays.presentSheet(app, app.chrome.more);
     app.more_sheet = .{ .row = row, .sheet = sheet };
     var it = app.tree.children(row);
     while (it.next()) |child| {

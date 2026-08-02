@@ -294,8 +294,8 @@ fn drawNode(app: *App, canvas: Painter, id: NodeId) void {
         // outlined pill, the same geometry — so the row keeps reading as
         // one row. Quiet emphasis on purpose: it is the way to the
         // actions, never one of them.
-        .more => drawButton(app, canvas, r, .{
-            .label = element_mod.more_label,
+        .more => |m| drawButton(app, canvas, r, .{
+            .label = m.label,
             .icon = .ellipsis,
             .secondary = true,
         }, ring),

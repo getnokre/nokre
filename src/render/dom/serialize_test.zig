@@ -493,6 +493,15 @@ test "a folded action is not on the row; the more control stands there" {
     try expectContains(html, ">Kept</button>");
     try expectLacks(html, "Folded");
     try expectContains(html, ">More</button>");
+
+    // The control's words are the app's chrome like every other
+    // framework string, and the second edition writes what the node
+    // carries rather than the English nokre ships.
+    app.setChrome(.{ .more = "Daha fazla" });
+    const tr = try render(&app);
+    defer testing.allocator.free(tr);
+    try expectContains(tr, ">Daha fazla</button>");
+    try expectLacks(tr, ">More</button>");
 }
 
 test "a list's marker is derived, so the markup carries none" {

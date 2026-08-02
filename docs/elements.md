@@ -413,8 +413,10 @@ license — see
 
 Put actions in a horizontal `stack` and nokre shows as many as fit. When
 they don't all fit, the row **folds**: the last completely visible one
-gives up its slot to a control labelled "More", and pressing that opens a
-sheet holding it and everything after it, in the row's own order.
+gives up its slot to a control labelled "More" (the framework's own word,
+`App.Chrome.more` — see [localization.md](localization.md)), and pressing
+that opens a sheet holding it and everything after it, in the row's own
+order.
 
 This is not opt-in and takes no setup — no flag on the stack, no wrapper,
 no width to declare. Any row of actions you have already written folds

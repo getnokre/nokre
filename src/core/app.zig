@@ -366,6 +366,11 @@ pub const App = struct {
                 .nav_current => |*n| n.name = chrome.section,
                 .nav_here => |*n| n.name = chrome.current_screen,
                 .notices_pane => |*p| p.title = chrome.notices,
+                // The fold's control keeps its own copy like the rest,
+                // and layout is handed the same word from `chrome`
+                // itself on the next pass (`App.flow`) — so the words on
+                // the pill and the width claimed for them never disagree.
+                .more => |*m| m.label = chrome.more,
                 else => {},
             }
         }
@@ -478,12 +483,12 @@ pub const App = struct {
     /// One pass: place everything, then re-place it if the content
     /// turned out too short for where it was scrolled to.
     fn flow(self: *App) void {
-        self.root_content_height = layout.computeScrolled(&self.tree, self.measurer, self.viewport, self.root_scroll, self.safe_bottom, self.direction);
+        self.root_content_height = layout.computeScrolled(&self.tree, self.measurer, self.viewport, self.root_scroll, self.safe_bottom, self.direction, self.chrome.more);
         const limit = layout.contentArea(&self.tree, self.viewport, self.safe_bottom).h;
         const clamped = std.math.clamp(self.root_scroll, 0, @max(0, self.root_content_height - limit));
         if (clamped != self.root_scroll) {
             self.root_scroll = clamped;
-            _ = layout.computeScrolled(&self.tree, self.measurer, self.viewport, clamped, self.safe_bottom, self.direction);
+            _ = layout.computeScrolled(&self.tree, self.measurer, self.viewport, clamped, self.safe_bottom, self.direction, self.chrome.more);
         }
     }
 

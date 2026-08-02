@@ -512,9 +512,11 @@ pub fn trailingSpace(tree: *const Tree, padding: i32) i32 {
     return padding;
 }
 
-/// Computes and stores the absolute rect of every node, left-to-right.
+/// Computes and stores the absolute rect of every node, left-to-right,
+/// with the framework's own English on the one control that is measured
+/// before it exists (`more_label`, below).
 pub fn compute(tree: *Tree, measurer: text.Measurer, viewport: Size) void {
-    _ = computeScrolled(tree, measurer, viewport, 0, 0, .ltr);
+    _ = computeScrolled(tree, measurer, viewport, 0, 0, .ltr, element_mod.default_chrome.more);
 }
 
 /// Same, with the window content shifted up by `scroll` px. Returns the
@@ -528,7 +530,13 @@ pub fn compute(tree: *Tree, measurer: text.Measurer, viewport: Size) void {
 /// slots run right-to-left, pinned corner controls swap corners.
 /// Vertical geometry is direction-blind, so `.ltr` output is
 /// byte-identical to what this function always produced.
-pub fn computeScrolled(tree: *Tree, measurer: text.Measurer, viewport: Size, scroll: i32, safe_bottom: i32, dir: bidi.Direction) i32 {
+/// `more_label` is the app's word for the folded tail
+/// (`App.Chrome.more`), threaded in for the same reason `dir` is: it is
+/// app state layout must know and cannot read off the tree. Every other
+/// framework string rides on the node it names, but the fold claims that
+/// control's width before the control is built, so this one arrives on
+/// its own.
+pub fn computeScrolled(tree: *Tree, measurer: text.Measurer, viewport: Size, scroll: i32, safe_bottom: i32, dir: bidi.Direction, more_label: []const u8) i32 {
     const root = tree.rootId();
     const rtl = dir == .rtl;
     const nav = findNav(tree);
@@ -539,7 +547,7 @@ pub fn computeScrolled(tree: *Tree, measurer: text.Measurer, viewport: Size, scr
     const picker = findPicker(tree);
     const anchored: Size = .{ .w = viewport.w, .h = viewport.h - safe_bottom };
     if (nav == null and notice == null and pane == null and indicator == null and sheet == null and picker == null) {
-        var ctx: Ctx = .{ .tree = tree, .measurer = measurer, .bottom = anchored.h, .scroll = scroll, .rtl = rtl };
+        var ctx: Ctx = .{ .tree = tree, .measurer = measurer, .bottom = anchored.h, .scroll = scroll, .rtl = rtl, .more_label = more_label };
         const content_h = ctx.layoutBlock(root, 0, -scroll, viewport.w);
         tree.setRect(root, .{ .x = 0, .y = 0, .w = viewport.w, .h = viewport.h });
         return content_h;
@@ -551,7 +559,7 @@ pub fn computeScrolled(tree: *Tree, measurer: text.Measurer, viewport: Size, scr
     const area = contentArea(tree, viewport, safe_bottom);
     const s = tree.getConst(root).?.stack;
     const trailing = trailingSpace(tree, s.padding);
-    var ctx: Ctx = .{ .tree = tree, .measurer = measurer, .bottom = area.bottom() - trailing, .scroll = scroll, .rtl = rtl };
+    var ctx: Ctx = .{ .tree = tree, .measurer = measurer, .bottom = area.bottom() - trailing, .scroll = scroll, .rtl = rtl, .more_label = more_label };
     const inner_h = ctx.flowChildren(root, area.x + s.padding, area.y + s.padding - scroll, area.w - 2 * s.padding, s.gap, s.padding);
     tree.setRect(root, .{ .x = 0, .y = 0, .w = viewport.w, .h = viewport.h });
     if (pane) |p| layoutNoticesPane(tree, measurer, p, anchored, rtl);
@@ -1077,6 +1085,15 @@ const Ctx = struct {
     margin: i32 = 0,
     /// Mirrored chrome (`App.setDirection(.rtl)`): leading means right.
     rtl: bool = false,
+    /// The app's word for the folded tail (`App.Chrome.more`), threaded
+    /// in as a value like `rtl` and `bottom` are — layout is still handed
+    /// a tree, a measurer, and plain values, never the App. It is here
+    /// because `foldButtonRow` claims that control's width before the
+    /// control exists, which is the one framework string no node on the
+    /// tree can supply. Defaulted so an internal `Ctx` that lays out
+    /// chrome (no button row folds inside a modal layer) states only what
+    /// it uses.
+    more_label: []const u8 = element_mod.default_chrome.more,
     /// A back control handed down into a transparent container so it
     /// pairs with the first line *inside* it (see `layoutRow`). Set by
     /// the row that hands it over and consumed by the very next
@@ -1497,7 +1514,7 @@ const Ctx = struct {
         // The control is not the width of the action it replaced, so
         // taking that one slot may not be enough: keep giving up slots
         // until what stays and the control fit together.
-        const more_w = moreSize(self.measurer).w;
+        const more_w = moreSize(self.measurer, self.more_label).w;
         while (visible > 0 and self.actionRunWidth(id, visible, span, gap) + gap + more_w > span) {
             visible -= 1;
         }
@@ -1862,7 +1879,10 @@ const Ctx = struct {
                     .h = text.Scale.body.lineHeight() + 2 * (metrics.button_pad_v + metrics.border),
                 };
             },
-            .more => moreSize(self.measurer),
+            // The control's own words once it is standing — the same word
+            // the fold reserved room for a pass earlier, because both
+            // come from `App.chrome.more`.
+            .more => |m| moreSize(self.measurer, m.label),
             .link => |l| .{
                 .w = @max(self.measure(.prose, .body, l.label), metrics.tap_target),
                 .h = text.Scale.body.lineHeight() + 2, // room for the underline
@@ -1923,11 +1943,14 @@ const Ctx = struct {
 /// the control is standing in the tree yet — `overflow.syncOverflowChrome`
 /// installs it only after a pass has measured the row. So the fold the
 /// second pass reaches is the one the first pass decided, and the shape
-/// cannot oscillate between them.
-pub fn moreSize(measurer: text.Measurer) Size {
+/// cannot oscillate between them: `label` is the app's chrome either
+/// way, threaded in for the pass that has no node to read it from and
+/// read off the control for the pass that does (`App.setChrome` keeps
+/// the two the same word).
+pub fn moreSize(measurer: text.Measurer, label: []const u8) Size {
     const size = text.Scale.body.px();
     return .{
-        .w = measurer.measure(.prose, size, element_mod.more_label) +
+        .w = measurer.measure(.prose, size, label) +
             measurer.measure(.icons, size, element_mod.IconName.ellipsis.utf8()) +
             metrics.icon_gap + 2 * (metrics.button_pad_h + metrics.border),
         .h = text.Scale.body.lineHeight() + 2 * (metrics.button_pad_v + metrics.border),

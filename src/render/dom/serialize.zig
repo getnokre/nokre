@@ -601,7 +601,7 @@ pub fn node(em: *Emitter, id: NodeId) anyerror!void {
                 try em.raw("</button>");
             }
         },
-        .more => {
+        .more => |m| {
             // Drawn *as* one of the buttons it stands among — the same
             // outlined pill, leading an ellipsis — so the row keeps
             // reading as one row.
@@ -609,7 +609,7 @@ pub fn node(em: *Emitter, id: NodeId) anyerror!void {
             try em.stop(id);
             try em.raw(">");
             try icon(em, .ellipsis, "", .ink, .body, .mark);
-            try em.text(element_mod.more_label);
+            try em.text(m.label);
             try em.raw("</button>");
         },
 

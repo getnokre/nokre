@@ -228,6 +228,7 @@ English until an app says otherwise:
 | `dismiss_prefix` | "Dismiss: " | joined the same way, on its dismiss control |
 | `important` / `other` | "Important" / "Other" | the pane's two group captions |
 | `copied` | "Copied" | the live region an acknowledged `copyable` grows |
+| `more` | "More" | the control an overflowing row of actions folds into |
 
 ```zig
 fn chromeFor(loc: L.Locale) nok.App.Chrome {
@@ -254,14 +255,14 @@ mistake is a *build* error — but there is no comptime left to check a
 string written into a struct at run time. Joining costs the reordering a
 few languages would want and buys a string that cannot be wrong.
 
-**One string is not here: "More"**, the control an overflowing row of
-actions folds into ([elements.md](elements.md#the-folded-tail-more)).
-Layout reserves that control's width while *deciding* the fold — before
-the control exists, so the pass that installs it reaches the same fold —
-so its words have to be knowable with no node to read them from, which
-is how every other chrome string escapes: by riding on the node it
-names. Localizing it means handing layout the app's chrome, and that is
-a wider change than a nav bar's labels.
+One of them is also *measured*: `more`, the control an overflowing row
+of actions folds into ([elements.md](elements.md#the-folded-tail-more)).
+Every other string here rides on the node it names, but layout claims
+that control's width while *deciding* the fold — before the control
+exists — so this word reaches layout on its own. The consequence is
+worth knowing: it is the one chrome string whose translation changes a
+layout. A long word takes its room from the row and folds it an action
+deeper, rather than clipping the pill that carries it.
 
 ## What the compiler checks
 

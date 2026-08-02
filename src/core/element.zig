@@ -734,6 +734,14 @@ pub const Chrome = struct {
     /// element — so unlike the rest this one is read where it is built,
     /// which the snapshot can do because it holds the App.
     copied: []const u8 = "Copied",
+    /// The folded tail's name, the words on its pill, and its sheet's
+    /// title (`More`). The other one read somewhere besides the node it
+    /// names: layout reserves this control's width while *deciding* the
+    /// fold, before the control exists, so `App.flow` hands layout this
+    /// word on its own (`layout.moreSize`) — the only field of this
+    /// struct layout is told about, because it is the only control whose
+    /// room is claimed before there is anything to measure.
+    more: []const u8 = "More",
 };
 
 /// The English nokre ships, and what every chrome element's own field
@@ -777,21 +785,19 @@ pub const SheetClose = struct {
 /// The actions themselves stay in the tree, folded (`Button.folded`), so
 /// a consumer's `NodeId` survives the row reshaping under it exactly as
 /// the roster survives the nav collapsing.
-pub const More = struct {};
-
-/// The folded-tail control's name, the words on its pill, and its
-/// sheet's title.
-///
-/// Deliberately *not* in `Chrome`, and the one framework string that is
-/// not. Layout reserves this control's width while deciding the fold —
-/// before the control exists, so that the pass which installs it reaches
-/// the same fold (`moreSize`) — and layout is handed a tree and a
-/// measurer and nothing else. Its words therefore have to be knowable
-/// with no node to read them from, which every other chrome string
-/// escapes by riding on the node it names. Localizing this one means
-/// handing layout the app's chrome, which is a wider change than a nav
-/// bar's labels: it is the next one, not this one.
-pub const more_label = "More";
+pub const More = struct {
+    /// The framework's own word for it (`App.Chrome.more`), the words on
+    /// its pill and its sheet's title alike — copied in when
+    /// `overflow.syncOverflowChrome` builds the control, for
+    /// `SheetClose.label`'s reason: `Element.label()` is pure and has no
+    /// App to ask which language this app is in. What is unlike the rest
+    /// is the *other* reader: layout claims this control's width while
+    /// deciding the fold, when there is no node here to read, so
+    /// `App.flow` hands the same word to layout separately
+    /// (`layout.moreSize`). One word, two routes to the same place — and
+    /// `App.setChrome` re-says it here so they cannot drift apart.
+    label: []const u8 = default_chrome.more,
+};
 
 /// The framework's back control, installed by the router on every pushed
 /// screen (stack depth > 1) — consumers never wire their own. Laid out at
@@ -1300,7 +1306,7 @@ pub const Element = union(Role) {
             .icon_button => |i| i.label,
             .picker => |p| p.title,
             .picker_item => |p| p.label,
-            .more => more_label,
+            .more => |m| m.label,
             else => "",
         };
     }

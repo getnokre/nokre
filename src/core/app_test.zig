@@ -3654,6 +3654,62 @@ test "an overflowing row grows a More control that opens the rest" {
     try testing.expectEqualStrings("Five", labels[1]);
 }
 
+fn standingActions(app: *const App, row: NodeId) usize {
+    var n: usize = 0;
+    var it = app.tree.children(row);
+    while (it.next()) |c| {
+        const el = app.tree.getConst(c).?;
+        if (el.* == .button and !el.button.folded) n += 1;
+    }
+    return n;
+}
+
+test "the folded tail says the app's word for itself, and is measured by it" {
+    var counter: PressCounter = .{};
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    const row = try buildOverflowingRow(&app, &counter);
+
+    // Said before the control exists: the word has to reach the pass
+    // that reserves its room, not only the pill that ends up drawn.
+    app.setChrome(.{ .more = "Daha fazla" });
+    app.performLayout();
+
+    const more = childOfRole(&app, row, .more) orelse return error.NoMoreControl;
+    try testing.expectEqualStrings("Daha fazla", app.tree.getConst(more).?.label());
+    // The room claimed while deciding the fold is the room these words
+    // need — the control is not laid out to fit "More" and then drawn
+    // wider than it.
+    try testing.expectEqual(layout.moreSize(app.measurer, "Daha fazla").w, app.tree.rectOf(more).w);
+    // And the sheet it opens carries the same word as its title.
+    try app.tap(app.tree.rectOf(more).center());
+    const sheet = layout.findSheet(&app.tree) orelse return error.NoSheet;
+    try testing.expectEqualStrings("Daha fazla", app.tree.getConst(sheet).?.sheet.title);
+}
+
+test "a wider word for the tail folds the row deeper" {
+    var counter: PressCounter = .{};
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    const row = try buildOverflowingRow(&app, &counter);
+    app.performLayout();
+    const in_english = standingActions(&app, row);
+    try testing.expect(in_english > 0);
+
+    // The fold is decided against the control's real width, so a longer
+    // word costs the row an action rather than clipping the pill that
+    // carries it.
+    app.setChrome(.{ .more = "Weitere Aktionen anzeigen" });
+    app.performLayout();
+    try testing.expect(standingActions(&app, row) < in_english);
+    const more = childOfRole(&app, row, .more) orelse return error.NoMoreControl;
+    const r = app.tree.rectOf(more);
+    try testing.expectEqual(layout.moreSize(app.measurer, "Weitere Aktionen anzeigen").w, r.w);
+    // Still inside the row it stands in: what the fold gave up, it gave
+    // up for this.
+    try testing.expect(r.right() <= app.tree.rectOf(row).right());
+}
+
 test "pressing a folded button runs its action and closes the tail sheet" {
     var counter: PressCounter = .{};
     var app = try test_app.init(400, 400);
