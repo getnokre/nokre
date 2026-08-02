@@ -101,6 +101,7 @@ pub const services = struct {
     pub const share = @import("services/share/share.zig");
     pub const clock = @import("services/clock/clock.zig");
     pub const iap = @import("services/iap/iap.zig");
+    pub const notification = @import("services/notification/notification.zig");
 };
 
 pub const testing = @import("testing/harness.zig");

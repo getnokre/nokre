@@ -17,15 +17,23 @@
 #include "../../services/locale/locale.h"
 #include "../../services/open_url/open_url.h"
 #include "../../services/share/share.h"
+#include "../../services/notification/notification.h"
 #include "../../../shim/nokre_accesskit.h"
 #include <string.h>
 
-// The notification service's Apple half lives in
-// src/services/notification/apple.m and is linked only when the app links
-// the service. Weak, so a shell built with zero services still links: the
-// app delegate below checks the symbol before calling it.
-extern void nokre_notification_apple_push_token(const uint8_t *bytes, size_t len)
-    __attribute__((weak_import));
+// Where an APNs token goes, installed by the notification service's Apple
+// half (src/services/notification/apple.m) and NULL in every app that
+// links no notifications — in which case the delegate method below is
+// dead code, since only that file ever asks UIKit to register. The shell
+// defines this rather than calling into the service, for the reason
+// notification.h states at length: the shell is always linked and
+// apple.m is not, so a call the other way is a link error for every app
+// that skips the service.
+static nokre_notification_push_token_fn g_push_token_sink = NULL;
+
+void nokre_notification_apple_set_push_token_sink(nokre_notification_push_token_fn fn) {
+    g_push_token_sink = fn;
+}
 
 static nokre_shell_config g_config;
 
@@ -1222,13 +1230,12 @@ void nokre_locale_uninstall(void) {
 // notifications is service-owned in src/services/notification/apple.m,
 // because UNUserNotificationCenter's delegate is any object — but an APNs
 // token is handed to the *application* delegate by UIKit and nowhere
-// else, so it crosses here. Weakly linked: an app that never links the
-// service leaves the symbol undefined, so the call is guarded rather than
-// named unconditionally (the shell's zero-services contract).
+// else, so it crosses here — into the sink above, which is NULL until the
+// service installs one (the shell's zero-services contract).
 - (void)application:(UIApplication *)application
     didRegisterForRemoteNotificationsWithDeviceToken:(NSData *)deviceToken {
-    if (nokre_notification_apple_push_token != NULL) {
-        nokre_notification_apple_push_token(deviceToken.bytes, deviceToken.length);
+    if (g_push_token_sink != NULL) {
+        g_push_token_sink(deviceToken.bytes, deviceToken.length);
     }
 }
 

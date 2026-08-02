@@ -100,10 +100,24 @@ The placement is split, and each half earns it.
 both. `UNUserNotificationCenter`'s delegate is any object rather than the
 app delegate, so nothing here needs to be the shell, and one file beats
 the verbatim duplication the locale hook pays across the same two shells.
-Each shell carries exactly one line, for one reason: an APNs token is
-handed to the *application* delegate by UIKit/AppKit and nowhere else, so
-`nokre_notification_apple_push_token` is forwarded from there. That is
-oauth's Android-intent exception, restated on Apple.
+Each shell carries exactly one delegate method, for one reason: an APNs
+token is handed to the *application* delegate by UIKit/AppKit and nowhere
+else, so it is forwarded from there. That is oauth's Android-intent
+exception, restated on Apple.
+
+The forwarding points *into* the shell, not out of it. Each shell defines
+`nokre_notification_apple_set_push_token_sink` (declared in
+[notification.h](../../src/services/notification/notification.h)) and
+apple.m installs itself from `nokre_notification_install`; the sink is
+NULL in an app that links no notifications, which is exactly when the
+delegate method is dead code — only apple.m ever asks AppKit/UIKit to
+register. The direction is not cosmetic. A shell links in *every* app
+and apple.m links in some, so a shell that named a symbol apple.m defines
+would fail at link time in every app that skips the service — which it
+did, until the sink replaced it. An optional service may name the shell;
+the shell may never name the service. `weak_import` is not a way around
+this: zig's MachO linker rejects an undefined weak symbol that no input
+defines, so the guard the two delegates carried was never reached.
 
 **Android, Linux and Windows are deep_link's placement**, because there
 the object the OS calls back really is the shell's:

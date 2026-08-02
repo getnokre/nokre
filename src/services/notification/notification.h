@@ -128,6 +128,27 @@ void nokre_notification_request_push(const char* key, size_t key_len);
 void nokre_notification_dispatch(int32_t kind, int32_t status, const char *a, size_t a_len,
                                  const char *b, size_t b_len);
 
+// Apple's inbound leg, and the only entry in this header a *shell*
+// defines rather than calls. An APNs token is handed to the
+// *application* delegate by UIKit/AppKit and nowhere else, so the macOS
+// and iOS shells own that one delegate method; they hand the bytes to
+// whatever sink is installed here and learn nothing about them —
+// Android's dispatch split, restated on Apple.
+//
+// The direction is inverted from the obvious one on purpose, and the
+// inversion is the point. A shell that *called* apple.m would name a
+// symbol that exists only when the app links this service; the shells
+// are always linked and apple.m is not, so every app linking no
+// notifications would fail at link time on a symbol it never asked for.
+// Definition on the always-linked side, reference on the optional side,
+// is deep_link's shape and cannot break that way: an optional service
+// may name the shell, never the reverse.
+//
+// Installed from nokre_notification_install and cleared (NULL) from
+// nokre_notification_uninstall. `token` is borrowed for the call.
+typedef void (*nokre_notification_push_token_fn)(const uint8_t* token, size_t len);
+void nokre_notification_apple_set_push_token_sink(nokre_notification_push_token_fn fn);
+
 #ifdef __cplusplus
 }
 #endif

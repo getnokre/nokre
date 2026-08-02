@@ -7,8 +7,12 @@
 // duplication the locale hook pays across the same two shells. The shells
 // get involved in exactly one place, for one reason: an APNs token is
 // delivered to the *application* delegate by UIKit/AppKit and nowhere
-// else, so each shell forwards it to nokre_notification_apple_push_token
-// below. That is oauth's Android-intent exception, restated on Apple.
+// else, so each shell owns that delegate method and hands the bytes to
+// the sink this file installs (nokre_notification_apple_set_push_token_
+// sink, notification.h). That is oauth's Android-intent exception,
+// restated on Apple — and it is *this* file that names the shell, never
+// the other way round, because a shell links in every app and this one
+// does not.
 //
 // UNUserNotificationCenter is both halves on both platforms: a local
 // request and a remote push land in the same delegate, which is why push
@@ -40,6 +44,10 @@ static NSString *g_pending_route = nil;
 // UNUserNotificationCenter answers settings asynchronously, and the boot
 // probe is synchronous by contract.
 static int32_t g_status = NOKRE_NOTIFICATION_NOT_DETERMINED;
+
+// Defined at the bottom, beside the wire format it owns; installed into
+// the shell from nokre_notification_install below.
+static void nokre_notification_apple_push_token(const uint8_t *bytes, size_t len);
 
 static int32_t nokre_notification_status_of(UNAuthorizationStatus s) {
     switch (s) {
@@ -141,6 +149,10 @@ static NokreNotificationDelegate *g_delegate = nil;
 void nokre_notification_install(void *ctx, nokre_notification_cb cb) {
     g_ctx = ctx;
     g_cb = cb;
+    // Strictly before any registerForRemoteNotifications, which only
+    // nokre_notification_request_push below ever calls — so a token can
+    // never arrive at a shell holding no sink.
+    nokre_notification_apple_set_push_token_sink(nokre_notification_apple_push_token);
     if (g_delegate == nil) {
         g_delegate = [[NokreNotificationDelegate alloc] init];
         UNUserNotificationCenter.currentNotificationCenter.delegate = g_delegate;
@@ -178,6 +190,10 @@ void nokre_notification_uninstall(void) {
     // the process, and one app per process is the charter.
     g_ctx = NULL;
     g_cb = NULL;
+    // The shell outlives this service's interest in it, so it is handed
+    // back the NULL it started with rather than a pointer into a file
+    // that no longer wants the call.
+    nokre_notification_apple_set_push_token_sink(NULL);
 }
 
 int32_t nokre_notification_available(void) {
@@ -293,7 +309,7 @@ void nokre_notification_request_push(const char *key, size_t key_len) {
     (void)key_len; // APNs identifies the sender by the app's own registration
     // Must run on the main thread on both platforms, and the token comes
     // back to the *application* delegate — which is why the shells carry
-    // the two methods that call nokre_notification_apple_push_token.
+    // the two methods, and why install handed them a sink first.
     dispatch_async(dispatch_get_main_queue(), ^{
 #if TARGET_OS_IPHONE
       [UIApplication.sharedApplication registerForRemoteNotifications];
@@ -303,11 +319,13 @@ void nokre_notification_request_push(const char *key, size_t key_len) {
     });
 }
 
-// The shells' one line into this file: APNs hands the app delegate 32
+// The sink the two shells forward to: APNs hands the app delegate 32
 // opaque bytes, and every push service on earth wants them hex. Rendering
 // here rather than in each shell keeps the two delegates to a forwarding
-// call, and keeps the wire format's owner in one place.
-void nokre_notification_apple_push_token(const uint8_t *bytes, size_t len) {
+// call, and keeps the wire format's owner in one place. Static — the
+// shell reaches it through the pointer install handed over, so no app
+// that skips this service has a symbol to resolve.
+static void nokre_notification_apple_push_token(const uint8_t *bytes, size_t len) {
     if (g_cb == NULL || bytes == NULL || len == 0) return;
     NSMutableString *hex = [NSMutableString stringWithCapacity:len * 2];
     for (size_t i = 0; i < len; i++) [hex appendFormat:@"%02x", bytes[i]];

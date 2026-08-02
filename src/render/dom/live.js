@@ -690,6 +690,7 @@ export async function mount({ wasm, into, worker, content, route, seed, addressi
       const rest = q.toString();
       history.replaceState(null, "", location.pathname + (rest ? "?" + rest : "") + location.hash);
     }
+  }
 
   if (!documents) {
     const inbound = location.hash.slice(1);
