@@ -366,6 +366,21 @@ test "a tile's leading mark is a hidden square; its chevron stays a mark" {
     try testing.expect(std.mem.indexOf(u8, html, "aria-label=\"Members\"") == null);
 }
 
+test "a chip's mark is a hidden small mark, and the words still carry it" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    _ = try app.tree.append(app.tree.rootId(), .{ .badge = .{ .label = "Istanbul", .icon = .map_pin } });
+
+    const html = try render(&app);
+    defer testing.allocator.free(html);
+    // `mark`, not `square`: a chip hugs its content. `s-small`, because
+    // the glyph is the chip's own text made a glyph.
+    try expectContains(html, "<span class=\"badge\">" ++
+        "<span class=\"icon s-small\" aria-hidden=\"true\">&#xE111;</span>Istanbul</span>");
+    // Decorative: nothing announces the family, only the words.
+    try testing.expect(std.mem.indexOf(u8, html, "role=\"img\"") == null);
+}
+
 test "stateful controls carry their state, not just their label" {
     var app = try test_app.init(400, 400);
     defer app.deinit();

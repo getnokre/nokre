@@ -17,7 +17,7 @@ and produces a flat, parent-linked `Snapshot` in document order. Roles map
 | span with a destination (`route` or `external`) | `link` | a link child of its paragraph, named by its own words, focusable |
 | `heading` | `heading` | level 1–6; spans invisible as on `text` |
 | `icon` (labeled) | `image` | label as name; decorative icons are omitted |
-| `badge`, `meter` | `static_text` | the words carry all state |
+| `badge`, `meter` | `static_text` | the words carry all state; a badge's leading mark is decorative and is never announced |
 | `qr` | `image` | label as name, encoded value carried |
 | `stack`, `box` | `group` | — |
 | `tile_group` | `group` | description as value |
@@ -26,7 +26,7 @@ and produces a flat, parent-linked `Snapshot` in document order. Roles map
 | `button` / `link` (folded) | — | absent: the row folded it away and its `more` speaks for it |
 | `sheet_close`, `back`, `icon_button`, `more` | `button` | focused |
 | `link` | `link` | focused |
-| `tile` | `link` (route) / `button` (action) | detail as value, focused |
+| `tile` | `link` (route) / `button` (action) | detail as value, focused; its leading mark is decorative — the label is the name |
 | `toggle` | `switch` | on (carried as checked), focused; `in_progress`: disabled *and* busy, the value still carried, still a focus stop |
 | `checkbox` | `checkbox` | checked, focused; `in_progress` as `toggle` |
 | `copyable` | `button` | copied value carried, focused; a `status` child while acknowledged |

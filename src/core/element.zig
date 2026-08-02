@@ -181,6 +181,25 @@ pub const Divider = struct {};
 /// Never interactive — an actionable chip is a `button`.
 pub const Badge = struct {
     label: []const u8,
+    /// Leading mark on the chip, decorative — `Tile.icon`'s shape and
+    /// `Tile.icon`'s terms. A field, not a child node: it takes no focus
+    /// and answers no press, and it enters no accessibility tree, so the
+    /// `label` remains both mandatory and the whole of what is announced.
+    ///
+    /// **It restates; it never states.** A chip whose glyph carries
+    /// something its words do not is a chip that says less to a reader
+    /// than to a looker, which is the refusal behind "the words carry
+    /// it" — the state was never allowed to live in the ornament. The
+    /// check is one deletion: take every mark off the screen and nothing
+    /// on it has stopped being true or knowable. What the glyph buys is
+    /// recognition in a row that gets scanned, not a fact.
+    ///
+    /// Sized as the chip's own text (`small`) and inked as it is, so it
+    /// costs the glyph's advance plus `icon_gap` and no more — a `mark`
+    /// and not the `lineHeight` band a `tile` spends, because chips flow
+    /// inline and have no column to line up. On a chip that stands alone
+    /// that width buys nothing; see [elements.md](../../docs/elements.md).
+    icon: ?IconName = null,
 };
 
 /// A static gauge: how much of a whole is filled, as a bar under the
@@ -1515,6 +1534,20 @@ test "copyable is interactive and carries its label as ink text" {
     try std.testing.expect(c.isFocusable());
     try std.testing.expectEqualStrings("Recovery code", c.label());
     try std.testing.expectEqual(@as(?@import("color.zig").Gray, .ink), c.ambientTextInk());
+}
+
+test "a badge's mark is decorative and never replaces its label" {
+    // The chip announces its words and nothing else: `label()` is the
+    // label with or without a mark, and the mark is a field, so no node
+    // exists for it to be announced from.
+    const marked: Element = .{ .badge = .{ .label = "Istanbul", .icon = .map_pin } };
+    const bare: Element = .{ .badge = .{ .label = "Istanbul" } };
+    try std.testing.expectEqualStrings(bare.label(), marked.label());
+    try std.testing.expect(!marked.isInteractive());
+    try std.testing.expect(!marked.isFocusable());
+    // Same ink as the words it leads, so the mark reaches the contrast
+    // gate at exactly the level the label already cleared.
+    try std.testing.expectEqual(bare.ambientTextInk(), marked.ambientTextInk());
 }
 
 test "badges are static and carry their label as ink text" {

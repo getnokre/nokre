@@ -827,6 +827,7 @@ const sheet =
     \\  display: inline-flex;
     \\  align-self: flex-start;
     \\  align-items: center;
+    \\  gap: var(--icon-gap);
     \\  font-size: var(--px-small);
     \\  line-height: var(--lh-small);
     \\  padding: var(--badge-pad-v) var(--badge-pad-h);

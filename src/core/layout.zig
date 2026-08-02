@@ -404,6 +404,20 @@ pub fn tileIconBand(has_icon: bool) i32 {
     return if (has_icon) text.Scale.body.lineHeight() + metrics.icon_gap else 0;
 }
 
+/// What a chip's leading mark adds to its width: the glyph's own advance
+/// at the chip's scale plus `icon_gap`, zero when there is none.
+///
+/// A `mark` and not the `tileIconBand` square, and the difference is the
+/// whole reason both exist. A tile's band is fixed because a *column* of
+/// rows has to start its words on one x; chips are intrinsic-width and
+/// flow inline, so there is no column, no band to hold, and no reason to
+/// charge a chip for space its own glyph does not occupy. This is the
+/// same number `intrinsicSize`'s button arm spends on a leading icon.
+pub fn badgeIconWidth(measurer: text.Measurer, icon: ?element_mod.IconName) i32 {
+    const name = icon orelse return 0;
+    return measurer.measure(.icons, text.Scale.small.px(), name.utf8()) + metrics.icon_gap;
+}
+
 /// Height a description adds beneath a tile group's border: a label gap
 /// plus the wrapped small text, zero when there is none. Layout and the
 /// renderer both split the rect into border box and description with
@@ -1923,7 +1937,8 @@ const Ctx = struct {
             // paragraph's business.
             .list, .list_item, .blockquote, .document => .{ .w = avail_w, .h = text.Scale.body.lineHeight() },
             .badge => |b| .{
-                .w = self.measure(.prose, .small, b.label) + 2 * (metrics.badge_pad_h + metrics.border),
+                .w = self.measure(.prose, .small, b.label) + badgeIconWidth(self.measurer, b.icon) +
+                    2 * (metrics.badge_pad_h + metrics.border),
                 .h = text.Scale.small.lineHeight() + 2 * (metrics.badge_pad_v + metrics.border),
             },
             else => .{ .w = @divTrunc(avail_w, 2), .h = text.Scale.body.lineHeight() },

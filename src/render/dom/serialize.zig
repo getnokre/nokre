@@ -235,6 +235,10 @@ pub fn node(em: *Emitter, id: NodeId) anyerror!void {
         .divider => try em.raw("<hr>"),
         .badge => |b| {
             try em.raw("<span class=\"badge\">");
+            // A `mark`, not the `square` a tile's leading glyph takes: a
+            // chip hugs its content, so it is charged the glyph's own
+            // advance and the chip's flex `gap` (`badgeIconWidth`).
+            if (b.icon) |name| try icon(em, name, "", .ink, .small, .mark);
             try em.text(b.label);
             try em.raw("</span>");
         },

@@ -255,17 +255,7 @@ fn drawNode(app: *App, canvas: Painter, id: NodeId) void {
         },
         .icon => |ic| drawIcon(app, canvas, r, ic),
         .divider => hairline(canvas, r.x, r.right(), r.y),
-        .badge => |b| {
-            strokeGroupEdge(canvas, r, metrics.radius);
-            canvas.drawText(
-                r.x + metrics.border + metrics.badge_pad_h,
-                r.y + metrics.border + metrics.badge_pad_v + text.Scale.small.baseline(),
-                .prose,
-                text.Scale.small.px(),
-                b.label,
-                .ink,
-            );
-        },
+        .badge => |b| drawBadge(app, canvas, r, b),
         .meter => |m| drawMeter(app, canvas, r, m),
         .qr => |q| drawQr(app, canvas, r, q),
         .stack, .list, .document => drawChildren(app, canvas, id),
@@ -1504,6 +1494,33 @@ fn drawQr(app: *App, canvas: Painter, r: Rect, q: element_mod.Qr) void {
             mx += run;
         }
     }
+}
+
+/// A chip: the grouping edge, an optional leading mark, the words.
+///
+/// The mark is the chip's own text made a glyph — `small`, `.ink` — and
+/// it takes its own advance rather than a fixed box (`badgeIconWidth`),
+/// because a chip hugs its content and has no column to align into.
+/// Both it and the label sit on the small baseline, so the two share a
+/// line box the way a button's leading icon shares one with its words.
+fn drawBadge(app: *App, canvas: Painter, r: Rect, b: element_mod.Badge) void {
+    strokeGroupEdge(canvas, r, metrics.radius);
+    const size = text.Scale.small.px();
+    const inner_x = r.x + metrics.border + metrics.badge_pad_h;
+    const inner_w = r.w - 2 * (metrics.border + metrics.badge_pad_h);
+    const baseline = r.y + metrics.border + metrics.badge_pad_v + text.Scale.small.baseline();
+    const lead = layout.badgeIconWidth(app.measurer, b.icon);
+    if (b.icon) |name| {
+        const gw = lead - metrics.icon_gap;
+        const gx = startX(app, inner_x, inner_w, gw);
+        // Glyph ink hangs centred in the em box rather than standing on
+        // the baseline, so the mark centres on the words' line box
+        // instead of sharing their baseline — `emCenterBaseline`'s
+        // reason, applied to the one line a chip has.
+        canvas.drawText(gx, emCenterBaseline(r, size), .icons, size, name.utf8(), .ink);
+    }
+    const indent: i32 = if (mirrored(app)) 0 else lead;
+    drawLeading(app, canvas, inner_x + indent, inner_w - lead, baseline, .prose, size, b.label, .ink);
 }
 
 fn drawIcon(app: *App, canvas: Painter, r: Rect, ic: element_mod.Icon) void {

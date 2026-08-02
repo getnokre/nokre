@@ -447,6 +447,27 @@ test "golden: badges are intrinsic-width chips in a horizontal row" {
     try renderGolden(&harness, "badge");
 }
 
+fn buildMarkedBadges(_: ?*anyopaque, app: *h.App) !void {
+    // The case a mark on a chip is for: a row of them, scanned together,
+    // each glyph restating a grouping the words already carry. The chips
+    // still hug their content — the mark is the glyph's own advance, not
+    // a band — so the row is 20px per chip wider and nothing else moved.
+    const tree = &app.tree;
+    const root = tree.rootId();
+    _ = try tree.append(root, .{ .heading = .{ .content = "Tags", .level = .h1 } });
+    const row = try tree.append(root, .{ .stack = .{ .axis = .horizontal } });
+    _ = try tree.append(row, .{ .badge = .{ .label = "Istanbul", .icon = .map_pin } });
+    _ = try tree.append(row, .{ .badge = .{ .label = "Coffee", .icon = .sparkles } });
+    _ = try tree.append(row, .{ .badge = .{ .label = "Turkish", .icon = .languages } });
+    _ = try tree.append(root, .{ .text = .{ .content = "The mark restates; the words still say all of it." } });
+}
+
+test "golden: a row of chips carrying decorative marks" {
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 160 }, null, buildMarkedBadges);
+    defer harness.deinit();
+    try renderGolden(&harness, "badge-marked");
+}
+
 fn buildCheckboxes(_: ?*anyopaque, app: *h.App) !void {
     const tree = &app.tree;
     const root = tree.rootId();
@@ -1145,8 +1166,9 @@ fn buildPersianRtl(_: ?*anyopaque, app: *h.App) !void {
     // The same evidence, now with the chrome mirrored (setDirection):
     // labels lead from the right, the toggle knob and track sit at the
     // trailing edge, the tile chevron points back, the tile's leading
-    // mark leads from the right with its band, the segmented runs
-    // right-to-left — while the paragraph still aligns by its own bytes.
+    // mark leads from the right with its band, a chip's mark leads from
+    // the right without one, the segmented runs right-to-left — while
+    // the paragraph still aligns by its own bytes.
     app.setDirection(.rtl);
     const tree = &app.tree;
     const root = tree.rootId();
@@ -1156,6 +1178,9 @@ fn buildPersianRtl(_: ?*anyopaque, app: *h.App) !void {
     _ = try tree.append(root, .{ .segmented = .{ .label = "نما", .options = &.{ "فهرست", "شبکه" }, .selected = 0 } });
     const group = try tree.append(root, .{ .tile_group = .{} });
     _ = try tree.append(group, .{ .tile = .{ .label = "حساب کاربری", .route = "account", .icon = .user } });
+    const chips = try tree.append(root, .{ .stack = .{ .axis = .horizontal } });
+    _ = try tree.append(chips, .{ .badge = .{ .label = "استانبول", .icon = .map_pin } });
+    _ = try tree.append(chips, .{ .badge = .{ .label = "قهوه", .icon = .sparkles } });
     _ = try tree.append(root, .{ .button = .{ .label = "ذخیره" } });
     _ = try tree.append(root, .{ .text = .{ .content = "English keeps its own left-aligned paragraph beside them." } });
 }
@@ -1186,4 +1211,27 @@ test "trace: PixelSink writes a PPM frame per step" {
         try std.testing.expectEqual(@as(usize, 360), frame.w);
         try std.testing.expectEqual(@as(usize, 280), frame.h);
     }
+}
+
+test "a chip's mark costs the same width whatever glyph it is" {
+    // The number the badge guidance in elements.md rests on. Every glyph
+    // in the bundled icon face advances the same at a given size, so a
+    // mark costs a chip exactly `advance + icon_gap` — 20px at the chip's
+    // `small` scale — no matter which one it holds. That uniformity is
+    // what makes the advice sayable ("a mark adds ~20px, so it earns its
+    // width in a row that gets scanned and not on a lone chip"); if the
+    // face ever ships a wider glyph the advice needs rewriting, and this
+    // is where that shows up rather than in a narrow-screen bug report.
+    const m = skia.measurer();
+    const expected = h.layout.badgeIconWidth(m, .tag);
+    try std.testing.expectEqual(@as(i32, 20), expected);
+    for ([_]h.element.IconName{
+        .map_pin,     .layout_grid,  .briefcase,      .languages,
+        .trophy,      .sparkles,     .heart,          .handshake,
+        .shield,      .circle_check, .message_circle, .users,
+        .credit_card, .key_round,    .a_arrow_down,   .zoom_out,
+    }) |name| {
+        try std.testing.expectEqual(expected, h.layout.badgeIconWidth(m, name));
+    }
+    try std.testing.expectEqual(@as(i32, 0), h.layout.badgeIconWidth(m, null));
 }

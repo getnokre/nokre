@@ -108,7 +108,41 @@ by hue elsewhere, here the words carry it — "Active", "Owner",
 an empty badge is a floating border saying nothing. For status inside a
 `tile` row, use the tile's `detail` line instead of nesting a badge.
 Semantics: plain static text; assistive tech hears the words, which is
-everything the badge says.
+everything the badge *says*.
+
+An optional `icon` (any [`IconName`](#icon)) leads the chip, on a
+`tile`'s terms: decorative, a field rather than a child node, so the
+mandatory `label` stays the accessible name and no glyph can enter the
+tree to double it. It draws at the chip's own scale and ink (`small`,
+`.ink`), so it opens no styling surface and reaches the contrast gate
+exactly where the label already cleared it.
+
+**It restates; it never states.** "The words carry it" was never about
+whether a chip may hold a glyph — it was the refusal of *state conveyed
+by ornament instead of language*, the same refusal that keeps hue out.
+A mark that means something the words do not is that refusal broken: the
+chip then says less to a reader than to a looker. The check is one
+deletion — take every mark off the screen, and nothing on it has stopped
+being true or knowable. What a glyph buys is recognition in a row that
+gets scanned; a dimension chip's mark restates the dimension its label
+names, a tag chip's restates the family its set is organised by. A chip
+whose words are the whole story and whose glyph is the only clue that
+something failed is the case this paragraph refuses.
+
+Unlike a `tile`, chips carry **no all-or-nothing rule** and no fixed
+band: a tile's mark reserves a `lineHeight` square so a *column* of rows
+starts its words on one x, and chips are intrinsic-width and flow
+inline, where there is no column to hold. So a chip is charged only the
+glyph's own advance plus the icon gap — a flat **20px** at the small
+scale, the same for every glyph in the bundled face (pinned by a test,
+since the guidance below rests on the number).
+
+Twenty pixels is 15% of a long chip and over a third of a short one, on
+an element that is often several across in a row that already has to fit
+a 320pt screen. So: **a mark earns its width where chips are read as a
+set** — a row of tags, a row of dimensions, where the glyphs are what
+lets the eye sort them — and not on a lone chip beside prose, where it
+is 20px spent on a picture of a word already visible next to it.
 
 **A number with a name on it is a badge.** "3 credits", "12 active
 keys", "2 pending" — a quantity and the thing it counts, formatted by
