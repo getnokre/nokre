@@ -222,6 +222,33 @@ test "app icon png is byte-exact" {
     try std.testing.expectEqualSlices(u8, @embedFile("testdata/icon-48.png"), actual);
 }
 
+test "a declared Icon Composer bundle takes Apple's slot, and only Apple's" {
+    // Omitted, the tree is exactly what it has always been: the option
+    // costs existing consumers not one byte.
+    try std.testing.expectEqual(packaging.icon_files.len, packaging.derivedIcons(false).len);
+
+    // Declared, the derived appiconset gives way — actool resolves the
+    // app icon by name, so two answers named AppIcon is one too many —
+    // and nothing under ios/ is derived any more.
+    const with_bundle = packaging.derivedIcons(true);
+    try std.testing.expectEqual(packaging.icon_files.len - 1, with_bundle.len);
+    for (with_bundle) |f| try std.testing.expect(!std.mem.startsWith(u8, f.path, "ios/"));
+
+    // Android and the web keep the mark either way: `.icon` is an Apple
+    // format and nothing else can read it.
+    for (packaging.icon_files) |f| {
+        if (std.mem.startsWith(u8, f.path, "ios/")) continue;
+        var kept = false;
+        for (with_bundle) |g| kept = kept or std.mem.eql(u8, f.path, g.path);
+        try std.testing.expect(kept);
+    }
+
+    // The bundle lands where each Apple project looks, under the name
+    // the Xcode setting is pinned to.
+    try std.testing.expectEqualStrings("ios/AppIcon.icon", packaging.apple_icon.delivery_paths[0]);
+    try std.testing.expectEqualStrings("macos/AppIcon.icon", packaging.apple_icon.delivery_paths[1]);
+}
+
 test "icon size table divides exactly — no icon depends on a rounding rule" {
     for (packaging.icon_files) |f| {
         // Cells fit and centre: the margin comment in icon.zig only

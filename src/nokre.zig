@@ -174,4 +174,8 @@ test {
     // Build-time only (consumed by build.zig, never compiled into
     // apps), but its goldens run with everything else's.
     _ = @import("packaging/packaging_test.zig");
+    // The declared Apple icon keeps its tests inline, and build.zig is
+    // its only consumer — no golden reaches the module, so it is named
+    // here or it is never analyzed.
+    _ = @import("packaging/apple_icon.zig");
 }

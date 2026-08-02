@@ -9,7 +9,11 @@
 //! into a second source of truth. Emitters are pure functions of
 //! (declaration, linked services): deterministic to the byte and
 //! golden-tested like everything else here (packaging_test.zig embeds
-//! the expected files).
+//! the expected files). One artifact travels the other way — the
+//! Icon Composer bundle an app may declare (apple_icon.zig), which is
+//! validated and carried, never generated — and it is the exception
+//! that proves the rule: nokre takes an input only where the input is
+//! itself a declaration Apple's own tool compiles.
 //!
 //! Permissions are derived, not declared — linking a service *is* the
 //! statement of intent, the a11y rule (derive from the tree) applied to
@@ -27,6 +31,13 @@ const std = @import("std");
 /// (icon.zig); the per-platform size tables live below with the other
 /// derivation policy.
 pub const icon = @import("icon.zig");
+
+/// The declared Apple icon — an Icon Composer `.icon` bundle the tree
+/// carries whole (apple_icon.zig). The one packaging artifact that is
+/// an *input* rather than a derivation, and it earns that by being a
+/// declaration itself: nokre validates and delivers it, Xcode's actool
+/// compiles it.
+pub const apple_icon = @import("apple_icon.zig");
 
 /// App identity as build.zig declares it (the `pkg_*` options alias
 /// this struct). Packaging consumes the declaration directly, never the
@@ -679,7 +690,9 @@ pub fn webIndexHtml(gpa: std.mem.Allocator, decl: Decl, module_wasm: []const u8)
 /// 40 dp of the 108 dp canvas: Google's keyline for a square logo,
 /// with the mark's diagonal inside the 66 dp always-visible circle no
 /// matter which mask an OEM picks. Every (size, cell) pair divides
-/// exactly, so no icon depends on a rounding rule.
+/// exactly, so no icon depends on a rounding rule. Apple's row leads
+/// the table because a declared Icon Composer bundle displaces it —
+/// `derivedIcons` below.
 pub const IconFile = struct { path: []const u8, size: u32, cell: u32 };
 pub const icon_files = [_]IconFile{
     .{ .path = "ios/Assets.xcassets/AppIcon.appiconset/AppIcon1024.png", .size = 1024, .cell = 128 },
@@ -697,10 +710,24 @@ pub const icon_files = [_]IconFile{
     .{ .path = "web/icon-512.png", .size = 512, .cell = 64 },
 };
 
+/// The derived icons the tree carries. A declared Icon Composer bundle
+/// (apple_icon.zig) takes Apple's slot whole: actool resolves the app
+/// icon by name, so a derived `AppIcon.appiconset` shipping beside an
+/// `AppIcon.icon` would be a second answer to one question — and the
+/// derived mark is the *default*, never a fallback layered under real
+/// art. Android and the web keep it either way; the bundle is an Apple
+/// format and nothing else can read it.
+pub fn derivedIcons(apple_bundle_declared: bool) []const IconFile {
+    return if (apple_bundle_declared) icon_files[1..] else &icon_files;
+}
+
 /// The asset-catalog scaffolding around the one iOS icon: Xcode 14+
 /// accepts a single 1024 image and derives every slot, so the catalog
 /// is two constant JSON files and one PNG — no per-size table on
 /// Apple's side. Constant because nothing identity-shaped lives here.
+/// The catalog itself ships either way — the Xcode template compiles
+/// it as a resource — but the appiconset inside is the derived mark's,
+/// and gives way to a declared `.icon` bundle (`derivedIcons`).
 pub const ios_assets_contents_json: []const u8 =
     \\{
     \\  "info" : {

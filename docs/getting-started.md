@@ -1725,8 +1725,18 @@ Packaging is already done: `zig build` writes `zig-out/pkg/` — an iOS
 `Info.plist` and asset catalog, an `AndroidManifest.xml` with the icon
 res tree, a web page with manifest and icons — all generated from Part
 1's declaration, never hand-written, never committed. The icon is a
-deterministic grayscale mark computed from your app id
-([services.md](services.md)). Part 3's `.deep_link` added to that tree:
+deterministic grayscale mark computed from your app id — unless you have
+real art for Apple's platforms, which is one more line in the same
+declaration:
+
+```zig
+        .apple_icon = b.path("assets/AppIcon.icon"),
+```
+
+pointing at the `.icon` bundle Icon Composer exports. nokre checks it and
+delivers it whole to `pkg/ios/AppIcon.icon` and `pkg/macos/AppIcon.icon`;
+Xcode compiles it, and the contract — including the Xcode 26 floor — is
+[services.md](services.md). Part 3's `.deep_link` added to that tree:
 `ios/App.entitlements` (point Xcode's `CODE_SIGN_ENTITLEMENTS` at it),
 the App-Links `intent-filter` inside the manifest, and a `.well-known/`
 directory with `assetlinks.json` and `apple-app-site-association` — copy
@@ -1744,6 +1754,18 @@ and not in a Gradle log. iOS is not that cheap a check: its build wants
 a macOS host, `deps/skia`, and `xcrun`, so it is verified through the
 Xcode project below.
 
+An executable is what those three are: nokre builds no macOS `.app`, and
+will not — bundling is Xcode's job or your own script's, and a third
+pipeline is one nokre would have to keep correct forever. What it does
+instead is have the icon ready. `pkg/macos/AppIcon.icon` is the same
+bundle iOS gets, delivered where a macOS project can reach it: a wrapper
+target adds it to its Resources and sets
+`ASSETCATALOG_COMPILER_APPICON_NAME` to `AppIcon`, exactly as on iOS
+below, and a hand-rolled `.app` has one directory to hand to `actool`.
+Without an `.apple_icon` there is no `pkg/macos/` at all — the derived
+mark reaches iOS, Android and the web, and macOS has no bundle for it to
+reach.
+
 **iOS.** Build Skia for iOS once, then let Xcode own packaging and
 signing, with a build phase calling `zig build` for the Zig side — the
 kitchen sink's project is the template to copy:
@@ -1760,6 +1782,14 @@ both); `INFOPLIST_FILE` and the asset catalog read from the `pkg/ios`
 tree your install step fills; and `PRODUCT_BUNDLE_IDENTIFIER` must equal
 the declared id — that one duplication belongs to Apple's signing
 machinery, and Xcode fails the build if it disagrees, so drift is loud.
+If you declared an `.apple_icon`, one addition: drag
+`ios/build/pkg/AppIcon.icon` into the project so it joins the target's
+Resources phase. The copied build phase already mirrors it there on every
+build (the template's script does this whether or not an icon is
+declared), and `ASSETCATALOG_COMPILER_APPICON_NAME` already says
+`AppIcon`, which is the name nokre normalizes the bundle to — so that one
+drag is the whole wiring, and the icon still has exactly one source. It
+wants Xcode 26; an older `actool` does not know the format.
 The per-target split of who compiles what is
 [internals/platform-shells.md](internals/platform-shells.md). The
 Simulator needs no signing setup; for your own iPhone, a free Apple ID's

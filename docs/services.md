@@ -221,6 +221,34 @@ no-custom-visual-identity refusal ([introduction.md](introduction.md))
 applied to the home screen. The same id draws the same mark everywhere,
 forever; renaming the display name keeps it.
 
+An app that has real art for Apple's platforms declares it, and that is
+the one packaging *input* nokre takes:
+
+```zig
+    .apple_icon = b.path("assets/AppIcon.icon"),   // requires .pkg
+```
+
+The value is an Icon Composer bundle — the `.icon` **directory** Apple's
+tool exports, holding `icon.json` and the layer images it names under
+`Assets/`. That format earns the exception by being a declaration
+itself: appearance (light, dark, tinted), lighting, shadow and the glass
+material are values over vector layers, and every idiom's pixels are
+compiled by Xcode's `actool`, never by nokre — which resamples nothing,
+re-encodes nothing, and models none of the schema. The bundle is checked
+where it is declared (a `.icon` directory, a parseable `icon.json`, every
+layer image it names present) and delivered whole to
+`pkg/ios/AppIcon.icon` and `pkg/macos/AppIcon.icon` — one icon, both
+Apple platforms, which is Icon Composer's own claim, not a duplication
+nokre invented. It replaces the derived appiconset rather than joining
+it: `actool` resolves the app icon by name, and two answers named
+`AppIcon` is one too many. **Xcode 26 is the floor** — an older `actool`
+cannot compile a `.icon` at all, and the answer on one is to declare no
+`apple_icon` and ship the derived mark. Android and the web keep the
+mark either way; `.icon` is an Apple format and nothing else reads it.
+Pointing an Xcode project at the delivered bundle — and what "delivered"
+buys on macOS, which nokre does not bundle — is
+[getting-started.md](getting-started.md).
+
 The native side answers only the question the build cannot: installer
 provenance (app store / TestFlight / direct / bare `dev` binary; `web`
 on wasm), as one stateless synchronous query. The query is real on

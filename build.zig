@@ -61,6 +61,16 @@ pub const AppOptions = struct {
     /// Gradle coordinate the consumer adds themselves; nokre has no
     /// dependency manager to add it for them (docs/internals/iap.md).
     iap: bool = false,
+    /// The app's Apple icon: an Icon Composer bundle — the `.icon`
+    /// *directory* Icon Composer exports, holding `icon.json` and its
+    /// layer images. Requires `pkg` (the icon rides the tree the
+    /// declaration creates); omitted, the tree carries the mark
+    /// derived from the app id, which is what every app gets for
+    /// nothing. Declared, the same bundle serves iOS and macOS, and
+    /// Xcode 26 or newer compiles it — nokre delivers it untouched and
+    /// checks only that it is a bundle whose layer images ship
+    /// (docs/services.md).
+    apple_icon: ?std.Build.LazyPath = null,
     /// Web only: the name of the wasm module the packaging tree's
     /// generated index.html loads, served beside it (with live.js and
     /// its imports, per docs/internals/dom-edition.md's host contract).
@@ -128,7 +138,7 @@ fn addAppTo(hb: *std.Build, options: AppOptions) App {
 fn appPkgTree(hb: *std.Build, options: AppOptions) ?std.Build.LazyPath {
     const decl = options.pkg orelse return null;
     const wf = hb.addWriteFiles();
-    addPkgTree(hb, wf, decl, appServices(options), options.web_wasm);
+    addPkgTree(hb, wf, decl, appServices(options), options.web_wasm, options.apple_icon);
     return wf.getDirectory();
 }
 
@@ -144,6 +154,7 @@ fn checkServicesNeedPkg(hb: *std.Build, options: AppOptions, artifact: *std.Buil
     checkDeepLinkNeedsPkg(hb, options, artifact);
     checkOauthNeedsPkg(hb, options, artifact);
     checkIapNeedsPkg(hb, options, artifact);
+    checkAppleIconNeedsPkg(hb, options, artifact);
 }
 
 fn checkStoreNeedsPkg(hb: *std.Build, options: AppOptions, artifact: *std.Build.Step.Compile) void {
@@ -179,6 +190,17 @@ fn checkOauthNeedsPkg(hb: *std.Build, options: AppOptions, artifact: *std.Build.
 fn checkIapNeedsPkg(hb: *std.Build, options: AppOptions, artifact: *std.Build.Step.Compile) void {
     if (options.iap and options.pkg == null) {
         const fail = hb.addFail("iap needs the app's identity — both stores resolve products against the app id, so declare .pkg alongside .iap (docs/services.md)");
+        artifact.step.dependOn(&fail.step);
+    }
+}
+
+/// An app icon with no identity has nowhere to go: the bundle rides
+/// the packaging tree, and there is no tree without `.pkg`. The
+/// services' rule, on the artifact the consumer builds — the icon's
+/// own shape is checked where the tree is written (`addAppleIcon`).
+fn checkAppleIconNeedsPkg(hb: *std.Build, options: AppOptions, artifact: *std.Build.Step.Compile) void {
+    if (options.apple_icon != null and options.pkg == null) {
+        const fail = hb.addFail("apple_icon has no packaging tree to ride — the icon is delivered beside the manifests, so declare .pkg alongside .apple_icon (docs/services.md)");
         artifact.step.dependOn(&fail.step);
     }
 }
@@ -834,9 +856,13 @@ pub fn build(b: *std.Build) void {
         installKitchenSinkPkg(b, pkg_step);
         // app.wasm is the documented default name for the module the
         // generated web index loads; regenerate via the packaging API
-        // to rename it.
+        // to rename it. No apple_icon either: a `-D` option carries
+        // strings, and a path resolved against nokre's own build root
+        // is not the consumer's icon — declaring one is `addApp`'s
+        // surface, and this tree carries the derived mark
+        // (docs/services.md).
         if (pkg_decl) |decl|
-            addPkgTree(b, b.addNamedWriteFiles("pkg"), decl, services, "app.wasm");
+            addPkgTree(b, b.addNamedWriteFiles("pkg"), decl, services, "app.wasm", null);
     }
 
     // The run-* step names exist whatever the flags and dep state say:
@@ -955,7 +981,9 @@ fn installKitchenSinkPkg(b: *std.Build, into: *std.Build.Step) void {
     const wf = b.addWriteFiles();
     // app.wasm matches the web step's output name, so the pkg tree's
     // index.html and `zig build web`'s directory agree when merged.
-    addPkgTree(b, wf, kitchen_sink_pkg, .{}, "app.wasm");
+    // No apple_icon: nokre ships no art, so the kitchen sink's icon is
+    // the mark derived from its id, like any app that declares none.
+    addPkgTree(b, wf, kitchen_sink_pkg, .{}, "app.wasm", null);
     into.dependOn(&b.addInstallDirectory(.{
         .source_dir = wf.getDirectory(),
         .install_dir = .prefix,
@@ -968,7 +996,14 @@ fn installKitchenSinkPkg(b: *std.Build, into: *std.Build.Step) void {
 /// declaration, never hand-written or committed. An invalid declaration
 /// attaches a fail step to the tree, so plain builds proceed and
 /// anything consuming the manifests fails with the message.
-fn addPkgTree(b: *std.Build, wf: *std.Build.Step.WriteFile, decl: PackageDecl, services: packaging.Services, web_wasm: []const u8) void {
+fn addPkgTree(
+    b: *std.Build,
+    wf: *std.Build.Step.WriteFile,
+    decl: PackageDecl,
+    services: packaging.Services,
+    web_wasm: []const u8,
+    apple_icon: ?std.Build.LazyPath,
+) void {
     packaging.validate(decl) catch |err| {
         const fail = b.addFail(switch (err) {
             error.InvalidId => "pkg_id must be two or more dot-separated [a-z][a-z0-9_]* segments — the intersection of Apple and Android identifier rules (docs/services.md)",
@@ -987,12 +1022,16 @@ fn addPkgTree(b: *std.Build, wf: *std.Build.Step.WriteFile, decl: PackageDecl, s
     _ = wf.add("web/index.html", packaging.webIndexHtml(gpa, decl, web_wasm) catch @panic("OOM"));
     // The app icon set, derived from the id (src/packaging/icon.zig):
     // the asset-catalog scaffolding Xcode compiles, the adaptive-icon
-    // resources Gradle merges, and the PNGs themselves.
+    // resources Gradle merges, and the PNGs themselves. A declared Icon
+    // Composer bundle takes Apple's slot instead — checked and copied
+    // whole, never generated.
+    const apple_bundle = addAppleIcon(b, wf, apple_icon);
     _ = wf.add("ios/Assets.xcassets/Contents.json", packaging.ios_assets_contents_json);
-    _ = wf.add("ios/Assets.xcassets/AppIcon.appiconset/Contents.json", packaging.ios_appicon_contents_json);
+    if (!apple_bundle)
+        _ = wf.add("ios/Assets.xcassets/AppIcon.appiconset/Contents.json", packaging.ios_appicon_contents_json);
     _ = wf.add("android/res/mipmap-anydpi-v26/ic_launcher.xml", packaging.android_adaptive_icon_xml);
     _ = wf.add("android/res/values/ic_launcher.xml", packaging.android_icon_values_xml);
-    for (packaging.icon_files) |f|
+    for (packaging.derivedIcons(apple_bundle)) |f|
         _ = wf.add(f.path, packaging.icon.png(gpa, decl.id, f.size, f.cell) catch @panic("OOM"));
     // deep_link association files (docs/services.md): the client halves
     // ride the Info.plist entitlement + the manifest intent-filter above;
@@ -1006,6 +1045,47 @@ fn addPkgTree(b: *std.Build, wf: *std.Build.Step.WriteFile, decl: PackageDecl, s
         _ = wf.add(".well-known/apple-app-site-association", aasa);
     if (packaging.androidAssetLinks(gpa, decl, services) catch @panic("OOM")) |links|
         _ = wf.add(".well-known/assetlinks.json", links);
+}
+
+/// The declared Icon Composer bundle: checked while the graph is
+/// built, then copied whole into the tree once per Apple platform
+/// (src/packaging/apple_icon.zig). Returns whether the tree carries it.
+/// A bundle nokre would not deliver leaves the derived mark in place
+/// and attaches the fix to the tree's step — the invalid-declaration
+/// rule: plain builds proceed, anything consuming the manifests fails
+/// with the sentence naming what to fix.
+fn addAppleIcon(b: *std.Build, wf: *std.Build.Step.WriteFile, apple_icon: ?std.Build.LazyPath) bool {
+    const src = apple_icon orelse return false;
+    // Reading the bundle at construction time is what makes the check
+    // possible at all, and a build output has no path yet. An app icon
+    // is art in a source tree; say so rather than let a LazyPath panic
+    // say it worse.
+    switch (src) {
+        .generated => return refuseAppleIcon(b, wf, "apple_icon must point at a .icon bundle in your source tree — nokre reads it while the build graph is built, so a build output cannot be one (docs/services.md)"),
+        else => {},
+    }
+    const path = src.getPath2(b, null);
+    const problem = packaging.apple_icon.check(b.allocator, b.graph.io, .cwd(), path) catch @panic("OOM");
+    if (problem) |p| return refuseAppleIcon(b, wf, switch (p) {
+        .not_dot_icon => b.fmt("apple_icon must name an Icon Composer bundle — a directory ending in {s}, which is what Icon Composer exports and what Xcode's app-icon setting resolves; {s} does not (docs/services.md)", .{ packaging.apple_icon.extension, path }),
+        .missing => b.fmt("apple_icon points at {s}, which does not exist (docs/services.md)", .{path}),
+        .not_a_directory => b.fmt("apple_icon points at {s}, which is a file — a .icon bundle is a directory, drawn as one item by Finder and Xcode; pass the directory itself (docs/services.md)", .{path}),
+        .unreadable => b.fmt("apple_icon points at {s}, which the build cannot read (docs/services.md)", .{path}),
+        .no_manifest => b.fmt("{s} carries no {s} — that file is the icon; re-export the bundle from Icon Composer (docs/services.md)", .{ path, packaging.apple_icon.manifest_name }),
+        .malformed_manifest => b.fmt("{s}/{s} is not valid JSON — nokre hands the bundle to Xcode's actool untouched and cannot repair it (docs/services.md)", .{ path, packaging.apple_icon.manifest_name }),
+        .missing_asset => |name| b.fmt("{s}/{s} names the layer image \"{s}\", but {s}/{s}/{s} is not there — copy the layer asset into the bundle (docs/services.md)", .{ path, packaging.apple_icon.manifest_name, name, path, packaging.apple_icon.assets_dir, name }),
+    });
+    // Delivery is a copy, and only a copy: no resampling, no
+    // re-encoding, no second reading of a format Apple's tool owns.
+    for (packaging.apple_icon.delivery_paths) |dest| _ = wf.addCopyDirectory(src, dest, .{});
+    return true;
+}
+
+/// The refusal half of `addAppleIcon`: the fix rides the tree's step,
+/// and the tree keeps the derived mark so it stays well-formed.
+fn refuseAppleIcon(b: *std.Build, wf: *std.Build.Step.WriteFile, message: []const u8) bool {
+    wf.step.dependOn(&b.addFail(message).step);
+    return false;
 }
 
 /// The linked-service set an `addApp` call implies, in the one shape
