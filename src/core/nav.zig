@@ -1,5 +1,6 @@
 //! The app-level navigation chrome: the roster of destinations, and the
-//! two shapes it renders as. `App.setNav` records the set; `syncNavChrome`
+//! two shapes it renders as. `App.setNav` records the set and
+//! `App.clearNav` retires it; `syncNavChrome`
 //! decides — every time the viewport, the direction, or the current route
 //! changes — whether the bottom pane shows the row of `nav_item`s or the
 //! single `nav_current` chip standing in for all of them.
@@ -22,6 +23,7 @@ const std = @import("std");
 const app_mod = @import("app.zig");
 const element_mod = @import("element.zig");
 const layout = @import("layout.zig");
+const overlays = @import("overlays.zig");
 const tree_mod = @import("tree.zig");
 
 const App = app_mod.App;
@@ -120,11 +122,17 @@ pub fn effectiveRoster(app: *const App, buf: *RosterBuf) []const RosterItem {
 }
 
 /// Installs app-level navigation chrome: the destinations, preserved
-/// across router rebuilds. Call once, before the first navigate — nav
-/// leads the focus order as the navigation landmark. The route table is
-/// already in place by then (it is an `App.init` option), which is what
+/// across router rebuilds and taken back down by `clearNav`. The route
+/// table is what names them (it is an `App.init` option), which is what
 /// lets a destination be a route and a glyph and nothing else — every
 /// label here is a `RouteDef.title`.
+///
+/// The node goes **first** among the root's children wherever the call
+/// lands: the nav leads the focus order as the navigation landmark, and
+/// enforcing that by position rather than by demanding a bare tree is
+/// what lets an app install the bar at the moment it earns one — see
+/// `clearNav` for the teardown that only makes sense if this half is
+/// callable from the same place.
 ///
 /// It takes the bottom band of the viewport, centered at whatever width
 /// its own contents come to — not the sheet cap, which is a rule about
@@ -141,26 +149,76 @@ pub fn setNav(app: *App, items: []const Destination) !void {
     // 2–5 destinations: fewer is not navigation, more does not fit a
     // bottom bar at any viewport width.
     if (items.len < 2 or items.len > max_nav_items) return error.NavItemCount;
-    const root = app.tree.rootId();
-    if (app.tree.childCount(root) != 0) return error.NavMustComeFirst;
-    // All or nothing: a roster half-built by a refused route — or by a
-    // failed allocation — would outlive the error and describe a nav
-    // that was never installed.
-    errdefer app.nav_items.clearRetainingCapacity();
+    // The whole roster is read before anything moves. The route table
+    // is what names a destination, so a route it has never heard of is
+    // refused here rather than drawn as a blank chip leading nowhere;
+    // and a destination is entered by name alone, so a route that takes
+    // arguments would fail its arity on every press — better a refused
+    // roster than an inert one. Checking first is also what lets a
+    // refused call leave a bar that is already up exactly as it was.
     for (items) |item| {
-        // The route table is what names the destination, so a route it
-        // has never heard of is refused here rather than drawn as a
-        // blank chip leading nowhere. It also settles the labels: they
-        // are the titles the routes declare, borrowed from the table.
         const def = app.router.lookup(item.route) orelse return error.UnknownRoute;
-        // A destination is entered by name alone — the row has no
-        // argument to supply and would fail the arity check on every
-        // press. Better a refused roster than an inert one.
         if (def.args != 0) return error.RouteArgCount;
+    }
+    // All or nothing past here: only an allocation can still fail, and
+    // a roster half-copied would outlive the error describing a nav
+    // that was never installed. Down to nothing rather than down to
+    // half — `clearNav` is the same teardown a consumer would ask for.
+    errdefer clearNav(app);
+    app.nav_items.clearRetainingCapacity();
+    for (items) |item| {
+        // The labels settle here: they are the titles the routes
+        // declare, borrowed from the table.
+        const def = app.router.lookup(item.route).?;
         try app.nav_items.append(app.gpa, .{ .label = def.title, .route = def.name, .icon = item.icon });
     }
-    _ = try app.tree.append(root, .{ .nav = .{} });
+    // Reused when a bar is already up, so re-declaring a roster does
+    // not replace the node that focus — or an open picker — is naming.
+    // The tree keeps the rest honest: a nav is a root child and there
+    // is at most one (`validateAppend`).
+    if (layout.findNav(&app.tree) == null)
+        _ = try app.tree.insertFirst(app.tree.rootId(), .{ .nav = .{} });
     try syncNavChrome(app);
+    app.invalidate();
+}
+
+/// Takes the nav chrome back down — the roster and the node — leaving a
+/// tree that is simply an app without app-level navigation, and every
+/// destination unreachable because there is nothing left to press.
+///
+/// The counterpart `setNav` needs, and it has to be a verb: a router
+/// rebuild preserves the nav on purpose (`Router.clearContent`), so an
+/// app whose bar belongs to a session had no way to end one except to
+/// reach into the tree for the child whose role is `.nav`.
+///
+/// Idempotent and infallible — an app that never installed a bar, or
+/// one signing out twice, costs nothing. It takes with it whatever was
+/// pointing at the bar: the section picker is the collapsed chip's own
+/// overlay, and focus cannot outlive the node that held it.
+///
+/// **Where to call it.** At the transition that ends the session, with
+/// `setNav` at the one that begins it. Both are ordinary calls against
+/// a tree of any shape, which is why `setNav` places the node first
+/// rather than demanding a bare root: an install that lives inside a
+/// screen builder runs again on every rebuild of that screen, so any
+/// rebuild landing after the clear puts the bar back up — and nokre
+/// cannot tell that reinstall from a wanted one. Moving both halves out
+/// of the builders is what makes the order stop mattering.
+pub fn clearNav(app: *App) void {
+    app.nav_items.clearRetainingCapacity();
+    const nav = layout.findNav(&app.tree) orelse return;
+    // The section picker belongs to the chip that is about to go, so it
+    // goes first — through the one verb that knows how to close it.
+    if (app.picker_owner) |owner| {
+        if (app.tree.isDescendant(owner, nav)) overlays.closePicker(app, null);
+    }
+    // …which hands focus back to that chip, so this runs after it.
+    if (app.focused) |f| {
+        if (app.tree.isDescendant(f.node, nav)) app.focused = null;
+    }
+    // Only CannotRemoveRoot and InvalidNode, neither reachable for a
+    // node `findNav` just handed back.
+    app.tree.remove(nav) catch {};
     app.invalidate();
 }
 

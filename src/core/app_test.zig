@@ -1553,14 +1553,86 @@ fn queryLabel(app: *App, label: []const u8) ?NodeId {
     return null;
 }
 
-test "setNav must precede content" {
-    var app = try test_app.init(400, 400);
+test "the bar leads the focus order wherever setNav is called from" {
+    var app = try offRosterApp(900);
     defer app.deinit();
-    _ = try app.tree.append(app.tree.rootId(), .{ .text = .{ .content = "early" } });
-    try testing.expectError(error.NavMustComeFirst, app.setNav(&.{
-        .{ .route = "home", .icon = .house },
-        .{ .route = "settings", .icon = .settings },
-    }));
+    // A screen is already up — which used to refuse the call, and is
+    // exactly where an app whose bar belongs to a session installs one.
+    try app.navigate("terms");
+    try testing.expect(app.tree.childCount(app.tree.rootId()) > 0);
+
+    try app.setNav(&offroster_nav);
+    // Position, not timing, is what makes the navigation landmark lead.
+    var it = app.tree.children(app.tree.rootId());
+    try testing.expect(it.next().?.eql(layout.findNav(&app.tree).?));
+}
+
+test "clearNav takes the bar down, and its destinations stop being reachable" {
+    var app = try offRosterApp(900);
+    defer app.deinit();
+    try app.setNav(&offroster_nav);
+    try app.navigate("home");
+    app.performLayout();
+
+    var it = app.tree.children(layout.findNav(&app.tree).?);
+    _ = it.next();
+    const settings_item = it.next().?;
+    const spot = app.tree.rectOf(settings_item).center();
+
+    app.clearNav();
+    try testing.expect(layout.findNav(&app.tree) == null);
+    try testing.expectEqual(@as(usize, 0), app.nav_items.items.len);
+    app.performLayout();
+
+    // The band is gone, not hidden: a press where Settings stood
+    // reaches nothing, and the router has not moved.
+    try app.tap(spot);
+    try testing.expectEqualStrings("home", app.router.current().?);
+
+    // Idempotent, and no rebuild brings it back — a rebuild preserves
+    // the nav node on purpose, and there is none left to preserve.
+    app.clearNav();
+    try app.navigate("terms");
+    try testing.expect(layout.findNav(&app.tree) == null);
+}
+
+test "clearNav is not one-way: a later setNav puts the bar back" {
+    var app = try offRosterApp(900);
+    defer app.deinit();
+    try app.setNav(&offroster_nav);
+    try app.navigate("home");
+    app.clearNav();
+    try testing.expect(layout.findNav(&app.tree) == null);
+
+    // The session begins again, from the transition rather than a
+    // builder: a screen is on the tree and the install still lands.
+    try app.setNav(&offroster_nav);
+    const nav = layout.findNav(&app.tree).?;
+    // Two destinations, not two rosters stacked.
+    try testing.expectEqual(@as(usize, 2), app.nav_items.items.len);
+    try testing.expectEqual(@as(usize, 2), app.tree.childCount(nav));
+    var it = app.tree.children(nav);
+    try testing.expectEqualStrings("Home", app.tree.getConst(it.next().?).?.nav_item.label);
+}
+
+test "clearNav takes what was pointing at the bar: the open picker and focus" {
+    var app = try crowdedApp();
+    defer app.deinit();
+    try app.setNav(&crowded_nav);
+    try app.navigate("settings");
+    app.performLayout();
+
+    // The collapsed chip's section menu is open, and focus is in it.
+    try app.tap(app.tree.rectOf(navChip(&app).?).center());
+    try testing.expect(app.picker_owner != null);
+    try testing.expect(layout.findPicker(&app.tree) != null);
+
+    app.clearNav();
+    // Nothing is left naming a node that no longer exists.
+    try testing.expect(layout.findNav(&app.tree) == null);
+    try testing.expect(layout.findPicker(&app.tree) == null);
+    try testing.expect(app.picker_owner == null);
+    try testing.expect(app.focused == null);
 }
 
 test "setNav rejects too few or too many destinations" {

@@ -227,6 +227,7 @@ pub const App = struct {
     // ---- feature APIs, implemented in the sibling modules ----
 
     pub const setNav = nav_mod.setNav;
+    pub const clearNav = nav_mod.clearNav;
     pub const presentSheet = overlays.presentSheet;
     pub const dismissSheet = overlays.dismissSheet;
     pub const notify = notices_mod.notify;

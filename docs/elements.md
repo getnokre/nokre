@@ -954,7 +954,8 @@ the path that encodes it — is [routing.md](routing.md); what follows is
 the chrome.
 
 ### `nav` / `nav_item`
-App-level navigation, installed once — not placed in route builders:
+App-level navigation — a set of places the app always has, declared in
+one call and never placed in route builders:
 
 ```zig
 try app.setNav(&.{
@@ -962,6 +963,8 @@ try app.setNav(&.{
     .{ .route = "settings", .icon = .settings },
 });
 try app.navigate("library");
+
+app.clearNav(); // and the bar is gone, roster and all
 ```
 
 The nav survives every router rebuild and leads the focus order as the
@@ -970,6 +973,25 @@ decisions, not the consumer's, and there is no API for either: the bar
 is always the bottom band of the viewport, and whatever it holds — the
 row of destinations, the collapsed chip, the minimized-notices square —
 is measured at its own width and centered there.
+
+**`clearNav` is the counterpart**, and an app needs one whenever its bar
+belongs to a *session* rather than to the app: a rebuild preserves the
+nav deliberately, so nothing short of this takes it down. It removes the
+roster and the node — every destination unreachable, because there is
+nothing left to press — along with whatever was pointing at the bar (an
+open section menu is the collapsed chip's own; focus does not outlive
+the node that held it). Infallible and idempotent: signing out twice
+costs nothing, and neither does clearing a bar that was never
+installed. A later `setNav` puts one back.
+
+**Call both at the transition, not from a builder.** `setNav` installs
+the node first among the root's children wherever the call lands — the
+landmark leads by position, so neither half needs a bare tree, and the
+sign-in and the sign-out can each say their piece. An install that
+lives inside a screen builder runs again on every rebuild of that
+screen, so a rebuild landing after the clear puts the bar back up;
+nokre cannot tell that reinstall from a wanted one, and moving both
+halves out to the transitions is what makes the order stop mattering.
 
 A destination is a `route` — never an action — and an `icon` (any
 [`IconName`](#icon)), and nothing else. **It carries no label**: what a
