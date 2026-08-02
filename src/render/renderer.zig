@@ -1333,9 +1333,32 @@ fn drawControlLabel(app: *App, canvas: Painter, r: Rect, control_w: i32, label: 
     canvas.drawText(tx, labelBaseline(r), .prose, text.Scale.body.px(), label, .ink);
 }
 
+/// What a switch or a box draws while its work runs: `…` in the slot the
+/// control occupied, and nothing else changed. The words beside it stay
+/// (a name is not a state) and layout never measured the control's
+/// contents, so the row is the size it always was — the flip does not
+/// reflow the screen out from under the finger that made it. It does not
+/// dim: `in_progress` is busy, not unavailable, and the ellipsis is the
+/// only sign the work is happening. Centered text needs no mirroring; the
+/// *slot* mirrors, exactly as the control's did.
+fn drawControlWait(app: *App, canvas: Painter, r: Rect, control_w: i32) void {
+    drawCenteredText(app, canvas, .{
+        .x = startX(app, r.x, r.w, control_w),
+        .y = r.y,
+        .w = control_w,
+        .h = r.h,
+    }, layout.ellipsis, .ink);
+}
+
 /// An iOS-style pill switch: the knob travels toward the trailing edge
 /// as it switches on, so it mirrors with the chrome.
 fn drawToggle(app: *App, canvas: Painter, r: Rect, t: element_mod.Toggle, focused: bool) void {
+    if (t.in_progress) {
+        drawControlWait(app, canvas, r, metrics.toggle_track_w);
+        drawControlLabel(app, canvas, r, metrics.toggle_track_w, t.label);
+        if (focused) drawFocusRing(canvas, r, metrics.radius);
+        return;
+    }
     const track: Rect = .{
         .x = startX(app, r.x, r.w, metrics.toggle_track_w),
         .y = r.y + @divTrunc(r.h - metrics.toggle_track_h, 2),
@@ -1365,6 +1388,12 @@ fn drawToggle(app: *App, canvas: Painter, r: Rect, t: element_mod.Toggle, focuse
 }
 
 fn drawCheckbox(app: *App, canvas: Painter, r: Rect, c: element_mod.Checkbox, focused: bool) void {
+    if (c.in_progress) {
+        drawControlWait(app, canvas, r, metrics.checkbox_box);
+        drawControlLabel(app, canvas, r, metrics.checkbox_box, c.label);
+        if (focused) drawFocusRing(canvas, r, metrics.radius);
+        return;
+    }
     const box: Rect = .{
         .x = startX(app, r.x, r.w, metrics.checkbox_box),
         .y = r.y + @divTrunc(r.h - metrics.checkbox_box, 2),

@@ -81,6 +81,31 @@ test "a button with work in progress is announced busy, disabled, and still reac
     try testing.expect(!d.focusable);
 }
 
+test "a switch with work in progress keeps its value and gains the busy pair" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    const sw = try app.tree.append(app.tree.rootId(), .{ .toggle = .{ .label = "Push to phone", .on = true, .in_progress = true } });
+    const box = try app.tree.append(app.tree.rootId(), .{ .checkbox = .{ .label = "Weekly digest", .in_progress = true } });
+
+    var snap = try snapshot(testing.allocator, &app);
+    defer snap.deinit();
+
+    for ([_]@TypeOf(sw){ sw, box }) |id| {
+        const n = snap.find(id).?;
+        // The button's pair: not operable, not gone.
+        try testing.expect(n.busy);
+        try testing.expect(n.disabled);
+        try testing.expect(n.focusable);
+        try testing.expect(!n.activatable);
+    }
+    // The value the pixels stopped showing is still what a reader is
+    // told: the `…` is a rendering, and the app still holds the state.
+    try testing.expectEqual(@as(?bool, true), snap.find(sw).?.checked);
+    try testing.expectEqual(@as(?bool, false), snap.find(box).?.checked);
+    // And the name never became the mark.
+    try testing.expectEqualStrings("Push to phone", snap.find(sw).?.label);
+}
+
 test "a known percentage reaches assistive tech as the button's value" {
     var app = try test_app.init(400, 400);
     defer app.deinit();

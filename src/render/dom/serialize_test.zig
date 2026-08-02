@@ -377,6 +377,28 @@ test "stateful controls carry their state, not just their label" {
     try expectLacks(html, "name=\"View\"");
 }
 
+test "a busy switch says so on the control, keeping its role and its value" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    const root = app.tree.rootId();
+    _ = try app.tree.append(root, .{ .toggle = .{ .label = "Sync", .on = true, .in_progress = true } });
+    _ = try app.tree.append(root, .{ .checkbox = .{ .label = "Remember", .in_progress = true } });
+
+    const html = try render(&app);
+    defer testing.allocator.free(html);
+    // What a pixel golden cannot check for this edition: the input is
+    // still the control — role and value intact — and `aria-busy` is
+    // what a screen reader hears while the work runs. The `busy` class
+    // on the row is what stands the drawing down (stylesheet.zig); the
+    // markup carries no ellipsis of its own, because the mark is a
+    // rendering and the reader is owed the state instead.
+    try expectContains(html, "class=\"ctl busy\"");
+    try expectContains(html, "class=\"toggle\" role=\"switch\" checked aria-busy=\"true\">");
+    try expectContains(html, "class=\"check\" aria-busy=\"true\">");
+    // The name is never replaced by the state.
+    try expectContains(html, "<span class=\"ctl-label\">Sync</span>");
+}
+
 test "a track that overflows bleeds to the edge; one that fits does not" {
     var app = try test_app.init(400, 400);
     defer app.deinit();

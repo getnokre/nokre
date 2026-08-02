@@ -499,6 +499,72 @@ test "an in-progress button swaps its words for a centered ellipsis, at the size
     try testing.expectEqualStrings("Save changes", app.tree.getConst(running).?.label());
 }
 
+test "a busy switch stands its track down for the ellipsis and keeps the row" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    const busy = try app.tree.append(app.tree.rootId(), .{ .toggle = .{ .label = "Push to phone", .on = true, .in_progress = true } });
+    // The same switch at rest: the row must measure identically, so the
+    // flip moves nothing on the screen.
+    const resting = try app.tree.append(app.tree.rootId(), .{ .toggle = .{ .label = "Push to phone", .on = true } });
+
+    var rec = frameOf(&app);
+    defer rec.deinit();
+
+    const r = app.tree.rectOf(busy);
+    try testing.expectEqual(app.tree.rectOf(resting).w, r.w);
+    try testing.expectEqual(app.tree.rectOf(resting).h, r.h);
+
+    var ellipses: usize = 0;
+    var words: usize = 0;
+    for (rec.ops.items) |op| switch (op) {
+        .draw_text => |t| {
+            if (std.mem.eql(u8, t.bytes, layout.ellipsis)) {
+                ellipses += 1;
+                // Centered in the track's own slot, not in the row: the
+                // words keep the column beside it.
+                const w = app.measurer.measure(.prose, t.size_px, t.bytes);
+                try testing.expectEqual(r.x + @divTrunc(metrics.toggle_track_w - w, 2), t.x);
+                // Busy is not unavailable — full ink, like the words.
+                try testing.expectEqual(Gray.ink, t.gray);
+            }
+            if (std.mem.eql(u8, t.bytes, "Push to phone")) words += 1;
+        },
+        // The track and the knob are the two fills a resting switch
+        // draws; the busy one draws neither, so only the resting twin's
+        // pair is on screen.
+        .fill_rect => |f| try testing.expect(f.rect.y < r.y or f.rect.y >= r.y + r.h),
+        else => {},
+    };
+    try testing.expectEqual(@as(usize, 1), ellipses);
+    // Both rows still say their name — a state is not a name.
+    try testing.expectEqual(@as(usize, 2), words);
+}
+
+test "a busy checkbox does the same in its own narrower slot" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    const busy = try app.tree.append(app.tree.rootId(), .{ .checkbox = .{ .label = "Weekly digest", .checked = true, .in_progress = true } });
+
+    var rec = frameOf(&app);
+    defer rec.deinit();
+
+    const r = app.tree.rectOf(busy);
+    var found = false;
+    for (rec.ops.items) |op| switch (op) {
+        .draw_text => |t| {
+            if (std.mem.eql(u8, t.bytes, layout.ellipsis)) {
+                const w = app.measurer.measure(.prose, t.size_px, t.bytes);
+                try testing.expectEqual(r.x + @divTrunc(metrics.checkbox_box - w, 2), t.x);
+                found = true;
+            }
+            // The check mark is the box's, and the box has stood down.
+            try testing.expect(!std.mem.eql(u8, t.bytes, element_mod.checkbox_check));
+        },
+        else => {},
+    };
+    try testing.expect(found);
+}
+
 test "a known percentage takes the ellipsis's slot without moving the pill" {
     var app = try test_app.init(400, 400);
     defer app.deinit();

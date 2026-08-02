@@ -383,11 +383,38 @@ pub const Link = struct {
 };
 
 /// On/off state as an iOS-style pill switch. State changes apply
-/// immediately — a toggle never needs a submit button beside it.
+/// immediately — a toggle never needs a submit button beside it, and a
+/// change that has to reach a server before it is true says so with
+/// `in_progress` rather than borrowing one.
 pub const Toggle = struct {
     label: []const u8,
     on: bool = false,
     on_toggle: ToggleAction = .{},
+    /// The work this switch started is running: it has been flipped and
+    /// the new value is not a fact yet. `Button.in_progress` in every
+    /// respect but one — what stands down is not the words but the
+    /// *switch*, because a button's words say what the press will do
+    /// while a track says what the value is, and neither is knowable
+    /// while the work is in flight.
+    ///
+    /// The track and its knob give way to `…` in the slot they
+    /// occupied, at the size layout already gave the row, so nothing
+    /// moves when the work starts or when it ends. It does not dim:
+    /// busy is not unavailable. The words stay — `…` is a state, not a
+    /// name — and so does `on`, which assistive tech still hears: the
+    /// ellipsis is a rendering, and a reader who cannot see it is owed
+    /// the value the app still holds.
+    ///
+    /// It stops flipping — a second press cannot start the work twice —
+    /// and keeps its focus stop, for the reason `Button.in_progress`
+    /// keeps its: the user flipped this switch, usually with the
+    /// keyboard, and dropping the stop out from under their own focus is
+    /// the focus loss WCAG 3.2.2 is about.
+    ///
+    /// There is deliberately no twin of `Button.progress_percent` here:
+    /// a 20px track has nowhere to read a bar, which is the same reason
+    /// an `icon_only` button is refused one.
+    in_progress: bool = false,
 };
 
 /// On/off state as a square check box. Unlike `toggle`, checking commits
@@ -397,6 +424,12 @@ pub const Checkbox = struct {
     label: []const u8,
     checked: bool = false,
     on_toggle: ToggleAction = .{},
+    /// `Toggle.in_progress`, box for track: the mark this box carries is
+    /// what stands down for `…` while the work runs. The rarer of the
+    /// two, because checking commits nothing by itself — but a box whose
+    /// row is gathered the moment it is ticked has work in flight like
+    /// any other, and nothing else on the row can say so.
+    in_progress: bool = false,
 };
 
 /// Single-line text input. The label is rendered above the field — it is
@@ -1099,7 +1132,12 @@ pub const Element = union(Role) {
             // for it, and nothing may reach past that to press it.
             .button => |b| !b.disabled and !b.in_progress and !b.folded,
             .link => |l| !l.folded,
-            .toggle, .checkbox, .text_input, .text_area, .segmented, .tile, .radio_group, .select, .copyable, .nav_item, .nav_current, .sheet_close, .back, .icon_button, .picker_item, .more => true,
+            // The button's rule, for the two controls that also start
+            // work: a flip whose result has not landed takes no second
+            // press.
+            .toggle => |t| !t.in_progress,
+            .checkbox => |c| !c.in_progress,
+            .text_input, .text_area, .segmented, .tile, .radio_group, .select, .copyable, .nav_item, .nav_current, .sheet_close, .back, .icon_button, .picker_item, .more => true,
             else => false,
         };
     }
@@ -1118,6 +1156,11 @@ pub const Element = union(Role) {
             // Folded takes the stop the way `disabled` does, and for a
             // stronger reason: there is nothing there to land on.
             .button => |b| !b.disabled and !b.folded,
+            // The same split again, and here it is the whole of it:
+            // neither control has a `disabled` to take the stop away,
+            // so busy is the only thing that stops them activating and
+            // the stop always survives it.
+            .toggle, .checkbox => true,
             else => self.isInteractive(),
         };
     }
@@ -1271,6 +1314,26 @@ test "an in-progress button stops activating but keeps its focus stop" {
     try std.testing.expectEqual(@as(?@import("color.zig").Gray, .ink), outlined.ambientTextInk());
     const glyph: Element = .{ .button = .{ .label = "Next cycle", .icon = .chevron_right, .icon_only = true, .in_progress = true } };
     try std.testing.expectEqual(@as(?@import("color.zig").Gray, .ink), glyph.ambientTextInk());
+}
+
+test "a busy switch stops flipping but keeps its focus stop" {
+    // The button's bargain, restated for the two controls that have no
+    // `disabled` to be confused with: busy takes the press, never the
+    // stop, and never the name.
+    for ([_]Element{
+        .{ .toggle = .{ .label = "Email me", .on = true, .in_progress = true } },
+        .{ .checkbox = .{ .label = "Email me", .checked = true, .in_progress = true } },
+    }) |busy| {
+        try std.testing.expect(!busy.isInteractive());
+        try std.testing.expect(busy.isFocusable());
+        try std.testing.expectEqualStrings("Email me", busy.label());
+        // Busy is not unavailable, so the words stay at full ink and
+        // face the contrast gate exactly as they did at rest.
+        try std.testing.expectEqual(@as(?@import("color.zig").Gray, .ink), busy.ambientTextInk());
+    }
+
+    const resting: Element = .{ .toggle = .{ .label = "Email me" } };
+    try std.testing.expect(resting.isInteractive());
 }
 
 test "six heading levels descend through six distinct sizes" {

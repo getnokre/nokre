@@ -27,8 +27,8 @@ and produces a flat, parent-linked `Snapshot` in document order. Roles map
 | `sheet_close`, `back`, `icon_button`, `more` | `button` | focused |
 | `link` | `link` | focused |
 | `tile` | `link` (route) / `button` (action) | detail as value, focused |
-| `toggle` | `switch` | on (carried as checked), focused |
-| `checkbox` | `checkbox` | checked, focused |
+| `toggle` | `switch` | on (carried as checked), focused; `in_progress`: disabled *and* busy, the value still carried, still a focus stop |
+| `checkbox` | `checkbox` | checked, focused; `in_progress` as `toggle` |
 | `copyable` | `button` | copied value carried, focused; a `status` child while acknowledged |
 | `text_input` | `text_field` | value, composition, focused |
 | `text_input` (obscured) | `password_field` | value withheld |

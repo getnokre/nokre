@@ -475,9 +475,11 @@ routed link, because where a link goes is semantics, not a visual
 variant. Setting both, or neither, is rejected at `append`.
 
 ### `toggle`
-On/off state as an iOS-style pill switch: `label`, `on`, `on_toggle`.
-Flipped by tap/Enter/Space; the change applies immediately — a toggle
-never needs a submit button beside it. On: `.ink` track, `.paper` knob
+On/off state as an iOS-style pill switch: `label`, `on`, `on_toggle`,
+`in_progress`. Flipped by tap/Enter/Space; the change applies
+immediately — a toggle never needs a submit button beside it, and one
+whose change has to reach a server before it is true says so with
+`in_progress` rather than borrowing one. On: `.ink` track, `.paper` knob
 at the trailing edge. Off: dimmed `.g11` track, knob at the leading
 edge, both outlined `.g6` — as in `segmented`, the border is what
 carries the WCAG 1.4.11 state. Semantics: a switch (announced on/off),
@@ -491,9 +493,51 @@ collapses: each already carries its own padding, and counting the
 stack's gap on top would hold them three gaps apart. Anything else
 beside one — a pill, a field — keeps the full gap.
 
+`in_progress` is `button`'s state on a switch, and it differs from the
+button's in exactly one place: what stands down is not the words but the
+**switch**. A button's words say what the press will do; a track says
+what the value *is*, and while the work is in flight neither is
+knowable. So the track and its knob give way to `…` — the same mark, the
+same reason — in the slot they occupied, at the size layout already gave
+the row. Nothing else changes: the words stay where they were, the row
+keeps its height and width, and the flip does not reflow the screen out
+from under the finger that made it. It does not dim; busy is not
+unavailable.
+
+The switch stops flipping — tap, Enter, and Space all pass over it — but
+**keeps its focus stop**, for the reason `button`'s does. Assistive tech
+hears the same pair (disabled *and* busy, still named, still reachable)
+and, unlike the button, still hears the **value**: the `…` is a
+rendering, and a reader who cannot see it is owed the state the app
+still holds. In tests, `tap` fails with `error.InProgress` rather than
+flipping nothing quietly.
+
+```zig
+// In the toggle handler: the flip is a request, not a fact — put the
+// value back where the server still has it and say work is running.
+const t = &app.tree.get(state.notify_id).?.toggle;
+t.on = !wanted;
+t.in_progress = true;
+
+// In the reply handler: clear it on every path that ends the work, and
+// move the value only on the one that succeeded.
+t.in_progress = false;
+if (ok) t.on = wanted;
+```
+
+Nothing clears it for you, and a switch left at `…` is worse than a
+button left there: it is the one control on the row that cannot be
+pressed to recover. Clear it on failure and cancellation too.
+
+There is deliberately no `progress_percent` twin: a 20px track has
+nowhere to read a bar, which is the same reason an `icon_only` button is
+refused one. And no `disabled`, still — a switch that cannot be flipped
+at all is a screen that should not be drawing one.
+
 ### `checkbox`
-On/off state as a square check box: `label`, `checked`, `on_toggle`.
-The same interaction as `toggle` — flipped by tap/Enter/Space — but the
+On/off state as a square check box: `label`, `checked`, `on_toggle`,
+`in_progress`. The same interaction as `toggle` — flipped by
+tap/Enter/Space — but the
 opposite contract: checking commits nothing by itself; the choice waits
 for a nearby control to gather it (consent-then-submit, picking members
 from a list). If flipping it takes effect immediately, it should have
@@ -503,6 +547,13 @@ WCAG 1.4.11 pattern. There is no indeterminate state; a "some of these"
 summary is a screen problem, not a control problem. Semantics: a
 checkbox (announced checked/unchecked). Its row is 44px deep for the
 same reason `toggle`'s is.
+
+`in_progress` is `toggle`'s, box for track: the box and its mark stand
+down for `…` in the slot they had, with the same lockout, the same kept
+focus stop, and the same busy announcement. It is the rarer of the two,
+because checking commits nothing by itself — but a box whose row is
+gathered the moment it is ticked has work in flight like any other, and
+nothing else on the row can say so.
 
 ### `radio_group`
 The same exclusive-choice semantics as `segmented` in a different form:

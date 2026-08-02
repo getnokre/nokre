@@ -156,6 +156,35 @@ test "e2e: tap refuses a button whose work is still running" {
     try h.tap(btn);
 }
 
+test "e2e: a switch with work in flight takes no press and loses no place" {
+    var ctx: TodoCtx = .{};
+    var h = try Harness.init(testing.allocator, .{ .w = 480, .h = 640 }, &ctx, buildTodo);
+    defer h.deinit();
+    const sw = try h.app.tree.append(h.app.tree.rootId(), .{ .toggle = .{ .label = "Push to phone", .in_progress = true } });
+    h.app.invalidate();
+
+    // Keyboard-reachable while busy — that is the whole point of the
+    // state — so Tab still lands on it and focus stays put.
+    try h.focusVia(sw);
+    try h.expectFocused("Push to phone");
+    // …and Enter on the focused switch flips nothing.
+    try h.pressKey(.enter, .{});
+    try h.expectChecked("Push to phone", false);
+
+    // The tap refuses loudly rather than pressing nothing quietly, the
+    // button's rule reached through the same verb.
+    {
+        diag.quiet = true;
+        defer diag.quiet = false;
+        try testing.expectError(error.InProgress, h.tap(sw));
+    }
+
+    // Once the work lands, it is an ordinary switch again.
+    h.app.tree.get(sw).?.toggle.in_progress = false;
+    try h.tap(sw);
+    try h.expectChecked("Push to phone", true);
+}
+
 test "e2e: harness rejects screens that fail the audit" {
     const bad = struct {
         fn build(_: ?*anyopaque, app: *App) anyerror!void {

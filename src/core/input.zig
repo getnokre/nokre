@@ -366,11 +366,15 @@ pub fn activate(app: *App, id: NodeId) !void {
             // action a second time.
             if (!b.disabled and !b.in_progress) b.on_press.invoke();
         },
-        .toggle => |*t| {
+        // Running work swallows the press here for the same reason it
+        // does above: the switch keeps its stop and still takes Enter,
+        // and a second flip would start the action a second time —
+        // against a value that has not landed yet.
+        .toggle => |*t| if (!t.in_progress) {
             t.on = !t.on;
             t.on_toggle.invoke(t.on);
         },
-        .checkbox => |*c| {
+        .checkbox => |*c| if (!c.in_progress) {
             c.checked = !c.checked;
             c.on_toggle.invoke(c.checked);
         },

@@ -464,8 +464,8 @@ pub fn node(em: *Emitter, id: NodeId) anyerror!void {
         // browser had acted on the label — and cancelling that late
         // reverts it, leaving the control showing one state while the
         // tree holds the other.
-        .toggle => |t| try switchRow(em, id, "toggle", t.label, t.on),
-        .checkbox => |c| try switchRow(em, id, "check", c.label, c.checked),
+        .toggle => |t| try switchRow(em, id, "toggle", t.label, t.on, t.in_progress),
+        .checkbox => |c| try switchRow(em, id, "check", c.label, c.checked, c.in_progress),
         .text_input => |t| {
             try em.raw("<label class=\"field\"><span class=\"field-label\">");
             try em.text(t.label);
@@ -815,14 +815,21 @@ fn noticeControls(em: *Emitter, notice: NodeId, flank: enum { lead, trail }) !vo
     }
 }
 
-fn switchRow(em: *Emitter, id: NodeId, class: []const u8, label: []const u8, on: bool) !void {
-    try em.raw("<label class=\"ctl\"");
+/// Work in flight stands the control's *drawing* down and nothing else
+/// (`Toggle.in_progress`): the input stays in the markup and stays the
+/// control — it is what carries the role, the value, and `aria-busy` —
+/// while the stylesheet puts `…` in the track's or the box's slot. The
+/// words are untouched, so the row keeps its size and its name, and the
+/// busy pair reaches a screen reader exactly as the button's does.
+fn switchRow(em: *Emitter, id: NodeId, class: []const u8, label: []const u8, on: bool, busy: bool) !void {
+    try em.print("<label class=\"ctl{s}\"", .{if (busy) " busy" else ""});
     try em.stop(id);
     try em.print("><input type=\"checkbox\" class=\"{s}\"{s}", .{
         class,
         if (std.mem.eql(u8, class, "toggle")) " role=\"switch\"" else "",
     });
     if (on) try em.raw(" checked");
+    if (busy) try em.raw(" aria-busy=\"true\"");
     try em.stop(id);
     try em.raw("><span class=\"ctl-label\">");
     try em.text(label);

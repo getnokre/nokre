@@ -102,6 +102,11 @@ that silently lands elsewhere is a lie, not a test:
   [elements.md](elements.md#the-folded-tail-more)). A folded action is
   off the screen, so `getByLabel` does not return it either — the
   listing that comes back says where it went.
+- `error.InProgress` is the one refusal that is not about reaching the
+  control: a `button`, `toggle`, or `checkbox` with `in_progress` set
+  keeps its focus stop on purpose, so the check above lets it through and
+  the press would land nowhere. Settle the work first, or clear the flag
+  if the test meant to press it again.
 - `focusVia` fails with `error.NotKeyboardReachable` if Tab can't reach
   the node — a test that passes only with a mouse is a bug.
 

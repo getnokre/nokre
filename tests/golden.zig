@@ -462,6 +462,30 @@ test "golden: checkboxes checked, unchecked, and focused" {
     try renderGolden(&harness, "checkbox");
 }
 
+fn buildSwitchesAtWork(_: ?*anyopaque, app: *h.App) !void {
+    const tree = &app.tree;
+    const root = tree.rootId();
+    _ = try tree.append(root, .{ .heading = .{ .content = "Notifications", .level = .h1 } });
+    // A resting switch above a busy one: same row height, words in the
+    // same place, and only the track standing down for the `…` — the new
+    // value is not a fact until the server says so.
+    _ = try tree.append(root, .{ .toggle = .{ .label = "Email me", .on = true } });
+    _ = try tree.append(root, .{ .toggle = .{ .label = "Push to phone", .on = true, .in_progress = true } });
+    // The box says it the same way, in its own narrower slot.
+    _ = try tree.append(root, .{ .checkbox = .{ .label = "Weekly digest", .checked = true, .in_progress = true } });
+}
+
+test "golden: switches at work — the ellipsis in the control's slot, the row unmoved" {
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 240 }, null, buildSwitchesAtWork);
+    defer harness.deinit();
+    // Two tabs: past the resting switch and onto the busy one. A busy
+    // control keeps its focus stop, so the ring has to draw on it — that
+    // is the whole reason it stays reachable.
+    try harness.pressKey(.tab, .{});
+    try harness.pressKey(.tab, .{});
+    try renderGolden(&harness, "switch-in-progress");
+}
+
 fn buildMeters(_: ?*anyopaque, app: *h.App) !void {
     const tree = &app.tree;
     const root = tree.rootId();

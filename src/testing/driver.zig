@@ -6,6 +6,7 @@ const std = @import("std");
 const diag = @import("diag.zig");
 const app_mod = @import("../core/app.zig");
 const tree_mod = @import("../core/tree.zig");
+const element_mod = @import("../core/element.zig");
 const event_mod = @import("../core/event.zig");
 const focus = @import("../core/focus.zig");
 const geometry = @import("../core/geometry.zig");
@@ -35,11 +36,11 @@ pub fn tap(app: *App, id: NodeId) !void {
         diag.print("tap: \"{s}\" is not interactive (static or disabled)\n", .{el.label()});
         return error.NotInteractive;
     }
-    // An in-progress button is focusable on purpose (it keeps the stop
-    // the user's press put focus on), so the check above lets it
-    // through — and a tap on it does nothing at all. Silence there would
-    // read as a passing test of an action that never ran.
-    if (el.* == .button and el.button.in_progress) {
+    // A control with work in flight is focusable on purpose (it keeps
+    // the stop the user's own press put focus on), so the check above
+    // lets it through — and a tap on it does nothing at all. Silence
+    // there would read as a passing test of an action that never ran.
+    if (inProgress(el.*)) {
         diag.print("tap: \"{s}\" has work in progress — it takes no press until that work finishes; settle the work first, or clear in_progress if the test meant to press it again\n", .{el.label()});
         return error.InProgress;
     }
@@ -54,6 +55,19 @@ pub fn tap(app: *App, id: NodeId) !void {
         return error.Obscured;
     }
     try app.tap(center);
+}
+
+/// The three controls that can have work in flight, asked as one
+/// question — each keeps its focus stop while it does, so `isFocusable`
+/// cannot answer this and every driver verb that presses needs the same
+/// answer (`Toggle.in_progress`).
+fn inProgress(el: element_mod.Element) bool {
+    return switch (el) {
+        .button => |b| b.in_progress,
+        .toggle => |t| t.in_progress,
+        .checkbox => |c| c.in_progress,
+        else => false,
+    };
 }
 
 /// Taps an inline link at the middle of its first rect — the same

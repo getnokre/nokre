@@ -181,8 +181,20 @@ fn appendNode(snap: *Snapshot, app: *App, id: NodeId, parent: ?usize) !void {
     };
     switch (el.*) {
         .heading => |h| node.heading_level = @intFromEnum(h.level),
-        .toggle => |t| node.checked = t.on,
-        .checkbox => |c| node.checked = c.checked,
+        // The value is still reported while the work runs: the `…` on
+        // screen is a rendering, and a reader who cannot see it is owed
+        // the value the app still holds. The disabled/busy pair beside
+        // it is the button's, below, and says the rest.
+        .toggle => |t| {
+            node.checked = t.on;
+            node.disabled = t.in_progress;
+            node.busy = t.in_progress;
+        },
+        .checkbox => |c| {
+            node.checked = c.checked;
+            node.disabled = c.in_progress;
+            node.busy = c.in_progress;
+        },
         .tile => |t| node.value = t.detail,
         // The description rides on the group like a tile's detail rides
         // on the tile: assistive tech hears the caption with the group.

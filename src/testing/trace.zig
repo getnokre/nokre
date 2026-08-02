@@ -83,10 +83,12 @@ fn dumpNode(gpa: std.mem.Allocator, out: *std.ArrayList(u8), app: *App, id: Node
         .toggle => |t| {
             try appendQuoted(gpa, out, t.label);
             if (t.on) try out.appendSlice(gpa, " on");
+            if (t.in_progress) try out.appendSlice(gpa, " in_progress");
         },
         .checkbox => |c| {
             try appendQuoted(gpa, out, c.label);
             if (c.checked) try out.appendSlice(gpa, " checked");
+            if (c.in_progress) try out.appendSlice(gpa, " in_progress");
         },
         .tile_group => |tg| {
             if (tg.description.len > 0) {

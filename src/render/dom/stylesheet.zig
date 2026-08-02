@@ -1145,6 +1145,33 @@ const sheet =
     \\input.toggle:checked { background: var(--ink); border-color: var(--ink); }
     \\input.toggle:checked::after { border-color: transparent; margin-inline-start: auto; }
     \\
+    \\/* Work in flight: the track or the box stands down for `…` in the
+    \\   slot it occupied — the reference's `drawControlWait`. The input
+    \\   keeps its box, because the row must not resize when the flip
+    \\   starts or when the result lands, and it keeps being the control:
+    \\   the role, the value and aria-busy all ride on it, and only its
+    \\   *drawing* steps aside. Undoing that drawing is a list of denials
+    \\   because the two controls state so much (the knob is a sized flex
+    \\   item, the check a glyph in the icon face); the rules win on
+    \\   specificity and on order alike. No dimming — busy is not
+    \\   unavailable, and the mark is the only sign the work is happening. */
+    \\.ctl.busy input { background: none; border-color: transparent; padding: 0; }
+    \\.ctl.busy input::after {
+    \\  content: "\2026";
+    \\  visibility: visible;
+    \\  width: 100%;
+    \\  aspect-ratio: auto;
+    \\  margin-inline-start: 0;
+    \\  background: none;
+    \\  border: 0;
+    \\  border-radius: 0;
+    \\  font-family: prose;
+    \\  font-size: var(--px-body);
+    \\  line-height: 1;
+    \\  text-align: center;
+    \\  color: var(--ink);
+    \\}
+    \\
     \\/* A column of tile rows under a label, in the tile group's shape.
     \\   Block flow, not flex: the legend is the label and no engine puts
     \\   a legend in its parent's flex line (see the reset). */

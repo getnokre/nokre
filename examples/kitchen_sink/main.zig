@@ -34,6 +34,11 @@ const State = struct {
     // workers learned by taking a role each.
     example_job: HttpJob = .{},
     nowhere_job: HttpJob = .{},
+    // The server-backed switch and the value it is asking for. A switch
+    // reports what the server holds, so the wanted value lives here
+    // until the reply lands rather than on the control itself.
+    notify_toggle_id: h.NodeId = .invalid,
+    notify_wanted: bool = false,
     l10n_locale: L.Locale = .en,
     l10n_count: i64 = 1,
     l10n_text_id: h.NodeId = .invalid,
@@ -237,9 +242,48 @@ fn onGoogleSignIn(ctx: ?*anyopaque) void {
     setStatus(state, "A real app would start the Google flow here (docs/services.md).", .{});
 }
 
+/// A server-backed switch: the flip is a *request*, not a fact, so the
+/// handler puts the value back where it found it and lets the track
+/// stand down for `…` until the answer arrives. Nothing else on the row
+/// changes and nothing beside it appears — this is the shape a status
+/// line and a submit button used to stand in for.
 fn onToggleNotify(ctx: ?*anyopaque, checked: bool) void {
     const state: *State = @ptrCast(@alignCast(ctx.?));
-    setStatus(state, "Notifications {s}.", .{if (checked) "on" else "off"});
+    const el = state.app.tree.get(state.notify_toggle_id) orelse return;
+    el.toggle.on = !checked; // what the server still says
+    el.toggle.in_progress = true;
+    state.notify_wanted = checked;
+    _ = h.services.http.request(.{
+        .app = state.app,
+        .url = "https://example.com/",
+        .ctx = state,
+        .on_result = onNotifyResult,
+    }) catch {
+        el.toggle.in_progress = false;
+        setStatus(state, "Could not reach notification settings.", .{});
+        return;
+    };
+    setStatus(state, "Turning notifications {s}…", .{if (checked) "on" else "off"});
+    state.app.invalidate();
+}
+
+/// Both legs clear it, for the reason `onHttpResult` states: a switch
+/// released only when the request succeeds is a switch stuck at `…` the
+/// first time the network isn't there — and it is the one control on the
+/// row that cannot be pressed to recover.
+fn onNotifyResult(ctx: ?*anyopaque, result: h.services.http.Result) void {
+    const state: *State = @ptrCast(@alignCast(ctx.?));
+    const el = state.app.tree.get(state.notify_toggle_id) orelse return;
+    el.toggle.in_progress = false;
+    switch (result) {
+        // The value moves now, on the server's word and not on the tap.
+        .response => {
+            el.toggle.on = state.notify_wanted;
+            setStatus(state, "Notifications {s}.", .{if (state.notify_wanted) "on" else "off"});
+        },
+        .failure => |f| setStatus(state, "Notification settings unchanged: {s}.", .{f.name}),
+    }
+    state.app.invalidate();
 }
 
 fn onNameChange(ctx: ?*anyopaque, value: []const u8) void {
@@ -631,7 +675,7 @@ fn buildHome(ctx: ?*anyopaque, app: *h.App) !void {
         .placeholder = "Obscured as you type",
         .obscured = true,
     } });
-    _ = try tree.append(root, .{ .toggle = .{
+    state.notify_toggle_id = try tree.append(root, .{ .toggle = .{
         .label = "Notify me",
         .on_toggle = .{ .ctx = state, .call = onToggleNotify },
     } });
