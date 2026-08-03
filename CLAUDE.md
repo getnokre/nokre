@@ -25,7 +25,11 @@ fact has one home; complement, never duplicate. Start with
   `node` on PATH and **fails without it** rather than passing a check it
   did not run — `-Djs-parse=false` is how you say you meant to skip it.
   With `-Dskia` it also links the examples, which is the desktop link
-  `check-targets` cannot do
+  `check-targets` cannot do. On a macOS or desktop-Linux host it also
+  builds `tests/dev_store.zig` as an *executable* and runs it: the one
+  gate where a service's release verbs reach a store the OS answers,
+  since under `zig test` a service is its mock
+  (`docs/internals/secure_store.md`, the dev file store)
 - `zig build test -Dskia -Dgolden` — golden screenshot tests, byte-exact
   (run `tools/fetch-deps.sh` once first; add `-Dupdate-goldens` to
   create missing goldens or regenerate after an intentional visual

@@ -724,6 +724,47 @@ Practically, for your app: an integration bug in nokre's shell or in a
 real service backend will not fail your test suite. Everything above
 `App.dispatch` will.
 
+## Driving an app outside `zig test`
+
+That own tier is a *driver*: an ordinary executable that constructs a
+real `App`, drives it, and reaches the real services — the program
+shape a shell is, minus the window. It is not the harness with a flag
+turned on, and deliberately not:
+
+- **`Harness` stays inside `zig test`.** Its whole value is that every
+  field is a mock (`t.store`, `setStoreAvailable`, the http handler),
+  and mocks exist only under `builtin.is_test` — `Service =
+  if (is_test) Mock else PlatformService` is the roster's rule, not one
+  service's. A `Harness` that compiled in a release build would have to
+  carry every mock into it, which is the exact thing that rule exists to
+  make unrepresentable. So the seam is one layer down.
+- **The driver layer already is that seam.** `testing.driver`,
+  `testing.queries`, `testing.audit`, `testing.trace` and
+  `testing.golden` name no `builtin.is_test` at all and are exported
+  unconditionally. `driver.tap(app, id)`,
+  `queries.queryByLabel(&app.tree, …)` and `audit.audit(app)` work on
+  any `*App`, in any build.
+
+Two things a driver owes that a test does not. It owes the hooks a
+shell owes — `nokre_locale_install` and its pair at minimum, plus
+`nokre_open_url_open` and `nokre_shell_write_clipboard` if its screens
+reach them — exported by the program itself, answering the way a shell
+with nothing to report does. And it owes the `App` a fixed address: a
+press handler holds a `*App`, so build the app into storage that
+outlives the call rather than returning one by value (`Harness` keeps it
+as a field for exactly that reason).
+
+The one service a driver cannot simply use as it stands is
+`secure_store`, and it has its own answer: `.secure_store_dev = true`
+swaps the Keychain or the Secret Service for a plaintext file the driver
+owns, because an unentitled binary is refused the data-protection
+keychain and a headless CI machine runs no keyring daemon
+([services.md](services.md) has the gates that keep it out of a shipping
+build). nokre's own `tests/dev_store.zig` is a worked example of the
+whole shape, and it runs on every `zig build test` on a desktop POSIX
+host — the one place in the repository where the store verbs reach a
+store the OS answers.
+
 What nokre tests for *itself* — and the guarantees those tests prove on
 your behalf — is catalogued in
 [internals/contributing.md](internals/contributing.md).

@@ -231,6 +231,19 @@ way. The shell's complete job description is in
   identity and the kitchen sink links none at all — the shape every app
   starts in, and the shape an undefined symbol in an always-linked shell
   breaks first.
+- **One service's verbs outside `zig test`**, in `zig build test` on a
+  macOS or desktop-Linux host:
+  [tests/dev_store.zig](../../tests/dev_store.zig) is built as an
+  *executable* and run. Under `zig test` a service *is* its mock, so no
+  unit test anywhere reaches secure_store's release dispatch, its
+  `CountCache`, or a store the OS answers — the boundary
+  [testing.md](../testing.md) names. This program constructs a real
+  `App`, drives its screens through `testing.driver`, and puts all four
+  verbs through the dev file store (`.secure_store_dev`,
+  [secure_store.md](secure_store.md)), asserting a boot read, a write
+  that outlives the app that made it, and a delete. It does not make
+  macos.m or windows.c any more executed than they were; it makes the
+  Zig above them so, which was previously proven by nothing.
 
 Goldens are byte-exact and must stay byte-identical unless a change is
 intentionally visual — then regenerate, eyeball the image, and commit it

@@ -38,6 +38,23 @@ pub const AppOptions = struct {
     /// Linking the secure_store service; requires `pkg` — the id is
     /// the store's namespace (docs/services.md).
     secure_store: bool = false,
+    /// Swap the platform store for the **dev file store**: a plaintext
+    /// file under `$HOME/.nokre-dev-store` (or `$NOKRE_SECURE_STORE_DEV`)
+    /// instead of the Keychain or the Secret Service. It is for the
+    /// binary that drives a real app end to end outside `zig test`,
+    /// where the OS store is not a driver's to use: macOS refuses the
+    /// data-protection keychain to an unentitled process and leaves only
+    /// the deprecated legacy keychain — the developer's own login
+    /// keychain, which can raise a modal — and a headless Linux CI
+    /// machine runs no keyring daemon at all.
+    ///
+    /// Not a fallback and not a runtime choice: a build-time swap a
+    /// build file has to say out loud, refused unless the build is Debug
+    /// and the target is macOS or desktop Linux, and announced on stderr
+    /// at every launch of the binary that carries it. Requires
+    /// `.secure_store` — it is a backend for the linked service, not a
+    /// second service (docs/services.md).
+    secure_store_dev: bool = false,
     /// Linking the deep_link service: the domains the app claims for App
     /// Links / Universal Links (empty = unlinked). Requires `pkg` — the
     /// entitlement and assetlinks are keyed to the app's identity — and
@@ -361,7 +378,7 @@ fn addDesktopApp(hb: *std.Build, options: AppOptions) App {
         .link_libc = true,
         .sanitize_c = sanitize_c,
     });
-    configureNokre(hb, nokre_mod, options.pkg, appServices(options));
+    configureNokre(hb, nokre_mod, options.pkg, appServices(options), options.secure_store_dev);
 
     const app_mod = hb.createModule(.{
         .root_source_file = options.root_source_file,
@@ -540,7 +557,7 @@ fn addIosApp(hb: *std.Build, options: AppOptions) App {
         .optimize = options.optimize,
         .link_libc = true,
     });
-    configureNokre(hb, nokre_mod, options.pkg, appServices(options));
+    configureNokre(hb, nokre_mod, options.pkg, appServices(options), options.secure_store_dev);
 
     const app_mod = hb.createModule(.{
         .root_source_file = options.root_source_file,
@@ -616,7 +633,7 @@ fn addAndroidApp(hb: *std.Build, options: AppOptions) App {
         .link_libc = true,
         .pic = true,
     });
-    configureServices(hb, nokre_mod, options.pkg, appServices(options));
+    configureServices(hb, nokre_mod, options.pkg, appServices(options), options.secure_store_dev);
 
     const app_mod = hb.createModule(.{
         .root_source_file = options.root_source_file,
@@ -648,7 +665,7 @@ fn addWebApp(hb: *std.Build, options: AppOptions) App {
         // for in download.
         .optimize = .ReleaseSmall,
     });
-    configureNokre(hb, nokre_mod, options.pkg, appServices(options));
+    configureNokre(hb, nokre_mod, options.pkg, appServices(options), options.secure_store_dev);
 
     const app_mod = hb.createModule(.{
         .root_source_file = options.root_source_file,
@@ -738,7 +755,7 @@ fn emitStylesheet(hb: *std.Build) std.Build.LazyPath {
         .optimize = .Debug,
         .link_libc = true,
     });
-    configureNokre(hb, host_nokre, null, .{});
+    configureNokre(hb, host_nokre, null, .{}, false);
     const tool = hb.addExecutable(.{
         .name = "emit-css",
         .root_module = hb.createModule(.{
@@ -923,6 +940,14 @@ pub fn build(b: *std.Build) void {
     // namespace it — hence the pkg_id requirement (docs/services.md).
     const secure_store_opt = b.option(bool, "secure_store", "Link the secure_store service (requires pkg_id — the app id is the store's namespace)") orelse false;
 
+    // The dev file store: the backend a driver binary gets instead of the
+    // Keychain or the Secret Service, neither of which is a driver's to
+    // use (AppOptions.secure_store_dev,
+    // docs/internals/secure_store.md). Off by default, refused outside
+    // Debug and outside macOS / desktop Linux, and the binary that
+    // carries it says so on stderr at every launch.
+    const secure_store_dev_opt = b.option(bool, "secure_store_dev", "Swap secure_store's platform backend for the plaintext dev file store — Debug, macOS or desktop Linux, and never a shipping build (requires -Dsecure_store)") orelse false;
+
     // deep_link: the domains the app claims for App Links / Universal
     // Links (repeat -Ddeep_link to claim more). Same "linking needs
     // identity" shape as the store — the entitlement and assetlinks are
@@ -1019,7 +1044,7 @@ pub fn build(b: *std.Build) void {
         .link_libc = true,
         .sanitize_c = sanitize_c,
     });
-    configureNokre(b, nokre, pkg_decl, services);
+    configureNokre(b, nokre, pkg_decl, services, secure_store_dev_opt);
 
     // ---- Pure unit tests: no dependencies, run anywhere. ----
     const unit_tests = b.addTest(.{ .root_module = nokre });
@@ -1038,6 +1063,13 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     }) });
     test_step.dependOn(&b.addRunArtifact(serve_tests).step);
+
+    // The one thing `zig test` structurally cannot check: a real
+    // executable driving a real app against a real store. Under
+    // `zig test` a service *is* its mock, so the store the unit suite
+    // exercises is never one the OS answers — the boundary
+    // docs/testing.md names, and the tier nokre owes on its own side.
+    addDevStoreCheck(b, test_step, target);
 
     // The other half of the web edition, which no Zig test can reach.
     addJsParseCheck(b, test_step, js_parse);
@@ -1061,7 +1093,7 @@ pub fn build(b: *std.Build) void {
     for (check_targets) |query| {
         // The bare library: nothing linked, so every platform stub and
         // the comptime dispatch must analyze on their own.
-        addCheckObject(b, check_step, query, optimize, "nokre-check", null, .{});
+        addCheckObject(b, check_step, query, optimize, "nokre-check", null, .{}, false);
 
         // The linked twin: secure_store and deep_link enabled under a
         // dummy identity so native.zig / web.zig and the comptime
@@ -1074,7 +1106,21 @@ pub fn build(b: *std.Build) void {
         addCheckObject(b, check_step, query, optimize, "nokre-check-store", check_decl, .{
             .secure_store = true,
             .deep_link_domains = &.{"nokre.dev"},
-        });
+        }, false);
+
+        // The dev file store's own object, on the two targets it is
+        // allowed on (devStoreAllowed refuses the other four, and a
+        // refusal is a failed build — so this loop must not ask for one).
+        // dev.c is plain POSIX with no framework and no daemon behind it,
+        // which is what lets it compile from any host and makes this the
+        // one backend `check-targets` can analyze without an SDK. Debug
+        // rather than the build's optimize, for the same reason: Debug is
+        // the gate, and the object honors it instead of dodging it.
+        if (query.os_tag == .macos or (query.os_tag == .linux and query.abi != .android)) {
+            addCheckObject(b, check_step, query, .Debug, "nokre-check-store-dev", check_decl, .{
+                .secure_store = true,
+            }, true);
+        }
 
         // oauth gets its own object rather than riding the one above: a
         // compile-only object links nothing, and on COFF zig refuses to
@@ -1084,13 +1130,13 @@ pub fn build(b: *std.Build) void {
         addCheckObject(b, check_step, query, optimize, "nokre-check-oauth", check_decl, .{
             .oauth_schemes = &.{"dev.nokre.check"},
             .oauth_apple = true,
-        });
+        }, false);
 
         // iap gets its own for oauth's reason, and for a second one this
         // service alone has: three of these six targets compile the
         // policy layer with no leg behind it, and "the storeless build
         // still analyzes" is exactly what would rot unnoticed.
-        addCheckObject(b, check_step, query, optimize, "nokre-check-iap", check_decl, .{ .iap = true });
+        addCheckObject(b, check_step, query, optimize, "nokre-check-iap", check_decl, .{ .iap = true }, false);
 
         // notification gets its own for iap's second reason, sharpened:
         // it is the one service every target has a leg for, so what needs
@@ -1101,7 +1147,7 @@ pub fn build(b: *std.Build) void {
         addCheckObject(b, check_step, query, optimize, "nokre-check-notification", check_decl, .{
             .notification = true,
             .notification_push = true,
-        });
+        }, false);
     }
 
     // The one target of the six that can be *linked* from any host, and
@@ -1530,7 +1576,7 @@ fn appServices(options: AppOptions) packaging.Services {
     };
 }
 
-fn configureNokre(b: *std.Build, mod: *std.Build.Module, pkg: ?PackageDecl, services: packaging.Services) void {
+fn configureNokre(b: *std.Build, mod: *std.Build.Module, pkg: ?PackageDecl, services: packaging.Services, secure_store_dev: bool) void {
     // The one C dependency in the core module: Nayuki's qrcodegen
     // (vendored, single file, no heap). Everything else stays pure Zig.
     mod.addCSourceFile(.{
@@ -1552,7 +1598,7 @@ fn configureNokre(b: *std.Build, mod: *std.Build.Module, pkg: ?PackageDecl, serv
             });
         }
     }
-    configureServices(b, mod, pkg, services);
+    configureServices(b, mod, pkg, services, secure_store_dev);
 }
 
 /// Every JavaScript file that reaches a browser, and the goal each one is
@@ -1649,6 +1695,7 @@ fn addCheckObject(
     name: []const u8,
     pkg: ?PackageDecl,
     services: packaging.Services,
+    secure_store_dev: bool,
 ) void {
     const mod = b.createModule(.{
         .root_source_file = b.path("src/nokre.zig"),
@@ -1656,7 +1703,7 @@ fn addCheckObject(
         .optimize = optimize,
     });
     addPackageInfo(b, mod, null);
-    addSecureStore(b, mod, pkg, services.secure_store);
+    addSecureStore(b, mod, pkg, services.secure_store, secure_store_dev);
     addDeepLink(b, mod, pkg, services.deep_link_domains.len != 0);
     addOauth(b, mod, pkg, services);
     addIap(b, mod, pkg, services.iap);
@@ -1696,9 +1743,9 @@ fn appleSdkPath(b: *std.Build, sdk_name: []const u8) []const u8 {
 /// world. (The web's DOM edition takes configureNokre whole:
 /// wasm32-freestanding compiles qrcodegen against shim/freestanding,
 /// no emscripten involved — docs/internals/dom-edition.md.)
-fn configureServices(b: *std.Build, mod: *std.Build.Module, pkg: ?PackageDecl, services: packaging.Services) void {
+fn configureServices(b: *std.Build, mod: *std.Build.Module, pkg: ?PackageDecl, services: packaging.Services, secure_store_dev: bool) void {
     addPackageInfo(b, mod, pkg);
-    addSecureStore(b, mod, pkg, services.secure_store);
+    addSecureStore(b, mod, pkg, services.secure_store, secure_store_dev);
     addDeepLink(b, mod, pkg, services.deep_link_domains.len != 0);
     addOauth(b, mod, pkg, services);
     addIap(b, mod, pkg, services.iap);
@@ -1812,7 +1859,7 @@ fn addPackageInfo(b: *std.Build, mod: *std.Build.Module, decl: ?PackageDecl) voi
 // missing-module error (package_info's rule). Composition is comptime
 // only: the namespace bakes into secure_store's own options module,
 // and at runtime the service never calls package_info.
-fn addSecureStore(b: *std.Build, mod: *std.Build.Module, decl: ?PackageDecl, enabled_in: bool) void {
+fn addSecureStore(b: *std.Build, mod: *std.Build.Module, decl: ?PackageDecl, enabled_in: bool, dev_in: bool) void {
     var enabled = enabled_in;
     if (enabled and decl == null) {
         const fail = b.addFail("secure_store needs the app's identity for its namespace — set .pkg_id (package_info) alongside .secure_store. docs/services.md");
@@ -1826,8 +1873,28 @@ fn addSecureStore(b: *std.Build, mod: *std.Build.Module, decl: ?PackageDecl, ena
     opts.addOption(bool, "linked", enabled);
     opts.addOption([]const u8, "namespace", if (decl) |d| d.id else "");
     mod.addImport("nokre_secure_store_options", opts.createModule());
+    if (dev_in and !enabled) {
+        const fail = b.addFail("the secure_store dev store is a backend for the linked service, not a second one — set .secure_store = true alongside .secure_store_dev (docs/services.md)");
+        b.default_step.dependOn(&fail.step);
+    }
     if (!enabled) return;
-    switch (mod.resolved_target.?.result.os.tag) {
+    const target = mod.resolved_target.?.result;
+    // The three gates on the dev store, all here, all at build time, and
+    // each one a failed build rather than a quieter store. There is no
+    // runtime path to this backend at all: which C file compiles is
+    // decided below, so a binary either carries the platform store or
+    // carries the file one, and nothing it reads at runtime can change
+    // which (docs/internals/secure_store.md).
+    const dev = dev_in and devStoreAllowed(b, mod, target, dev_in);
+    if (dev) {
+        // POSIX, no framework, no daemon, no host gate: it compiles for
+        // macOS and desktop Linux from any host, which is also what lets
+        // check-targets analyze it.
+        mod.link_libc = true;
+        mod.addCSourceFile(.{ .file = b.path("src/services/secure_store/dev.c"), .flags = &.{"-std=c11"} });
+        return;
+    }
+    switch (target.os.tag) {
         .macos, .ios => {
             // Framework headers exist only on a macOS host. The
             // check-targets linked objects still analyze native.zig
@@ -1869,6 +1936,101 @@ fn addSecureStore(b: *std.Build, mod: *std.Build.Module, decl: ?PackageDecl, ena
         },
         else => {}, // wasm links nothing (live.js/services.js carry the mirror)
     }
+}
+
+/// May this build have the dev file store? Three refusals, and a build
+/// that trips any of them fails — the flag is never quietly downgraded
+/// to the platform store either, because a driver that thinks it has a
+/// writable store and does not is the failure this whole backend exists
+/// to end.
+///
+/// The shape is deliberate: nothing here is a property of the machine
+/// running the build, so a refusal reproduces everywhere, and there is
+/// no combination of environment, signature or runtime state that turns
+/// a shipping build's store into this one.
+fn devStoreAllowed(b: *std.Build, mod: *std.Build.Module, target: std.Target, dev: bool) bool {
+    if (!dev) return false;
+    var ok = true;
+    // 1. It is a backend for the linked service, not a second service —
+    //    refused by the caller, which never reaches this function with
+    //    an unlinked store.
+    // 2. Debug only. A driver binary is built the way a developer builds
+    //    everything they are iterating on; an optimized artifact is one
+    //    somebody is preparing to hand out.
+    if (mod.optimize != .Debug) {
+        const fail = b.addFail("the secure_store dev store builds only in Debug: it is the store of a binary that drives an app, and an optimized artifact is one somebody ships. Drop .secure_store_dev, or build with -Doptimize=Debug (docs/services.md)");
+        b.default_step.dependOn(&fail.step);
+        ok = false;
+    }
+    // 3. macOS and desktop Linux only — the two platforms where the OS
+    //    store is not a driver's to use (dev.c says what each one does
+    //    instead). iOS and Android artifacts exist only to be installed
+    //    from a store, the web's table already answers any build, and
+    //    Windows' Credential Manager answers any process in a logon
+    //    session: on those four the dev store would be a weaker store
+    //    solving nothing.
+    const desktop_posix = switch (target.os.tag) {
+        .macos => true,
+        .linux => !target.abi.isAndroid(),
+        else => false,
+    };
+    if (!desktop_posix) {
+        const fail = b.addFail("the secure_store dev store exists for macOS and desktop Linux, where the OS store is not a driver's to use. iOS, Android and the web ship through a store that answers already, and Windows' Credential Manager answers any logon session (docs/services.md)");
+        b.default_step.dependOn(&fail.step);
+        ok = false;
+    }
+    return ok;
+}
+
+/// The dev store's own gate: `tests/dev_store.zig` built as an
+/// executable — not a `zig test` binary — and run. It is the only step
+/// in this repository where the secure_store verbs a consumer calls
+/// reach a store the OS actually answers: everywhere else they reach the
+/// per-app Fake (`zig test`), a compile-only object (`check-targets`),
+/// or a linked artifact nothing runs (the examples).
+///
+/// Native desktop POSIX only, and quietly so: the four other targets
+/// have no dev store to gate (devStoreAllowed says why), and a
+/// cross-compiled binary is one this machine could not run. Debug is
+/// hard-coded rather than taken from `-Doptimize`, because Debug is one
+/// of the gates — the step honors it instead of asking for an exemption.
+fn addDevStoreCheck(b: *std.Build, step: *std.Build.Step, target: std.Build.ResolvedTarget) void {
+    const t = target.result;
+    const desktop_posix = switch (t.os.tag) {
+        .macos => true,
+        .linux => !t.abi.isAndroid(),
+        else => false,
+    };
+    if (!desktop_posix or t.os.tag != builtin.os.tag or t.cpu.arch != builtin.cpu.arch) return;
+
+    const decl: PackageDecl = .{ .name = "dev-store", .id = "dev.nokre.devstore", .version = "0.0.0", .build = 0 };
+    const nokre_mod = b.createModule(.{
+        .root_source_file = b.path("src/nokre.zig"),
+        .target = target,
+        .optimize = .Debug,
+        .link_libc = true,
+    });
+    configureNokre(b, nokre_mod, decl, .{ .secure_store = true }, true);
+    const exe = b.addExecutable(.{ .name = "dev-store-check", .root_module = b.createModule(.{
+        .root_source_file = b.path("tests/dev_store.zig"),
+        .target = target,
+        .optimize = .Debug,
+        .imports = &.{.{ .name = "nokre", .module = nokre_mod }},
+    }) });
+
+    const run = b.addRunArtifact(exe);
+    // The store file goes in the cache, never in the developer's
+    // $HOME/.nokre-dev-store: this gate runs on every `zig build test`,
+    // and a check that litters a home directory is a check people learn
+    // to resent. It also makes the run independent of whatever a real
+    // driver session on this machine has stored.
+    run.setEnvironmentVariable("NOKRE_SECURE_STORE_DEV", b.cache_root.join(b.allocator, &.{"nokre-dev-store"}) catch @panic("OOM"));
+    // A substring, on stderr, because stderr is where the dev store's
+    // own launch banner lands — and asserting the program's last line
+    // asserts every step before it ran.
+    run.expectStdErrMatch("dev store: boot read, set, relaunch, get, list, delete — all ok");
+    run.expectExitCode(0);
+    step.dependOn(&run.step);
 }
 
 // The options module is ALWAYS added (package_info's rule): an unlinked

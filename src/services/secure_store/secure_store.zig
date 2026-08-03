@@ -6,6 +6,10 @@
 //! backend answers in-process — Keychain, Credential Manager, the
 //! Android Keystore (a Keystore-wrapped store reached over JNI), and
 //! (on web) an in-memory table seeded from sessionStorage before boot.
+//! Which of them a binary carries is build.zig's to decide and this
+//! file's not to know: a driver binary may declare the dev file store
+//! and get dev.c behind the same four native verbs, with everything
+//! below unchanged (docs/internals/secure_store.md).
 //! Tokens and locale are boot reads, and nokre has no tickers to
 //! retire the loading frame an async boot read would strand — so a
 //! read at app boot is one call, inside build, no handshake.

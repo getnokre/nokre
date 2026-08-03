@@ -197,8 +197,42 @@ Tests never see it (they only reach the fake,
 [testing.md](testing.md)). Packaging note: static-lib consumers (the
 iOS Xcode project) add Security.framework themselves.
 
+**The dev store,** for the binary that drives your app end to end
+outside `zig test`. That binary is the one case the OS store is not
+really yours to use: on macOS an unentitled process is refused the
+data-protection keychain outright and lands in the deprecated legacy
+one — the developer's own login keychain, ACL-bound to a signature that
+changes every rebuild, which is the prompt the paragraph above
+describes — and a headless Linux CI machine runs no keyring daemon at
+all. Declare it and the Keychain / Secret Service leg is replaced by a
+plaintext file:
+
+```zig
+const nokre = b.dependency("nokre", .{
+    .pkg_id = @as([]const u8, "com.example.notes"),
+    .secure_store = true,
+    .secure_store_dev = true, // never in a build you ship
+});
+```
+
+The API does not change, and neither do the caps, the errors or the
+sort order: the swap happens under the four native verbs, so the same
+policy layer runs above it. The file is `$NOKRE_SECURE_STORE_DEV` if
+you set it — one driver run, one store, which is how a run gets a store
+nothing else has touched — otherwise `$HOME/.nokre-dev-store/<pkg_id>`,
+mode 0600, and yours to delete.
+
+It cannot reach a shipping build, and not because you remembered: the
+declaration is refused unless the build is **Debug** and the target is
+**macOS or desktop Linux** (iOS, Android, the web and Windows all fail
+the build — their stores answer any binary already), it is refused
+without `.secure_store`, and the binary that carries it prints one line
+to stderr at every launch saying so. There is no runtime path in at
+all: which backend a binary has is decided when it is compiled.
+
 The wiring — the Keychain/CredMan mappings, the web snapshot/mirror
-flow, and why each refusal holds — is
+flow, the dev store's file format and its four gates, and why each
+refusal holds — is
 [internals/secure_store.md](internals/secure_store.md).
 
 ### clipboard: one verb, write-only
@@ -1014,7 +1048,18 @@ android { sourceSets { main { java.srcDirs += '<nokre>/src/services/iap/java' } 
 dependencies { implementation 'com.android.billingclient:billing:7.1.1' }
 ```
 
-An app that links no `iap` adds neither. On Play the transaction id *is*
+…and a third line, in `gradle.properties`, because that coordinate drags
+AndroidX in and AGP refuses the classpath without it:
+
+```properties
+android.useAndroidX=true
+```
+
+That is the only service whose Android leg forces the flag, and it is
+stated here rather than discovered at the first Gradle sync: the
+kitchen sink never hits it, because the example builds iap's C leg
+without the billing dependency behind it. An app that links no `iap`
+adds none of the three. On Play the transaction id *is*
 the purchase token: `getOrderId()` is absent for pending and test
 purchases, and Google's Developer API is keyed by token, so one honest
 value beats a nullable one that vanishes exactly when a purchase is most

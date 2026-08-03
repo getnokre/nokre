@@ -17,9 +17,14 @@ bridge to [NokreSecureStore.java](../../src/platform/android/java/dev/nokre/shel
 On wasm, [web.zig](../../src/services/secure_store/web.zig) replaces the
 native leg with a static in-module table plus the snapshot/mirror glue
 in [services.js](../../src/render/dom/services.js) (the seed scan is
-called from [live.js](../../src/render/dom/live.js) before boot). The
+called from [live.js](../../src/render/dom/live.js) before boot).
+[dev.c](../../src/services/secure_store/dev.c) is the sixth
+implementation of the same four verbs and the only one no app ships: the
+dev file store a driver binary opts into at build time (below). The
 contract tests are
-[secure_store_test.zig](../../src/services/secure_store/secure_store_test.zig).
+[secure_store_test.zig](../../src/services/secure_store/secure_store_test.zig),
+and the one gate that runs the *real* verbs is
+[tests/dev_store.zig](../../tests/dev_store.zig).
 
 The split is package_info's: the native side is thin, stateless,
 synchronous — four verbs against the OS store, holding nothing between
@@ -457,6 +462,110 @@ posture every consumer already handles.
 | stored value's hex is malformed or decodes past the value cap (an external writer's) | `Unavailable` — the entry exists but cannot be served in-contract |
 | any `GError` (locked keyring, no daemon, denied) | `Unavailable` |
 
+## The dev file store: the driver's backend, opted into at build time
+
+[dev.c](../../src/services/secure_store/dev.c) answers the same four
+`nokre_ss_*` verbs against a plaintext file. It is selected in
+build.zig — `.secure_store_dev = true` alongside `.secure_store`
+(`-Dsecure_store_dev` for nokre's own build) — and it is *instead of*
+the platform leg, never beside it: `addSecureStore` compiles either
+dev.c or macos.m/linux.c, so a binary has one backend and no runtime
+state can change which. Everything above it is untouched. The Zig
+policy layer never learns of it, `native.zig` is the same file, and the
+caps, the sort order, the `StoreFull` line and every error name are
+therefore the same by construction rather than by re-implementation —
+which is the whole reason the swap happens at the C seam and not higher.
+
+**What it is for.** An executable that drives a real app against real
+backends — the tier [../testing.md](../testing.md#where-the-harness-stops)
+says nokre owes on its own side, since under `zig test` a service *is*
+its mock. Two platforms make the OS store the wrong thing for such a
+binary to use:
+
+- **macOS.** `SecItemAdd` with `kSecUseDataProtectionKeychain = YES`
+  answers `errSecMissingEntitlement` (-34018) from an ad-hoc /
+  linker-signed binary — measured, and ad-hoc signing the entitlement
+  *in* is no way out either: the process is SIGKILLed at launch, with
+  `keychain-access-groups` and with `com.apple.application-identifier`
+  alike. What keeps an unsigned binary working today is the legacy
+  file-keychain fallback the Apple section above describes — and that
+  section already calls it dev-only posture rather than contract. It is
+  deprecated, macOS-only, it is the developer's own login keychain, and
+  its per-item ACL binds to a signature that changes on every rebuild,
+  so it can raise a modal the synchronous API blocks the thread behind.
+  A driver riding it is one macOS dialog away from a hung CI job, and
+  every run shares one store with every other.
+- **Linux.** A headless machine runs no Secret Service daemon, so
+  libsecret has nothing to talk to and every verb is `Unavailable`.
+  There is no fallback there at all.
+
+So the dev store is not "the store that works where none does" — it is
+the store a driver *should* be using: named by the build, isolated per
+run, shared with nothing, and unable to prompt.
+
+**The file.** `$NOKRE_SECURE_STORE_DEV` names it outright, which is how
+one driver run gets a store no previous run can have touched; otherwise
+it is `$HOME/.nokre-dev-store/<pkg_id>`, one directory named for what it
+is, where a developer can find it and delete it. With neither, there is
+no file and every verb answers `Unavailable` — the locked-keychain
+posture every consumer already handles. Mode 0600: the protection
+boundary is the user's account, which is the same boundary DPAPI and a
+login keyring give, and the only one a plaintext file can honestly
+claim.
+
+The format is a 16-byte magic and then `[key_len:u8][value_len:u16
+le][key][value]` records, streamed rather than slurped — a 128-byte key
+scratch and one value buffer, so the frame stays ~3 KiB whatever the
+store holds, and there is still no allocator anywhere in the service.
+`set` and `delete` are one function: rewrite into a sibling `.tmp` and
+`rename` over, which is the atomic upsert `CredWriteW` and
+`SecItemUpdate` give for free — a crash leaves the old file or the new
+one, never half a store. Nothing is held between calls (the charter),
+so two `App`s, or two processes, see one store with no cache to
+reconcile. A file whose magic does not match is refused by every verb
+and never overwritten; a record whose lengths the caps could not have
+produced makes the file corrupt rather than skippable, because this
+format has exactly one writer and a store that lies is worse than one
+that refuses.
+
+**How a shipping build cannot get here.** Four things, all at build
+time, none of them a property of the machine that runs the build:
+
+1. **It must be asked for, by name.** `.secure_store_dev` defaults
+   false and reads as what it is. There is no environment variable, no
+   signature check, no probe: nothing an app *runs into* selects this
+   backend.
+2. **It must be Debug.** Any other `-Doptimize` fails the build with a
+   message saying why. An optimized artifact is one somebody is
+   preparing to hand out.
+3. **It must be macOS or desktop Linux.** iOS, Android and wasm fail
+   the build: those artifacts exist only to be installed, and their
+   stores answer any build already. Windows fails too — Credential
+   Manager answers any process in a logon session, so a dev store there
+   would be a weaker store solving nothing.
+4. **It must be linked.** `.secure_store_dev` without `.secure_store`
+   fails: it is a backend for the service, not a second service.
+
+And if all four ever held by accident, the binary says so: dev.c's
+`__attribute__((constructor))` prints one line to stderr at every
+launch, before any app code runs — at process start rather than at
+first use, so a build carrying this store announces it even on the run
+that never touches it, and so the file itself still holds nothing
+between calls.
+
+**What runs it.** `zig build test` builds
+[tests/dev_store.zig](../../tests/dev_store.zig) as an executable — not
+a `zig test` binary — and runs it on a native macOS or desktop-Linux
+host, against a store file in the build cache. It is the only place in
+this repository where the verbs a consumer calls reach a store the OS
+answers: everywhere else they reach the Fake (`zig test`), a
+compile-only object (`check-targets`), or a linked artifact nothing
+runs (the examples). It also demonstrates the driver shape whole — an
+`App` constructed outside `zig test`, its screens driven through
+`testing.driver`, the a11y audit run on each one, and the shell hooks a
+linking program owes exported by the program itself (emit_css.zig's
+note).
+
 ## Testing: one fake per app, constructed with it
 
 Under `builtin.is_test` the four verbs route — comptime, so test
@@ -501,7 +610,21 @@ ends with a comptime block that takes the backend fns' addresses when
 linked and non-test — lazy analysis would otherwise skip bodies
 nothing references — and `zig build check-targets` builds a linked
 twin object per target under a dummy identity, so `native.zig`,
-`web.zig`, and the dispatch analyze on every OS tag.
+`web.zig`, and the dispatch analyze on every OS tag. dev.c gets its own
+twin on the two targets it is allowed on; being plain POSIX with no
+framework and no daemon behind it, it is the one backend that step can
+analyze without an SDK.
+
+**What the Fake does not prove, and who proves it.** The Fake is a
+contract asserted against itself: its fidelity to a keychain is
+asserted by nothing under `zig test`, because the keychain is not
+compiled into a test binary at all. The dev store is what closes that
+on nokre's side — `tests/dev_store.zig` runs the release verbs, in an
+executable, against a store the OS actually answers, on every
+`zig build test` on a desktop POSIX host. It proves the *dispatch and
+the policy layer* work outside `is_test`, which is the half no unit
+test can reach; it does not make macos.m or windows.c any more
+executed than they were, and nothing here pretends otherwise.
 
 ## Refusals
 

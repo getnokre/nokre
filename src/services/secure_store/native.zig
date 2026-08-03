@@ -1,5 +1,7 @@
-//! The macOS / iOS / Windows extern surface: four nokre_ss_* verbs
-//! (secure_store.h, implemented in macos.m and windows.c) and the
+//! The native extern surface: four nokre_ss_* verbs (secure_store.h,
+//! implemented in macos.m, windows.c, linux.c and — over JNI —
+//! android.c, or in dev.c when a build declares the dev file store,
+//! which build.zig swaps in behind this same file) and the
 //! code→error mapping. Policy stays out — validation, caps, and the
 //! entry-count line all ran in secure_store.zig before any call lands
 //! here; this file's one job beyond ferrying is list's determinism:
