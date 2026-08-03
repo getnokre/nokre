@@ -170,6 +170,9 @@ test {
     _ = @import("workers/workers_test.zig");
     _ = @import("l10n/l10n_test.zig");
     _ = @import("services/http/http_test.zig");
+    // The one suite that runs a transport instead of the mock — a
+    // loopback origin in this process — so it is host-only.
+    if (@import("builtin").cpu.arch != .wasm32) _ = @import("services/http/native_test.zig");
     _ = @import("services/secure_store/secure_store_test.zig");
     _ = @import("services/deep_link/deep_link_test.zig");
     _ = @import("services/locale/locale_test.zig");

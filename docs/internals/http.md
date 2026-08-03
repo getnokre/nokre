@@ -55,7 +55,15 @@ with zero copies.
   the exemption architecture.md grants it), each request runs its own
   `std.http.Client` with `keep_alive = false` (nothing pools across a
   detached thread's lifetime), and the response head is copied before
-  the body reader invalidates it. Bodies decompress
+  the body reader invalidates it. The send path is the *method's* —
+  `std.http.Method.requestHasBody()` — never the body's length:
+  `std.http.Client` asserts at each path that the method agrees with
+  the one taken, so a POST with no fields is still a body request
+  (`content-length: 0`) and a GET is never one. Measuring the body
+  instead panicked every bodiless mutation an app has, which is why
+  `request` now refuses a body on a verb that carries none and why
+  [native_test.zig](../../src/services/http/native_test.zig) puts every
+  verb on a real socket. Bodies decompress
   (gzip/deflate/zstd) before delivery — the browser decompresses too,
   one outcome. The transport deadline is a second thread you can see:
   a per-request watchdog sleeps out `deadline_seconds`, then claims

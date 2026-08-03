@@ -541,6 +541,11 @@ export function appHooks({ nk, memory, workerUrl, wasmUrl, onWork, onMetrics }) 
         for (let i = 0; i + 1 < parts.length; i += 2) init.headers.push([parts[i], parts[i + 1]]);
       }
       // A copy: fetch is async and the borrow ends when this returns.
+      // Length is the right question here and only here: an omitted
+      // body on a POST is the `content-length: 0` the native path
+      // writes, and a body on a verb fetch would throw on never
+      // arrives (http.zig asserts it away). Native asks the method,
+      // because there the length would be choosing the send path.
       if (bLen) init.body = mem.slice(bPtr, bPtr + bLen);
 
       fetch(url, init)

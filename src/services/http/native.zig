@@ -51,7 +51,7 @@ fn unlockIo() void {
 /// reference lives, the module-level `io` is pinned and any thread may
 /// read it — the refcounted-backend exemption in
 /// docs/internals/architecture.md.
-fn acquireIo(gpa: std.mem.Allocator) std.Io {
+pub fn acquireIo(gpa: std.mem.Allocator) std.Io {
     lockIo();
     defer unlockIo();
     if (io_backend == null) {
@@ -65,7 +65,7 @@ fn acquireIo(gpa: std.mem.Allocator) std.Io {
     return io;
 }
 
-fn releaseIo() void {
+pub fn releaseIo() void {
     lockIo();
     defer unlockIo();
     io_refs -= 1;
@@ -278,19 +278,25 @@ const ios_anchors = struct {
     }
 };
 
-/// Owned copies of everything the request needs — values, not
+/// Everything that goes on the wire — owned copies, values not
 /// references; the app's slices were borrowed only for the call.
-/// Shared by the transfer thread and the deadline watchdog, so
-/// ownership is a two-count refcount (loopback.zig's bargain):
-/// whichever thread exits last frees the job.
-const Job = struct {
-    gpa: std.mem.Allocator,
-    ticket: workers.Ticket,
+/// Separate from the delivery half so `perform` can be driven with one
+/// directly, which is what native_test.zig's loopback origin does.
+pub const Wire = struct {
     method: std.http.Method,
     url: []const u8,
     headers: []std.http.Header,
     body: []const u8,
     max_body: u32,
+};
+
+/// A wire request plus its one delivery. Shared by the transfer thread
+/// and the deadline watchdog, so ownership is a two-count refcount
+/// (loopback.zig's bargain): whichever thread exits last frees the job.
+const Job = struct {
+    gpa: std.mem.Allocator,
+    ticket: workers.Ticket,
+    wire: Wire,
     /// One for the transfer thread, one for the watchdog.
     refs: std.atomic.Value(u32) = .init(2),
     /// Whether some side already owns the one delivery. The one-shot
@@ -349,11 +355,13 @@ pub fn send(g: std.mem.Allocator, ticket: workers.Ticket, opts: http.RequestOpti
     job.* = .{
         .gpa = g,
         .ticket = ticket,
-        .method = mapMethod(opts.method),
-        .url = url,
-        .headers = headers,
-        .body = body,
-        .max_body = opts.max_body,
+        .wire = .{
+            .method = opts.method.asStd(),
+            .url = url,
+            .headers = headers,
+            .body = body,
+            .max_body = opts.max_body,
+        },
     };
     const thread = try std.Thread.spawn(.{}, run, .{job});
     thread.detach();
@@ -391,26 +399,15 @@ fn watchdog(job: *Job) void {
     unrefJob(job);
 }
 
-fn mapMethod(m: http.Method) std.http.Method {
-    return switch (m) {
-        .GET => .GET,
-        .HEAD => .HEAD,
-        .POST => .POST,
-        .PUT => .PUT,
-        .PATCH => .PATCH,
-        .DELETE => .DELETE,
-    };
-}
-
 fn freeJob(job: *Job) void {
     const g = job.gpa;
-    g.free(job.url);
-    g.free(job.body);
-    for (job.headers) |h| {
+    g.free(job.wire.url);
+    g.free(job.wire.body);
+    for (job.wire.headers) |h| {
         g.free(h.name);
         g.free(h.value);
     }
-    g.free(job.headers);
+    g.free(job.wire.headers);
     g.destroy(job);
 }
 
@@ -426,7 +423,7 @@ fn run(job: *Job) void {
     defer unrefJob(job);
     var arena_state = std.heap.ArenaAllocator.init(job.gpa);
     defer arena_state.deinit();
-    if (perform(job, arena_state.allocator())) |response| {
+    if (perform(job.gpa, job.wire, arena_state.allocator())) |response| {
         if (!job.claim()) {
             // The deadline got there first: the transfer finished on
             // its own clock, and its delivery is the one dropped.
@@ -452,8 +449,12 @@ fn deliverFailure(job: *Job, name: []const u8) void {
     workers.deliverOneShot(http.Result, job.ticket, job.gpa, .{ .failure = .{ .name = name } }) catch {};
 }
 
-fn perform(job: *Job, arena: std.mem.Allocator) !http.Response {
-    var client: std.http.Client = .{ .allocator = job.gpa, .io = io };
+/// One blocking transfer on the calling thread — `run`'s middle, and
+/// the whole of what a test can drive against a real socket. The
+/// caller holds an `acquireIo` reference: the client runs on the
+/// module's refcounted backend.
+pub fn perform(gpa: std.mem.Allocator, wire: Wire, arena: std.mem.Allocator) !http.Response {
+    var client: std.http.Client = .{ .allocator = gpa, .io = io };
     // iOS lends the client the process-global anchor set: a non-null
     // `now` is what tells the client its bundle is already good (the
     // rescan that would clear it is gated on that field), and putting
@@ -461,7 +462,7 @@ fn perform(job: *Job, arena: std.mem.Allocator) !http.Response {
     // from freeing memory it only borrowed. Every other platform lets
     // the client rescan for itself, unchanged.
     if (comptime is_ios) {
-        client.ca_bundle = ios_anchors.shared(job.gpa);
+        client.ca_bundle = ios_anchors.shared(gpa);
         client.now = std.Io.Clock.real.now(io);
     }
     defer {
@@ -469,19 +470,23 @@ fn perform(job: *Job, arena: std.mem.Allocator) !http.Response {
         client.deinit();
     }
 
-    const uri = try std.Uri.parse(job.url);
-    var req = try client.request(job.method, uri, .{
-        .extra_headers = job.headers,
+    const uri = try std.Uri.parse(wire.url);
+    var req = try client.request(wire.method, uri, .{
+        .extra_headers = wire.headers,
         // One request, one connection: nothing pools across a
         // detached thread's lifetime.
         .keep_alive = false,
     });
     defer req.deinit();
 
-    if (job.body.len > 0) {
-        req.transfer_encoding = .{ .content_length = job.body.len };
+    // The send path is the method's, never the body's length: each
+    // path asserts that the method agrees with it, so a POST whose
+    // fields are all defaults still goes out as a body request with
+    // `content-length: 0`, and a GET never takes that path at all.
+    if (wire.method.requestHasBody()) {
+        req.transfer_encoding = .{ .content_length = wire.body.len };
         var body_writer = try req.sendBodyUnflushed(&.{});
-        try body_writer.writer.writeAll(job.body);
+        try body_writer.writer.writeAll(wire.body);
         try body_writer.end();
         try req.connection.?.flush();
     } else {
@@ -510,9 +515,9 @@ fn perform(job: *Job, arena: std.mem.Allocator) !http.Response {
 
     // One past the cap so a body of exactly max_body is not rejected
     // at the limit boundary; the explicit check below is the contract.
-    const body = try reader.allocRemaining(job.gpa, .limited(@as(usize, job.max_body) + 1));
-    if (body.len > job.max_body) {
-        job.gpa.free(body);
+    const body = try reader.allocRemaining(gpa, .limited(@as(usize, wire.max_body) + 1));
+    if (body.len > wire.max_body) {
+        gpa.free(body);
         return error.StreamTooLong;
     }
     return .{ .status = status, .headers = headers, .body = http.Bytes.adopt(body) };

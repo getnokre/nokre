@@ -520,7 +520,12 @@ guarantees the failure path eventually runs, so recovery (clearing an
 handling, which now always gets its turn. Under `zig test` the mock
 ignores it: parked requests stay parked until the test answers, so the
 network stays a test input. The verb set is closed — GET, HEAD, POST,
-PUT, PATCH, DELETE — and there is no streaming, no timeout knob, and
+PUT, PATCH, DELETE — and the verb, not the bytes, decides whether a
+request carries a body: POST, PUT and PATCH always do, empty or not
+(`content-length: 0` is a body a server can read as one), and passing
+`body` on any other verb is a programmer error nokre asserts on rather
+than a request one platform would send and the other would refuse.
+There is no streaming, no timeout knob, and
 no per-request configuration surface. Like `worker` — and unlike
 `package_info` — nothing links: the service is always available, and
 an app that never calls it pays nothing.

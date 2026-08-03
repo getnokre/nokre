@@ -28,7 +28,31 @@ pub const Bytes = workers.Bytes;
 /// plumbing — the browser issues its own preflights and no app-level
 /// semantic needs them; the set stays closed the way the element set
 /// does.
-pub const Method = enum { GET, HEAD, POST, PUT, PATCH, DELETE };
+pub const Method = enum {
+    GET,
+    HEAD,
+    POST,
+    PUT,
+    PATCH,
+    DELETE,
+
+    /// The std verb — and through its `requestHasBody()`, the one
+    /// authority on which verbs carry a body at all. std.http.Client
+    /// asserts that the send path and the method agree, so a transport
+    /// picks its path by asking the method, never by measuring the
+    /// body: a POST with no fields is still a body request
+    /// (`content-length: 0`), and a GET is never one.
+    pub fn asStd(m: Method) std.http.Method {
+        return switch (m) {
+            .GET => .GET,
+            .HEAD => .HEAD,
+            .POST => .POST,
+            .PUT => .PUT,
+            .PATCH => .PATCH,
+            .DELETE => .DELETE,
+        };
+    }
+};
 
 pub const Header = struct { name: []const u8, value: []const u8 };
 
@@ -79,6 +103,9 @@ pub const RequestOptions = struct {
     /// Borrowed only for the `request` call, like every message: the
     /// transport copies before returning.
     headers: []const Header = &.{},
+    /// Only POST, PUT and PATCH carry one — a body on any other verb
+    /// has nowhere to go on either platform, and is asserted away at
+    /// `request`.
     body: []const u8 = &.{},
     /// A response body larger than this is the failure "BodyTooLarge":
     /// a rogue server must not be able to balloon the app's memory,
@@ -114,6 +141,12 @@ pub const Handle = struct {
 /// supplies the response — the network becomes a test input
 /// (docs/testing.md).
 pub fn request(opts: RequestOptions) !Handle {
+    // A body a verb cannot carry is a caller's mistake with no honest
+    // outcome — native would drop it, fetch would throw — so it is
+    // refused here, once, where the mock catches it in a harness run
+    // rather than a shipped app. Same class as web.zig's newline
+    // assertion on a header.
+    std.debug.assert(opts.body.len == 0 or opts.method.asStd().requestHasBody());
     const ticket = try workers.openOneShot(Result, opts.app, opts.ctx, opts.on_result);
     errdefer workers.cancelOneShot(ticket);
     if (comptime builtin.is_test) {

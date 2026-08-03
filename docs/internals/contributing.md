@@ -216,6 +216,16 @@ way. The shell's complete job description is in
   build rather than skipping, because a gate that stands aside quietly
   reports a green nobody can interpret. `-Djs-parse=false` is the way to
   decline it out loud.
+- **One transport on a real socket**, in `zig build test`:
+  [native_test.zig](../../src/services/http/native_test.zig) binds a
+  loopback origin in the test process and puts all six verbs through
+  the native http transport, asserting the bytes that go out. Every
+  other service is proven against its mock, and a mock answers whatever
+  it is asked — which is how a send path that `std.http.Client` asserts
+  on shipped choosing itself by the body's length, panicking every
+  bodiless POST. Where a service's real leg is pure Zig over a socket,
+  a fake is not enough; the threads around it stay the mock's, because
+  a gate cannot wait out a 30-second watchdog.
 - **The desktop link**, in `zig build test -Dskia`: the examples are
   built, not just installed. hello links the services that need an
   identity and the kitchen sink links none at all — the shape every app
