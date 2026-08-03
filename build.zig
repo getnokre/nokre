@@ -1071,6 +1071,11 @@ pub fn build(b: *std.Build) void {
     // docs/testing.md names, and the tier nokre owes on its own side.
     addDevStoreCheck(b, test_step, target);
 
+    // And the other one: the native http transport's threads, which no
+    // `zig test` can reach either — under it the service is its mock,
+    // and native_test.zig drives `perform` without them.
+    addHttpStressCheck(b, test_step, target);
+
     // The other half of the web edition, which no Zig test can reach.
     addJsParseCheck(b, test_step, js_parse);
 
@@ -1750,6 +1755,57 @@ fn configureServices(b: *std.Build, mod: *std.Build.Module, pkg: ?PackageDecl, s
     addOauth(b, mod, pkg, services);
     addIap(b, mod, pkg, services.iap);
     addNotification(b, mod, pkg, services);
+}
+
+/// The native http transport's own gate: `tests/http_stress.zig` built
+/// as an executable — not a `zig test` binary — and run. Two `App`s in
+/// one process drive nearly two thousand real requests at a loopback
+/// origin, which is the only way nokre's detached transfer and watchdog
+/// threads, its delivery pump, and std.http.Client's connect machinery
+/// are ever put in a room together: under `zig test` the service is its
+/// mock, and native_test.zig drives `perform` without the threads on
+/// purpose.
+///
+/// It is a race gate, so it is sized by measurement, not by taste — the
+/// file says what the numbers buy. Native desktop only, and quietly so,
+/// for addDevStoreCheck's reasons: a cross-compiled binary is one this
+/// machine could not run, and the phones and the web reach the network
+/// through a transport this program does not contain. Debug is
+/// hard-coded rather than taken from `-Doptimize`, for
+/// addDevStoreCheck's reason and one of its own: the crash this holds
+/// off is a Debug-only panic — a release build turns the same errno
+/// into `error.Unexpected` and the request merely fails — so a gate
+/// built any other way would watch for something that cannot happen.
+fn addHttpStressCheck(b: *std.Build, step: *std.Build.Step, target: std.Build.ResolvedTarget) void {
+    const t = target.result;
+    const desktop = switch (t.os.tag) {
+        .macos, .windows => true,
+        .linux => !t.abi.isAndroid(),
+        else => false,
+    };
+    if (!desktop or t.os.tag != builtin.os.tag or t.cpu.arch != builtin.cpu.arch) return;
+
+    const decl: PackageDecl = .{ .name = "http-stress", .id = "dev.nokre.httpstress", .version = "0.0.0", .build = 0 };
+    const nokre_mod = b.createModule(.{
+        .root_source_file = b.path("src/nokre.zig"),
+        .target = target,
+        .optimize = .Debug,
+        .link_libc = true,
+    });
+    configureNokre(b, nokre_mod, decl, .{}, false);
+    const exe = b.addExecutable(.{ .name = "http-stress-check", .root_module = b.createModule(.{
+        .root_source_file = b.path("tests/http_stress.zig"),
+        .target = target,
+        .optimize = .Debug,
+        .imports = &.{.{ .name = "nokre", .module = nokre_mod }},
+    }) });
+
+    const run = b.addRunArtifact(exe);
+    // A substring, on stderr, for addDevStoreCheck's reason: asserting
+    // the program's last line asserts every step before it ran.
+    run.expectStdErrMatch("http stress: 1920 requests");
+    run.expectExitCode(0);
+    step.dependOn(&run.step);
 }
 
 // The options module is ALWAYS added (package_info's rule): an unlinked

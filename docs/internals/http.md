@@ -112,6 +112,60 @@ with zero copies.
   keeps: "these requests, in this order" outlives the answers. The
   parked state dies with the app at `deinit`.
 
+## No pool under the native transport
+
+The native transport's `std.Io.Threaded` is created with
+`async_limit = .nothing`, so it dispatches nothing to a pool: every
+`Io.async` std makes under `std.http.Client` runs on the caller, which
+is the request's own detached thread. That is what makes "one thread
+per request" literally true rather than approximately true, and it is
+load-bearing, not tidiness.
+
+With a pool, the transport dies. `std.Io.Threaded` cancels a blocked
+syscall by sending `SIGIO` to the pool thread sitting in it, and
+`std.http.Client` reaches `HostName.connect`, whose happy-eyeballs race
+cancels the losing attempt on *every host that resolves to more than one
+address* — which is every dual-stack host, including `localhost`. A
+signal aimed at one attempt can arrive after that thread has moved on to
+another request's `connect`. std then retries the interrupted call,
+which POSIX does not permit: after `EINTR` the connection completes
+asynchronously, so the retry answers `EISCONN`, and std treats that
+errno as a programmer bug and panics — `panic: programmer bug caused
+syscall error: ISCONN`, on a thread with nothing of the app on its
+stack. The odds scale with how many requests are connecting at once, so
+it reads as a rare crash in a small app and a frequent one in anything
+that fans out. In a release build the same errno becomes
+`error.Unexpected` and the request merely fails, which is worse in the
+way silence usually is. With no pool, no thread is ever a
+`pthread_kill` target and the whole class is gone.
+
+The cost, stated rather than implied: one host's addresses are tried in
+**sequence**, not in parallel. A refused address — the common shape of
+broken IPv6 — still answers at once, so the usual fallback is unchanged;
+a silently black-holed address ahead of a good one delays the request
+instead of losing a race to it, and guarantee 7 is what bounds that: the
+app sees `"TimedOut"`, never a hang. The other edge is std's own queues,
+32 entries each — a host resolving to more than 32 addresses would fill
+one with no consumer running, and that request reaches the app as the
+same `"TimedOut"`. Both are a slow request; the pool's price was a dead
+process.
+
+This is a property of the transport, not of the app: nothing a consumer
+does can restore the pool, and **two `App`s in one process are safe** —
+that shape (a driver holding two devices) is what made the crash easy to
+see, but one `App` fanning out requests reaches it too. The gate is
+[tests/http_stress.zig](../../tests/http_stress.zig): two apps, eight
+requests in flight each, 1920 requests at a loopback origin listening on
+both families. With the pool restored it crashed on 20 runs out of 20;
+without it, 0 in 100.
+
+The other two refcounted `std.Io.Threaded` backends in the tree —
+[workers/thread.zig](../../src/workers/thread.zig) and
+[oauth/loopback.zig](../../src/services/oauth/loopback.zig) — keep the
+default, and correctly: neither ever calls `Io.async`, so neither has a
+pool to be signalled through. Only the http transport hands its `Io` to
+code that does.
+
 ## Guarantees
 
 1. Exactly one `Result` per request, on the UI thread, between events.

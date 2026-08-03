@@ -135,6 +135,9 @@ construction.
   construction, not by the test runner's serialization. The documented
   exemptions — wasm shell singletons (the instance *is* one app) and
   the refcounted native Io backends — each carry a guard and a comment.
+  The http transport's backend carries one more: it is created with no
+  async pool, which is a correctness requirement rather than a tuning
+  choice ([http.md](http.md#no-pool-under-the-native-transport)).
 
 Code conventions (test layout, formatting, comment voice) are in
 [contributing.md](contributing.md). Why the render seam is shaped to

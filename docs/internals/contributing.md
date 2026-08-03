@@ -224,8 +224,8 @@ way. The shell's complete job description is in
   it is asked — which is how a send path that `std.http.Client` asserts
   on shipped choosing itself by the body's length, panicking every
   bodiless POST. Where a service's real leg is pure Zig over a socket,
-  a fake is not enough; the threads around it stay the mock's, because
-  a gate cannot wait out a 30-second watchdog.
+  a fake is not enough; the threads around it are the next tier's, not
+  this one's, because a gate cannot wait out a 30-second watchdog.
 - **The desktop link**, in `zig build test -Dskia`: the examples are
   built, not just installed. hello links the services that need an
   identity and the kitchen sink links none at all — the shape every app
@@ -244,6 +244,20 @@ way. The shell's complete job description is in
   that outlives the app that made it, and a delete. It does not make
   macos.m or windows.c any more executed than they were; it makes the
   Zig above them so, which was previously proven by nothing.
+
+- **That transport's threads**, in `zig build test` on a native desktop
+  host: [tests/http_stress.zig](../../tests/http_stress.zig) is built as
+  an *executable* and run. Two `App`s in one process put 1920 requests
+  through the real transport at a loopback origin listening on both
+  families, so nokre's delivery pump, its detached transfer and watchdog
+  threads, and std's connect machinery run together — the one
+  arrangement in which the transport's concurrency is the subject rather
+  than the setting. It is sized by measurement, not by taste, because
+  what it holds off is a race: restore the async pool it refuses
+  ([http.md](http.md#no-pool-under-the-native-transport)) and this load
+  crashes the process on 20 runs out of 20. Failures the *machine*
+  produces — no thread to spawn, no ephemeral port left — are counted
+  and reported, never failed on; a resource limit is not a defect.
 
 Goldens are byte-exact and must stay byte-identical unless a change is
 intentionally visual — then regenerate, eyeball the image, and commit it

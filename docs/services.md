@@ -504,10 +504,14 @@ shared memory, no futures, no thread pool, no forced kill) — is
 ### http: the network as a message
 
 One API on every platform; behind it the shells wire what they have —
-native blocks one visible thread per request on `std.http.Client`, the
-web hands the job to the browser's `fetch`, tests park the request
-until the test answers it — and the consumer contract never changes:
-no futures, no locks, no callback off the UI thread. Requests and
+native blocks one visible thread per request on `std.http.Client` and
+nothing else (no pool hides under it, deliberately — the reason is
+[internals/http.md](internals/http.md#no-pool-under-the-native-transport),
+and one consequence is that a host's addresses are tried in sequence
+rather than raced), the web hands the job to the browser's `fetch`,
+tests park the request until the test answers it — and the consumer
+contract never changes: no futures, no locks, no callback off the UI
+thread. Requests and
 worker messages share one delivery lane, so ordering, thread
 discipline, and the testing story are the same fact, not three
 parallel ones. One platform wants the hosts in advance: a web build's

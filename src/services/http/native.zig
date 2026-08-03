@@ -20,6 +20,34 @@
 //! until it exits — so the backend always outlives the detached
 //! threads that use it — and the last release tears it down, so a
 //! leak-checked test binary ends clean without a process atexit.
+//!
+//! The backend runs with no async pool at all (`async_limit = .nothing`),
+//! which is what makes the paragraph above literally true: the request
+//! thread is the only thread the transfer touches. That is not a tuning
+//! choice — it is the one thing standing between this transport and a
+//! crash. `std.Io.Threaded` implements cancellation by sending SIGIO to
+//! the pool thread blocked in a syscall, and `std.http.Client` reaches
+//! `HostName.connect`, whose happy-eyeballs race *cancels the losing
+//! connect on every multi-address host*. A signal aimed at one attempt
+//! can land after that thread has moved on to another request's
+//! `connect`, where std retries the interrupted call — which POSIX does
+//! not allow, because after EINTR the connection completes
+//! asynchronously and the retry answers EISCONN, an errno std treats as
+//! a programmer bug and panics on. With no pool, `Io.async` runs the
+//! task on the caller (std's documented fallback), no thread is ever a
+//! `pthread_kill` target, and that whole class of stray interrupt is
+//! gone. See tests/http_stress.zig, the gate that holds it.
+//!
+//! What it costs, said plainly: one host's addresses are now tried in
+//! sequence rather than in parallel, so a silently black-holed address
+//! ahead of a good one delays the request instead of losing a race to
+//! it. Refused addresses — the common shape of broken IPv6 — still
+//! answer at once, and the deadline above is what bounds the rest: the
+//! app sees "TimedOut", never a hang. The other edge is std's queues,
+//! 32 entries each: a host resolving to more than 32 addresses would
+//! fill one with no consumer running, and that request reaches the app
+//! as the same "TimedOut". Both are a slow request; the pool's price
+//! was a dead process.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -55,7 +83,9 @@ pub fn acquireIo(gpa: std.mem.Allocator) std.Io {
     lockIo();
     defer unlockIo();
     if (io_backend == null) {
-        io_backend = std.Io.Threaded.init(gpa, .{});
+        // No pool: every `Io.async` under std.http.Client runs on the
+        // calling thread, which is this request's own (the module note).
+        io_backend = std.Io.Threaded.init(gpa, .{ .async_limit = .nothing });
         io = if (comptime builtin.abi.isAndroid())
             android_lookup.wrap(io_backend.?.io())
         else

@@ -754,6 +754,20 @@ press handler holds a `*App`, so build the app into storage that
 outlives the call rather than returning one by value (`Harness` keeps it
 as a field for exactly that reason).
 
+A driver may hold **more than one `App` at a time**, and often should:
+two devices in one process is how a scenario signs out as one user and
+in as another. Nothing in nokre is process-global on an app's behalf —
+the exemptions are the shared `std.Io.Threaded` backends
+([internals/architecture.md](internals/architecture.md) lists them),
+and they are refcounted so that two apps share one and the last one out
+tears it down. Two apps' networks, stores and worker rosters are
+disjoint by construction. The concurrency a second app adds is the same
+concurrency one app fanning out requests adds, and the http transport
+carries a gate of its own for it
+([internals/http.md](internals/http.md#no-pool-under-the-native-transport)):
+`tests/http_stress.zig`, two apps at 1920 real requests, on every
+`zig build test`.
+
 The one service a driver cannot simply use as it stands is
 `secure_store`, and it has its own answer: `.secure_store_dev = true`
 swaps the Keychain or the Secret Service for a plaintext file the driver
@@ -763,7 +777,9 @@ keychain and a headless CI machine runs no keyring daemon
 build). nokre's own `tests/dev_store.zig` is a worked example of the
 whole shape, and it runs on every `zig build test` on a desktop POSIX
 host — the one place in the repository where the store verbs reach a
-store the OS answers.
+store the OS answers. `tests/http_stress.zig` is the second worked
+example, and the other half of the same tier: the one place where the
+http verbs reach a socket the OS answers.
 
 What nokre tests for *itself* — and the guarantees those tests prove on
 your behalf — is catalogued in

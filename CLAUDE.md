@@ -29,7 +29,11 @@ fact has one home; complement, never duplicate. Start with
   builds `tests/dev_store.zig` as an *executable* and runs it: the one
   gate where a service's release verbs reach a store the OS answers,
   since under `zig test` a service is its mock
-  (`docs/internals/secure_store.md`, the dev file store)
+  (`docs/internals/secure_store.md`, the dev file store). On any native
+  desktop host it builds and runs `tests/http_stress.zig` the same way:
+  two `App`s, 1920 real requests at a loopback origin, the one gate on
+  the native http transport's *threads*
+  (`docs/internals/http.md`, "No pool under the native transport")
 - `zig build test -Dskia -Dgolden` — golden screenshot tests, byte-exact
   (run `tools/fetch-deps.sh` once first; add `-Dupdate-goldens` to
   create missing goldens or regenerate after an intentional visual
