@@ -139,6 +139,10 @@ pub const App = struct {
     layout_dirty: bool = true,
     /// Where focus returns when the open sheet is dismissed.
     sheet_return_focus: ?focus.Focus = null,
+    /// The open sheet as data: who builds it, and who to tell when it
+    /// closes (`overlays.openSheet`). Kept until the sheet closes;
+    /// `reload` runs it again, so the sheet outlives the rebuild.
+    sheet_builder: ?overlays.SheetBuilder = null,
     /// The open sheet, when it is a row's folded tail rather than a
     /// consumer's (overflow.zig). Pressing one of the buttons it lists
     /// closes it, so activation has to know which sheet it is standing
@@ -182,6 +186,9 @@ pub const App = struct {
     /// See `more_sheet`: the folded tail on screen, and the row it is
     /// the tail of.
     pub const MoreSheet = struct { row: NodeId, sheet: NodeId };
+
+    /// A sheet declared as data — what `openSheet` takes (overlays.zig).
+    pub const SheetBuilder = overlays.SheetBuilder;
 
     /// In a test build `services` loses its default (see below): every
     /// test constructs its app with its mocks — `.services = .mocks()`
@@ -229,6 +236,7 @@ pub const App = struct {
 
     pub const setNav = nav_mod.setNav;
     pub const clearNav = nav_mod.clearNav;
+    pub const openSheet = overlays.openSheet;
     pub const presentSheet = overlays.presentSheet;
     pub const dismissSheet = overlays.dismissSheet;
     pub const notify = notices_mod.notify;

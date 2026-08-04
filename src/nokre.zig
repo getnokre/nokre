@@ -122,6 +122,9 @@ pub const IconName = element.IconName;
 pub const Destination = @import("core/nav.zig").Destination;
 pub const Event = event.Event;
 pub const RouteDef = router.RouteDef;
+/// A sheet declared as data: what `App.openSheet` takes, and the
+/// framework re-runs on reload (core/overlays.zig).
+pub const SheetBuilder = app.App.SheetBuilder;
 pub const Gray = color.Gray;
 pub const Scheme = color.Scheme;
 pub const Appearance = color.Appearance;

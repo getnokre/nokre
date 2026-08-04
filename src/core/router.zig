@@ -41,6 +41,7 @@
 const std = @import("std");
 const app_mod = @import("app.zig");
 const nav_mod = @import("nav.zig");
+const overlays = @import("overlays.zig");
 const tree_mod = @import("tree.zig");
 
 const App = app_mod.App;
@@ -372,14 +373,14 @@ pub const Router = struct {
         // then strand an owned reference outside the stack.
         try self.stack.ensureUnusedCapacity(app.gpa, 1);
         self.stack.appendAssumeCapacity(try own(app.gpa, idx, reference));
-        try self.rebuild(app, .push, .fresh);
+        try self.rebuild(app, .push, .fresh, .dropped);
     }
 
     /// Pops back one screen. No-op at the root of the stack.
     pub fn pop(self: *Router, app: *App) !void {
         if (self.stack.items.len <= 1) return;
         self.dropTop(app.gpa);
-        try self.rebuild(app, .pop, .restored);
+        try self.rebuild(app, .pop, .restored, .dropped);
     }
 
     pub fn replace(self: *Router, app: *App, reference: []const u8) !void {
@@ -391,7 +392,7 @@ pub const Router = struct {
         const entry = try own(app.gpa, idx, reference);
         if (self.stack.items.len != 0) self.dropTop(app.gpa);
         self.stack.appendAssumeCapacity(entry);
-        try self.rebuild(app, .replace, .fresh);
+        try self.rebuild(app, .replace, .fresh, .dropped);
     }
 
     /// Enters `reference` with the stack reset to just it: arriving somewhere
@@ -409,7 +410,7 @@ pub const Router = struct {
         for (self.stack.items) |e| app.gpa.free(e.ref);
         self.stack.clearRetainingCapacity();
         self.stack.appendAssumeCapacity(entry);
-        try self.rebuild(app, .switch_to, .fresh);
+        try self.rebuild(app, .switch_to, .fresh, .dropped);
     }
 
     /// Rebuilds the current screen from its own reference — the way to
@@ -421,10 +422,14 @@ pub const Router = struct {
     /// halfway down is the papercut `pop` has, arriving through a
     /// different door — and a screen that redraws a row cannot be asked
     /// to also put the viewport back.
+    ///
+    /// An open sheet survives it too, by the same argument: its builder
+    /// (`App.openSheet`) runs again over the rebuilt screen, so a sheet
+    /// is never the reason state cannot be answered.
     pub fn reload(self: *Router, app: *App) !void {
         if (self.stack.items.len == 0) return;
         captureScroll(app, self.topMut().?);
-        try self.rebuild(app, .replace, .restored);
+        try self.rebuild(app, .replace, .restored, .carried);
     }
 
     fn own(gpa: std.mem.Allocator, idx: usize, reference: []const u8) !Entry {
@@ -487,7 +492,14 @@ pub const Router = struct {
     /// which is also how `reload` keeps announcing itself as `.replace`.
     const Scroll = enum { fresh, restored };
 
-    fn rebuild(self: *Router, app: *App, change: Change, scroll: Scroll) !void {
+    /// Whether an open sheet's builder (`App.openSheet`) rides this
+    /// rebuild or dies with the screen. Kept separate from `Change` for
+    /// `Scroll`'s reason — and only a reload carries: every real
+    /// navigation is a new screen, and a sheet belongs to the state of
+    /// the one that opened it.
+    const SheetFate = enum { dropped, carried };
+
+    fn rebuild(self: *Router, app: *App, change: Change, scroll: Scroll, sheet: SheetFate) !void {
         const entry = self.stack.items[self.stack.items.len - 1];
         const def = self.routes[entry.idx];
         try clearContent(app);
@@ -504,8 +516,11 @@ pub const Router = struct {
         // node it named is gone, and putting a screen reader's cursor
         // back by ordinal would land it on whatever took that place.
         app.focused = null;
-        app.sheet_return_focus = null; // the sheet went with the content
-        app.picker_owner = null; // and so did the picker
+        // The sheet's *node* went with the content either way; whether
+        // its builder gets to build again is `sheet`'s call, below.
+        app.sheet_return_focus = null;
+        if (sheet == .dropped) overlays.dropSheetBuilder(app);
+        app.picker_owner = null; // the picker went with the content
         app.more_sheet = null; // and the folded tail with the row it came from
         app.root_scroll = 0;
         // The latched node ids would dangle into the rebuilt tree.
@@ -525,6 +540,9 @@ pub const Router = struct {
         // no frame ever shows the top of a list the user left halfway
         // down. Layout clamps whatever no longer fits.
         if (scroll == .restored) restoreScroll(app, entry);
+        // After the screen, so the carried sheet stands on the rebuilt
+        // content it is about — and its builder reads post-reload state.
+        if (sheet == .carried) try overlays.representSheet(app);
         // The collapsed nav names the section it stands on, so the
         // chrome follows the stack (nav.zig). The row does not — it
         // reads the current route at draw time — so this is a no-op
@@ -573,8 +591,9 @@ pub const Router = struct {
 
     /// Removes every root child except app chrome: nav (see App.setNav)
     /// and the notice chrome (banner, pane, or minimized indicator —
-    /// status outlives the screen it was raised on). An open sheet
-    /// belongs to the old screen and goes with it.
+    /// status outlives the screen it was raised on). An open sheet's
+    /// node belongs to the old tree and goes with it; whether its
+    /// builder presents again is `rebuild`'s `SheetFate`.
     fn clearContent(app: *App) !void {
         const root = app.tree.rootId();
         var doomed: std.ArrayList(NodeId) = .empty;

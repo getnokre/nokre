@@ -688,3 +688,88 @@ test "the route table is validated at init, not at first navigation" {
         .services = .mocks(),
     }));
 }
+
+// ---- the sheet across the motions: carried by reload, dropped by the
+// rest (docs/routing.md, docs/elements.md "sheet") ----
+
+/// A controller in miniature, sheet-side: the state its builder reads,
+/// and the record of what the framework told it.
+const SheetCtx = struct {
+    built: u32 = 0,
+    sheet_open: bool = false,
+    sheet_builds: u32 = 0,
+    dismissed: u32 = 0,
+
+    fn buildScreen(ctx: ?*anyopaque, app: *App) anyerror!void {
+        const self: *SheetCtx = @ptrCast(@alignCast(ctx.?));
+        self.built += 1;
+        try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Home" } });
+    }
+
+    fn buildSheet(ctx: ?*anyopaque, app: *App) anyerror!void {
+        const self: *SheetCtx = @ptrCast(@alignCast(ctx.?));
+        if (!self.sheet_open) return;
+        self.sheet_builds += 1;
+        _ = try app.presentSheet("Confirm");
+    }
+
+    fn onDismiss(ctx: ?*anyopaque) void {
+        const self: *SheetCtx = @ptrCast(@alignCast(ctx.?));
+        self.sheet_open = false;
+        self.dismissed += 1;
+    }
+
+    fn open(self: *SheetCtx, app: *App) !void {
+        self.sheet_open = true;
+        try app.openSheet(.{ .ctx = self, .call = buildSheet, .on_dismiss = onDismiss });
+    }
+};
+
+const sheet_routes = [_]router_mod.RouteDef{
+    .{ .name = "home", .title = "Home", .build = SheetCtx.buildScreen },
+    .{ .name = "details", .title = "Details", .build = buildDetails },
+};
+
+test "reload carries the open sheet: its builder runs again over the rebuilt screen" {
+    var data: SheetCtx = .{};
+    var app = try App.init(testing.allocator, .{
+        .viewport = .{ .w = 400, .h = 400 },
+        .routes = &sheet_routes,
+        .ctx = &data,
+        .services = .mocks(),
+    });
+    defer app.deinit();
+    try app.navigate("home");
+    try data.open(&app);
+    try testing.expectEqual(@as(u32, 1), data.sheet_builds);
+
+    try app.reload();
+    // The screen rebuilt, and the sheet stood back up on it — same
+    // builder, fresh tree, no closure announced.
+    try testing.expectEqual(@as(u32, 2), data.built);
+    try testing.expectEqual(@as(u32, 2), data.sheet_builds);
+    try testing.expect(layout.findSheet(&app.tree) != null);
+    try testing.expectEqual(@as(u32, 0), data.dismissed);
+}
+
+test "a navigation drops the open sheet and tells its builder" {
+    var data: SheetCtx = .{};
+    var app = try App.init(testing.allocator, .{
+        .viewport = .{ .w = 400, .h = 400 },
+        .routes = &sheet_routes,
+        .ctx = &data,
+        .services = .mocks(),
+    });
+    defer app.deinit();
+    try app.navigate("home");
+    try data.open(&app);
+
+    try app.navigate("details");
+    try testing.expect(layout.findSheet(&app.tree) == null);
+    try testing.expectEqual(@as(u32, 1), data.dismissed);
+    try testing.expect(!data.sheet_open);
+    try testing.expect(app.sheet_builder == null);
+    // And a reload of the new screen has no sheet to stand back up.
+    try app.reload();
+    try testing.expect(layout.findSheet(&app.tree) == null);
+}

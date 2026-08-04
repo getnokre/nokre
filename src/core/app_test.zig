@@ -2019,6 +2019,116 @@ test "escape dismisses the sheet and restores focus to the invoker" {
     try testing.expect(app.focused.?.on(behind));
 }
 
+/// The declared-sheet fixture: a controller in miniature — an enum
+/// saying which sheet is wanted, state the builder reads, and the two
+/// callbacks a `SheetBuilder` carries.
+const SheetHost = struct {
+    sheet: enum { none, confirm } = .none,
+    label: []const u8 = "Delete",
+    builds: u32 = 0,
+    dismissed: u32 = 0,
+
+    fn build(ctx: ?*anyopaque, app: *App) anyerror!void {
+        const self: *SheetHost = @ptrCast(@alignCast(ctx.?));
+        if (self.sheet == .none) return;
+        self.builds += 1;
+        const sheet = try app.presentSheet("Confirm");
+        try app.tree.append(sheet, .{ .button = .{ .label = self.label } });
+    }
+
+    fn onDismiss(ctx: ?*anyopaque) void {
+        const self: *SheetHost = @ptrCast(@alignCast(ctx.?));
+        self.sheet = .none;
+        self.dismissed += 1;
+    }
+
+    fn builder(self: *SheetHost) App.SheetBuilder {
+        return .{ .ctx = self, .call = build, .on_dismiss = onDismiss };
+    }
+};
+
+/// Whether the open sheet holds a button with exactly `label`.
+fn sheetHasButton(app: *App, label: []const u8) bool {
+    const sheet = layout.findSheet(&app.tree) orelse return false;
+    var it = app.tree.children(sheet);
+    while (it.next()) |c| {
+        const el = app.tree.getConst(c).?;
+        if (el.role() == .button and std.mem.eql(u8, el.button.label, label)) return true;
+    }
+    return false;
+}
+
+test "openSheet builds the declared sheet and rebuilds it in place" {
+    var app = try test_app.init(400, 600);
+    defer app.deinit();
+    const behind = try app.tree.appendId(app.tree.rootId(), .{ .button = .{ .label = "Behind" } });
+    app.focused = .of(behind);
+
+    var host: SheetHost = .{ .sheet = .confirm };
+    try app.openSheet(host.builder());
+    try testing.expect(sheetHasButton(&app, "Delete"));
+    try testing.expectEqual(@as(u32, 1), host.builds);
+
+    // State changed under the open sheet: the same call again is the
+    // whole ceremony, and the sheet is rebuilt in place, not stacked.
+    host.label = "Really delete";
+    try app.openSheet(host.builder());
+    try testing.expect(sheetHasButton(&app, "Really delete"));
+    try testing.expectEqual(@as(u32, 2), host.builds);
+    // A rebuild is not a closure.
+    try testing.expectEqual(@as(u32, 0), host.dismissed);
+
+    // And the rebuilt sheet still remembers the original invoker.
+    try app.dispatch(.{ .key_down = .{ .key = .escape } });
+    try testing.expect(app.focused.?.on(behind));
+}
+
+test "the framework's dismissals tell the declared sheet's on_dismiss" {
+    var app = try test_app.init(400, 600);
+    defer app.deinit();
+    var host: SheetHost = .{ .sheet = .confirm };
+    try app.openSheet(host.builder());
+
+    // Esc is the framework's dismissal, not the consumer's: without the
+    // callback the controller's state would still say the sheet is open,
+    // and its next refresh would put a dismissed dialog back.
+    try app.dispatch(.{ .key_down = .{ .key = .escape } });
+    try testing.expect(layout.findSheet(&app.tree) == null);
+    try testing.expectEqual(@as(u32, 1), host.dismissed);
+    try testing.expect(host.sheet == .none);
+    try testing.expect(app.sheet_builder == null);
+}
+
+test "a builder that presents nothing declines quietly" {
+    var app = try test_app.init(400, 600);
+    defer app.deinit();
+    // The sheet's subject vanished before the build: the state already
+    // says .none, so there is no closure to announce.
+    var host: SheetHost = .{ .sheet = .none };
+    try app.openSheet(host.builder());
+    try testing.expect(layout.findSheet(&app.tree) == null);
+    try testing.expect(app.sheet_builder == null);
+    try testing.expectEqual(@as(u32, 0), host.dismissed);
+}
+
+fn buildHalfThenFail(_: ?*anyopaque, app: *App) anyerror!void {
+    const sheet = try app.presentSheet("Confirm");
+    try app.tree.append(sheet, .{ .button = .{ .label = "Half" } });
+    return error.SheetFixture;
+}
+
+test "a builder that fails strands no half-built sheet" {
+    var app = try test_app.init(400, 600);
+    defer app.deinit();
+    const behind = try app.tree.appendId(app.tree.rootId(), .{ .button = .{ .label = "Behind" } });
+    app.focused = .of(behind);
+
+    try testing.expectError(error.SheetFixture, app.openSheet(.{ .call = buildHalfThenFail }));
+    try testing.expect(layout.findSheet(&app.tree) == null);
+    try testing.expect(app.sheet_builder == null);
+    try testing.expect(app.focused.?.on(behind));
+}
+
 test "tap on the scrim dismisses the sheet; background is not hittable" {
     var counter: PressCounter = .{};
     var app = try test_app.init(400, 600);

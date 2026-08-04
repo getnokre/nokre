@@ -1245,13 +1245,48 @@ device with haptics turned off.
 ## Layers
 
 ### `sheet`
-The only modal surface, created through the app — never appended
-directly to build content:
+The only modal surface, declared to the app as a *builder* — a fn the
+framework calls to build the sheet, and calls again whenever it must be
+built again — never appended directly to build content:
 
 ```zig
-const sheet = try app.presentSheet("Filter results");
-try app.tree.append(sheet, .{ .toggle = .{ .label = "Only unread" } });
+fn buildFilter(ctx: ?*anyopaque, app: *nokre.App) anyerror!void {
+    const c = nokre.ctx(Filters, ctx);
+    if (!c.filtering) return; // declining is the builder's to do
+    const sheet = try app.presentSheet("Filter results");
+    try app.tree.append(sheet, .{ .toggle = .{ .label = "Only unread" } });
+}
+
+fn onFilterDismissed(ctx: ?*anyopaque) void {
+    nokre.ctx(Filters, ctx).filtering = false;
+}
+
+// at the point the user asks for it:
+c.filtering = true;
+try app.openSheet(.{ .ctx = c, .call = buildFilter, .on_dismiss = onFilterDismissed });
 ```
+
+`openSheet` runs the builder at once and keeps it — as data, for as
+long as the sheet is up. That one declaration is the whole lifecycle:
+
+- **State changed under the open sheet?** Call `openSheet` again with
+  the same builder — the sheet is rebuilt in place, never stacked. The
+  builder always starts from a tree with no sheet in it (the framework
+  takes the open one down first), so building is always building from
+  scratch, and a builder never calls `dismissSheet` itself.
+- **The screen reloaded?** The builder runs again over the rebuilt
+  screen, unasked: a sheet survives `reload` the way scroll does,
+  because a reload is the same screen answering changed state. A real
+  navigation is a different screen, and drops the sheet.
+- **The sheet closed?** However it happened — Esc, the close control, a
+  tap outside, `App.dismissSheet`, a navigation — the builder is
+  dropped and its optional `on_dismiss` told, so the state the builder
+  reads can record a closure it did not initiate. A builder that
+  presents nothing has *declined* — its subject vanished — and is
+  dropped quietly, with no `on_dismiss`: the state already knows.
+
+Inside the builder, `presentSheet` is the verb that makes the node: it
+returns the sheet to fill with content.
 
 A bottom-anchored panel (top corners rounded, `.g6` outline), at most
 `metrics.sheet_max_w` (560px) wide and never closer than
@@ -1264,7 +1299,7 @@ dimmed by a 1px `.paper` checkerboard scrim, which keeps the pixels
 inside the thirteen-gray palette. Esc or a tap on the scrim dismisses
 it (`App.dismissSheet` does so programmatically), and focus returns to
 the element that had it. One sheet at a time; a second `presentSheet` is
-rejected at the call site, and navigating away dismisses it.
+rejected at the call site.
 
 It appears in place, fully formed — no slide, no fade (WCAG 2.3.3, and
 nokre has no animation to begin with).

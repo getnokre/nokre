@@ -1,7 +1,9 @@
-//! The modal layers above content: the bottom sheet (`App.presentSheet`)
-//! and the select picker (opened by activating a `select`). While one is
-//! open the rest of the tree is inert — `App.focusScope` and hit testing
-//! enforce that; this module owns their lifecycle and focus hand-off.
+//! The modal layers above content: the bottom sheet (`App.openSheet`,
+//! built by a declared `SheetBuilder`; `App.presentSheet` is the node
+//! the builder starts from) and the select picker (opened by activating
+//! a `select`). While one is open the rest of the tree is inert —
+//! `App.focusScope` and hit testing enforce that; this module owns
+//! their lifecycle and focus hand-off.
 
 const std = @import("std");
 const app_mod = @import("app.zig");
@@ -18,13 +20,75 @@ const NodeId = tree_mod.NodeId;
 
 // ---- sheet ----
 
+/// A sheet declared as data: the fn the framework calls to build the
+/// sheet, and calls again when the screen reloads, so a sheet answers
+/// changed state the way a screen does (`RouteDef.build`'s shape). It
+/// lives on the App, not the route, because sheets are not
+/// route-shaped: one screen can host several controllers' sheets, and
+/// one controller's sheet can open from several screens. Held from
+/// `openSheet` until the sheet closes — the framework never keeps a
+/// builder it was not just handed.
+pub const SheetBuilder = struct {
+    ctx: ?*anyopaque = null,
+    /// Presents the sheet (`App.presentSheet`) and fills it from state.
+    /// It always runs against a tree with no sheet in it — the
+    /// framework takes an open one down first, so building is building
+    /// from scratch, and the builder never calls `dismissSheet` itself.
+    /// Presenting nothing is how a builder declines — the sheet's
+    /// subject can vanish under it — and quietly drops the builder,
+    /// with no `on_dismiss`: the state it reads already knows.
+    call: *const fn (ctx: ?*anyopaque, app: *App) anyerror!void,
+    /// Told when the framework takes the sheet away — Esc, the close
+    /// control, a tap outside, a navigation — so the state the builder
+    /// reads can record a closure it did not initiate. Clear state
+    /// here; do not navigate or present.
+    on_dismiss: ?*const fn (ctx: ?*anyopaque) void = null,
+};
+
+/// Opens the sheet `builder` describes, and keeps the builder: the
+/// framework runs it again after `App.reload` rebuilds the screen, so
+/// an open sheet answers changed state instead of dying with the tree
+/// it stood on. A consumer whose state changed under an open sheet
+/// calls this again — same builder, no ceremony: an open sheet is
+/// rebuilt in place, never stacked. However the sheet then closes —
+/// `dismissSheet`, Esc, the close control, a tap outside, a navigation
+/// — the builder is dropped and its `on_dismiss` told.
+pub fn openSheet(app: *App, builder: SheetBuilder) !void {
+    teardownSheet(app);
+    app.sheet_builder = builder;
+    // A builder that fails half-way strands no half-built dialog: the
+    // sheet comes down whole and the error surfaces at the caller.
+    errdefer {
+        teardownSheet(app);
+        app.sheet_builder = null;
+    }
+    try builder.call(builder.ctx, app);
+    if (layout.findSheet(&app.tree) == null) app.sheet_builder = null;
+}
+
+/// Re-runs the kept builder — the router's arm of `openSheet`'s
+/// promise, called after a reload's rebuild. No-op without one.
+pub fn representSheet(app: *App) !void {
+    const builder = app.sheet_builder orelse return;
+    try openSheet(app, builder);
+}
+
+/// Forgets the kept builder and tells its `on_dismiss` — the
+/// bookkeeping half of a dismissal, shared with the router's
+/// navigations, whose `clearContent` already took the node itself.
+pub fn dropSheetBuilder(app: *App) void {
+    const builder = app.sheet_builder orelse return;
+    app.sheet_builder = null;
+    if (builder.on_dismiss) |told| told(builder.ctx);
+}
+
 /// Opens a modal bottom sheet and returns its node to fill with
-/// content. While it is open the rest of the tree is inert: focus,
-/// taps, and scrolling stay inside. A close control (×, accessible
-/// name "Close") is pinned to the header corner — an inescapable
-/// sheet cannot be built — and Esc or tapping outside also dismiss.
-/// Focus moves in now and returns to the invoking element on
-/// dismissal.
+/// content — the verb a `SheetBuilder` starts from. While it is open
+/// the rest of the tree is inert: focus, taps, and scrolling stay
+/// inside. A close control (×, accessible name "Close") is pinned to
+/// the header corner — an inescapable sheet cannot be built — and Esc
+/// or tapping outside also dismiss. Focus moves in now and returns to
+/// the invoking element on dismissal.
 pub fn presentSheet(app: *App, title: []const u8) !NodeId {
     closePicker(app, null); // an in-flight choice does not survive a new layer
     // Whatever this sheet is, it is not the one a folded row opened —
@@ -46,6 +110,14 @@ pub fn presentSheet(app: *App, title: []const u8) !NodeId {
 
 /// No-op when no sheet is open.
 pub fn dismissSheet(app: *App) void {
+    teardownSheet(app);
+    dropSheetBuilder(app);
+}
+
+/// The node's half of a dismissal — removal and the focus hand-back —
+/// without touching the kept builder: `openSheet` rebuilds through
+/// here, and a rebuild is not a closure.
+fn teardownSheet(app: *App) void {
     const sheet = layout.findSheet(&app.tree) orelse return;
     closePicker(app, null); // its owner may be about to go with the sheet
     app.more_sheet = null;

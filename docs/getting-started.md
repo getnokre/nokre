@@ -809,25 +809,32 @@ explicit `scroll_region` only to pin a viewport *within* a screen
 ([elements.md](elements.md), which also covers `select`, `table`, and
 the rest this app doesn't need).
 
-The sheet is created through the app, never appended by a builder, and
-its lifecycle is framework-owned — close control pinned, focus moved in,
-everything behind inert, Esc/scrim dismissal, focus returned:
+The sheet is *declared* to the app, never appended by a screen builder:
+`openSheet` takes a builder fn, runs it now, and keeps it — so the
+framework can build the sheet again whenever it must (a `reload` under
+an open sheet, for one). Everything else about its lifecycle is
+framework-owned too — close control pinned, focus moved in, everything
+behind inert, Esc/scrim dismissal, focus returned:
 
 ```zig
 fn onOpenNewNote(ctx: ?*anyopaque) void {
     const state: *State = @ptrCast(@alignCast(ctx.?));
-    const app = state.app;
     state.draft_len = 0;
-    const sheet = app.presentSheet("New note") catch return;
-    app.tree.append(sheet, .{ .text_area = .{
+    state.app.openSheet(.{ .ctx = state, .call = buildNewNote }) catch return;
+}
+
+fn buildNewNote(ctx: ?*anyopaque, app: *nokre.App) anyerror!void {
+    const state: *State = @ptrCast(@alignCast(ctx.?));
+    const sheet = try app.presentSheet("New note");
+    try app.tree.append(sheet, .{ .text_area = .{
         .label = "Note",
         .placeholder = "Write it down…",
         .on_change = .{ .ctx = state, .call = onDraftChange },
-    } }) catch return;
-    app.tree.append(sheet, .{ .button = .{
+    } });
+    try app.tree.append(sheet, .{ .button = .{
         .label = "Add",
         .on_press = .{ .ctx = state, .call = onAddNote },
-    } }) catch return;
+    } });
 }
 
 fn onAddNote(ctx: ?*anyopaque) void {
@@ -840,6 +847,12 @@ fn onAddNote(ctx: ?*anyopaque) void {
     refresh(state);
 }
 ```
+
+(This app never needs to know the sheet closed under it, so it declares
+no `on_dismiss`; an app whose state records "a sheet is open" gives the
+builder one, and the framework tells it on Esc, the scrim, and every
+other closure the consumer did not make — [elements.md](elements.md),
+"sheet", has the full contract.)
 
 (`onDraftChange` copies like `onPassphraseChange`. A `text_area`
 because Enter must insert a newline; submission belongs to the explicit
