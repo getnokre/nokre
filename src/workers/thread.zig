@@ -164,10 +164,6 @@ fn isInterrupted(ctx: ?*anyopaque) bool {
 }
 
 fn postFault(w: *ThreadWorker, e: anyerror) void {
-    var buf: [1 + 64]u8 = undefined;
-    const name = @errorName(e);
-    const n = @min(name.len, buf.len - 1);
-    buf[0] = workers.fault_frame;
-    @memcpy(buf[1 .. 1 + n], name[0..n]);
-    w.runtime.enqueueDelivery(w.index, w.gen, buf[0 .. 1 + n]);
+    var buf: workers.FaultBuf = undefined;
+    w.runtime.enqueueDelivery(w.index, w.gen, workers.faultFrame(&buf, e));
 }

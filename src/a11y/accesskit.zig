@@ -15,37 +15,6 @@ const semantics = @import("semantics.zig");
 const focus_mod = @import("../core/focus.zig");
 const tree_mod = @import("../core/tree.zig");
 
-pub const Adapter = struct {
-    ctx: ?*anyopaque,
-    vtable: *const VTable,
-
-    pub const VTable = struct {
-        /// Pushes a fresh snapshot to the platform a11y API.
-        publish: *const fn (ctx: ?*anyopaque, snap: *const semantics.Snapshot) void,
-        deinit: *const fn (ctx: ?*anyopaque) void,
-    };
-
-    pub fn publish(self: Adapter, snap: *const semantics.Snapshot) void {
-        self.vtable.publish(self.ctx, snap);
-    }
-
-    pub fn deinit(self: Adapter) void {
-        self.vtable.deinit(self.ctx);
-    }
-};
-
-/// Used headless (tests) and until a platform adapter is wired up.
-pub const noop: Adapter = .{ .ctx = null, .vtable = &noop_vtable };
-
-const noop_vtable: Adapter.VTable = .{
-    .publish = struct {
-        fn f(_: ?*anyopaque, _: *const semantics.Snapshot) void {}
-    }.f,
-    .deinit = struct {
-        fn f(_: ?*anyopaque) void {}
-    }.f,
-};
-
 /// Mirrors nokre_a11y_node in shim/nokre_accesskit.h exactly.
 pub const CNode = extern struct {
     id: u64,

@@ -129,6 +129,14 @@ pub const Size = geometry.Size;
 pub const Rect = geometry.Rect;
 pub const Canvas = render.canvas.Canvas;
 
+/// The typed end of every handler's `?*anyopaque` context: the cast a
+/// consumer would otherwise write per screen
+/// (`@ptrCast(@alignCast(c.?))`), with the null unwrap — a handler
+/// installed without its state — kept as the same loud safety check.
+pub fn ctx(comptime T: type, ptr: ?*anyopaque) *T {
+    return @ptrCast(@alignCast(ptr.?));
+}
+
 test {
     // Reference only pure modules: skia bindings and platform shells
     // contain extern symbols that unit tests must not link against.

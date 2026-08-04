@@ -693,7 +693,7 @@ test "a locked keychain degrades to signed-in-for-now" {
     defer t.deinit();
     state.app = &t.app;
 
-    try t.setStoreAvailable(false); // only Unavailable is injectable —
+    try t.lockStore(); // only Unavailable is injectable —
     try t.focusVia(try t.getByLabel("Passphrase")); // the other errors
     try t.typeText("letmein"); // occur organically, by argument
     try t.pressKey(.enter, .{});
@@ -1776,7 +1776,8 @@ else
 
 Packaging is already done: `zig build` writes `zig-out/pkg/` — an iOS
 `Info.plist` and asset catalog, an `AndroidManifest.xml` with the icon
-res tree, a web page with manifest and icons — all generated from Part
+res tree, a macOS `Info.plist` with the mark as `AppIcon.icns`, a web
+page with manifest and icons — all generated from Part
 1's declaration, never hand-written, never committed. The icon is a
 deterministic grayscale mark computed from your app id — unless you have
 real art for Apple's platforms, which is one more line in the same
@@ -1807,17 +1808,20 @@ and not in a Gradle log. iOS is not that cheap a check: its build wants
 a macOS host, `deps/skia`, and `xcrun`, so it is verified through the
 Xcode project below.
 
-An executable is what those three are: nokre builds no macOS `.app`, and
-will not — bundling is Xcode's job or your own script's, and a third
-pipeline is one nokre would have to keep correct forever. What it does
-instead is have the icon ready. `pkg/macos/AppIcon.icon` is the same
-bundle iOS gets, delivered where a macOS project can reach it: a wrapper
-target adds it to its Resources and sets
+An executable is what Windows and Linux get. On macOS the bundle's
+contents are generated too: `pkg/macos/` always carries an `Info.plist`
+and the derived mark as `AppIcon.icns`, so a `.app` is three copies —
+plist and `.icns` into `Contents/`, your executable into
+`Contents/MacOS/` under the name the plist declares (`nokre_app`) — made
+by your own script or Xcode target; signing and notarizing stay yours.
+Assemble it before you rely on notifications: on macOS the service posts
+only from inside a bundle
+([internals/notifications.md](internals/notifications.md)). If you
+declared an `.apple_icon`, `pkg/macos/AppIcon.icon` is the same bundle
+iOS gets, delivered where a macOS project can reach it: a wrapper target
+adds it to its Resources and sets
 `ASSETCATALOG_COMPILER_APPICON_NAME` to `AppIcon`, exactly as on iOS
 below, and a hand-rolled `.app` has one directory to hand to `actool`.
-Without an `.apple_icon` there is no `pkg/macos/` at all — the derived
-mark reaches iOS, Android and the web, and macOS has no bundle for it to
-reach.
 
 **iOS.** Build Skia for iOS once, then let Xcode own packaging and
 signing, with a build phase calling `zig build` for the Zig side — the
@@ -1893,11 +1897,12 @@ zig build serve -Dweb    # the same site, served at http://localhost:8000
 ```
 
 `app.web` is a directory, not a file, and that is the point: the wasm
-module under the name the page loads, the live driver's three modules
+module under the name the page loads, the live driver's modules
 ([live.js](../src/render/dom/live.js),
 [live-worker.js](../src/render/dom/live-worker.js),
-[services.js](../src/render/dom/services.js)), the stylesheet the
-library generates out of its own palette and metrics, the four bundled
+[services.js](../src/render/dom/services.js)) plus the service worker
+([sw.js](../src/render/dom/sw.js)), the stylesheet the
+library generates out of its own palette and metrics, the bundled
 faces, and the page, manifest and icons your Part 1 declaration
 produces. Half a site is not a smaller site — a missing `services.js` is
 a blank page in a browser rather than an error in a build — so there is
@@ -1971,7 +1976,7 @@ web's price rather than a gap to be closed
   harness checks anyway.
 - **No fractional-scaling refusal.** A browser will hand out a 1.1
   device pixel ratio and no edition can decline it on your behalf.
-- **System fonts show through.** The four bundled faces are still the
+- **System fonts show through.** The bundled faces are still the
   only ones nokre asks for, but a codepoint outside them falls back to
   whatever the reader has.
 

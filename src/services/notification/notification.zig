@@ -54,7 +54,7 @@ const web = if (is_wasm and !builtin.is_test) @import("web.zig") else struct {};
 /// share's switch, `.linux` is blanket-true: the Wayland desktop has
 /// org.freedesktop.Notifications on the bus this shell already polls, and
 /// Android has NotificationManager, so both halves of `.linux` answer.
-const has_shell_hook = is_wasm or builtin.abi.isAndroid() or switch (builtin.os.tag) {
+const has_shell_hook = is_wasm or switch (builtin.os.tag) {
     .macos, .ios, .windows, .linux => true,
     else => false,
 };
@@ -454,10 +454,8 @@ fn statusOf(code: i32) Status {
 }
 
 fn checkLinked() void {
-    // Tests always run against the per-app mock (the only path compiled
-    // under `zig test`), so linking is not required there. A release
-    // build that skipped linking still cannot ship: the curated error
-    // names the one-line fix — secure_store's rule.
+    // Mocks satisfy tests, a release build cannot ship unlinked —
+    // secure_store's checkLinked states why.
     comptime if (!options.linked and !builtin.is_test) @compileError(
         \\the notification service is not linked. Pass .notification = true
         \\(plus .pkg_id — the channel, the AUMID and the entitlement are all
@@ -560,7 +558,7 @@ const OwnedEvent = struct {
     }
 };
 
-pub const PlatformService = struct {
+const PlatformService = struct {
     state: ?*PlatformState = null,
 
     /// Installs in `App.init` rather than at the first `setHandler` —
@@ -765,16 +763,17 @@ pub const Mock = struct {
 
     /// The user tapped a notification. Routes to the handler on this
     /// thread, now — synchronous, like the deep_link mock; the test is
-    /// the interleaving.
-    pub fn open(self: Mock, id: []const u8, route: []const u8) void {
-        self.state.?.emit(.{ .opened = .{ .id = id, .route = route } });
+    /// the interleaving. Takes `Payload`, the type the handler receives,
+    /// so id and route cannot be swapped into a plausible wrong test.
+    pub fn open(self: Mock, payload: Payload) void {
+        self.state.?.emit(.{ .opened = payload });
     }
 
     /// A notification came due with the app on screen — a scheduled one
     /// firing during a session, or a push arriving mid-use. No OS banner
     /// is drawn for it on any platform; the event is the whole delivery.
-    pub fn arrive(self: Mock, id: []const u8, route: []const u8) void {
-        self.state.?.emit(.{ .received = .{ .id = id, .route = route } });
+    pub fn arrive(self: Mock, payload: Payload) void {
+        self.state.?.emit(.{ .received = payload });
     }
 
     /// The push transport minted (or rotated) a token.
@@ -817,6 +816,15 @@ comptime {
         _ = &authorize;
         _ = &scheduleAvailable;
         _ = &requestPushToken;
+        // The install path itself — locale's forcing: nothing in a
+        // compile-only object references App.init, so without these the
+        // shell externs (and the wasm install) would go unanalyzed. Only
+        // where the release half compiles: under `zig test` the mock is
+        // the Service and the web module is never imported.
+        if (!builtin.is_test) {
+            _ = &PlatformService.init;
+            _ = &PlatformService.deinit;
+        }
         if (is_wasm and !builtin.is_test) _ = &web.nokre_notification_receive;
     }
 }

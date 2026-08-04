@@ -346,10 +346,8 @@ fn dispatch(ctx: ?*anyopaque, result: Result) void {
 }
 
 fn checkLinked() void {
-    // Tests always run against the per-app mock (the only path compiled
-    // under `zig test`), so linking is not required there. A release
-    // build that skipped linking still cannot ship: the curated error
-    // names the one-line fix — secure_store's rule.
+    // Mocks satisfy tests, a release build cannot ship unlinked —
+    // secure_store's checkLinked states why.
     comptime if (!options.linked and !builtin.is_test) @compileError(
         \\the oauth service is not linked. Pass .oauth with the app's
         \\redirect scheme (plus .pkg_id — the URL-type registration and the
@@ -567,9 +565,9 @@ fn composeAppleCallback(
 ) std.mem.Allocator.Error!void {
     try out.appendSlice(gpa, redirect);
     try out.append(gpa, '?');
-    try appendParam(gpa, out, "code", code, true);
-    try appendParam(gpa, out, "id_token", id_token, false);
-    if (state.len != 0) try appendParam(gpa, out, "state", state, false);
+    try appendParam(gpa, out, "code", code);
+    try appendParam(gpa, out, "id_token", id_token);
+    if (state.len != 0) try appendParam(gpa, out, "state", state);
 }
 
 fn appendParam(
@@ -577,9 +575,11 @@ fn appendParam(
     out: *std.ArrayList(u8),
     name: []const u8,
     value: []const u8,
-    first: bool,
 ) std.mem.Allocator.Error!void {
-    if (!first) try out.append(gpa, '&');
+    // The separator is a fact of the buffer, not a parameter a fourth
+    // call site could get wrong: '?' is still the last byte only before
+    // the first param lands.
+    if (out.items[out.items.len - 1] != '?') try out.append(gpa, '&');
     try out.appendSlice(gpa, name);
     try out.append(gpa, '=');
     for (value) |c| {

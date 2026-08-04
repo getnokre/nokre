@@ -424,7 +424,7 @@ test "harness: stored token skips sign-in; sign-out deletes it; locked keychain 
     // one get at boot, one delete — the app never rewrote the secret:
     try std.testing.expectEqual(2, h.store.journal().len);
 
-    try h.setStoreAvailable(false); // keychain locks mid-session
+    try h.lockStore(); // keychain locks mid-session
     try h.tapLabel("Sign in"); // the handler's set fails -> error.Unavailable
     _ = try h.getByLabel("Signed in — couldn't save your session");
     try h.expectStoredAbsent("auth.token"); // and nothing leaked into the store

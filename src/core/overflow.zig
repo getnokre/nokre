@@ -139,31 +139,35 @@ fn nextListed(app: *const App, it: *tree_mod.Tree.ChildIterator) ?*const element
 /// is the ctx/fn pair, the only identity an `Action` has.
 fn restatesExactly(orig: element_mod.Element, listed: element_mod.Element) bool {
     switch (orig) {
-        .button => |b| {
-            if (listed != .button) return false;
-            const l = listed.button;
-            return std.mem.eql(u8, b.label, l.label) and
-                b.disabled == l.disabled and
-                b.in_progress == l.in_progress and
-                std.meta.eql(b.progress_percent, l.progress_percent) and
-                b.secondary == l.secondary and
-                std.meta.eql(b.icon, l.icon) and
-                b.icon_only == l.icon_only and
-                std.meta.eql(b.provider, l.provider) and
-                b.on_press.ctx == l.on_press.ctx and
-                b.on_press.call == l.on_press.call;
-        },
-        .link => |k| {
-            if (listed != .link) return false;
-            const l = listed.link;
-            return std.mem.eql(u8, k.label, l.label) and
-                std.mem.eql(u8, k.route, l.route) and
-                sameOptionalString(k.external, l.external);
+        inline .button, .link => |o, tag| {
+            if (listed != tag) return false;
+            const l = @field(listed, @tagName(tag));
+            inline for (@typeInfo(@TypeOf(o)).@"struct".fields) |f| {
+                // `folded` is the one field a restatement exists to
+                // differ in (`presentMoreSheet` clears it). Every
+                // other field — today's and any added tomorrow — must
+                // agree, which is why this walks the type rather than
+                // keeping a hand list a new field would silently miss.
+                if (comptime std.mem.eql(u8, f.name, "folded")) continue;
+                if (!fieldEql(f.type, @field(o, f.name), @field(l, f.name))) return false;
+            }
+            return true;
         },
         // `foldable` admits only buttons and links, so anything else
         // was never a restatement.
         else => return false,
     }
+}
+
+fn fieldEql(comptime T: type, a: T, b: T) bool {
+    return switch (T) {
+        []const u8 => std.mem.eql(u8, a, b),
+        ?[]const u8 => sameOptionalString(a, b),
+        // Action identity is the ctx/fn pair — the only identity an
+        // `Action` has.
+        element_mod.Action => a.ctx == b.ctx and a.call == b.call,
+        else => std.meta.eql(a, b),
+    };
 }
 
 fn sameOptionalString(a: ?[]const u8, b: ?[]const u8) bool {

@@ -230,6 +230,19 @@ pub fn findIndicator(tree: *const Tree) ?NodeId {
     return tree.rootChild(.icon_button);
 }
 
+/// The topmost open modal layer, in the one precedence the modal stack
+/// has: a picker opened from a sheet sits over it, and either sits over
+/// the notices pane. Focus scoping, scrim hit-testing, Esc, root-scroll
+/// gating, and the DOM chrome pass all take the order from here — five
+/// askers, one answer.
+pub fn topModalLayer(tree: *const Tree) ?NodeId {
+    return findPicker(tree) orelse findSheet(tree) orelse findNoticesPane(tree);
+}
+
+pub fn modalOpen(tree: *const Tree) bool {
+    return topModalLayer(tree) != null;
+}
+
 /// The bottom pane's width: full viewport up to the sheet cap. For the
 /// prose surfaces only — the bar measures itself with `navGroupX`.
 pub fn paneWidth(viewport: Size) i32 {
@@ -533,9 +546,17 @@ pub fn contentArea(tree: *const Tree, viewport: Size, safe_bottom: i32) Rect {
 /// the stack's own padding, exactly as before — the 24 is clearance
 /// from a control, and there is no control.
 pub fn trailingSpace(tree: *const Tree, padding: i32) i32 {
-    if (findNotice(tree) != null or findNav(tree) != null or findIndicator(tree) != null)
-        return metrics.nav_content_gap;
+    if (hasBottomChrome(tree)) return metrics.nav_content_gap;
     return padding;
+}
+
+/// Whether this screen carries bottom chrome — a notice, a nav pane, or
+/// the bare minimized-notices indicator. Both editions ask this one
+/// question: the reference edition to reserve the trailing band, the
+/// DOM edition to decide `has-chrome`. One predicate, so the two
+/// answers cannot drift.
+pub fn hasBottomChrome(tree: *const Tree) bool {
+    return findNotice(tree) != null or findNav(tree) != null or findIndicator(tree) != null;
 }
 
 /// Computes and stores the absolute rect of every node, left-to-right,
@@ -2029,7 +2050,13 @@ const Ctx = struct {
                     2 * (metrics.badge_pad_h + metrics.border),
                 .h = text.Scale.small.lineHeight() + 2 * (metrics.badge_pad_v + metrics.border),
             },
-            else => .{ .w = @divTrunc(avail_w, 2), .h = text.Scale.body.lineHeight() },
+            // The half-width, one-line guess, for every element whose
+            // real size some other path decides (chrome is laid out by
+            // its own pass; the full-span controls are stretched, never
+            // asked here). Enumerated rather than defaulted: a new
+            // element must claim its intrinsic size or fail to compile,
+            // the same discipline the draw walks keep.
+            .divider, .meter, .qr, .stack, .text_input, .text_area, .code_block, .table, .row, .cell, .scroll_region, .tile_group, .tile, .select, .copyable, .nav, .nav_item, .nav_current, .nav_here, .sheet, .sheet_close, .back, .notice, .notices_pane, .icon_button, .picker, .picker_item => .{ .w = @divTrunc(avail_w, 2), .h = text.Scale.body.lineHeight() },
         };
     }
 

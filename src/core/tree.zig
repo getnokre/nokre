@@ -230,7 +230,10 @@ pub const Tree = struct {
         return if (n.parent.isValid()) n.parent else null;
     }
 
-    /// Whether `id` is `ancestor` or one of its descendants.
+    /// Whether `id` is `ancestor` or one of its descendants. The two
+    /// parameters are the same type and swapping them returns a
+    /// plausible `false` — keep the call reading "is `id` under
+    /// `ancestor`", never the other way around.
     pub fn isDescendant(self: *const Tree, id: NodeId, ancestor: NodeId) bool {
         var cur: ?NodeId = id;
         while (cur) |c| : (cur = self.parentOf(c)) {
@@ -457,10 +460,20 @@ pub const Tree = struct {
         // (element.zig). nokre ships the mark, never a translation.
         if (element == .button and element.button.provider != null and element.button.label.len == 0)
             return error.AuthButtonNeedsVendorLabel;
+        if (element.role().requiresLabel() and element.label().len == 0)
+            return error.UnlabeledInteractive;
+        // Layout-owned state must arrive at its default: these fields
+        // are written by layout once the node is in the tree, and a
+        // literal that sets one gets an element that draws wrong or
+        // not at all — refused at the door rather than accepted as a
+        // silent no-op. (The fold's own restatement path clears
+        // `folded` before it appends — overflow.presentMoreSheet.)
         switch (element) {
-            .button, .link, .toggle, .checkbox, .text_input, .text_area, .nav_item, .segmented, .tile, .radio_group, .select, .copyable, .icon_button, .picker_item => {
-                if (element.label().len == 0) return error.UnlabeledInteractive;
-            },
+            .button => |b| if (b.folded) return error.LayoutOwnedField,
+            .link => |l| if (l.folded) return error.LayoutOwnedField,
+            .notice => |n| if (n.height != 0) return error.LayoutOwnedField,
+            .notices_pane => |p| if (p.height != 0) return error.LayoutOwnedField,
+            .scroll_region => |r| if (r.content_height != 0) return error.LayoutOwnedField,
             else => {},
         }
         switch (element) {

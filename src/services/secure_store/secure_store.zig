@@ -107,11 +107,18 @@ pub const ListError = error{Unavailable};
 /// bytewise sort order equals human sort order for list.
 pub fn validKey(key: []const u8) bool {
     if (key.len == 0 or key.len > max_key_bytes) return false;
-    for (key) |c| switch (c) {
-        'a'...'z', '0'...'9', '.', '_', '-' => {},
-        else => return false,
-    };
+    for (key) |c| if (!validKeyByte(c)) return false;
     return true;
+}
+
+/// The per-byte half of `validKey` — exported so a consumer escaping
+/// foreign ids into this charset derives the set instead of
+/// transcribing it.
+pub fn validKeyByte(c: u8) bool {
+    return switch (c) {
+        'a'...'z', '0'...'9', '.', '_', '-' => true,
+        else => false,
+    };
 }
 
 /// Read one value into `buf`; the returned slice aliases it (reuse

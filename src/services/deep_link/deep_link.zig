@@ -104,10 +104,8 @@ fn receiveC(ctx: ?*anyopaque, url: [*]const u8, len: usize) callconv(.c) void {
 }
 
 fn checkLinked() void {
-    // Tests always run against the per-app mock (the only path compiled
-    // under `zig test`), so linking is not required there. A release build
-    // that skipped linking still cannot ship: the curated error names the
-    // one-line fix — secure_store's rule.
+    // Mocks satisfy tests, a release build cannot ship unlinked —
+    // secure_store's checkLinked states why.
     comptime if (!options.linked and !builtin.is_test) @compileError(
         \\the deep_link service is not linked. Pass .deep_link with the app's
         \\domains (plus .pkg_id — the entitlement and assetlinks are keyed to

@@ -181,6 +181,15 @@ _ = try t.getByLabel("abacus");      // the stale answer arrived last —
 try t.expectAbsent("apple");         // — and lost
 ```
 
+When several requests leave together, a test that names one by its
+queue position is asserting issue order it never meant to:
+`fulfillHttpPath(suffix, ...)` and `failHttpPath(suffix, name)` answer
+the oldest parked request whose URL ends in `suffix`, and
+`fulfillHttpLastPath` the newest — the screen that re-asks an endpoint
+a sweep behind it already asked. A miss prints every parked URL, so
+the failure says what was actually in flight. A request in hand
+answers header questions itself: `req.headerValue("Authorization")`.
+
 For flows with many requests, `onHttp(ctx, handler)` installs a fake
 server: a function from a parked request to a canned response, a
 failure name, or null — leave it parked. `settleHttp()` runs it over
@@ -234,10 +243,11 @@ store is the *subject* of the test rather than a dependency of it.
 Every app owns a fake store — constructed with it, dead with it at
 `deinit` — and the harness aliases it as `t.store`. Two
 concurrently-driven apps get two fakes with disjoint entries,
-journals, and knobs, by construction: the state is a field of the app,
-not a module, so nothing *can* leak across tests. Under `zig test` the
-fake is the only store that exists, on every platform; the real
-keychain is never an option.
+journals, and knobs; why leakage across tests is unrepresentable
+rather than merely checked is
+[internals/secure_store.md](internals/secure_store.md). Under `zig
+test` the fake is the only store that exists, on every platform; the
+real keychain is never an option.
 
 Boot state goes in at construction: the general `initWith(gpa,
 viewport, opts)` takes a `.store` of type `secure_store.Mock.Config`
@@ -254,11 +264,11 @@ app into a locked keychain. After boot:
 - `expectStored(key, expected)` / `expectStoredAbsent(key)` — assert
   persisted state directly off the fake. No app code runs and nothing
   settles: sync means there is nothing to settle.
-- `setStoreAvailable(bool)` — the keychain locks (or recovers) under
-  the running app. Only `error.Unavailable` is injectable, because
+- `lockStore()` / `unlockStore()` — the keychain locks (or recovers)
+  under the running app. Only `error.Unavailable` is injectable, because
   only `Unavailable` is environmental — the other three errors are
   pure functions of the arguments and occur organically: produce
-  `InvalidKey` by passing `"Bad Key!"`, `StoreFull` by seeding 64
+  `InvalidKey` by passing `"Bad Key!"`, `StoreFull` by seeding 256
   entries.
 - `t.store.journal()` — every call the app made, in program order, so
   tests assert behavior, not just final state: "signs out without
@@ -267,7 +277,7 @@ app into a locked keychain. After boot:
   any platform and are never journaled; calls the availability knobs
   fail and a `StoreFull` set are.
 
-The `setStoreAvailable(false)` test is table stakes, not an edge case:
+The `lockStore()` test is table stakes, not an edge case:
 a locked keychain, an absent Secret Service session on Linux, or a
 Keystore fault on Android all surface as `Unavailable`, and an app
 that degrades gracefully under it is ready everywhere.
@@ -286,7 +296,7 @@ test "stored token skips sign-in; sign-out deletes it; locked keychain degrades"
     // one get at boot, one delete — the app never rewrote the secret:
     try std.testing.expectEqual(@as(usize, 2), t.store.journal().len);
 
-    try t.setStoreAvailable(false);            // keychain locks mid-session
+    try t.lockStore();                         // keychain locks mid-session
     try t.tapLabel("Sign in");                 // the handler's set fails -> error.Unavailable
     _ = try t.getByLabel("Signed in — couldn't save your session");
     try t.expectStoredAbsent("auth.token");    // and nothing leaked into the store
@@ -594,9 +604,9 @@ expectation can't be met there, a screen reader user can't meet it either.
   posted without ever asking". What the *user* did is the test's to
   drive: `grantNotifications()` and `denyNotifications()` answer the
   prompt — or flip the switch in Settings without one, which is legal
-  and worth testing — `deliverNotificationTap(id, route)` is the tap
+  and worth testing — `deliverNotificationTap(.{ .id = …, .route = … })` is the tap
   (call it first to write the launch that started from one),
-  `deliverNotification(id, route)` is one coming due with the app on
+  `deliverNotification` the same payload coming due with the app on
   screen, and `deliverPushToken(token)` is the transport minting one.
   Boot a device that cannot notify, cannot schedule, or cannot push with
   `.notification = .{ .available = false }` and its siblings, and assert
@@ -707,10 +717,12 @@ test, because two hops are substituted rather than executed:
   compile-checks all six; that is the whole of it.
 - **The real services.** Under `zig test` a service *is* its mock:
   `Service = if (builtin.is_test) Mock else PlatformService`. The real
-  keychain, socket, and browser-session code is not merely unused, it is
+  keychain and browser-session code is not merely unused, it is
   not compiled into the test binary. So the mocks are contracts asserted
   against themselves — their fidelity to the platform is asserted by
-  nothing *in this harness*.
+  nothing *in this harness*. (The one exception is http's native
+  transport, which is pure Zig over a socket and gets its own gate
+  below.)
 
 This is a deliberate boundary, not an oversight. The determinism this
 document keeps promising — no flakiness, byte-exact frames, races
@@ -720,11 +732,12 @@ and a real socket would buy a little coverage and lose the property the
 whole design is built on. The gap is nokre's to close on its own side,
 in its own tier — never by making your tests heavier.
 
-That tier now has four gates, all of them on every `zig build test`:
+That tier now has five gates, all of them on every `zig build test`:
 
 | gate | what reaches a real implementation |
 | --- | --- |
 | `tests/dev_store.zig` | the secure_store verbs, against a store the OS answers (desktop POSIX) |
+| `src/services/http/native_test.zig` | the native http transport's six verbs, over a real loopback socket inside the test binary |
 | `tests/http_stress.zig` | the native http transport's threads, against a loopback socket |
 | `node --check` × 5 | every JavaScript file a web build ships, parsed by the engine that runs it |
 | `tests/web_services.mjs` | the three service legs that exist **only** on the web, executed |
@@ -796,7 +809,7 @@ shape a shell is, minus the window. It is not the harness with a flag
 turned on, and deliberately not:
 
 - **`Harness` stays inside `zig test`.** Its whole value is that every
-  field is a mock (`t.store`, `setStoreAvailable`, the http handler),
+  field is a mock (`t.store`, `lockStore`, the http handler),
   and mocks exist only under `builtin.is_test` — `Service =
   if (is_test) Mock else PlatformService` is the roster's rule, not one
   service's. A `Harness` that compiled in a release build would have to

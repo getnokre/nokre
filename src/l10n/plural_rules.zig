@@ -204,19 +204,28 @@ pub fn forLocale(comptime tag: []const u8) ?Rule {
     return null;
 }
 
-pub fn languageOf(comptime tag: []const u8) []const u8 {
+// Locale-tag identity: case-insensitive, `-` and `_` one separator.
+// The one home for the rule — the comptime bundle machinery and
+// l10n.zig's runtime `resolve` both compare tags with exactly these,
+// so the two can never disagree about which locale a tag is.
+
+pub fn languageOf(tag: []const u8) []const u8 {
     for (tag, 0..) |c, i| if (c == '_' or c == '-') return tag[0..i];
     return tag;
 }
 
-fn tagEql(comptime a: []const u8, comptime b: []const u8) bool {
+pub fn tagEql(a: []const u8, b: []const u8) bool {
     if (a.len != b.len) return false;
     for (a, b) |ca, cb| {
-        const la = if (ca >= 'A' and ca <= 'Z') ca + 32 else if (ca == '-') '_' else ca;
-        const lb = if (cb >= 'A' and cb <= 'Z') cb + 32 else if (cb == '-') '_' else cb;
-        if (la != lb) return false;
+        if (normTagByte(ca) != normTagByte(cb)) return false;
     }
     return true;
+}
+
+fn normTagByte(c: u8) u8 {
+    if (c >= 'A' and c <= 'Z') return c + 32;
+    if (c == '-') return '_';
+    return c;
 }
 
 // --- selectors -------------------------------------------------------------

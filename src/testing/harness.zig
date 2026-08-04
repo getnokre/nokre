@@ -71,6 +71,7 @@ pub const InitOptions = struct {
     nav: []const nav_mod.Destination = &.{},
     initial_route: []const u8 = "", // required when routes given
     store: secure_store.Mock.Config = .{},
+    http: http.Mock.Config = .{}, // the app's fake server, live from the first request
     locale: locale.Mock.Config = .{}, // the device tag at boot; "" is "the platform said nothing"
     clock: clock.Mock.Config = .{}, // the wall clock at boot; the default is a fixed, obviously fake instant
     oauth: oauth.Mock.Config = .{}, // the PKCE seeds, and optionally what the browser does
@@ -104,6 +105,7 @@ pub const Harness = struct {
                 .ctx = opts.ctx,
                 .services = .{
                     .secure_store = .mock(opts.store),
+                    .http = .mock(opts.http),
                     .locale = .mock(opts.locale),
                     .clock = .mock(opts.clock),
                     .oauth = .mock(opts.oauth),
@@ -383,6 +385,52 @@ pub const Harness = struct {
         try self.afterStep("fail http {s}", .{name});
     }
 
+    /// Answer the oldest parked request whose URL ends in `suffix`.
+    /// Tests name a request by its path, not its queue position — the
+    /// position encodes issue order, which is the app's business, not
+    /// the test's. On a miss the parked URLs are printed, so the
+    /// diagnostic says what *was* in flight.
+    pub fn fulfillHttpPath(self: *Harness, suffix: []const u8, canned: http.CannedResponse) !void {
+        try self.fulfillHttpAt(try self.httpIndexOf(suffix, .oldest), canned);
+    }
+
+    /// fulfillHttpPath's newest-match twin, for the screen that asks
+    /// the same endpoint twice: the sweep behind it owns the oldest
+    /// ask, the screen the newest.
+    pub fn fulfillHttpLastPath(self: *Harness, suffix: []const u8, canned: http.CannedResponse) !void {
+        try self.fulfillHttpAt(try self.httpIndexOf(suffix, .newest), canned);
+    }
+
+    /// Fail the oldest parked request whose URL ends in `suffix` —
+    /// fulfillHttpPath's failure twin.
+    pub fn failHttpPath(self: *Harness, suffix: []const u8, name: []const u8) !void {
+        try self.failHttpAt(try self.httpIndexOf(suffix, .oldest), name);
+    }
+
+    /// Index of the parked request whose URL ends in `suffix`, or a
+    /// loud miss listing everything parked. `.newest` falls back to
+    /// the oldest scan only through the shared miss path, so both
+    /// directions fail identically.
+    pub fn httpIndexOf(self: *Harness, suffix: []const u8, which: enum { oldest, newest }) !usize {
+        const mock = &self.app.services.http;
+        const n = mock.pendingCount();
+        switch (which) {
+            .oldest => for (0..n) |i| {
+                if (std.mem.endsWith(u8, mock.pendingAt(i).url, suffix)) return i;
+            },
+            .newest => {
+                var i = n;
+                while (i > 0) {
+                    i -= 1;
+                    if (std.mem.endsWith(u8, mock.pendingAt(i).url, suffix)) return i;
+                }
+            },
+        }
+        diag.print("no parked request ending in \"{s}\"; parked:\n", .{suffix});
+        for (0..n) |i| diag.print("  {s}\n", .{mock.pendingAt(i).url});
+        return error.NoSuchRequest;
+    }
+
     /// Install the test's fake server (see `HttpHandler`) on this
     /// app's mock. It answers nothing by itself: delivery stays an
     /// explicit move, at `settleHttp`.
@@ -493,18 +541,19 @@ pub const Harness = struct {
     }
 
     /// The user tapped a notification — including the tap that launched
-    /// the app, which a test writes by calling this first.
-    pub fn deliverNotificationTap(self: *Harness, id: []const u8, route: []const u8) !void {
-        self.app.services.notification.open(id, route);
-        try self.afterStep("notification tapped {s}", .{id});
+    /// the app, which a test writes by calling this first. Takes the
+    /// service's own `Payload`, so id and route cannot be swapped.
+    pub fn deliverNotificationTap(self: *Harness, payload: notification.Payload) !void {
+        self.app.services.notification.open(payload);
+        try self.afterStep("notification tapped {s}", .{payload.id});
     }
 
     /// A notification came due with the app on screen — a scheduled one
     /// firing mid-session, or a push arriving during use. No OS banner is
     /// drawn for it, so the event is the whole delivery.
-    pub fn deliverNotification(self: *Harness, id: []const u8, route: []const u8) !void {
-        self.app.services.notification.arrive(id, route);
-        try self.afterStep("notification arrived {s}", .{id});
+    pub fn deliverNotification(self: *Harness, payload: notification.Payload) !void {
+        self.app.services.notification.arrive(payload);
+        try self.afterStep("notification arrived {s}", .{payload.id});
     }
 
     /// The push transport minted (or rotated) this device's token.
@@ -750,11 +799,18 @@ pub const Harness = struct {
         return error.UnexpectedlyStored;
     }
 
-    /// The keychain locks (or recovers) under the running app; emits
-    /// a trace step.
-    pub fn setStoreAvailable(self: *Harness, available: bool) !void {
-        self.store.available = available;
-        try self.afterStep("store available {}", .{available});
+    /// The keychain locks under the running app; emits a trace step.
+    /// Named for the event, like `denyNotifications` — a bare bool at
+    /// the call site reads as nothing in particular.
+    pub fn lockStore(self: *Harness) !void {
+        self.store.available = false;
+        try self.afterStep("store locked", .{});
+    }
+
+    /// The keychain recovers.
+    pub fn unlockStore(self: *Harness) !void {
+        self.store.available = true;
+        try self.afterStep("store unlocked", .{});
     }
 
     // ---- notices (docs/elements.md) ----

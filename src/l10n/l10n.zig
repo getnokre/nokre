@@ -245,11 +245,11 @@ pub fn Bundle(comptime arb_sources: []const []const u8) type {
         /// exactly — a zh bundle should list its scripts explicitly.
         pub fn resolve(tag_str: []const u8) Locale {
             inline for (locale_tags, 0..) |t, i| {
-                if (rtTagEql(t, tag_str)) return @enumFromInt(i);
+                if (plural_rules.tagEql(t, tag_str)) return @enumFromInt(i);
             }
-            const lang = rtLanguageOf(tag_str);
+            const lang = plural_rules.languageOf(tag_str);
             inline for (locale_tags, 0..) |t, i| {
-                if (rtTagEql(comptime plural_rules.languageOf(t), lang)) return @enumFromInt(i);
+                if (plural_rules.tagEql(comptime plural_rules.languageOf(t), lang)) return @enumFromInt(i);
             }
             return default_locale;
         }
@@ -543,8 +543,8 @@ const Digits = enum { ascii, arabic_indic, extended_arabic_indic };
 /// language. Extending it is one row here plus a test.
 fn digitsOfTag(comptime tag: []const u8) Digits {
     const lang = plural_rules.languageOf(tag);
-    if (rtTagEql(lang, "fa")) return .extended_arabic_indic;
-    if (rtTagEql(lang, "ar")) return .arabic_indic;
+    if (plural_rules.tagEql(lang, "fa")) return .extended_arabic_indic;
+    if (plural_rules.tagEql(lang, "ar")) return .arabic_indic;
     return .ascii;
 }
 
@@ -658,26 +658,9 @@ fn selectOther(comptime s: arb.Select) arb.Segs {
 // ---------------------------------------------------------------------------
 // runtime tag matching (resolve)
 
-fn rtNorm(c: u8) u8 {
-    if (c >= 'A' and c <= 'Z') return c + 32;
-    if (c == '-') return '_';
-    return c;
-}
-
-fn rtTagEql(a: []const u8, b: []const u8) bool {
-    if (a.len != b.len) return false;
-    for (a, b) |ca, cb| {
-        if (rtNorm(ca) != rtNorm(cb)) return false;
-    }
-    return true;
-}
-
-fn rtLanguageOf(s: []const u8) []const u8 {
-    for (s, 0..) |c, i| {
-        if (c == '_' or c == '-') return s[0..i];
-    }
-    return s;
-}
+// Tag identity (case, separator) is plural_rules.zig's one rule —
+// `tagEql`/`languageOf` there — shared by this file's runtime resolve
+// and the comptime bundle machinery alike.
 
 // ---------------------------------------------------------------------------
 // writing direction
@@ -743,10 +726,10 @@ pub fn directionOfTag(tag_str: []const u8) Direction {
         start = i + 1;
     }
     if (script) |s| {
-        for (rtl_scripts) |rs| if (rtTagEql(rs, s)) return .rtl;
+        for (rtl_scripts) |rs| if (plural_rules.tagEql(rs, s)) return .rtl;
         return .ltr;
     }
-    for (rtl_languages) |rl| if (rtTagEql(rl, lang)) return .rtl;
+    for (rtl_languages) |rl| if (plural_rules.tagEql(rl, lang)) return .rtl;
     return .ltr;
 }
 

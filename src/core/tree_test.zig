@@ -192,6 +192,19 @@ test "append rejects unlabeled interactive elements" {
     _ = try tree.append(root, .{ .button = .{ .label = "Go", .disabled = true } });
 }
 
+test "append rejects layout-owned fields set by the consumer" {
+    var tree = try Tree.init(std.testing.allocator);
+    defer tree.deinit();
+    const root = tree.rootId();
+
+    // A folded control draws nothing, takes no tap, and keeps no focus
+    // stop — accepted silently it would just be a missing button.
+    try std.testing.expectError(error.LayoutOwnedField, tree.append(root, .{ .button = .{ .label = "Go", .folded = true } }));
+    try std.testing.expectError(error.LayoutOwnedField, tree.append(root, .{ .link = .{ .label = "Go", .route = "r", .folded = true } }));
+    try std.testing.expectError(error.LayoutOwnedField, tree.append(root, .{ .scroll_region = .{ .height = 100, .content_height = 5 } }));
+    _ = try tree.append(root, .{ .scroll_region = .{ .height = 100 } });
+}
+
 test "append rejects a percentage with nothing to measure" {
     var tree = try Tree.init(std.testing.allocator);
     defer tree.deinit();

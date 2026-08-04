@@ -268,17 +268,32 @@ pub const AuthProvider = enum {
 
     /// The mark, as a codepoint in the brand face
     /// (src/assets/fonts/LICENSE-Brand.txt). Trademarked artwork, drawn
-    /// from exactly one place in the renderer. Google's G is four
-    /// glyphs on one shared advance (one per colored arc — the color
-    /// itself lives in the renderer, never here); this returns the
-    /// first, which is also what layout measures, and the renderer
-    /// overlays all four at the origin this one is placed at.
+    /// from exactly one place in each edition. Google's G is four
+    /// glyphs on one shared advance (one per colored arc —
+    /// `google_g_rgb` below); this returns the first, which is also
+    /// what layout measures, and the renderer overlays all four at the
+    /// origin this one is placed at.
     pub fn mark(self: AuthProvider) []const u8 {
         return switch (self) {
             .apple => "\u{e900}",
             .google => "\u{e901}",
         };
     }
+};
+
+/// Google's four arc colors, in arc order — blue, green, yellow, red —
+/// the order the brand face stacks its glyphs and the DOM markup its
+/// spans. The vendor's trademark spec, transcribed exactly once: the
+/// reference renderer paints them and the generated stylesheet prints
+/// them, both from this table, so the two editions cannot drift
+/// (docs/internals/oauth.md). They are the only color values in nokre —
+/// infrastructure, not a palette: no element carries a color and no
+/// consumer call accepts one.
+pub const google_g_rgb = [4]struct { r: u8, g: u8, b: u8 }{
+    .{ .r = 0x42, .g = 0x85, .b = 0xF4 }, // blue
+    .{ .r = 0x34, .g = 0xA8, .b = 0x53 }, // green
+    .{ .r = 0xFB, .g = 0xBC, .b = 0x05 }, // yellow
+    .{ .r = 0xEA, .g = 0x43, .b = 0x35 }, // red
 };
 
 pub const Button = struct {
@@ -1159,6 +1174,33 @@ pub const Role = enum {
     picker,
     picker_item,
     more,
+
+    /// Whether a root child of this role is a framework chrome layer —
+    /// drawn by the chrome pass, in its fixed order — rather than page
+    /// content. Both editions partition the root with this one answer
+    /// (`render`, `serialize.chrome`/`content`); exhaustive with no
+    /// `else`, so a new element must say which side it stands on or
+    /// neither edition compiles.
+    pub fn isChromeLayer(self: Role) bool {
+        return switch (self) {
+            .nav, .icon_button, .notice, .notices_pane, .sheet, .picker => true,
+            .text, .heading, .icon, .box, .divider, .badge, .meter, .qr, .stack, .button, .link, .toggle, .checkbox, .text_input, .text_area, .list, .list_item, .code_block, .blockquote, .document, .table, .row, .cell, .scroll_region, .segmented, .tile_group, .tile, .radio_group, .select, .copyable, .nav_item, .nav_current, .nav_here, .sheet_close, .back, .picker_item, .more => false,
+        };
+    }
+
+    /// Whether an element of this role must carry a non-empty
+    /// accessible name to enter the tree (`Tree.validateAppend`,
+    /// `error.UnlabeledInteractive`). The consumer-built interactive
+    /// set — narrower than `isInteractive`, because framework chrome
+    /// (`nav_current`, `sheet_close`, `back`, `more`) names itself and
+    /// a disabled control still needs its name. Exhaustive, so a new
+    /// interactive element cannot silently skip the guarantee.
+    pub fn requiresLabel(self: Role) bool {
+        return switch (self) {
+            .button, .link, .toggle, .checkbox, .text_input, .text_area, .nav_item, .segmented, .tile, .radio_group, .select, .copyable, .icon_button, .picker_item => true,
+            .text, .heading, .icon, .box, .divider, .badge, .meter, .qr, .stack, .list, .list_item, .code_block, .blockquote, .document, .table, .row, .cell, .scroll_region, .tile_group, .nav, .nav_current, .nav_here, .sheet, .sheet_close, .back, .notice, .notices_pane, .picker, .more => false,
+        };
+    }
 };
 
 /// See `Element.textRun`.
@@ -1275,7 +1317,11 @@ pub const Element = union(Role) {
             .toggle => |t| !t.in_progress,
             .checkbox => |c| !c.in_progress,
             .text_input, .text_area, .segmented, .tile, .radio_group, .select, .copyable, .nav_item, .nav_current, .sheet_close, .back, .icon_button, .picker_item, .more => true,
-            else => false,
+            // Static content and containers. Enumerated rather than
+            // defaulted: a new element must declare its answer here, or
+            // it silently takes no press, no focus stop, and no place
+            // in the a11y tree's interaction order.
+            .text, .heading, .icon, .box, .divider, .badge, .meter, .qr, .stack, .list, .list_item, .code_block, .blockquote, .document, .table, .row, .cell, .scroll_region, .tile_group, .nav, .nav_here, .sheet, .notice, .notices_pane, .picker => false,
         };
     }
 
@@ -1343,7 +1389,10 @@ pub const Element = union(Role) {
             .picker => |p| p.title,
             .picker_item => |p| p.label,
             .more => |m| m.label,
-            else => "",
+            // Pure structure: no name of its own. Enumerated rather
+            // than defaulted so a new element cannot ship a silently
+            // empty accessible name.
+            .box, .divider, .stack, .list, .list_item, .blockquote, .table, .row, .cell, .scroll_region, .tile_group, .nav => "",
         };
     }
 
@@ -1409,7 +1458,12 @@ pub const Element = union(Role) {
             .picker_item => .dark,
             // The group draws no text of its own unless described.
             .tile_group => |tg| if (tg.description.len == 0) null else .dark,
-            else => null,
+            // Containers draw no text; the plated surfaces (segmented,
+            // nav and its markers, sheet, the notice layers, picker)
+            // paint their own background, so their words are judged
+            // where they are drawn. Enumerated rather than defaulted so
+            // a new element cannot silently skip the contrast gate.
+            .box, .divider, .stack, .list, .blockquote, .document, .table, .row, .cell, .scroll_region, .segmented, .nav, .nav_item, .nav_current, .nav_here, .sheet, .notice, .notices_pane, .picker => null,
         };
     }
 };

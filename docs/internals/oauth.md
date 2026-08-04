@@ -63,25 +63,12 @@ const redirect = try oauth.redirectUri(app, "com.example.notes", &buf);
 
 _ = try nokre.services.oauth.start(.{
     .app = app,
-    .url = authorize_url,            // built by the app: scopes, PKCE challenge, state
+    .url = authorize_url,   // built by the app: scopes, PKCE challenge, state
     .redirect = redirect,
     .ctx = state,
-    .on_result = onAuth,
+    .on_result = onAuth,    // .callback / .cancelled / .failure — the
+                            // three-armed contract in ../services.md
 });
-
-fn onAuth(ctx: ?*anyopaque, result: nokre.services.oauth.Result) void {
-    switch (result) {
-        // The OS handed the callback URL back. Parse it, exchange the
-        // code over `http`, store the refresh token in `secure_store`.
-        .callback => |url| exchange(ctx, url),
-        // The user dismissed the sheet. A first-class value, not an
-        // error: cancelling a login is a normal thing to do.
-        .cancelled => dismiss(ctx),
-        // Transport or configuration failure, as a stable name —
-        // http's `.failure` posture.
-        .failure => |f| showAuthError(ctx, f.name),
-    }
-}
 ```
 
 | Platform | Implementation | Notes |
@@ -104,21 +91,13 @@ dispatch, not a consumer branch.
 ## Where the service stops
 
 `deep_link`'s line, applied again: nokre hands over the result and
-stops. Not in scope, and each for a stated reason:
-
-- **No token refresh policy.** When to refresh is the app's session
-  model, and a timer is a ticker — nokre has none.
-- **No user model.** An idToken is a JWT the app decodes and trusts (or
-  sends to its backend to verify). nokre does not define a `User`.
-- **No route table.** Post-login navigation is the router's, which the
-  app owns.
-- **No JWT verification.** Signature checking needs the provider's
-  rotating JWKS — a network fetch with a cache policy and a clock. The
-  server does it. nokre returns bytes.
-- **Apple's token exchange needs the app's backend regardless**: the
-  client secret is a JWT signed with the developer's `.p8` key, which
-  must never ship in a binary. The roster row's "returning an idToken" is
-  already the right boundary.
+stops. Not in scope — the full roster of refusals (token refresh, a
+user model, a route table, JWT verification, Apple's server-side token
+exchange) and each one's argument is the consumer section's
+([../services.md](../services.md)). What matters internally is that
+every one of them keeps state, a schedule, or a key out of the service,
+so the whole per-platform surface stays the one verb above; the roster
+row's "returning an idToken" is already the right boundary.
 
 ## PKCE, and the one determinism carve-out
 
@@ -321,7 +300,7 @@ Two facts about the pipeline set the price of everything below.
 The vocabulary is [nine operations](../../src/render/canvas.zig) — eight
 speaking `Gray` plus the one rgb text op the reversal added — none of
 which draws an image; the only path-rendering ops are the text ones,
-which is why the icon set is a font ([lucide.ttf](../../src/assets/fonts),
+which is why the icon set is a font ([lucide.ttf](../../src/assets/fonts/lucide.ttf),
 `IconName` in [element.zig](../../src/core/element.zig)) rather than
 vectors. And the surface was, at the time of the first argument, 8-bit
 gray from end to end: `kGray_8_SkColorType` in
@@ -470,8 +449,9 @@ hands shells RGBX they blit without interpreting, goldens are PPM, and
 every op but one still writes r=g=b, so the frame is gray by
 construction everywhere the mark is not. The canvas gained exactly one
 operation (`drawTextRgb`), the brand face gained the four arc glyphs on
-one shared advance, and the renderer's `google_g` table is the only
-place the four colour values exist. There is still no `-Dbrand_color`
+one shared advance, and `element.zig`'s `google_g_rgb` is the only
+place the four colour values exist — both editions derive their
+tables from it at comptime. There is still no `-Dbrand_color`
 and no fork: the format changed for *everyone*, one product, one
 determinism story — "same viewport, same bytes" holds as before, three
 channels wide. The first argument's objection to A — "it makes colour

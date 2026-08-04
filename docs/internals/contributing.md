@@ -123,7 +123,8 @@ The authoring rules that keep the shell/service split honest:
   links something (secure_store's Keychain, deep_link's URL
   registration) gates on its `nokre_*_options.linked` and is a curated
   comptime error at the call site when unlinked. A service that links
-  *nothing* — clipboard, locale, open_url, share — has no unlinked state to error on, so
+  *nothing* — clipboard, clock, haptic, http, locale, open_url, share,
+  worker — has no unlinked state to error on, so
   it gets no options module and no build flag: adding one would be
   ceremony over a decision the app never makes. For those, "optional"
   means costing nothing where the platform has no hook (a comptime
@@ -153,8 +154,9 @@ The authoring rules that keep the shell/service split honest:
   `Services` ([services.zig](../../src/services/services.zig)):
   define `Service = if (builtin.is_test) Mock else PlatformService`
   (`services.Stateless` where the release half holds nothing, as
-  clipboard, haptic and secure_store do — writing your own `init`/
-  `deinit` pair is then how a service says it *does* keep state),
+  clipboard, clock, haptic and open_url do — writing your own `init`/
+  `deinit` pair is then how a service says it *does* keep state, which
+  is secure_store's shape: its release half carries the `CountCache`),
   give the mock a `mock(config)` constructor plus `init(gpa)`/`deinit`
   that own its heap state, and wire both into `Services.init`/`deinit`
   — the state lives on the App, applied before `build` runs. The mock
@@ -262,22 +264,18 @@ way. The shell's complete job description is in
   [tests/web_services.zig](../../tests/web_services.zig) is an ordinary
   nokre app with deep_link, oauth and secure_store linked, built into a
   site by the same `addApp` path a consumer takes, and booted by node
-  against [tests/web_browser.mjs](../../tests/web_browser.mjs) — a
-  browser stub that knows nothing about nokre and implements only
-  platform APIs (a document, a location, a session storage, a window
-  that can open another and be posted to). The JavaScript under test is
-  the *site's own* `live.js` and `services.js`, imported unmodified, and
-  every assertion reads back what the wasm app recorded through probe
-  exports: a harness that restated a line of the driver would prove that
-  line twice and the real one never. Those three legs exist on no other
-  platform, so `zig test` reaches none of them and `check-targets`
-  compiles them into objects it never runs — the fragment that arrives,
-  the popup that reports to its opener, and the seed that beats the
-  first `build` were, until this gate, asserted by nothing.
-  [testing.md](../testing.md) lists what it covers and what it still
-  does not: the stub is not a browser, and nothing in it asserts layout,
-  styling, or how a page looks. It rides `-Djs-parse`, because that is
-  one question asked once — node, and the shipped JavaScript really
+  against [tests/web_browser.mjs](../../tests/web_browser.mjs). What
+  the stub carries, what the site's own modules prove, and what the
+  gate still does not cover is [testing.md](../testing.md)'s "The web's
+  own gate". The design rule is that every assertion reads back what
+  the wasm app recorded through probe exports: a harness that restated
+  a line of the driver would prove that line twice and the real one
+  never. Those three legs exist on no other platform, so `zig test`
+  reaches none of them and `check-targets` compiles them into objects
+  it never runs — the fragment that arrives, the popup that reports to
+  its opener, and the seed that beats the first `build` were, until
+  this gate, asserted by nothing. It rides `-Djs-parse`, because that
+  is one question asked once — node, and the shipped JavaScript really
   read.
 
 Goldens are byte-exact and must stay byte-identical unless a change is

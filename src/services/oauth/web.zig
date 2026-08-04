@@ -101,6 +101,8 @@ pub fn start(ctx: ?*anyopaque, cb: Callback, url: []const u8, rt: *workers.Runti
 
 pub fn cancel() void {
     receiver_cb = null;
+    receiver_ctx = null;
+    runtime = null;
     nokre_oauth_js_close();
 }
 

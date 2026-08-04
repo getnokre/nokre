@@ -375,10 +375,8 @@ fn dispatchUpdate(ctx: ?*anyopaque, update: Update) void {
 }
 
 fn checkLinked() void {
-    // Tests always run against the per-app mock (the only path compiled
-    // under `zig test`), so linking is not required there. A release
-    // build that skipped linking still cannot ship: the curated error
-    // names the one-line fix — secure_store's rule.
+    // Mocks satisfy tests, a release build cannot ship unlinked —
+    // secure_store's checkLinked states why.
     comptime if (!options.linked and !builtin.is_test) @compileError(
         \\the iap service is not linked. Pass .iap = true (plus .pkg_id — the
         \\stores resolve products against the app's identity) to the nokre
@@ -888,11 +886,6 @@ pub const Mock = struct {
     /// visible control, so zero is a finding.
     pub fn restores(self: Mock) usize {
         return self.state.?.restores;
-    }
-
-    /// Whether a payment sheet is up, waiting for the test to answer.
-    pub fn sheetUp(self: Mock) bool {
-        return self.state.?.buying;
     }
 
     /// Whether a catalog query is parked.

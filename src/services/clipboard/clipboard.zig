@@ -17,16 +17,9 @@ const app_mod = @import("../../core/app.zig");
 const services = @import("../services.zig");
 
 const App = app_mod.App;
-const is_wasm = builtin.cpu.arch == .wasm32;
 
-/// Whether this target's shell provides the clipboard hook. Referenced
-/// only where true, so stub targets never name the extern.
-const has_shell_hook = is_wasm or switch (builtin.os.tag) {
-    // .linux covers both the Android JNI shell and the desktop Wayland
-    // shell — both export nokre_shell_write_clipboard.
-    .macos, .ios, .windows, .linux => true,
-    else => false,
-};
+// Every shell exports nokre_shell_write_clipboard.
+const has_shell_hook = services.every_shell_hooks;
 
 extern fn nokre_shell_write_clipboard(utf8: [*]const u8, len: usize) void;
 
@@ -45,20 +38,9 @@ pub fn copy(app: *const App, utf8: []const u8) void {
 /// `zig test`, nothing in release — the extern call keeps no state.
 pub const Service = if (builtin.is_test) Mock else services.Stateless;
 
-/// The mock's heap half: every copy the app made, in order, as owned
-/// strings — dead with the app.
-pub const MockState = struct {
-    gpa: std.mem.Allocator,
-    writes: std.ArrayList([]u8) = .empty,
-
-    fn record(self: *MockState, utf8: []const u8) void {
-        // A copy is fire-and-forget for the app on every platform, so
-        // the journal has no error to surface either; a test allocator
-        // giving out is a crash, not an outcome (the Fake's rule).
-        const owned = self.gpa.dupe(u8, utf8) catch @panic("clipboard mock: allocator failed");
-        self.writes.append(self.gpa, owned) catch @panic("clipboard mock: allocator failed");
-    }
-};
+/// The mock's heap half: every copy the app made, in order
+/// (services.Journal's ownership and no-error rules).
+pub const MockState = services.Journal([]u8, "clipboard mock");
 
 /// One app's journaling clipboard.
 pub const Mock = struct {
@@ -80,14 +62,19 @@ pub const Mock = struct {
 
     pub fn deinit(self: *Mock) void {
         const state = self.state orelse return;
-        for (state.writes.items) |w| state.gpa.free(w);
-        state.writes.deinit(state.gpa);
-        state.gpa.destroy(state);
+        const gpa = state.gpa;
+        state.deinit();
+        gpa.destroy(state);
         self.state = null;
     }
 
     /// Every copy the app made, in order. Borrowed views.
     pub fn copies(self: Mock) []const []u8 {
-        return self.state.?.writes.items;
+        return self.state.?.view();
+    }
+
+    /// The per-phase reset (http's rule).
+    pub fn clearJournal(self: Mock) void {
+        self.state.?.clear();
     }
 };

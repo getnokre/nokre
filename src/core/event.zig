@@ -57,6 +57,22 @@ pub const Modifiers = packed struct(u8) {
     _pad: u4 = 0,
 };
 
+// These ordinals are a wire contract, pinned the way semantics.zig
+// pins its roles: shell.h's NOKRE_* blocks (POINTER/SCROLL/PAN/EDGE
+// 0-based, KEY 1-based at enum + 1, MOD the packed bits) and live.js's
+// KEY_BY_CODE all transcribe them, and none of those files can be read
+// by this compile. A variant added, removed, or reordered here without
+// them fails the build instead of silently re-meaning an event.
+comptime {
+    const assert = @import("std").debug.assert;
+    assert(@intFromEnum(Pointer.Phase.down) == 0 and @intFromEnum(Pointer.Phase.cancel) == 3 and @typeInfo(Pointer.Phase).@"enum".fields.len == 4);
+    assert(@intFromEnum(ScrollPhase.free) == 0 and @intFromEnum(ScrollPhase.end) == 3 and @typeInfo(ScrollPhase).@"enum".fields.len == 4);
+    assert(@intFromEnum(EdgePan.Phase.begin) == 0 and @intFromEnum(EdgePan.Phase.cancel) == 3 and @typeInfo(EdgePan.Phase).@"enum".fields.len == 4);
+    assert(@intFromEnum(EdgePan.Edge.left) == 0 and @typeInfo(EdgePan.Edge).@"enum".fields.len == 2);
+    assert(@intFromEnum(Key.tab) == 0 and @intFromEnum(Key.page_down) == 13 and @typeInfo(Key).@"enum".fields.len == 14);
+    assert(@as(u8, @bitCast(Modifiers{ .shift = true })) == 1 and @as(u8, @bitCast(Modifiers{ .meta = true })) == 8);
+}
+
 pub const ImeEvent = union(enum) {
     start,
     /// In-progress composition text (e.g. romaji before kana conversion).

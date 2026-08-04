@@ -110,6 +110,15 @@ fn validIdent(s: []const u8) bool {
 /// (docs/internals/platform-shells.md).
 pub const Change = enum { push, pop, replace, switch_to };
 
+// The ordinals are a wire contract: the DOM driver exports the latest
+// motion as `@intFromEnum` and live.js indexes its MOTION table with
+// it. Append only; a reorder here without live.js turns a pop into a
+// push in the browser's history.
+comptime {
+    const assert = @import("std").debug.assert;
+    assert(@intFromEnum(Change.push) == 0 and @intFromEnum(Change.switch_to) == 3 and @typeInfo(Change).@"enum".fields.len == 4);
+}
+
 /// Installed by a shell that has somewhere to show the current route,
 /// left null by every shell that does not — the `workers.Wake` shape.
 /// `route` is the full reference, and it is borrowed **only for the

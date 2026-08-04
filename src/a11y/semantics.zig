@@ -65,7 +65,10 @@ pub const A11yRole = enum {
 // roles in Zig instead). New roles append; nothing is ever inserted or
 // reordered.
 comptime {
-    if (@intFromEnum(A11yRole.checkbox) != 22) @compileError("a11y role ordinals are a wire contract; append only");
+    // Pinning the last variant, not just one in the middle: a reorder
+    // anywhere in the tail moves it, so the whole table is covered.
+    if (@intFromEnum(A11yRole.checkbox) != 22 or @intFromEnum(A11yRole.blockquote) != 26 or @typeInfo(A11yRole).@"enum".fields.len != 27)
+        @compileError("a11y role ordinals are a wire contract; append only");
 }
 
 pub const A11yNode = struct {

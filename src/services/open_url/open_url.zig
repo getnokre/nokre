@@ -33,18 +33,11 @@ const app_mod = @import("../../core/app.zig");
 const services = @import("../services.zig");
 
 const App = app_mod.App;
-const is_wasm = builtin.cpu.arch == .wasm32;
 
 pub const Error = error{UnsupportedScheme};
 
-/// Whether this target's shell provides the hook. Referenced only
-/// where true, so stub targets never name the extern.
-const has_shell_hook = is_wasm or switch (builtin.os.tag) {
-    // .linux covers both the Android JNI shell and the desktop Wayland
-    // shell — both export nokre_open_url_open.
-    .macos, .ios, .windows, .linux => true,
-    else => false,
-};
+// Every shell exports nokre_open_url_open.
+const has_shell_hook = services.every_shell_hooks;
 
 extern fn nokre_open_url_open(url: [*]const u8, len: usize) void;
 
@@ -80,20 +73,9 @@ pub fn open(app: *const App, url: []const u8) Error!void {
 /// `zig test`, nothing in release — the extern call keeps no state.
 pub const Service = if (builtin.is_test) Mock else services.Stateless;
 
-/// The mock's heap half: every URL the app asked to open, in order, as
-/// owned strings — dead with the app.
-pub const MockState = struct {
-    gpa: std.mem.Allocator,
-    requested: std.ArrayList([]u8) = .empty,
-
-    fn record(self: *MockState, url: []const u8) void {
-        // Fire-and-forget on every platform, so the journal has no
-        // error to surface either; a test allocator giving out is a
-        // crash, not an outcome (the clipboard mock's rule).
-        const owned = self.gpa.dupe(u8, url) catch @panic("open_url mock: allocator failed");
-        self.requested.append(self.gpa, owned) catch @panic("open_url mock: allocator failed");
-    }
-};
+/// The mock's heap half: every URL the app asked to open, in order
+/// (services.Journal's ownership and no-error rules).
+pub const MockState = services.Journal([]u8, "open_url mock");
 
 /// One app's journaling browser handoff.
 pub const Mock = struct {
@@ -115,16 +97,21 @@ pub const Mock = struct {
 
     pub fn deinit(self: *Mock) void {
         const state = self.state orelse return;
-        for (state.requested.items) |u| state.gpa.free(u);
-        state.requested.deinit(state.gpa);
-        state.gpa.destroy(state);
+        const gpa = state.gpa;
+        state.deinit();
+        gpa.destroy(state);
         self.state = null;
     }
 
     /// Every URL the app asked to open, in order. Borrowed views.
     /// Rejected schemes never journal — the OS was never asked.
     pub fn opens(self: Mock) []const []u8 {
-        return self.state.?.requested.items;
+        return self.state.?.view();
+    }
+
+    /// The per-phase reset (http's rule).
+    pub fn clearJournal(self: Mock) void {
+        self.state.?.clear();
     }
 };
 

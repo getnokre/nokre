@@ -152,7 +152,7 @@ pub fn content(em: *Emitter) !void {
     var it = tree.children(tree.rootId());
     while (it.next()) |id| {
         const el = tree.getConst(id) orelse continue;
-        if (isChrome(el.role())) continue;
+        if (el.role().isChromeLayer()) continue;
         try node(em, id);
     }
 }
@@ -187,16 +187,12 @@ pub fn chrome(em: *Emitter) !void {
             }
         }
     }
-    inline for (.{ "findNoticesPane", "findSheet", "findPicker" }) |finder| {
-        if (@field(layout, finder)(tree)) |id| try node(em, id);
-    }
-}
-
-fn isChrome(role: element_mod.Role) bool {
-    return switch (role) {
-        .nav, .sheet, .notice, .notices_pane, .picker, .icon_button => true,
-        else => false,
-    };
+    // The modal layers, bottom of the stack first, so the markup order
+    // is the paint order — the reverse of `layout.topModalLayer`'s
+    // precedence, which is the same fact read from the other end.
+    if (layout.findNoticesPane(tree)) |id| try node(em, id);
+    if (layout.findSheet(tree)) |id| try node(em, id);
+    if (layout.findPicker(tree)) |id| try node(em, id);
 }
 
 // ----------------------------------------------------------------- walk
@@ -279,7 +275,7 @@ pub fn node(em: *Emitter, id: NodeId) anyerror!void {
                 if (hands_back) " hands-back" else "",
             });
             const d: element_mod.Stack = .{};
-            try boxStyle(em, s.gap, d.gap, s.padding, d.padding, null);
+            try boxStyle(em, .{ .value = s.gap, .default = d.gap }, .{ .value = s.padding, .default = d.padding }, null);
             try em.raw(">");
             try children(em, id);
             try em.raw("</div>");
@@ -287,7 +283,7 @@ pub fn node(em: *Emitter, id: NodeId) anyerror!void {
         .box => |b| {
             try em.print("<div class=\"box{s}\"", .{if (b.border) "" else " bare"});
             const d: element_mod.Box = .{};
-            try boxStyle(em, null, 0, b.padding, d.padding, b.fill);
+            try boxStyle(em, null, .{ .value = b.padding, .default = d.padding }, b.fill);
             try em.raw(">");
             try children(em, id);
             try em.raw("</div>");
@@ -474,8 +470,8 @@ pub fn node(em: *Emitter, id: NodeId) anyerror!void {
         // browser had acted on the label — and cancelling that late
         // reverts it, leaving the control showing one state while the
         // tree holds the other.
-        .toggle => |t| try switchRow(em, id, "toggle", t.label, t.on, t.in_progress),
-        .checkbox => |c| try switchRow(em, id, "check", c.label, c.checked, c.in_progress),
+        .toggle => |t| try switchRow(em, id, "toggle", t.label, .{ .on = t.on, .busy = t.in_progress }),
+        .checkbox => |c| try switchRow(em, id, "check", c.label, .{ .on = c.checked, .busy = c.in_progress }),
         .text_input => |t| {
             try em.raw("<label class=\"field\"><span class=\"field-label\">");
             try em.text(t.label);
@@ -535,8 +531,8 @@ pub fn node(em: *Emitter, id: NodeId) anyerror!void {
             try em.raw("</button></div>");
         },
         // A column of rows has no track to overflow, so it never bleeds.
-        .radio_group => |g| try choice(em, id, "radios", g.label, g.options, g.selected, false, 0),
-        .segmented => |s| try choice(em, id, "segmented", s.label, s.options, s.selected, true, s.bleed),
+        .radio_group => |g| try choice(em, id, "radios", g.label, g.options, g.selected, .rows, 0),
+        .segmented => |s| try choice(em, id, "segmented", s.label, s.options, s.selected, .chips, s.bleed),
         .copyable => |c| {
             // Activation is intrinsic — it writes the value to the
             // platform clipboard — so it is a button named by its label,
@@ -843,7 +839,9 @@ fn noticeControls(em: *Emitter, notice: NodeId, flank: enum { lead, trail }) !vo
 /// while the stylesheet puts `…` in the track's or the box's slot. The
 /// words are untouched, so the row keeps its size and its name, and the
 /// busy pair reaches a screen reader exactly as the button's does.
-fn switchRow(em: *Emitter, id: NodeId, class: []const u8, label: []const u8, on: bool, busy: bool) !void {
+fn switchRow(em: *Emitter, id: NodeId, class: []const u8, label: []const u8, state: struct { on: bool, busy: bool }) !void {
+    const on = state.on;
+    const busy = state.busy;
     try em.print("<label class=\"ctl{s}\"", .{if (busy) " busy" else ""});
     try em.stop(id);
     try em.print("><input type=\"checkbox\" class=\"{s}\"{s}", .{
@@ -905,9 +903,10 @@ fn choice(
     label: []const u8,
     options: []const []const u8,
     selected: usize,
-    chips: bool,
+    shape: enum { rows, chips },
     bleed: i32,
 ) !void {
+    const chips = shape == .chips;
     // Radiogroup semantics either way — `segmented` is a track of chips
     // and `radio_group` a column of rows, and neither is a tab list.
     try em.print("<fieldset class=\"{s}\"><legend class=\"{s}\">", .{
@@ -1043,14 +1042,16 @@ fn qr(em: *Emitter, id: NodeId, q: element_mod.Qr) !void {
 /// default is read off the struct rather than repeated here, so a
 /// change to one in `element.zig` cannot leave this quietly emitting
 /// the wrong thing.
-fn boxStyle(em: *Emitter, gap: ?i32, gap_default: i32, padding: i32, pad_default: i32, fill: ?Gray) !void {
+const Styled = struct { value: i32, default: i32 };
+
+fn boxStyle(em: *Emitter, gap: ?Styled, padding: Styled, fill: ?Gray) !void {
     var open = false;
-    if (gap) |g| if (g != gap_default) {
-        try em.print("{s}--gap:{d}px", .{ if (open) ";" else " style=\"", g });
+    if (gap) |g| if (g.value != g.default) {
+        try em.print("{s}--gap:{d}px", .{ if (open) ";" else " style=\"", g.value });
         open = true;
     };
-    if (padding != pad_default) {
-        try em.print("{s}--pad:{d}px", .{ if (open) ";" else " style=\"", padding });
+    if (padding.value != padding.default) {
+        try em.print("{s}--pad:{d}px", .{ if (open) ";" else " style=\"", padding.value });
         open = true;
     }
     if (fill) |f| {

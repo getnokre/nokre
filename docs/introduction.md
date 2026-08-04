@@ -128,12 +128,14 @@ problems, because the library cannot express them.
   grayscale is still all you can author.
   [internals/oauth.md](internals/oauth.md) records why this one mark
   crossed the line and nothing else may follow it.
-- **No system fonts.** Four bundled families — one mono, one
-  proportional, one icon face, and one Arabic-script companion every
-  family falls back to for Persian and Arabic — every variant a real
-  drawn face from the same upstream build (bold, italic, and
+- **No system fonts.** Every face is bundled: one mono family, one
+  proportional, one icon face, and an Arabic-script companion face
+  every family falls back to for Persian and Arabic — every variant a
+  real drawn face from the same upstream build (bold, italic, and
   bold-italic for the two text families; the companion has no italic,
   because the script has none), and app text can reach nothing else.
+  The one family this list omits, `brand`, holds the sign-in marks
+  above — reachable only from the renderer, never from app text.
   No synthetic
   emboldening or shearing either: faked variants are
   rasterizer-dependent, which is the variance the bundling exists to

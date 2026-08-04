@@ -154,9 +154,9 @@ pub const App = struct {
     pkg: ?std.Build.LazyPath = null,
     /// The **site**: everything a browser needs to run this app, in one
     /// directory — the wasm module under the name the page loads, the
-    /// live driver's three modules, the generated stylesheet, the
-    /// faces, and the page, manifest and icons the declaration
-    /// produces. Non-null exactly when the target is the web; the rest
+    /// live driver's modules and the service worker, the generated
+    /// stylesheet, the faces, and the page, manifest and icons the
+    /// declaration produces. Non-null exactly when the target is the web; the rest
     /// of the platforms have a shell instead. Install it like `pkg`,
     /// and what lands is servable and uploadable as it stands:
     ///
@@ -2074,6 +2074,21 @@ fn addSecureStore(b: *std.Build, mod: *std.Build.Module, decl: ?PackageDecl, ena
 /// running the build, so a refusal reproduces everywhere, and there is
 /// no combination of environment, signature or runtime state that turns
 /// a shipping build's store into this one.
+/// Where the secure_store dev file store can exist at all: a native
+/// desktop POSIX build of the host that is building it. The quiet
+/// ahead-of-time answer for a consumer's build.zig deciding whether to
+/// wire a dev-store step — `devStoreAllowed` below stays the loud gate
+/// that explains each refusal once a build actually asks for the store.
+pub fn devStoreHost(target: std.Build.ResolvedTarget) bool {
+    const t = target.result;
+    const desktop_posix = switch (t.os.tag) {
+        .macos => true,
+        .linux => !t.abi.isAndroid(),
+        else => false,
+    };
+    return desktop_posix and t.os.tag == builtin.os.tag and t.cpu.arch == builtin.cpu.arch;
+}
+
 fn devStoreAllowed(b: *std.Build, mod: *std.Build.Module, target: std.Target, dev: bool) bool {
     if (!dev) return false;
     var ok = true;
@@ -2121,13 +2136,7 @@ fn devStoreAllowed(b: *std.Build, mod: *std.Build.Module, target: std.Target, de
 /// hard-coded rather than taken from `-Doptimize`, because Debug is one
 /// of the gates — the step honors it instead of asking for an exemption.
 fn addDevStoreCheck(b: *std.Build, step: *std.Build.Step, target: std.Build.ResolvedTarget) void {
-    const t = target.result;
-    const desktop_posix = switch (t.os.tag) {
-        .macos => true,
-        .linux => !t.abi.isAndroid(),
-        else => false,
-    };
-    if (!desktop_posix or t.os.tag != builtin.os.tag or t.cpu.arch != builtin.cpu.arch) return;
+    if (!devStoreHost(target)) return;
 
     const decl: PackageDecl = .{ .name = "dev-store", .id = "dev.nokre.devstore", .version = "0.0.0", .build = 0 };
     const nokre_mod = b.createModule(.{

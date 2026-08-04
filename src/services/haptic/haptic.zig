@@ -23,9 +23,11 @@
 //! same reason: a service that links nothing costs nothing where the
 //! platform has no hook.
 //!
-//! There is no nokre-side "off" switch, because both platforms already
-//! honour the system haptics setting themselves. A framework toggle
-//! would be a second answer to a question the OS has already asked.
+//! There is no nokre-side "off" switch: the one shell that fires
+//! already honours the system haptics setting (UIImpactFeedbackGenerator
+//! respects it), and Android's back feedback is the OS's own. A
+//! framework toggle would be a second answer to a question the OS has
+//! already asked.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -65,19 +67,9 @@ pub fn knock(app: *const App, kind: Knock) void {
 /// `zig test`, nothing in release — the extern call keeps no state.
 pub const Service = if (builtin.is_test) Mock else services.Stateless;
 
-/// The mock's heap half: every knock the app fired, in order — dead with
-/// the app.
-pub const MockState = struct {
-    gpa: std.mem.Allocator,
-    knocks: std.ArrayList(Knock) = .empty,
-
-    fn record(self: *MockState, kind: Knock) void {
-        // Fire-and-forget on every platform, so the journal has no error
-        // to surface either; a test allocator giving out is a crash, not
-        // an outcome (the clipboard mock's rule).
-        self.knocks.append(self.gpa, kind) catch @panic("haptic mock: allocator failed");
-    }
-};
+/// The mock's heap half: every knock the app fired, in order
+/// (services.Journal's no-error rule).
+pub const MockState = services.Journal(Knock, "haptic mock");
 
 /// One app's journaling haptics.
 pub const Mock = struct {
@@ -99,13 +91,19 @@ pub const Mock = struct {
 
     pub fn deinit(self: *Mock) void {
         const state = self.state orelse return;
-        state.knocks.deinit(state.gpa);
-        state.gpa.destroy(state);
+        const gpa = state.gpa;
+        state.deinit();
+        gpa.destroy(state);
         self.state = null;
     }
 
     /// Every knock the app fired, in order. Borrowed view.
     pub fn fired(self: Mock) []const Knock {
-        return self.state.?.knocks.items;
+        return self.state.?.view();
+    }
+
+    /// The per-phase reset (http's rule).
+    pub fn clearJournal(self: Mock) void {
+        self.state.?.clear();
     }
 };

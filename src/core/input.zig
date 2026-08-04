@@ -248,10 +248,7 @@ fn blurEditable(app: *App) void {
 /// Whether `p` falls outside the open modal layer — on the scrim, where
 /// a press means "leave this".
 fn onScrim(app: *App, p: Point) bool {
-    const layer = layout.findPicker(&app.tree) orelse
-        layout.findSheet(&app.tree) orelse
-        layout.findNoticesPane(&app.tree) orelse
-        return false;
+    const layer = layout.topModalLayer(&app.tree) orelse return false;
     return !app.tree.rectOf(layer).contains(p);
 }
 
@@ -259,9 +256,14 @@ fn onScrim(app: *App, p: Point) bool {
 /// committing, the sheet dismisses, the notices pane minimizes with its
 /// notices still pending.
 fn dismissLayer(app: *App) void {
-    if (layout.findPicker(&app.tree) != null) return overlays.closePicker(app, null);
-    if (layout.findSheet(&app.tree) != null) return overlays.dismissSheet(app);
-    if (layout.findNoticesPane(&app.tree) != null) notices.minimizeNotices(app);
+    const layer = layout.topModalLayer(&app.tree) orelse return;
+    switch (app.tree.getConst(layer).?.role()) {
+        .picker => overlays.closePicker(app, null),
+        .sheet => overlays.dismissSheet(app),
+        .notices_pane => notices.minimizeNotices(app),
+        // topModalLayer returns nothing else.
+        else => unreachable,
+    }
 }
 
 /// Deepest focus stop in the active layer whose visible
@@ -741,13 +743,7 @@ pub fn handleScroll(app: *App, s: event_mod.Scroll) void {
         remaining -= scrollRegionBy(app, id, remaining);
         if (remaining == 0) return;
     }
-    if (!modalOpen(app)) scrollRootBy(app, remaining);
-}
-
-fn modalOpen(app: *App) bool {
-    return layout.findSheet(&app.tree) != null or
-        layout.findNoticesPane(&app.tree) != null or
-        layout.findPicker(&app.tree) != null;
+    if (!layout.modalOpen(&app.tree)) scrollRootBy(app, remaining);
 }
 
 /// The deepest scroll region in the active layer whose visible geometry
@@ -793,7 +789,7 @@ fn scrollGestureVertical(app: *App, region: ?NodeId, delta: i32) void {
         _ = scrollRegionBy(app, id, delta);
         return;
     }
-    if (!modalOpen(app)) scrollRootBy(app, delta);
+    if (!layout.modalOpen(&app.tree)) scrollRootBy(app, delta);
 }
 
 /// Horizontal scroll goes to the deepest sideways scroller under the
@@ -864,7 +860,7 @@ fn revealSegSelected(app: *App, id: NodeId) void {
 }
 
 fn handleRootScrollKey(app: *App, key: event_mod.Key) void {
-    if (modalOpen(app)) return; // background is inert
+    if (layout.modalOpen(&app.tree)) return; // background is inert
     const line = text.Scale.body.lineHeight();
     const page = layout.contentArea(&app.tree, app.viewport, app.safe_bottom).h;
     switch (key) {
@@ -985,7 +981,7 @@ fn eligibleForBack(app: *App, from: event_mod.EdgePan.Edge) bool {
     // An open overlay dismisses itself, by its own close control and its
     // own Escape. One gesture that means "back" on one layer and
     // "dismiss" on another is a gesture nobody can predict.
-    if (modalOpen(app)) return false;
+    if (layout.modalOpen(&app.tree)) return false;
     // Back runs against the reading direction, like the chevron the
     // Back control draws: the mirrored chrome mirrors its gesture too.
     const leading: event_mod.EdgePan.Edge = if (app.direction == .rtl) .right else .left;

@@ -26,6 +26,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const app_mod = @import("../../core/app.zig");
+const services = @import("../services.zig");
 
 const App = app_mod.App;
 const is_wasm = builtin.cpu.arch == .wasm32;
@@ -68,8 +69,7 @@ pub const Error = error{ EmptyText, TextTooLarge, Unavailable };
 /// false on the Linux desktop always; on the web, whatever
 /// `navigator.share` answered at boot.
 pub fn available(app: *const App) bool {
-    if (comptime builtin.is_test) return app.services.share.state.?.can_share;
-    return app.services.share.can_share;
+    return app.services.share.canShare();
 }
 
 /// Ask the OS to show its share sheet with `text` on it. The argument
@@ -83,7 +83,7 @@ pub fn show(app: *const App, text: []const u8) Error!void {
     if (text.len > max_text_bytes) return error.TextTooLarge;
     if (!available(app)) return error.Unavailable;
     if (comptime builtin.is_test) {
-        app.services.share.state.?.record(text);
+        app.services.share.state.?.journal.record(text);
     } else if (comptime has_shell_hook) {
         nokre_share_show(text.ptr, text.len);
     }
@@ -96,7 +96,7 @@ pub fn show(app: *const App, text: []const u8) Error!void {
 /// init/deinit pair rather than naming `services.Stateless`.
 pub const Service = if (builtin.is_test) Mock else PlatformService;
 
-pub const PlatformService = struct {
+const PlatformService = struct {
     can_share: bool = false,
 
     pub fn init(self: *PlatformService, gpa: std.mem.Allocator) !void {
@@ -114,22 +114,18 @@ pub const PlatformService = struct {
     pub fn deinit(self: *PlatformService) void {
         self.can_share = false;
     }
+
+    fn canShare(self: PlatformService) bool {
+        return self.can_share;
+    }
 };
 
-/// The mock's heap half: every text the app put on the sheet, in order,
-/// as owned strings — dead with the app.
+/// The mock's heap half: the boot answer, and every text the app put on
+/// the sheet, in order (services.Journal's ownership and no-error
+/// rules).
 pub const MockState = struct {
-    gpa: std.mem.Allocator,
     can_share: bool,
-    shown: std.ArrayList([]u8) = .empty,
-
-    fn record(self: *MockState, text: []const u8) void {
-        // Fire-and-forget past the checks, so the journal has no error
-        // to surface either; a test allocator giving out is a crash,
-        // not an outcome (the clipboard mock's rule).
-        const owned = self.gpa.dupe(u8, text) catch @panic("share mock: allocator failed");
-        self.shown.append(self.gpa, owned) catch @panic("share mock: allocator failed");
-    }
+    journal: services.Journal([]u8, "share mock"),
 };
 
 /// One app's journaling share sheet.
@@ -152,22 +148,31 @@ pub const Mock = struct {
 
     pub fn init(self: *Mock, gpa: std.mem.Allocator) !void {
         const state = try gpa.create(MockState);
-        state.* = .{ .gpa = gpa, .can_share = self.boot.available };
+        state.* = .{ .can_share = self.boot.available, .journal = .{ .gpa = gpa } };
         self.state = state;
     }
 
     pub fn deinit(self: *Mock) void {
         const state = self.state orelse return;
-        for (state.shown.items) |s| state.gpa.free(s);
-        state.shown.deinit(state.gpa);
-        state.gpa.destroy(state);
+        const gpa = state.journal.gpa;
+        state.journal.deinit();
+        gpa.destroy(state);
         self.state = null;
+    }
+
+    fn canShare(self: Mock) bool {
+        return self.state.?.can_share;
     }
 
     /// Every text the app handed to the sheet, in order. Borrowed
     /// views. A refused share never journals — empty, over-cap, and
     /// unavailable all return before the OS would have been asked.
     pub fn shares(self: Mock) []const []u8 {
-        return self.state.?.shown.items;
+        return self.state.?.journal.view();
+    }
+
+    /// The per-phase reset (http's rule).
+    pub fn clearJournal(self: Mock) void {
+        self.state.?.journal.clear();
     }
 };

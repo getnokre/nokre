@@ -166,14 +166,23 @@ pub fn render(app: *App, target: Canvas) void {
     var picker: ?NodeId = null;
     var it = app.tree.children(app.tree.rootId());
     while (it.next()) |child| {
-        switch (app.tree.getConst(child).?.role()) {
+        const r = app.tree.getConst(child).?.role();
+        // `Role.isChromeLayer` is the partition's one home — both
+        // editions read it, so neither can draw a layer as content.
+        if (!r.isChromeLayer()) {
+            drawNode(app, canvas, child);
+            continue;
+        }
+        switch (r) {
             .nav => nav = child,
             .icon_button => indicator = child,
             .notice => notice = child,
             .notices_pane => pane = child,
             .sheet => sheet = child,
             .picker => picker = child,
-            else => drawNode(app, canvas, child),
+            // isChromeLayer is exhaustive: only a new layer whose slot
+            // above was not written can land here.
+            else => unreachable,
         }
     }
     const area = layout.contentArea(&app.tree, app.viewport, app.safe_bottom);
@@ -1164,17 +1173,18 @@ const Lead = struct { face: text.Face, glyph: []const u8, baseline: i32 };
 
 /// Google's G: four arc glyphs cut from one drawing, sharing one advance
 /// (tools/make-brand-font.py), overlaid at a single origin, each painted
-/// in the color Google's branding guidelines mandate. These four values
-/// are the only colors in nokre, and this table is the only place they
-/// exist — they are the vendor's trademark spec, transcribed, not a
-/// palette to pick from. The mark is decorative beside a real label
-/// (a11y-exempt like every lead mark), so no contrast gate applies; the
-/// pill under it is drawn at the light-pinned endpoints like Apple's.
-const google_g = [_]struct { glyph: []const u8, rgb: canvas_mod.Rgb }{
-    .{ .glyph = "\u{e901}", .rgb = .{ .r = 0x42, .g = 0x85, .b = 0xF4 } }, // blue
-    .{ .glyph = "\u{e902}", .rgb = .{ .r = 0x34, .g = 0xA8, .b = 0x53 } }, // green
-    .{ .glyph = "\u{e903}", .rgb = .{ .r = 0xFB, .g = 0xBC, .b = 0x05 } }, // yellow
-    .{ .glyph = "\u{e904}", .rgb = .{ .r = 0xEA, .g = 0x43, .b = 0x35 } }, // red
+/// in the color Google's branding guidelines mandate. The values live in
+/// `element.google_g_rgb` — the one home both editions read — and are
+/// the vendor's trademark spec, transcribed, not a palette to pick from.
+/// The mark is decorative beside a real label (a11y-exempt like every
+/// lead mark), so no contrast gate applies; the pill under it is drawn
+/// at the light-pinned endpoints like Apple's.
+const google_g = blk: {
+    const glyphs = [4][]const u8{ "\u{e901}", "\u{e902}", "\u{e903}", "\u{e904}" };
+    var t: [4]struct { glyph: []const u8, rgb: canvas_mod.Rgb } = undefined;
+    for (&t, glyphs, element_mod.google_g_rgb) |*arc, glyph, c|
+        arc.* = .{ .glyph = glyph, .rgb = .{ .r = c.r, .g = c.g, .b = c.b } };
+    break :blk t;
 };
 
 /// Draws a pill's lead mark at `tx`. The Google G is the special case:
@@ -1665,7 +1675,7 @@ fn drawTextInput(app: *App, canvas: Painter, r: Rect, inp: element_mod.TextInput
         const vx = if (rtl) tx + inner_w - vw else tx;
         canvas.drawText(vx, ty, .prose, size, inp.value, .ink);
         if (focused) {
-            const cx = vx + editing.caretX(app, inp.value, 0, inp.value.len, inp.cursor, size);
+            const cx = vx + editing.caretX(app, inp.value, .{ .start = 0, .end = inp.value.len }, inp.cursor, size);
             canvas.line(
                 .{ .x = cx, .y = field.y + field_pad },
                 .{ .x = cx, .y = field.bottom() - field_pad },
@@ -1760,7 +1770,7 @@ fn drawTextArea(app: *App, canvas: Painter, r: Rect, area: element_mod.TextArea,
                 // caretX resolves the same paragraph drawText just did;
                 // the scratch reuse is benign because the resolve is
                 // identical.
-                const cx = origin + editing.caretX(app, area.value, span.start, span.end, area.cursor, size);
+                const cx = origin + editing.caretX(app, area.value, span, area.cursor, size);
                 canvas.line(.{ .x = cx, .y = y }, .{ .x = cx, .y = y + line_h }, 1, .ink);
                 caret_drawn = true;
             }
@@ -1770,7 +1780,10 @@ fn drawTextArea(app: *App, canvas: Painter, r: Rect, area: element_mod.TextArea,
         if (focused and !caret_drawn) {
             // Cursor rides in trailing hanging whitespace past the last line.
             const origin = tx + editing.lineOriginX(app, area.value, last_span, inner_w);
-            const cx = origin + editing.caretX(app, area.value, last_span.start, area.value.len, area.cursor, size);
+            // Deliberately a mixed span: the last line's origin, run to
+            // the end of the value, so the caret rides in the trailing
+            // hanging whitespace.
+            const cx = origin + editing.caretX(app, area.value, .{ .start = last_span.start, .end = area.value.len }, area.cursor, size);
             canvas.line(.{ .x = cx, .y = y - line_h }, .{ .x = cx, .y = y }, 1, .ink);
         }
         return;

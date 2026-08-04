@@ -31,10 +31,11 @@ const workers = @import("../workers/workers.zig");
 
 /// The release half of a service that keeps nothing: the platform call
 /// is an extern with no handle to hold, so these two exist only to
-/// satisfy the injection contract every service answers to. `clipboard`
-/// and `haptic` name this instead of restating it — a service that
-/// *does* hold state writes its own pair (secure_store carries its
-/// `CountCache`), and the difference is then visible at a glance.
+/// satisfy the injection contract every service answers to. `clipboard`,
+/// `haptic`, `open_url`, and `clock` name this instead of restating it —
+/// a service that *does* hold state writes its own pair (secure_store
+/// carries its `CountCache`), and the difference is then visible at a
+/// glance.
 pub const Stateless = struct {
     pub fn init(self: *Stateless, gpa: std.mem.Allocator) !void {
         _ = self;
@@ -45,6 +46,66 @@ pub const Stateless = struct {
         _ = self;
     }
 };
+
+/// Whether the target's shell exports the hook for a service every
+/// shell answers (`.linux` covering both the Android JNI shell and the
+/// desktop Wayland shell). Referenced only where true, so stub targets
+/// never name the extern. One home so the next stateless service copies
+/// a fact, not a switch — a service some shell genuinely lacks (share's
+/// sheetless Wayland desktop, haptic's iOS-only threshold, locale's
+/// native-only install) states its own roster instead.
+pub const every_shell_hooks = builtin.cpu.arch == .wasm32 or switch (builtin.os.tag) {
+    .macos, .ios, .windows, .linux => true,
+    else => false,
+};
+
+// Mock conventions, stated once for the roster: every mock answers
+// `mock(Config)` even where Config is empty (clipboard, haptic,
+// open_url, deep_link) — the construction site reads uniformly, and a
+// service that later grows a knob grows it without changing the
+// consumer's shape.
+
+/// The journaling mock's ledger: everything the app asked the OS to do,
+/// in order, owned here — dead with the app. One shape for the
+/// fire-and-forget services, whose calls have no error to surface, so
+/// the journal has none either: a test allocator giving out is a crash,
+/// not an outcome. `[]u8` entries are copied in; anything else is held
+/// by value.
+pub fn Journal(comptime Entry: type, comptime name: []const u8) type {
+    return struct {
+        const Self = @This();
+        const owns_bytes = Entry == []u8;
+
+        gpa: std.mem.Allocator,
+        entries: std.ArrayList(Entry) = .empty,
+
+        pub fn record(self: *Self, entry: if (owns_bytes) []const u8 else Entry) void {
+            const owned: Entry = if (comptime owns_bytes)
+                self.gpa.dupe(u8, entry) catch @panic(name ++ ": allocator failed")
+            else
+                entry;
+            self.entries.append(self.gpa, owned) catch @panic(name ++ ": allocator failed");
+        }
+
+        /// The whole ledger, in call order. Borrowed views.
+        pub fn view(self: *const Self) []const Entry {
+            return self.entries.items;
+        }
+
+        /// Drop the ledger — the per-phase reset (http's `clearJournal`
+        /// rule), so a test can assert "and *that* action asked exactly
+        /// these" without arithmetic over everything before it.
+        pub fn clear(self: *Self) void {
+            if (comptime owns_bytes) for (self.entries.items) |e| self.gpa.free(e);
+            self.entries.clearRetainingCapacity();
+        }
+
+        pub fn deinit(self: *Self) void {
+            if (comptime owns_bytes) for (self.entries.items) |e| self.gpa.free(e);
+            self.entries.deinit(self.gpa);
+        }
+    };
+}
 
 pub const Services = struct {
     http: http.Service = .{},
@@ -169,18 +230,22 @@ pub const Services = struct {
         try self.locale.init(gpa);
     }
 
+    /// `init`, exactly mirrored: locale and notification came up last
+    /// because their installs call out to the shell and can fire
+    /// handlers into the other services, so they come down first —
+    /// nothing they can still fire into is ever half-torn-down.
     pub fn deinit(self: *Services) void {
-        self.http.deinit();
-        self.secure_store.deinit();
-        self.clipboard.deinit();
-        self.deep_link.deinit();
-        self.haptic.deinit();
-        self.open_url.deinit();
-        self.oauth.deinit();
-        self.share.deinit();
-        self.iap.deinit();
-        self.clock.deinit();
-        self.notification.deinit();
         self.locale.deinit();
+        self.notification.deinit();
+        self.clock.deinit();
+        self.iap.deinit();
+        self.share.deinit();
+        self.oauth.deinit();
+        self.open_url.deinit();
+        self.haptic.deinit();
+        self.deep_link.deinit();
+        self.clipboard.deinit();
+        self.secure_store.deinit();
+        self.http.deinit();
     }
 };

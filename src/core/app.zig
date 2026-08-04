@@ -288,6 +288,20 @@ pub const App = struct {
         try self.router.pop(self);
     }
 
+    /// Rebuild the current screen from state — the router verb at the
+    /// same hop as `navigate`, so a controller never threads the app
+    /// through itself (`app.router.reload(app)`) to say it.
+    pub fn reload(self: *App) !void {
+        try self.router.reload(self);
+    }
+
+    /// Enter `ref` with the stack reset to just it (router.zig says
+    /// when that is the right arrival), aliased for the same reason
+    /// as `reload`.
+    pub fn switchTo(self: *App, ref: []const u8) !void {
+        try self.router.switchTo(self, ref);
+    }
+
     /// The `i`th positional argument of the current screen — `"42"` on
     /// `note~42` (docs/routing.md). Null past the declared arity, so a
     /// builder that reads what its `RouteDef` declares always gets a
@@ -309,13 +323,10 @@ pub const App = struct {
         self.layout_dirty = true;
     }
 
-    /// The active focus layer: the open picker, the open sheet, the
-    /// open notices pane, or the whole tree.
+    /// The active focus layer: the topmost open modal layer
+    /// (`layout.topModalLayer`), or the whole tree.
     pub fn focusScope(self: *const App) NodeId {
-        return layout.findPicker(&self.tree) orelse
-            layout.findSheet(&self.tree) orelse
-            layout.findNoticesPane(&self.tree) orelse
-            self.tree.rootId();
+        return layout.topModalLayer(&self.tree) orelse self.tree.rootId();
     }
 
     pub fn setViewport(self: *App, viewport: Size) void {

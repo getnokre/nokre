@@ -58,8 +58,8 @@ wiring behind each Working service:
 - [oauth.md](oauth.md) — the sign-in browser session: one primitive
   instead of two vendor SDKs, why the redirect is a call and not a
   constant, and the brand marks — Apple's built in one monochrome glyph,
-  Google's refused for good, with the record of what building it would
-  have cost.
+  Google's first refused and then built under an owner-decided reversal,
+  with the record of what each answer cost.
 - [haptics.md](haptics.md) — the one gesture and its one haptic: why an
   edge pan that goes back is allowed where a sliding transition is not,
   where the threshold and its hysteresis live, and why a service nobody
@@ -68,3 +68,9 @@ wiring behind each Working service:
   stores, why money is a string the store hands over, the one Maven
   coordinate nokre asks for, and why three platforms answer "there is no
   store here" at runtime rather than at compile time.
+- [notifications.md](notifications.md) — the OS's own surface: the two
+  owner-decided reversals it required, the per-platform wiring behind
+  the three boot probes, and why macOS packaging grew a bundle.
+- [share.md](share.md) — the OS share surface: one verb over five
+  native sheets and the Web Share API, and the per-platform wiring
+  behind `available`.

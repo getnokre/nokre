@@ -32,6 +32,8 @@ nokre is a strict layer cake. Each layer knows only the layer below it.
 | [src/core/color.zig](../../src/core/color.zig) | `Gray`: the thirteen permitted shades |
 | [src/core/text.zig](../../src/core/text.zig) | families, type scale, `Measurer` interface |
 | [src/core/bidi.zig](../../src/core/bidi.zig) | UAX #9 in full: paragraph direction, embedding levels, visual run order — pure integer Zig, UCD-validated |
+| [src/core/bidi_tables.zig](../../src/core/bidi_tables.zig) | its generated UCD bidi-class tables (`tools/gen-bidi-tables.py`) — regenerated, never edited |
+| [src/core/icon_names.zig](../../src/core/icon_names.zig) | the generated icon-name table from lucide-static (`tools/gen-icon-names.py`), regenerated only with the face itself |
 | [src/core/element.zig](../../src/core/element.zig) | the closed element set (`Element` union) |
 | [src/core/tree.zig](../../src/core/tree.zig) | retained tree, generational `NodeId`s |
 | [src/core/layout.zig](../../src/core/layout.zig) | block-flow layout, word wrap, row wrap (`rowOverflow`), metrics |
@@ -63,6 +65,9 @@ nokre is a strict layer cake. Each layer knows only the layer below it.
 | [src/a11y/semantics.zig](../../src/a11y/semantics.zig) | tree → flat accessibility snapshot |
 | [src/a11y/accesskit.zig](../../src/a11y/accesskit.zig) | adapter over the AccessKit C bindings — VoiceOver, UIA, and AT-SPI are live; iOS (`UIAccessibilityElement`s) and Android (`AccessibilityNodeProvider`) consume the same `flatten` output without AccessKit, and the web needs no bridge at all |
 | [src/testing/harness.zig](../../src/testing/harness.zig) | headless e2e framework |
+| [src/testing/queries.zig](../../src/testing/queries.zig) / [driver.zig](../../src/testing/driver.zig) | semantic queries — find by what users perceive, never by index — and the synthetic input driver, both through `App.dispatch` |
+| [src/testing/audit.zig](../../src/testing/audit.zig) | the accessibility audit: the whole-tree content rules construction-time validation cannot cover |
+| [src/testing/trace.zig](../../src/testing/trace.zig) / [golden.zig](../../src/testing/golden.zig) / [diag.zig](../../src/testing/diag.zig) | per-step tracing, byte-exact PPM goldens, and the harness's one stderr gate |
 | [src/core/test_app.zig](../../src/core/test_app.zig) | the mocked App nokre's *own* unit tests build on — internal, not the consumer fixture above |
 | [src/platform/platform.zig](../../src/platform/platform.zig) | comptime backend selection |
 | [src/platform/c_shell.zig](../../src/platform/c_shell.zig) | shared Zig side of the C shell contract ([shell.h](../../src/platform/shell.h)); names no rendering backend |
@@ -72,6 +77,7 @@ nokre is a strict layer cake. Each layer knows only the layer below it.
 | [src/services/http/http.zig](../../src/services/http/http.zig) | request/response client, one API per platform ([http.md](http.md)) |
 | [src/services/secure_store/secure_store.zig](../../src/services/secure_store/secure_store.zig) | encrypted key/value for small secrets, sync, namespaced by `pkg_id` ([secure_store.md](secure_store.md)) |
 | [src/packaging/packaging.zig](../../src/packaging/packaging.zig) | platform manifests and the derived app icon ([icon.zig](../../src/packaging/icon.zig)) generated from the build declaration — build-time only, never compiled into apps ([../services.md](../services.md)) |
+| [src/packaging/apple_icon.zig](../../src/packaging/apple_icon.zig) | the declared Icon Composer bundle: checked where declared, delivered whole, never generated ([../services.md](../services.md)) |
 | [src/services/clipboard/clipboard.zig](../../src/services/clipboard/clipboard.zig) | one verb: copy text out, via the shell's C hook ([services.md](../services.md)) |
 | [src/services/deep_link/deep_link.zig](../../src/services/deep_link/deep_link.zig) | inbound URLs at launch and while running, delivered on the UI thread; routing stays the app's ([services.md](../services.md)) |
 | [src/services/locale/locale.zig](../../src/services/locale/locale.zig) | the device's BCP 47 tag, cached at boot and re-reported on change; feeds `l10n.Bundle.resolve` ([services.md](../services.md)) |

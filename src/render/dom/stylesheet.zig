@@ -391,6 +391,22 @@ fn writeFaces(gpa: std.mem.Allocator, out: *std.ArrayList(u8), dir: []const u8, 
     );
 }
 
+/// The four arc rules, printed at comptime from the one home the
+/// trademark colors have (`element.google_g_rgb`): this file no longer
+/// holds a color byte of its own, so the stylesheet and the reference
+/// renderer cannot disagree about the G.
+const google_arc_rules = blk: {
+    var s: []const u8 = "";
+    for (element.google_g_rgb, 1..) |c, i| {
+        if (i > 1) s = s ++ "\n";
+        s = s ++ std.fmt.comptimePrint(
+            ".btn.auth.google:not(.secondary):not([disabled]) .brand-mark.g > span:nth-child({d}) {{ color: #{x:0>2}{x:0>2}{x:0>2}; }}",
+            .{ i, c.r, c.g, c.b },
+        );
+    }
+    break :blk s;
+};
+
 const sheet =
     \\
     \\/* ---- reset ------------------------------------------------------ */
@@ -991,16 +1007,14 @@ const sheet =
     \\.brand-mark { font-family: brand; font-weight: 400; font-style: normal; }
     \\/* Google's G: four arc glyphs on one advance, overlaid by the grid
     \\   into one drawing. The colors are the vendor's trademark spec —
-    \\   the ONLY color literals in this stylesheet, matching the
-    \\   renderer's `google_g` table — and they apply only on the live
-    \\   branded pill: a dimmed button's G falls back to currentColor
-    \\   and reads as a silhouette, like the reference. */
+    \\   the ONLY color literals in this stylesheet, printed from the one
+    \\   table both editions read (`element.google_g_rgb`) — and they
+    \\   apply only on the live branded pill: a dimmed button's G falls
+    \\   back to currentColor and reads as a silhouette, like the
+    \\   reference. */
     \\.brand-mark.g { display: inline-grid; }
     \\.brand-mark.g > span { grid-area: 1 / 1; }
-    \\.btn.auth.google:not(.secondary):not([disabled]) .brand-mark.g > span:nth-child(1) { color: #4285f4; }
-    \\.btn.auth.google:not(.secondary):not([disabled]) .brand-mark.g > span:nth-child(2) { color: #34a853; }
-    \\.btn.auth.google:not(.secondary):not([disabled]) .brand-mark.g > span:nth-child(3) { color: #fbbc05; }
-    \\.btn.auth.google:not(.secondary):not([disabled]) .brand-mark.g > span:nth-child(4) { color: #ea4335; }
+++ "\n" ++ google_arc_rules ++ "\n" ++
     \\
     \\/* A percentage fills the pill as the work goes. On a filled button
     \\   the track is `.g7` — already clear of the ground it sits on —

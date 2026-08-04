@@ -309,8 +309,8 @@ it: `actool` resolves the app icon by name, and two answers named
 cannot compile a `.icon` at all, and the answer on one is to declare no
 `apple_icon` and ship the derived mark. Android and the web keep the
 mark either way; `.icon` is an Apple format and nothing else reads it.
-Pointing an Xcode project at the delivered bundle — and what "delivered"
-buys on macOS, which nokre does not bundle — is
+Pointing an Xcode project at the delivered bundle — and assembling the
+macOS `.app` around what `pkg/macos/` carries — is
 [getting-started.md](getting-started.md).
 
 The native side answers only the question the build cannot: installer
@@ -1021,8 +1021,8 @@ is a pure function of the argument checked before any OS call:
 | product id | 1–128 bytes of `[a-z0-9._]`, leading `[a-z0-9]` | the intersection of the two consoles' rules (Play's is narrower, and lowercase-only) — an id that is legal on the developer's Apple device and rejected by the Play console should fail on the machine that typed it, which is package_info's argument for the app id |
 
 One sheet and one query at a time per app: a second `purchase` is
-`error.PurchaseInFlight` (the sheet is modal, and a person can only be
-buying one thing at once — `oauth`'s argument), a second query is
+`error.PurchaseInFlight` (`oauth`'s `AuthInFlight` argument, sheet for
+sheet), a second query is
 `error.QueryInFlight` (a paywall asks for its whole catalog at once,
 because the id set is a parameter).
 
@@ -1074,11 +1074,9 @@ That is the only service whose Android leg forces the flag, and it is
 stated here rather than discovered at the first Gradle sync: the
 kitchen sink never hits it, because the example builds iap's C leg
 without the billing dependency behind it. An app that links no `iap`
-adds none of the three. On Play the transaction id *is*
-the purchase token: `getOrderId()` is absent for pending and test
-purchases, and Google's Developer API is keyed by token, so one honest
-value beats a nullable one that vanishes exactly when a purchase is most
-interesting.
+adds none of the three. On Play the transaction id *is* the purchase
+token — it is what your backend verifies with and what `finish` needs;
+the reasons are [internals/iap.md](internals/iap.md)'s.
 
 Where the service stops is `oauth`'s line. No receipt verification — the
 `token` goes to the app's backend, which calls the App Store Server API or
@@ -1200,13 +1198,10 @@ sometimes has `navigator.share` (secure contexts, and not every
 browser/OS pair). Both answer at runtime through `available`, iap's
 shape: an app ships one build tree, and the honest instruction is "do
 not draw the share affordance", not "fork your source". Everywhere
-else the sheet is the OS's own: `NSSharingServicePicker` on macOS,
-`UIActivityViewController` on iOS, the ACTION_SEND chooser on Android
-— always the chooser, so the user picks from everything installed
-rather than whatever won the last "always" — and the WinRT share pane
-on Windows, reached through the OS's own Win32 bridge with no packaging
-identity required (unlike the store, which is why iap answers false on
-Windows and share does not).
+else the sheet is the OS's own — always the system chooser, so the
+user picks from everything installed rather than whatever won the last
+"always". Which sheet each platform shows, and the Win32 bridge to the
+WinRT pane, is [internals/share.md](internals/share.md).
 
 **No geometry in the API.** The sheet is app-level, not
 element-anchored: the platforms that need a rect (the iPad popover,

@@ -224,40 +224,27 @@ fn onFrame(ctx: ?*anyopaque, logical_w: i32, logical_h: i32, safe_bottom: i32, s
     return pixels;
 }
 
+/// A C ordinal back as its enum: a bounds check, not a second map —
+/// event.zig's wire pins are what make that honest. Out of range is a
+/// shell bug; the event is dropped rather than invented.
+fn enumFromC(comptime E: type, v: i32) ?E {
+    if (v < 0 or v >= @typeInfo(E).@"enum".fields.len) return null;
+    return @enumFromInt(v);
+}
+
 fn onPointer(ctx: ?*anyopaque, x: i32, y: i32, phase: i32) callconv(.c) void {
-    const p: event_mod.Pointer.Phase = switch (phase) {
-        1 => .move,
-        2 => .up,
-        3 => .cancel,
-        else => .down,
-    };
+    const p = enumFromC(event_mod.Pointer.Phase, phase) orelse return;
     stateFrom(ctx).app.dispatch(.{ .pointer = .{ .at = .{ .x = x, .y = y }, .phase = p } }) catch {};
 }
 
 fn onKey(ctx: ?*anyopaque, key: i32, mods: u8) callconv(.c) void {
-    const k: event_mod.Key = switch (key) {
-        1 => .tab,
-        2 => .enter,
-        3 => .space,
-        4 => .escape,
-        5 => .backspace,
-        6 => .delete,
-        7 => .left,
-        8 => .right,
-        9 => .up,
-        10 => .down,
-        11 => .home,
-        12 => .end,
-        13 => .page_up,
-        14 => .page_down,
-        else => return,
-    };
-    const m: event_mod.Modifiers = .{
-        .shift = mods & 1 != 0,
-        .ctrl = mods & 2 != 0,
-        .alt = mods & 4 != 0,
-        .meta = mods & 8 != 0,
-    };
+    // NOKRE_KEY_* is the one 1-based block — 0 is a shell's "not a
+    // control key" — so the enum sits at C value − 1.
+    const k = enumFromC(event_mod.Key, key - 1) orelse return;
+    // The high nibble is room shell.h has not spent: masked, so a
+    // flag added there is ignored here until it is wired, never
+    // smuggled into padding.
+    const m: event_mod.Modifiers = @bitCast(mods & 0x0f);
     stateFrom(ctx).app.dispatch(.{ .key_down = .{ .key = k, .mods = m } }) catch {};
 }
 
@@ -266,23 +253,13 @@ fn onText(ctx: ?*anyopaque, utf8: [*]const u8, len: usize) callconv(.c) void {
 }
 
 fn onScroll(ctx: ?*anyopaque, x: i32, y: i32, delta_x: i32, delta_y: i32, phase: i32) callconv(.c) void {
-    const p: event_mod.ScrollPhase = switch (phase) {
-        1 => .begin,
-        2 => .move,
-        3 => .end,
-        else => .free,
-    };
+    const p = enumFromC(event_mod.ScrollPhase, phase) orelse return;
     stateFrom(ctx).app.dispatch(.{ .scroll = .{ .at = .{ .x = x, .y = y }, .delta_x = delta_x, .delta_y = delta_y, .phase = p } }) catch {};
 }
 
 fn onEdgePan(ctx: ?*anyopaque, from: i32, dx: i32, phase: i32) callconv(.c) void {
-    const p: event_mod.EdgePan.Phase = switch (phase) {
-        1 => .move,
-        2 => .end,
-        3 => .cancel,
-        else => .begin,
-    };
-    const edge: event_mod.EdgePan.Edge = if (from == 1) .right else .left;
+    const p = enumFromC(event_mod.EdgePan.Phase, phase) orelse return;
+    const edge = enumFromC(event_mod.EdgePan.Edge, from) orelse return;
     stateFrom(ctx).app.dispatch(.{ .edge_pan = .{ .from = edge, .dx = dx, .phase = p } }) catch {};
 }
 

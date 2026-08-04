@@ -38,6 +38,22 @@ pub const retired_frame: u8 = 2;
 pub const died_frame: u8 = 3;
 pub const reply_attach_frame: u8 = 4; // web envelope: reply + attachments
 
+/// A fault's error name is truncated to this on the wire: a name is a
+/// symbol, not a message, and 64 bytes outlasts any Zig identifier a
+/// handler would switch on.
+pub const max_fault_name = 64;
+pub const FaultBuf = [1 + max_fault_name]u8;
+
+/// Encode a fault frame — the one encoding all three transports send,
+/// so the truncation rule cannot drift between them.
+pub fn faultFrame(buf: *FaultBuf, e: anyerror) []const u8 {
+    const name = @errorName(e);
+    const n = @min(name.len, max_fault_name);
+    buf[0] = fault_frame;
+    @memcpy(buf[1 .. 1 + n], name[0..n]);
+    return buf[0 .. 1 + n];
+}
+
 /// The transferable blob — see codec.Bytes for the whole contract.
 pub const Bytes = codec.Bytes;
 
@@ -476,12 +492,8 @@ pub const Runtime = struct {
                     .send_owned_fn = inlineSendOwned,
                 };
                 iw.vt.handle(iw.inst.?, frame.bytes[1..], frame.attachments, &raw) catch |e| {
-                    var buf: [1 + 64]u8 = undefined;
-                    const name = @errorName(e);
-                    const n = @min(name.len, buf.len - 1);
-                    buf[0] = fault_frame;
-                    @memcpy(buf[1 .. 1 + n], name[0..n]);
-                    self.enqueueDelivery(@intCast(i), slot.gen, buf[0 .. 1 + n]);
+                    var buf: FaultBuf = undefined;
+                    self.enqueueDelivery(@intCast(i), slot.gen, faultFrame(&buf, e));
                 };
             }
             if (slot.state == .retiring and iw.inst != null) {

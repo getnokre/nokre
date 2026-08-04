@@ -25,6 +25,15 @@ pub const Family = enum {
     brand,
 };
 
+// The ordinals are a wire contract: the DOM driver sends
+// `@intFromEnum(face.family)` across the wasm boundary and services.js
+// indexes its FAMILIES table with it. Append only; a reorder here
+// without services.js re-fonts every measured run.
+comptime {
+    const assert = @import("std").debug.assert;
+    assert(@intFromEnum(Family.mono) == 0 and @intFromEnum(Family.brand) == 3 and @typeInfo(Family).@"enum".fields.len == 4);
+}
+
 /// A concrete drawable face: family plus variant. This is what the
 /// measurer and the canvas speak — spans resolve to it, everything else
 /// uses the regular decl literals (`.prose`, `.mono`, `.icons`). The

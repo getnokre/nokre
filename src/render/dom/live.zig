@@ -297,14 +297,12 @@ fn render(wrap: i32) callconv(.c) [*]const u8 {
 fn buildFrame(em: *serialize.Emitter, wrap: i32) !struct { chrome_bytes: usize, reserve: bool } {
     try serialize.chrome(em);
     const chrome_len = em.out.items.len;
-    // The bottom reserve is `trailingSpace`'s question, asked the way
-    // that function asks it: a screen with no chrome under it keeps the
-    // stack's own padding, and only one that has some owes the clear
-    // space a control needs. Reserving it unconditionally left every
-    // plain screen ending in 96px of nothing.
-    const chromed_screen = layout.findNotice(&app.tree) != null or
-        layout.findNav(&app.tree) != null or
-        layout.findIndicator(&app.tree) != null;
+    // The bottom reserve is `trailingSpace`'s question: a screen with
+    // no chrome under it keeps the stack's own padding, and only one
+    // that has some owes the clear space a control needs. Reserving it
+    // unconditionally left every plain screen ending in 96px of
+    // nothing.
+    const chromed_screen = layout.hasBottomChrome(&app.tree);
     if (wrap != 0) try em.raw(if (chromed_screen) "<main class=\"nokre has-chrome\">" else "<main class=\"nokre\">");
     try serialize.content(em);
     if (wrap != 0) try em.raw("</main>");

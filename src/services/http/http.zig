@@ -121,8 +121,10 @@ pub const RequestOptions = struct {
 pub const Handle = struct {
     ticket: workers.Ticket,
     /// Which app's mock parked the request — cancel must unpark it
-    /// there. Comptime-cut: release builds carry nothing.
-    mock: if (builtin.is_test) *MockState else void = if (builtin.is_test) undefined else {},
+    /// there. Comptime-cut: release builds carry nothing. No default,
+    /// deliberately: a construction site that forgot it would hand
+    /// `cancel` a live undefined pointer under `zig test`.
+    mock: if (builtin.is_test) *MockState else void,
 
     /// `on_result` will never run after this. The wire transfer may
     /// still finish where the platform cannot abort it (a native
@@ -155,10 +157,10 @@ pub fn request(opts: RequestOptions) !Handle {
         return .{ .ticket = ticket, .mock = state };
     } else if (comptime is_wasm) {
         try fetch_transport.send(opts.app.gpa, ticket, opts);
-        return .{ .ticket = ticket };
+        return .{ .ticket = ticket, .mock = {} };
     } else {
         try native_transport.send(opts.app.gpa, ticket, opts);
-        return .{ .ticket = ticket };
+        return .{ .ticket = ticket, .mock = {} };
     }
 }
 
@@ -197,6 +199,16 @@ pub const PendingRequest = struct {
     headers: []const Header,
     body: []const u8,
     max_body: u32,
+
+    /// The named header's value, or null — what a fake server asks of
+    /// nearly every request, so the lookup lives on the request rather
+    /// than as a loop in every consumer's fixture.
+    pub fn headerValue(self: PendingRequest, name: []const u8) ?[]const u8 {
+        for (self.headers) |header| {
+            if (std.mem.eql(u8, header.name, name)) return header.value;
+        }
+        return null;
+    }
 };
 
 /// One journaled request: what the app asked, as owned copies that

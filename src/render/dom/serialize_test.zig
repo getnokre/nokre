@@ -518,7 +518,10 @@ test "a folded action is not on the row; the more control stands there" {
     defer app.deinit();
     const row = try app.tree.append(app.tree.rootId(), .{ .stack = .{ .axis = .horizontal } });
     _ = try app.tree.append(row, .{ .button = .{ .label = "Kept" } });
-    _ = try app.tree.append(row, .{ .button = .{ .label = "Folded", .folded = true } });
+    // Folded is layout's write, made after the append the way layout
+    // makes it — the literal form is refused (error.LayoutOwnedField).
+    const folded = try app.tree.append(row, .{ .button = .{ .label = "Folded" } });
+    app.tree.get(folded).?.setFolded(true);
     _ = try app.tree.append(row, .{ .more = .{} });
 
     const html = try render(&app);

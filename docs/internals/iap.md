@@ -33,31 +33,18 @@ screen an app already knows how to build.
 ## The surface: four verbs, one query, one stream
 
 ```zig
-// Boot: is there a store here at all? Cached at App.init like locale's tag —
-// synchronous, no OS call, no error, so it is legal inside `build`.
-if (!nokre.services.iap.available(app)) return;   // hide the paywall entirely
-
-// Register once, inside `build`. The stream is the *only* place a purchase
-// arrives, including ones this launch never asked for.
-nokre.services.iap.setHandler(app, state, onPurchase);
-
-// The catalog. Request/response, http's shape: one Result on the UI thread.
-_ = try nokre.services.iap.products(.{
-    .app = app,
-    .ids = &.{ "pro.month", "coins.100" },
-    .ctx = state,
-    .on_result = onProducts,
-});
-
-// From a tap. The outcome lands on the stream, not here.
-try nokre.services.iap.purchase(.{ .app = app, .product = "coins.100" });
-
-// After the goods are durably delivered — and not one line before.
-nokre.services.iap.finish(app, txn_id, .consumed);
-
-// Apple requires a visible control for this; past purchases arrive as .restored.
-try nokre.services.iap.restore(app);
+if (!nokre.services.iap.available(app)) return;      // the boot query
+nokre.services.iap.setHandler(app, state, onPurchase); // the stream
+_ = try nokre.services.iap.products(.{ … });         // verb: catalog
+try nokre.services.iap.purchase(.{ … });             // verb: sheet up
+nokre.services.iap.finish(app, txn_id, .consumed);   // verb: delivered
+try nokre.services.iap.restore(app);                 // verb: Apple's control
 ```
+
+Each line's contract — when the query is legal, why the stream is the
+only place a purchase arrives, what `finish` promises — is
+[../services.md](../services.md); this file is why the surface has this
+shape and what each platform does under it.
 
 ### Money is a string the store hands over
 
@@ -109,8 +96,8 @@ the product type it already knows; Play does not.
   is opaque bytes nokre never reads. The app sends it to its backend, which
   calls the App Store Server API or the Play Developer API. Verifying on the
   device is verifying with the attacker's copy of the key, and doing it in the
-  framework would mean a JWKS fetch with a cache policy and a clock — the
-  argument that already excluded JWT verification from `oauth`.
+  framework was already excluded for `oauth` — the JWKS argument in
+  [../services.md](../services.md).
 - **No entitlement or expiry model.** `isActive`, renewal windows, grace periods,
   and billing retry are all schedules, and a schedule is a timer, which is a
   ticker nokre has none of — the `clock` service reads the time, it does not
@@ -225,8 +212,8 @@ it rather than as a boot answer that would have to lie for a moment first.
   service does not hold at delivery time; `openOneShot` becomes a one-line
   wrapper over it and nothing about its behavior changes.
 - **One payment sheet at a time** per app: a second `purchase` is
-  `error.PurchaseInFlight`. `oauth`'s `AuthInFlight` reasoning verbatim — the
-  sheet is modal and a person can only be buying one thing at once.
+  `error.PurchaseInFlight` — `oauth`'s `AuthInFlight` reasoning, verbatim
+  ([../services.md](../services.md)).
 
 ## Linking and packaging
 
@@ -248,7 +235,7 @@ manifest-golden diff:
 | Platform | Derived from the declaration |
 | --- | --- |
 | Android | `<uses-permission android:name="com.android.vending.BILLING" />` |
-| iOS / macOS | **Nothing.** In-App Purchase is a capability on the App ID, enabled in Apple's own console — there is no plist key and no entitlement file entry. The cost is link-time only: `-framework StoreKit` on macOS, and the iOS Xcode project links it by Clang module auto-linking. |
+| iOS / macOS | **Nothing** — why Apple's side needs no plist key or entitlement is the consumer section ([../services.md](../services.md)). The cost is link-time only: `-framework StoreKit` on macOS, and the iOS Xcode project links it by Clang module auto-linking. |
 | Windows / Linux / Web | Nothing — there is no store to declare. |
 
 ## The mock and the harness
@@ -257,7 +244,7 @@ Canonical fake, journaling, no transport semantics for the consumer to implement
 
 - **Config** seeds the catalog: a `[]const Product` with **fixed price strings**,
   so a paywall screen renders byte-identically every run. Plus `available` (false
-  boots the app onto a storeless platform, `setStoreAvailable`'s twin for a
+  boots the app onto a storeless platform, `lockStore`'s twin for a
   different store) and an optional auto-outcome for `purchase`.
 - **Journals**: `queries()` (the id sets asked for), `purchases()` (every
   `purchase` call, in order), `completions()` (id + disposition), `restores()`. So

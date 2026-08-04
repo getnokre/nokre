@@ -293,7 +293,7 @@ test "one handler carries taps, tokens, and the authorization answer" {
     var rec: Recorder = .{};
     notification.setHandler(&app, &rec, Recorder.onEvent);
 
-    app.services.notification.open("msg.42", "thread~42");
+    app.services.notification.open(.{ .id = "msg.42", .route = "thread~42" });
     app.services.notification.deliverToken("a1b2c3");
     app.services.notification.deny();
 
@@ -315,13 +315,13 @@ test "a foreground arrival is its own event, never a tap" {
     // The reminder fires while the app is on screen. The OS draws no
     // banner over the app, so this event is the whole delivery — and it
     // must not be reported as the user having chosen to open it.
-    app.services.notification.arrive("remind.1", "note~7");
+    app.services.notification.arrive(.{ .id = "remind.1", .route = "note~7" });
     try std.testing.expectEqual(@as(u32, 1), rec.arrived);
     try std.testing.expectEqual(@as(u32, 0), rec.opened);
     try std.testing.expectEqualStrings("remind.1", rec.id());
     try std.testing.expectEqualStrings("note~7", rec.route());
 
-    app.services.notification.open("remind.1", "note~7");
+    app.services.notification.open(.{ .id = "remind.1", .route = "note~7" });
     try std.testing.expectEqual(@as(u32, 1), rec.arrived);
     try std.testing.expectEqual(@as(u32, 1), rec.opened);
 }
@@ -353,7 +353,7 @@ test "registering again replaces the handler" {
     var second: Recorder = .{};
     notification.setHandler(&app, &first, Recorder.onEvent);
     notification.setHandler(&app, &second, Recorder.onEvent);
-    app.services.notification.open("n.1", "");
+    app.services.notification.open(.{ .id = "n.1", .route = "" });
 
     try std.testing.expectEqual(@as(u32, 0), first.opened);
     try std.testing.expectEqual(@as(u32, 1), second.opened);

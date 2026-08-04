@@ -111,10 +111,7 @@ fn roleInterrupted(_: ?*anyopaque) bool {
 }
 
 fn roleFault(e: anyerror) void {
-    var buf: [1 + 64]u8 = undefined;
-    const name = @errorName(e);
-    const n = @min(name.len, buf.len - 1);
-    buf[0] = workers.fault_frame;
-    @memcpy(buf[1 .. 1 + n], name[0..n]);
-    nokre_worker_js_reply(&buf, 1 + n);
+    var buf: workers.FaultBuf = undefined;
+    const frame = workers.faultFrame(&buf, e);
+    nokre_worker_js_reply(frame.ptr, frame.len);
 }

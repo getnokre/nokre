@@ -195,13 +195,13 @@ fn moveAreaCursor(app: *App, id: NodeId, area: *element_mod.TextArea, dir: i32) 
     // visual caret is nearest it.
     const inner_w = app.tree.rectOf(id).w - 2 * (layout.metrics.input_pad + layout.metrics.border);
     const px = lineOriginX(app, area.value, lines.cur, inner_w) +
-        caretX(app, area.value, lines.cur.start, lines.cur.end, area.cursor, size);
+        caretX(app, area.value, lines.cur, area.cursor, size);
     const target_origin = lineOriginX(app, area.value, target, inner_w);
     var best_off = target.start;
     var best_d: i32 = std.math.maxInt(i32);
     var off = target.start;
     while (true) {
-        const vx = target_origin + caretX(app, area.value, target.start, target.end, off, size);
+        const vx = target_origin + caretX(app, area.value, target, off, size);
         const d: i32 = @intCast(@abs(vx - px));
         if (d < best_d) {
             best_d = d;
@@ -230,19 +230,19 @@ pub fn lineOriginX(app: *App, value: []const u8, span: LineSpan, inner_w: i32) i
 /// left. Prefix widths measure standalone, so a caret mid-word in joined
 /// script can sit a pixel or two off the exact glyph boundary — the same
 /// forfeit contextual shaping already imposes on prefix measurement.
-pub fn caretX(app: *App, value: []const u8, line_start: usize, line_end: usize, cursor: usize, size_px: i32) i32 {
-    const line = value[line_start..line_end];
+pub fn caretX(app: *App, value: []const u8, span: LineSpan, cursor: usize, size_px: i32) i32 {
+    const line = value[span.start..span.end];
     if (!bidi.isComplex(line)) {
-        const to = @min(@max(cursor, line_start), line_end);
-        return app.measurer.measure(.prose, size_px, value[line_start..to]);
+        const to = @min(@max(cursor, span.start), span.end);
+        return app.measurer.measure(.prose, size_px, value[span.start..to]);
     }
-    const bounds = paragraphBounds(value, .{ .start = line_start, .end = line_end });
+    const bounds = paragraphBounds(value, span);
     const pb = value[bounds.start..bounds.end];
     const para = bidi.resolve(app.bidi_scratch, pb, bidi.paragraphDirection(pb));
     var runs_buf: [bidi.max_line_runs]bidi.Run = undefined;
     var edges_buf: [bidi.max_line_edges]u32 = undefined;
-    var it = bidi.linePieces(&para, line_start - bounds.start, line_end - bounds.start, &runs_buf, &edges_buf);
-    const rel = @min(@max(cursor, line_start), line_end) - bounds.start;
+    var it = bidi.linePieces(&para, span.start - bounds.start, span.end - bounds.start, &runs_buf, &edges_buf);
+    const rel = @min(@max(cursor, span.start), span.end) - bounds.start;
     var pen: i32 = 0;
     while (it.next()) |piece| {
         const bytes = pb[piece.start..piece.end];
