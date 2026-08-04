@@ -33,11 +33,12 @@ Selection is comptime in
 cost nothing.
 
 Note what job 3 does *not* include: the shell never draws. Each platform
-file installs a **frame source** — `skia_frame.install(&state)`, right
-before `c_shell.config` — and the shared code delegates to it, reconciling
-only the viewport and safe area the OS reported. So no shell names a
-rendering backend, and a second renderer edition installs its own source
-instead of forking all five ([renderer-editions.md](renderer-editions.md)).
+file names a **frame-source installer** — `skia_frame.install`, which the
+Runner calls right before `c_shell.config` — and the shared code delegates
+to it, reconciling only the viewport and safe area the OS reported. So no
+shell names a rendering backend, and a second renderer edition installs
+its own source instead of forking all five
+([renderer-editions.md](renderer-editions.md)).
 
 ## The C shell contract (macOS, iOS, Windows, Linux, and Android)
 
@@ -223,14 +224,23 @@ flow is. Contract in
 [src/services/oauth/oauth.h](../../src/services/oauth/oauth.h).
 
 The Zig half of the contract is shared:
-[c_shell.zig](../../src/platform/c_shell.zig) owns all state and every
-callback adapter, so a platform file
-([macos.zig](../../src/platform/macos/macos.zig),
+[c_shell.zig](../../src/platform/c_shell.zig) owns all state, every
+callback adapter, and — for the four shells whose loop `nokre_shell_run`
+owns — the whole `run`: `c_shell.Runner(Adapter, install_frame)`. A
+platform file ([macos.zig](../../src/platform/macos/macos.zig),
 [ios.zig](../../src/platform/ios/ios.zig),
 [windows.zig](../../src/platform/windows/windows.zig),
-[linux.zig](../../src/platform/linux/linux.zig)) adds only its
-`run` wiring and a11y attachment. The native side (~300–900 lines of
-Objective-C or C per platform) holds no state.
+[linux.zig](../../src/platform/linux/linux.zig)) only names its a11y
+adapter and frame-source installer. What used to differ invisibly
+across four `run` wirings — who forwards window focus, who lends its
+loop for worker wakes, who consumes `RunOptions.app_id`, whether attach
+wants the window class — is now a comptime branch in the Runner,
+derived from the adapter's own surface (`@hasDecl` for
+`detach`/`focusState`, attach's arity for the window class) or the
+platform predicates c_shell already had. Android is not a Runner
+instantiation: its loop is the Activity's, so android.zig keeps its own
+wiring over the same shared adapters. The native side (~300–900 lines
+of Objective-C or C per platform) holds no state.
 
 Frames are rendered **on demand**: the shell asks `wants_frame` and only
 repaints when true. No ticker, no vsync loop, zero idle CPU.

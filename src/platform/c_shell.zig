@@ -1,8 +1,11 @@
 //! Zig side shared by every C-contract shell (src/platform/shell.h):
 //! the mirrored config struct, the callback adapters that translate C
-//! callbacks into `App.dispatch`, and the a11y fill/action bridge over
-//! the flattened semantic snapshot. A platform file (macos.zig, ios.zig)
-//! adds only its `run` wiring and a11y adapter attachment.
+//! callbacks into `App.dispatch`, the a11y fill/action bridge over the
+//! flattened semantic snapshot, and `Runner` — the whole `run` for the
+//! four shells whose loop `nokre_shell_run` owns. A platform file
+//! (macos.zig, ios.zig) only names its a11y adapter and frame-source
+//! installer; Android keeps its own wiring (android.zig) because its
+//! loop is the Activity's, not `nokre_shell_run`'s.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -204,6 +207,90 @@ pub fn config(
 
 pub fn stateFrom(ctx: ?*anyopaque) *State {
     return @ptrCast(@alignCast(ctx.?));
+}
+
+/// The whole `run` for a `nokre_shell_run` shell, generic over the two
+/// things a platform actually contributes: its a11y adapter
+/// (accesskit.zig) and its frame-source installer (skia_frame.install,
+/// or a future edition's own — this layer still names no backend).
+/// Every other difference between the four shells that instantiate
+/// this — who forwards window focus, who lends its loop for worker
+/// wakes, who consumes `RunOptions.app_id`, whether attach wants the
+/// window class — derives at comptime from the adapter's own surface or
+/// the platform predicates above, so a divergence is a visible branch
+/// here, not an invisible asymmetry found by diffing four files.
+pub fn Runner(comptime Adapter: type, comptime install_frame: anytype) type {
+    return struct {
+        const platform = @import("platform.zig");
+
+        /// Macos.attach threads the window class through to AccessKit's
+        /// subclassing adapter; the other three adapters take no window
+        /// class, so the extra parameter is the honest signal.
+        const attach_takes_class =
+            @typeInfo(@TypeOf(Adapter.attach)).@"fn".params.len == 6;
+
+        pub fn run(app: *App, options: platform.RunOptions) !void {
+            var state: State = .{ .app = app };
+
+            const title_z = try app.gpa.dupeZ(u8, options.title);
+            defer app.gpa.free(title_z);
+            // Wayland is the one shell that consumes RunOptions.app_id
+            // (shell.h documents the contract); null stays null — the
+            // shell then sets no app_id.
+            const app_id_z: ?[:0]const u8 = if (comptime is_linux_desktop)
+                (if (options.app_id) |id| try app.gpa.dupeZ(u8, id) else null)
+            else
+                null;
+            defer if (app_id_z) |z| app.gpa.free(z);
+
+            // Nothing between here and state.deinit() may fail: the
+            // source is freed there, not by an errdefer.
+            try install_frame(&state);
+            var shell_config = config(&state, title_z, onReady, onWindowFocus);
+            if (app_id_z) |z| shell_config.app_id = z.ptr;
+            const rc = nokre_shell_run(&shell_config);
+            // iOS never reaches here — UIApplicationMain never returns;
+            // cleanup is the OS reclaiming the process — and its adapter
+            // has no detach. The hasDecl gate records that absence
+            // rather than naming the platform.
+            if (comptime @hasDecl(Adapter, "detach")) {
+                if (state.a11y_handle) |h| (Adapter{ .handle = h }).detach();
+            }
+            state.deinit();
+            if (rc != 0) return error.ShellFailed;
+        }
+
+        fn onReady(ctx: ?*anyopaque, view: *anyopaque, window_class: [*:0]const u8) callconv(.c) void {
+            const state = stateFrom(ctx);
+            state.view = view;
+            const attached = if (comptime attach_takes_class)
+                Adapter.attach(view, window_class, a11yFill, ctx, a11yAction, ctx)
+            else
+                Adapter.attach(view, a11yFill, ctx, a11yAction, ctx);
+            if (attached) |a| {
+                state.a11y_handle = a.handle;
+                state.a11y_push = pushA11y;
+            }
+            // The post-main shells lend their loop for worker wakes
+            // (docs/internals/workers.md): publish the target and drain
+            // whatever a boot-spawned worker queued before it existed.
+            if (comptime is_windows or is_linux_desktop) workersViewReady(state);
+        }
+
+        fn pushA11y(state: *State) void {
+            (Adapter{ .handle = state.a11y_handle.? }).update();
+        }
+
+        fn onWindowFocus(ctx: ?*anyopaque, focused: i32) callconv(.c) void {
+            // Windows' subclassing adapter wraps the window procedure
+            // and sees WM_SETFOCUS/WM_KILLFOCUS itself; iOS VoiceOver
+            // focus follows the app lifecycle. Neither adapter declares
+            // focusState, and that absence is the gate.
+            if (comptime !@hasDecl(Adapter, "focusState")) return;
+            const state = stateFrom(ctx);
+            if (state.a11y_handle) |h| (Adapter{ .handle = h }).focusState(focused != 0);
+        }
+    };
 }
 
 fn onFrame(ctx: ?*anyopaque, logical_w: i32, logical_h: i32, safe_bottom: i32, scale: i32, out_w: *i32, out_h: *i32) callconv(.c) ?[*]const u8 {

@@ -55,7 +55,7 @@ Consequently the guarantees split:
   it is handed ([platform-shells.md](platform-shells.md)), so
   [c_shell.zig](../../src/platform/c_shell.zig) holds a
   `FrameSource` — one `render` call plus `deinit` — and the platform file
-  installs one before the loop starts.
+  names the installer its Runner runs before the loop starts.
   [skia_frame.zig](../../src/platform/skia_frame.zig) is the reference
   edition's: surface lifecycle, the staleness check, `renderer.render`. A
   second edition installs its own and touches no shell. This seam was
