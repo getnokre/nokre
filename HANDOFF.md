@@ -37,15 +37,7 @@ free to move labels at runtime — and did, the same day (below).
 
 ## Execution order
 
-### 1. `expectGolden` on the harness
-
-Taking a golden from consumer code is a five-step incantation (set the
-module-global `testing.golden.update`, build a Skia surface at the
-viewport, swap the measurer, render, unpack four accessors into
-`expectMatches`) — both apps carry the same 19-line wrapper. One
-harness verb, and the module-global update flag becomes an argument.
-
-### 2. A recording headless shell
+### 1. A recording headless shell
 
 A consumer building a headless native binary (system tests, e2e
 drivers) hand-declares nokre ABI symbols — 21 extern declarations
@@ -53,7 +45,7 @@ across 4 files in the consumer, with exact `callconv(.c)` signatures.
 A rename here is at best a link error there. nokre ships the
 null/recording shell it is currently forcing every consumer to write.
 
-### 3. Vendoring
+### 2. Vendoring
 
 **Decided: revision constant plus published manifest.** A `revision`
 constant in nokre source that consumers assert (replacing the prose
@@ -98,6 +90,19 @@ they don't collide. No consumer API changes except where noted.
 
 ## Shipped from this list (2026-08-04, for the record)
 
+- The golden take, as a harness verb: `Harness.expectGolden` is the
+  whole five-step incantation — a Skia surface at the app's viewport,
+  the real measurer swapped in, one render through the production
+  pipeline, the byte-exact compare — and the module-global
+  `golden.update` became the assertion's `Options.update` argument,
+  threaded from `-Dupdate-goldens` through each consumer's options
+  module, so two suites in one process cannot fight over a global.
+  Skia is imported inside the verb and nowhere else in the harness, so
+  a suite that never takes a golden still links nothing. Both apps'
+  19-line `render()` wrappers shrink to the path and the flag, nokre's
+  own suite rides the same verb, goldens byte-identical on all three
+  builds. docs/testing.md owns the contract, docs/getting-started.md
+  the build recipe (nokre `f6ae27e`, rokovski `8f81a7ef`).
 - Worker queueing, as the ask surface: `workers.spawnAsker`/`ask`
   answer every question exactly once, in ask order, from a bounded
   FIFO on the slot — `max_pending_asks` (32) counting the one in
