@@ -71,7 +71,7 @@ const focus_mod = @import("../../core/focus.zig");
 const layout = @import("../../core/layout.zig");
 const text_mod = @import("../../core/text.zig");
 const http_web = @import("../../services/http/web.zig");
-const serialize = @import("serialize.zig");
+const dom = @import("dom.zig");
 const tree_mod = @import("../../core/tree.zig");
 const workers_post = @import("../../workers/post.zig");
 
@@ -126,8 +126,8 @@ var markup: std.ArrayList(u8) = .empty;
 var building: std.ArrayList(u8) = .empty;
 /// How much of that frame is chrome. The two halves are written into
 /// one buffer by one walk, and a host document that placed them in two
-/// places of its own splits there — `serialize.chrome` and
-/// `serialize.content` are already separate for that reason.
+/// places of its own splits there — `dom.chrome` and
+/// `dom.content` are already separate for that reason.
 var chrome_bytes: usize = 0;
 /// One string per event — text, a route reference — written by the glue
 /// before it calls the export that reads it.
@@ -138,7 +138,7 @@ var scratch: std.ArrayList(u8) = .empty;
 var seed: std.ArrayList(u8) = .empty;
 /// The app's own answer to "where does this screen live". Null until
 /// boot, because it takes the `*App` the root builds.
-var refs: ?serialize.Refs = null;
+var refs: ?dom.Refs = null;
 /// One href, for the glue to read back out of; `nokre_dom_href`.
 var href_out: std.ArrayList(u8) = .empty;
 /// Whether the last frame's screen has chrome under it.
@@ -279,7 +279,7 @@ fn render(wrap: i32) callconv(.c) [*]const u8 {
     // them.
     app.performLayout();
     building.clearRetainingCapacity();
-    var em: serialize.Emitter = .{
+    var em: dom.Emitter = .{
         .gpa = gpa,
         .app = app,
         .out = &building,
@@ -301,8 +301,8 @@ fn render(wrap: i32) callconv(.c) [*]const u8 {
 /// further interest — `render` shows nothing that did not come out of
 /// the success arm, which is the entire point of building off to the
 /// side.
-fn buildFrame(em: *serialize.Emitter, wrap: i32) !struct { chrome_bytes: usize, reserve: bool } {
-    try serialize.chrome(em);
+fn buildFrame(em: *dom.Emitter, wrap: i32) !struct { chrome_bytes: usize, reserve: bool } {
+    try dom.chrome(em);
     const chrome_len = em.out.items.len;
     // The bottom reserve is `trailingSpace`'s question: a screen with
     // no chrome under it keeps the stack's own padding, and only one
@@ -311,7 +311,7 @@ fn buildFrame(em: *serialize.Emitter, wrap: i32) !struct { chrome_bytes: usize, 
     // nothing.
     const chromed_screen = layout.hasBottomChrome(&app.tree);
     if (wrap != 0) try em.raw(if (chromed_screen) "<main class=\"nokre has-chrome\">" else "<main class=\"nokre\">");
-    try serialize.content(em);
+    try dom.content(em);
     if (wrap != 0) try em.raw("</main>");
     return .{ .chrome_bytes = chrome_len, .reserve = chromed_screen };
 }
@@ -340,9 +340,9 @@ fn chromed() callconv(.c) i32 {
 fn href(len: usize) callconv(.c) [*]const u8 {
     href_out.clearRetainingCapacity();
     if (!booted) return href_out.items.ptr;
-    var em: serialize.Emitter = .{ .gpa = gpa, .app = app, .out = &href_out };
+    var em: dom.Emitter = .{ .gpa = gpa, .app = app, .out = &href_out };
     defer em.deinit();
-    const r: serialize.Refs = refs orelse .{};
+    const r: dom.Refs = refs orelse .{};
     r.write(r.ctx, &em, scratch.items[0..len]) catch {};
     return href_out.items.ptr;
 }

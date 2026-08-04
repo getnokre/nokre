@@ -61,22 +61,25 @@ pub const Refs = struct {
     }
 };
 
-pub const Options = struct {
-    refs: Refs = .{},
-    /// Give every heading an `id` derived from its words, so a section
-    /// can be linked to. Ids only — never an anchor control beside the
-    /// heading: a control the tree does not have is a control assistive
-    /// tech hears that the app never wrote, and the set is closed here
-    /// too.
-    heading_ids: bool = true,
-    /// Write each focus stop's `NodeId` as `data-n`, so a driver that
-    /// resolves hits itself can name the node the reader meant. The
-    /// live driver needs it; a page written to a file has nobody to
-    /// tell, and leaves it off (live.zig).
-    node_ids: bool = false,
-};
-
 pub const Emitter = struct {
+    /// The emitter's own knobs, scoped here because "Options" alone is
+    /// ambiguous at the edition's surface: the stylesheet has options
+    /// too, and each set belongs to the thing it configures.
+    pub const Options = struct {
+        refs: Refs = .{},
+        /// Give every heading an `id` derived from its words, so a section
+        /// can be linked to. Ids only — never an anchor control beside the
+        /// heading: a control the tree does not have is a control assistive
+        /// tech hears that the app never wrote, and the set is closed here
+        /// too.
+        heading_ids: bool = true,
+        /// Write each focus stop's `NodeId` as `data-n`, so a driver that
+        /// resolves hits itself can name the node the reader meant. The
+        /// live driver needs it; a page written to a file has nobody to
+        /// tell, and leaves it off (live.zig).
+        node_ids: bool = false,
+    };
+
     gpa: std.mem.Allocator,
     app: *App,
     out: *std.ArrayList(u8),

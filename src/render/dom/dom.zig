@@ -17,6 +17,11 @@
 //!   patches the document with the same walk's output, splitting at the
 //!   seam `content` and `chrome` already stand on.
 //!
+//! Both drivers name the walk through this module — the facade is the
+//! one path, so what the edition exports and what its own drivers use
+//! cannot drift apart. Only the sibling `serialize_test.zig` reaches
+//! past it, the sibling-test convention's way.
+//!
 //! Its conformance test is not a pixel golden, which cannot apply to a
 //! non-reference edition. It is the **renderer contract**: per element,
 //! what must be conveyed — the role the snapshot gives it, its label,
@@ -31,7 +36,6 @@ pub const serialize = @import("serialize.zig");
 pub const stylesheet = @import("stylesheet.zig");
 
 pub const Emitter = serialize.Emitter;
-pub const Options = serialize.Options;
 pub const Refs = serialize.Refs;
 
 /// The screen: every root child that is not framework chrome.

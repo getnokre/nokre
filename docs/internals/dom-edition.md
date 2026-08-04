@@ -524,7 +524,7 @@ try dom.chrome(&em);    // notice, nav, sheet, picker
   paint order. Split because a driver decides where a page's document
   structure puts them — the nav leads the focus order, and a driver that
   wants it first in the markup can have it.
-- **Node ids.** With `Options.node_ids`, every focus stop carries its
+- **Node ids.** With `Emitter.Options.node_ids`, every focus stop carries its
   `NodeId` as `data-n` (and an inline link its span as `data-s`) — the
   live driver's way of naming the node the reader meant. A page written
   to a file has nobody to tell and leaves it off, *unless* that file is
