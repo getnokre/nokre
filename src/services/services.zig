@@ -47,6 +47,17 @@ pub const Stateless = struct {
     }
 };
 
+/// A failed verb, as a stable name — one type, not one per service.
+/// http, oauth, and iap each answered with a structurally identical
+/// `struct { name }` until a consumer's shared failure surface had to
+/// take three types that said the same thing; this is the one
+/// declaration, and each service's alias states which names it
+/// delivers. The type promises only the posture: a value with a stable
+/// name, never an exception, and never a display string — the name is
+/// for dispatch and logs, the app owns the words it shows
+/// (docs/services.md, "One failure shape").
+pub const Failure = struct { name: []const u8 };
+
 /// Whether the target's shell exports the hook for a service every
 /// shell answers (`.linux` covering both the Android JNI shell and the
 /// desktop Wayland shell). Referenced only where true, so stub targets

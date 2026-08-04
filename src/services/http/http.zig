@@ -73,8 +73,10 @@ pub const Response = struct {
 /// A transport failure: the request never became a response. The name
 /// is a Zig error name natively ("ConnectionRefused",
 /// "UnknownHostName"); on the web it is "FetchFailed" for everything
-/// the browser deliberately hides, plus "BodyTooLarge" on both.
-pub const Failure = struct { name: []const u8 };
+/// the browser deliberately hides, plus "BodyTooLarge" on both. The
+/// type is the roster's one `services.Failure`, shared with oauth and
+/// iap so a consumer's failure surface takes one type.
+pub const Failure = @import("../services.zig").Failure;
 
 /// What `on_result` receives — exactly once per request, in completion
 /// order across requests.

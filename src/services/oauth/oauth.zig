@@ -105,11 +105,11 @@ const status_cancelled: c_int = 1;
 const status_failure: c_int = 2;
 
 /// A transport or configuration failure: the flow never produced a
-/// callback and the user never cancelled it. A stable name, `http`'s
-/// `.failure` posture — "SessionUnavailable" when the platform refused
+/// callback and the user never cancelled it. The roster's one
+/// `services.Failure` — "SessionUnavailable" when the platform refused
 /// to open a session at all, "BrowserUnavailable" when no browser could
 /// be launched, otherwise whatever the platform called it.
-pub const Failure = struct { name: []const u8 };
+pub const Failure = @import("../services.zig").Failure;
 
 /// What `on_result` receives — exactly once per `start`.
 pub const Result = union(enum) {

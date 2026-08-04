@@ -14,7 +14,7 @@ const std = @import("std");
 /// Hand-bumped on every consumer-visible contract change, never by
 /// machinery — the no-CI stance is deliberate
 /// (docs/getting-started.md).
-pub const revision: u32 = 3;
+pub const revision: u32 = 4;
 
 pub const geometry = @import("core/geometry.zig");
 pub const color = @import("core/color.zig");
@@ -110,6 +110,10 @@ comptime {
 // legs are the OS call Zig already declares and its web leg is one
 // services.js import, so tests reference it as freely as http.
 pub const services = struct {
+    /// The one failure shape http, oauth, and iap all answer with —
+    /// each module's `Failure` is this type, so a consumer's shared
+    /// failure surface names `nokre.services.Failure` once.
+    pub const Failure = @import("services/services.zig").Failure;
     pub const package_info = @import("services/package_info/package_info.zig");
     pub const http = @import("services/http/http.zig");
     pub const secure_store = @import("services/secure_store/secure_store.zig");

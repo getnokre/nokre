@@ -62,6 +62,16 @@ content (fetched legal text, with its `mailto:` and third-party
 references) made "no external URLs" a refusal stricter than its
 rationale — never as a grab-bag of platform bindings.
 
+**One failure shape.** Every service whose verb can fail without an
+answer — http's transport, oauth's session, iap's store — fails with
+the same type, `nokre.services.Failure`: a value carrying one stable
+`name`, never an exception, and never a display string (the name is
+for dispatch and logs; the app owns the words it shows). Each module
+re-exports it as its own `Failure` and states which names it delivers,
+so per-service code reads unchanged — but the type is *one*, so a
+shared failure surface (an offline banner, a retry notice) takes
+`nokre.services.Failure` and accepts all three.
+
 ### secure_store: a pouch, not a database
 
 Small secrets — a session token, a device id — as encrypted key/value

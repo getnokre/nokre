@@ -16,7 +16,10 @@ const builtin = @import("builtin");
 const app_mod = @import("../core/app.zig");
 const workers = @import("../workers/workers.zig");
 const http = @import("http/http.zig");
+const iap = @import("iap/iap.zig");
+const oauth = @import("oauth/oauth.zig");
 const open_url = @import("open_url/open_url.zig");
+const services = @import("services.zig");
 const secure_store = @import("secure_store/secure_store.zig");
 const share = @import("share/share.zig");
 
@@ -32,6 +35,17 @@ test {
     _ = @import("package_info/package_info.zig");
     _ = @import("open_url/open_url.zig");
     _ = @import("share/share.zig");
+}
+
+// The design proof for the roster's one failure shape: identity, not
+// structural likeness — a consumer helper taking `services.Failure`
+// accepts all three, which three identical declarations never gave.
+test "one Failure: http, oauth, and iap answer with the same type" {
+    comptime {
+        std.debug.assert(http.Failure == services.Failure);
+        std.debug.assert(oauth.Failure == services.Failure);
+        std.debug.assert(iap.Failure == services.Failure);
+    }
 }
 
 const Doubler = struct {

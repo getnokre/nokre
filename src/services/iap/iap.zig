@@ -114,10 +114,10 @@ pub const Product = struct {
     kind: Kind,
 };
 
-/// A transport or store failure, as a stable name — http's `.failure`
-/// posture. "StoreUnavailable" when the platform refused the request
-/// outright, otherwise whatever the store called it.
-pub const Failure = struct { name: []const u8 };
+/// A transport or store failure — the roster's one `services.Failure`.
+/// "StoreUnavailable" when the platform refused the request outright,
+/// otherwise whatever the store called it.
+pub const Failure = @import("../services.zig").Failure;
 
 /// What a `products` query answers with, exactly once. An empty
 /// `products` slice is data, not an error: it means the store knows none
