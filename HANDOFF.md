@@ -40,13 +40,6 @@ free to move labels at runtime — and did, the same day (below).
 What remains, now that the execution-order list is done. One session
 each, any order. No consumer API changes except where noted.
 
-- **`Button`'s form as a tagged union.** `secondary`, `icon`,
-  `icon_only`, `provider` interact under five `validateAppend` rules —
-  five illegal states the type permits and checks at runtime. A
-  `form: union(enum) { filled, secondary, glyph, provider }` makes
-  them unrepresentable. Touches every consumer call site and the
-  goldens; the largest single runtime-check-that-could-be-comptime
-  left in the public surface.
 - **Two C copies of "open a URL" per desktop.** **Decided: dedupe.**
   One launcher per platform, owned by the shell; oauth's loopback leg
   names the shell symbol. The coupling is deliberate and
@@ -64,6 +57,23 @@ each, any order. No consumer API changes except where noted.
 
 ## Shipped from this list (2026-08-04, for the record)
 
+- `Button`'s form, as a tagged union: `form: union(enum) { filled,
+  secondary, glyph, provider }` replaces the `secondary` / `icon` /
+  `icon_only` / `provider` quartet, and the five illegal pairings the
+  flags permitted — a glyph form without a glyph or with an emphasis,
+  an icon beside the vendor mark, a glyph-only sign-in, an outlined
+  Google — are now unspellable rather than refused: the pill forms
+  carry their optional lead glyph as the payload, the glyph form's
+  glyph *is* the payload, and the vendor styles are spelled per vendor
+  (`.apple`, `.apple_outlined`, `.google`), so Apple's sanctioned
+  outlined third is a member and Google's unsanctioned one simply is
+  not. The vendor-label and progress refusals stay — they cross `form`
+  and the fields beside it. Every consumer call site moved (the one
+  computed emphasis, the credits sheet, selects between forms);
+  goldens byte-identical on all three builds; `nokre.revision` bumped
+  to 2 and all three pins moved with it. docs/elements.md "button"
+  owns the contract (nokre `3b858ff`, rokovski `a5f3c6b7`, site
+  `5a2a896`).
 - The four desktop shells, as one Runner:
   `c_shell.Runner(Adapter, install_frame)` is the whole `run` for the
   four shells whose loop `nokre_shell_run` owns — every formerly
