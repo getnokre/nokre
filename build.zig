@@ -201,9 +201,10 @@ pub fn addApp(nokre_dep: *std.Build.Dependency, options: AppOptions) App {
 /// Everything else about goldens is the consumer's own build option,
 /// because it is their test suite: `-Dgolden` deciding whether the
 /// golden tests are in the `test` step at all, and `-Dupdate-goldens`
-/// reaching `nokre.testing.golden.update` through an options module they
-/// pass to their test module. nokre's own build does exactly that
-/// (`tests/golden.zig`), and the recipe is in getting-started.md.
+/// reaching `expectGolden`'s `.update` argument through an options
+/// module they pass to their test module. nokre's own build does
+/// exactly that (`tests/golden.zig`), and the recipe is in
+/// getting-started.md.
 ///
 /// Needs the Skia prebuilt in the nokre checkout's deps/ —
 /// tools/fetch-deps.sh, run once inside the dependency — and fails the
@@ -1339,8 +1340,9 @@ pub fn build(b: *std.Build) void {
             .imports = &.{.{ .name = "nokre", .module = nokre }},
         });
         // Baseline maintenance is explicit: -Dupdate-goldens reaches
-        // expectMatches only through this options module, so CI — which
-        // never passes the flag — can neither mint nor heal a golden.
+        // expectGolden's `.update` only through this options module, so
+        // CI — which never passes the flag — can neither mint nor heal
+        // a golden.
         const golden_opts = b.addOptions();
         golden_opts.addOption(bool, "update_goldens", update_goldens);
         golden_mod.addOptions("build_options", golden_opts);

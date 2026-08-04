@@ -8,11 +8,11 @@
 //! three that matter. Everything outside the mark still writes r=g=b,
 //! so a golden's diff stays as readable as the gray ones were.
 //!
-//! Baseline maintenance is explicit (`update` below): a missing golden
-//! is a failure, not a first run — otherwise a baseline lost in CI
-//! would silently re-mint itself and turn the byte-exactness gate into
-//! a pass. A mismatch writes `<path>.actual.ppm` next to the golden
-//! for diffing.
+//! Baseline maintenance is explicit (`Options.update`): a missing
+//! golden is a failure, not a first run — otherwise a baseline lost in
+//! CI would silently re-mint itself and turn the byte-exactness gate
+//! into a pass. A mismatch writes `<path>.actual.ppm` next to the
+//! golden for diffing.
 
 const std = @import("std");
 const Io = std.Io;
@@ -20,17 +20,20 @@ const diag = @import("diag.zig");
 
 pub const max_file_size = 64 * 1024 * 1024;
 
-/// When set (build.zig threads `-Dupdate-goldens` into the golden test
-/// module, which assigns it), a missing golden is created and a
-/// mismatched one is rewritten in place — intentional visual changes
-/// are one command, not delete-then-rerun. Off, the only mode CI runs,
-/// both are failures: a baseline can only ever be minted or healed by
-/// someone who asked for it and will review the diff.
-///
-/// Deliberately module state, on the same exemption as `diag.quiet`:
-/// this configures the test process, not app behavior — nothing an app
-/// or a service does reads it.
-pub var update = false;
+pub const Options = struct {
+    /// When set (build.zig threads `-Dupdate-goldens` into the golden
+    /// test module, which passes it here), a missing golden is created
+    /// and a mismatched one is rewritten in place — intentional visual
+    /// changes are one command, not delete-then-rerun. Unset, the only
+    /// mode CI runs, both are failures: a baseline can only ever be
+    /// minted or healed by someone who asked for it and will review the
+    /// diff.
+    ///
+    /// An argument rather than module state: the flag rides the
+    /// assertion it governs, so two suites in one process cannot fight
+    /// over a global, and nothing an app or a service does can reach it.
+    update: bool = false,
+};
 
 /// `pixels` is RGBX as `Surface.pixels` returns it — 4 bytes per pixel,
 /// the padding byte dropped on the way to disk so the golden is pure
@@ -98,13 +101,13 @@ fn frameMatches(golden: Ppm, pixels: []const u8, w: usize, h: usize) bool {
 
 /// Byte-exact comparison against the golden at `sub_path` (relative to
 /// `dir`); `pixels` is RGBX as the surface hands it back. A missing
-/// golden fails unless `update` is set (then it is created); a mismatch
-/// writes `<path>.actual.ppm` and fails unless `update` is set (then
-/// the golden is rewritten in place).
-pub fn expectMatchesIn(io: Io, dir: Io.Dir, gpa: std.mem.Allocator, pixels: []const u8, w: usize, h: usize, sub_path: []const u8) !void {
+/// golden fails unless `opts.update` is set (then it is created); a
+/// mismatch writes `<path>.actual.ppm` and fails unless `opts.update`
+/// is set (then the golden is rewritten in place).
+pub fn expectMatchesIn(io: Io, dir: Io.Dir, gpa: std.mem.Allocator, pixels: []const u8, w: usize, h: usize, sub_path: []const u8, opts: Options) !void {
     const golden = readPpm(io, dir, gpa, sub_path) catch |err| switch (err) {
         error.FileNotFound => {
-            if (!update) {
+            if (!opts.update) {
                 diag.print("golden: {s} is missing — baselines are never created implicitly; rerun with -Dupdate-goldens to create it, then review and commit\n", .{sub_path});
                 return error.GoldenMissing;
             }
@@ -118,7 +121,7 @@ pub fn expectMatchesIn(io: Io, dir: Io.Dir, gpa: std.mem.Allocator, pixels: []co
 
     if (frameMatches(golden, pixels, w, h)) return;
 
-    if (update) {
+    if (opts.update) {
         try writePpm(io, dir, gpa, pixels, w, h, sub_path);
         diag.print("golden: rewrote {s} — review the diff and commit it\n", .{sub_path});
         return;
@@ -132,8 +135,8 @@ pub fn expectMatchesIn(io: Io, dir: Io.Dir, gpa: std.mem.Allocator, pixels: []co
 
 /// Convenience for tests: golden path relative to the current working
 /// directory, io from the test runner.
-pub fn expectMatches(gpa: std.mem.Allocator, pixels: []const u8, w: usize, h: usize, sub_path: []const u8) !void {
-    try expectMatchesIn(std.testing.io, Io.Dir.cwd(), gpa, pixels, w, h, sub_path);
+pub fn expectMatches(gpa: std.mem.Allocator, pixels: []const u8, w: usize, h: usize, sub_path: []const u8, opts: Options) !void {
+    try expectMatchesIn(std.testing.io, Io.Dir.cwd(), gpa, pixels, w, h, sub_path, opts);
 }
 
 // ---- tests ----
@@ -186,33 +189,29 @@ test "expectMatches creates only under update, then verifies and detects change"
     defer diag.quiet = false;
 
     const a = [_]u8{ 1, 2, 3, 0, 4, 5, 6, 0 };
-    // The CI shape: missing without `update` fails and writes nothing —
+    // The CI shape: missing without `.update` fails and writes nothing —
     // a lost baseline must never re-mint itself into a pass.
     try testing.expectError(
         error.GoldenMissing,
-        expectMatchesIn(testing.io, tmp.dir, testing.allocator, &a, 2, 1, "goldens/g.ppm"),
+        expectMatchesIn(testing.io, tmp.dir, testing.allocator, &a, 2, 1, "goldens/g.ppm", .{}),
     );
     try testing.expectError(
         error.FileNotFound,
         readPpm(testing.io, tmp.dir, testing.allocator, "goldens/g.ppm"),
     );
 
-    {
-        update = true;
-        defer update = false;
-        try expectMatchesIn(testing.io, tmp.dir, testing.allocator, &a, 2, 1, "goldens/g.ppm"); // creates
-    }
-    try expectMatchesIn(testing.io, tmp.dir, testing.allocator, &a, 2, 1, "goldens/g.ppm"); // matches
+    try expectMatchesIn(testing.io, tmp.dir, testing.allocator, &a, 2, 1, "goldens/g.ppm", .{ .update = true }); // creates
+    try expectMatchesIn(testing.io, tmp.dir, testing.allocator, &a, 2, 1, "goldens/g.ppm", .{}); // matches
 
     // The same frame under different padding bytes still matches: the
     // padding is not part of the pixel model's promise.
     const a_padded = [_]u8{ 1, 2, 3, 0xAB, 4, 5, 6, 0xCD };
-    try expectMatchesIn(testing.io, tmp.dir, testing.allocator, &a_padded, 2, 1, "goldens/g.ppm");
+    try expectMatchesIn(testing.io, tmp.dir, testing.allocator, &a_padded, 2, 1, "goldens/g.ppm", .{});
 
     const b = [_]u8{ 1, 2, 3, 0, 4, 5, 7, 0 };
     try testing.expectError(
         error.GoldenMismatch,
-        expectMatchesIn(testing.io, tmp.dir, testing.allocator, &b, 2, 1, "goldens/g.ppm"),
+        expectMatchesIn(testing.io, tmp.dir, testing.allocator, &b, 2, 1, "goldens/g.ppm", .{}),
     );
 }
 
@@ -224,16 +223,12 @@ test "update rewrites a mismatched golden in place" {
 
     const a = [_]u8{ 1, 2, 3, 0, 4, 5, 6, 0 };
     const b = [_]u8{ 1, 2, 3, 0, 4, 5, 7, 0 };
-    {
-        update = true;
-        defer update = false;
-        try expectMatchesIn(testing.io, tmp.dir, testing.allocator, &a, 2, 1, "goldens/g.ppm"); // creates
-        try expectMatchesIn(testing.io, tmp.dir, testing.allocator, &b, 2, 1, "goldens/g.ppm"); // rewrites
-    }
+    try expectMatchesIn(testing.io, tmp.dir, testing.allocator, &a, 2, 1, "goldens/g.ppm", .{ .update = true }); // creates
+    try expectMatchesIn(testing.io, tmp.dir, testing.allocator, &b, 2, 1, "goldens/g.ppm", .{ .update = true }); // rewrites
     // The rewrite is the new baseline; the old pixels now mismatch.
-    try expectMatchesIn(testing.io, tmp.dir, testing.allocator, &b, 2, 1, "goldens/g.ppm");
+    try expectMatchesIn(testing.io, tmp.dir, testing.allocator, &b, 2, 1, "goldens/g.ppm", .{});
     try testing.expectError(
         error.GoldenMismatch,
-        expectMatchesIn(testing.io, tmp.dir, testing.allocator, &a, 2, 1, "goldens/g.ppm"),
+        expectMatchesIn(testing.io, tmp.dir, testing.allocator, &a, 2, 1, "goldens/g.ppm", .{}),
     );
 }

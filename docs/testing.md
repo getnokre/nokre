@@ -673,14 +673,19 @@ that carries them — is
 [getting-started.md](getting-started.md#part-12--proof-tree-snapshots-step-traces-goldens).
 
 ```zig
-var surface = try nok.render.skia.Surface.init(480, 640, 1);
-defer surface.deinit();
-t.app.measurer = nok.render.skia.measurer();  // real text metrics
-t.app.invalidate();
-t.renderTo(surface.canvas());
-try nok.testing.golden.expectMatches(gpa, surface.pixels(),
-    surface.pixelWidth(), surface.pixelHeight(), "tests/goldens/checkout.ppm");
+try t.expectGolden("tests/goldens/checkout.ppm",
+    .{ .update = build_options.update_goldens });
 ```
+
+One verb does the whole take: a Skia surface at the app's viewport, the
+real Skia measurer swapped in (the fixed measurer's glyph positions
+match no device), one render through the production pipeline, and the
+byte-exact comparison. `.update` is how `-Dupdate-goldens` reaches the
+library — an argument on the assertion, not module state, threaded from
+your build through an options module (the recipe linked above). A
+custom surface — another scale, pixels you produced yourself — drops
+one layer to `nok.testing.golden.expectMatches`, which takes the same
+options.
 
 Workflow:
 

@@ -1658,10 +1658,10 @@ configures nokre's *own* steps and has never meant anything to yours.
 
 The other two flags are yours, because it is your test suite. `-Dgolden`
 decides whether the golden tests join the `test` step at all — they need
-the prebuilt fetched, so they are opt-in — and `-Dupdate-goldens` reaches
-`nok.testing.golden.update` through an options module, the only road it
-has, which is what keeps CI from minting baselines. In `build.zig`,
-beside the `addApp` call from Part 1:
+the prebuilt fetched, so they are opt-in — and `-Dupdate-goldens`
+reaches the assertion as its `.update` argument through an options
+module, the only road it has, which is what keeps CI from minting
+baselines. In `build.zig`, beside the `addApp` call from Part 1:
 
 ```zig
     const golden = b.option(bool, "golden", "Run golden screenshot tests (needs the Skia prebuilt)") orelse false;
@@ -1704,20 +1704,20 @@ pub const nokreWorkers = app.nokreWorkers;
 const gpa = std.testing.allocator;
 
 test "golden: the sign-in screen" {
-    nok.testing.golden.update = build_options.update_goldens;
     var state: app.State = .{};
     var t = try nok.testing.Harness.initWithNav(gpa, .{ .w = 480, .h = 640 }, &app.routes, &app.nav_items, &state, "notes");
     defer t.deinit();
     state.app = &t.app;
 
-    var surface = try nok.render.skia.Surface.init(480, 640, 1);
-    defer surface.deinit();
-    t.app.measurer = nok.render.skia.measurer(); // real text metrics
-    t.app.invalidate();
-    t.renderTo(surface.canvas());
-    try nok.testing.golden.expectMatches(gpa, surface.pixels(), surface.pixelWidth(), surface.pixelHeight(), "tests/goldens/signin.ppm");
+    try t.expectGolden("tests/goldens/signin.ppm", .{ .update = build_options.update_goldens });
 }
 ```
+
+`expectGolden` is the whole take: a Skia surface at the viewport, the
+real Skia measurer swapped in (real text metrics — the fixed measurer's
+glyph positions match no device), one render through the production
+pipeline, the byte-exact comparison. `.update` is the assertion-side
+end of the options module above.
 
 **Checkpoint:** `zig build test -Dgolden` fails, reporting that
 `tests/goldens/signin.ppm` is *missing* — baselines are never created

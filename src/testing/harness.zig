@@ -965,4 +965,25 @@ pub const Harness = struct {
     pub fn renderTo(self: *Harness, canvas: canvas_mod.Canvas) void {
         renderer.render(&self.app, canvas);
     }
+
+    /// Takes a golden of this app's frame: a Skia surface at the
+    /// viewport, the real Skia measurer swapped in — the fixed
+    /// measurer's glyph positions match no device — one render, and a
+    /// byte-exact comparison against the PPM at `sub_path`
+    /// (`golden.expectMatchesIn`'s contract; thread the consumer
+    /// build's `-Dupdate-goldens` in as `.update`). Assertions after
+    /// this call see Skia metrics, as a device would.
+    ///
+    /// Skia is imported here and nowhere else in the harness, so a
+    /// suite that never takes a golden stays headless-pure and links
+    /// nothing; a suite that does needs the prebuilt on its test binary
+    /// (`nokre.linkSkia` in the consumer's build.zig).
+    pub fn expectGolden(self: *Harness, sub_path: []const u8, opts: golden.Options) !void {
+        const skia = @import("../render/skia/canvas_skia.zig");
+        self.app.setMeasurer(skia.measurer());
+        var surface = try skia.Surface.init(self.app.viewport.w, self.app.viewport.h, 1);
+        defer surface.deinit();
+        self.renderTo(surface.canvas());
+        try golden.expectMatches(self.app.gpa, surface.pixels(), surface.pixelWidth(), surface.pixelHeight(), sub_path, opts);
+    }
 };

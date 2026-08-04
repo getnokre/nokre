@@ -19,22 +19,11 @@ const golden = h.testing.golden;
 
 fn noopPress(_: ?*anyopaque) void {}
 
-fn expectGolden(gpa: std.mem.Allocator, pixels: []const u8, w: usize, h_px: usize, sub_path: []const u8) !void {
-    // -Dupdate-goldens reaches the library here: the flag is a property
-    // of this build, not of any one test, so every assertion applies it.
-    golden.update = build_options.update_goldens;
-    try golden.expectMatches(gpa, pixels, w, h_px, sub_path);
-}
-
+// -Dupdate-goldens reaches the library as `.update` on each assertion:
+// the flag is a property of this build, not of any one test, so every
+// take applies it.
 fn renderGolden(harness: *h.testing.Harness, comptime name: []const u8) !void {
-    const gpa = std.testing.allocator;
-    harness.app.setMeasurer(skia.measurer());
-
-    var surface = try skia.Surface.init(harness.app.viewport.w, harness.app.viewport.h, 1);
-    defer surface.deinit();
-    harness.renderTo(surface.canvas());
-
-    try expectGolden(gpa, surface.pixels(), surface.pixelWidth(), surface.pixelHeight(), "tests/goldens/" ++ name ++ ".ppm");
+    try harness.expectGolden("tests/goldens/" ++ name ++ ".ppm", .{ .update = build_options.update_goldens });
 }
 
 fn buildElements(_: ?*anyopaque, app: *h.App) !void {
@@ -854,7 +843,7 @@ test "golden: 2x integer scale is pixel-doubled" {
     var surface = try skia.Surface.init(200, 120, 2);
     defer surface.deinit();
     harness.renderTo(surface.canvas());
-    try expectGolden(std.testing.allocator, surface.pixels(), surface.pixelWidth(), surface.pixelHeight(), "tests/goldens/form-2x.ppm");
+    try golden.expectMatches(std.testing.allocator, surface.pixels(), surface.pixelWidth(), surface.pixelHeight(), "tests/goldens/form-2x.ppm", .{ .update = build_options.update_goldens });
 }
 
 fn buildNavScreen(_: ?*anyopaque, app: *h.App) anyerror!void {
