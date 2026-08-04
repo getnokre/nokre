@@ -773,3 +773,157 @@ test "a navigation drops the open sheet and tells its builder" {
     try app.reload();
     try testing.expect(layout.findSheet(&app.tree) == null);
 }
+
+// ---- focus across reload: carried by name, never by position
+// (docs/routing.md) ----
+
+const FocusCtx = struct {
+    renamed: bool = false,
+
+    fn buildForm(ctx: ?*anyopaque, app: *App) anyerror!void {
+        const self: *FocusCtx = @ptrCast(@alignCast(ctx.?));
+        try app.tree.append(app.tree.rootId(), .{ .text_input = .{ .label = "Name" } });
+        try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Save" } });
+        try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = if (self.renamed) "Discard" else "Cancel" } });
+    }
+
+    fn buildProse(_: ?*anyopaque, app: *App) anyerror!void {
+        try app.tree.append(app.tree.rootId(), .{ .text = .{ .spans = &.{
+            .{ .text = "Read the " },
+            .{ .text = "terms", .route = "form" },
+        } } });
+    }
+};
+
+const focus_routes = [_]router_mod.RouteDef{
+    .{ .name = "form", .title = "Form", .build = FocusCtx.buildForm },
+    .{ .name = "prose", .title = "Prose", .build = FocusCtx.buildProse },
+};
+
+fn focusApp(data: *FocusCtx) !App {
+    return App.init(testing.allocator, .{
+        .viewport = .{ .w = 400, .h = 400 },
+        .routes = &focus_routes,
+        .ctx = data,
+        .services = .mocks(),
+    });
+}
+
+fn nodeLabeled(app: *const App, label: []const u8) ?NodeId {
+    var it = app.tree.dfs();
+    while (it.next()) |id| {
+        if (std.mem.eql(u8, app.tree.getConst(id).?.label(), label)) return id;
+    }
+    return null;
+}
+
+test "reload re-finds focus by name over the rebuilt tree" {
+    var data: FocusCtx = .{};
+    var app = try focusApp(&data);
+    defer app.deinit();
+    try app.navigate("form");
+    const before = nodeLabeled(&app, "Cancel").?;
+    app.focused = .of(before);
+
+    try app.reload();
+    const after = app.focused orelse return error.TestUnexpectedResult;
+    // The node is a new one — the content was rebuilt from scratch —
+    // but it answers to the same name, so it is the same control.
+    try testing.expect(!after.node.eql(before));
+    try testing.expectEqualStrings("Cancel", app.tree.getConst(after.node).?.label());
+}
+
+test "focus starts over when the carried name is gone" {
+    var data: FocusCtx = .{};
+    var app = try focusApp(&data);
+    defer app.deinit();
+    try app.navigate("form");
+    app.focused = .of(nodeLabeled(&app, "Cancel").?);
+
+    data.renamed = true; // the rebuilt screen says "Discard" instead
+    try app.reload();
+    // Nothing wears the carried name, and nothing else is guessed at:
+    // a wrong control under a screen reader's cursor is worse than a
+    // fresh start.
+    try testing.expect(app.focused == null);
+}
+
+test "a link span's stop is not carried" {
+    var data: FocusCtx = .{};
+    var app = try focusApp(&data);
+    defer app.deinit();
+    try app.navigate("prose");
+    var it = app.tree.children(app.tree.rootId());
+    const para = it.next().?;
+    app.focused = .{ .node = para, .span = 1 };
+
+    try app.reload();
+    // The paragraph has no name of its own, and the span index is
+    // exactly the ordinal a restore must never trust.
+    try testing.expect(app.focused == null);
+}
+
+/// Sheet-side of the carry: the sheet is re-presented first, then the
+/// carried name is looked for inside it — the active layer.
+const SheetFocusCtx = struct {
+    sheet_open: bool = false,
+
+    fn buildScreen(_: ?*anyopaque, app: *App) anyerror!void {
+        try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Home" } });
+        try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Refresh" } });
+    }
+
+    fn buildSheet(ctx: ?*anyopaque, app: *App) anyerror!void {
+        const self: *SheetFocusCtx = @ptrCast(@alignCast(ctx.?));
+        if (!self.sheet_open) return;
+        const sheet = try app.presentSheet("Confirm");
+        try app.tree.append(sheet, .{ .button = .{ .label = "Keep" } });
+        try app.tree.append(sheet, .{ .button = .{ .label = "Delete" } });
+    }
+};
+
+test "reload under a sheet re-finds focus inside the re-presented sheet" {
+    var data: SheetFocusCtx = .{};
+    var app = try App.init(testing.allocator, .{
+        .viewport = .{ .w = 400, .h = 400 },
+        .routes = &.{.{ .name = "home", .title = "Home", .build = SheetFocusCtx.buildScreen }},
+        .ctx = &data,
+        .services = .mocks(),
+    });
+    defer app.deinit();
+    try app.navigate("home");
+    data.sheet_open = true;
+    try app.openSheet(.{ .ctx = &data, .call = SheetFocusCtx.buildSheet });
+
+    const before = nodeLabeled(&app, "Delete").?;
+    app.focused = .of(before);
+    try app.reload();
+    const after = app.focused orelse return error.TestUnexpectedResult;
+    try testing.expect(!after.node.eql(before));
+    try testing.expectEqualStrings("Delete", app.tree.getConst(after.node).?.label());
+}
+
+test "reloadSafe: an overlay or an edit in flight says wait" {
+    var data: FocusCtx = .{};
+    var app = try focusApp(&data);
+    defer app.deinit();
+    try app.navigate("form");
+
+    // Nothing held: safe, and a control that is not an edit is safe
+    // too — the carry returns the place, and no work is in it to lose.
+    try testing.expect(app.reloadSafe());
+    app.focused = .of(nodeLabeled(&app, "Save").?);
+    try testing.expect(app.reloadSafe());
+
+    // An editable holds more than a place: caret, composition, and the
+    // unwritten value all die with the node.
+    app.focused = .of(nodeLabeled(&app, "Name").?);
+    try testing.expect(!app.reloadSafe());
+
+    // An overlay owns the screen, whoever holds focus inside it.
+    app.focused = null;
+    _ = try app.presentSheet("Confirm");
+    try testing.expect(!app.reloadSafe());
+    app.dismissSheet();
+    try testing.expect(app.reloadSafe());
+}

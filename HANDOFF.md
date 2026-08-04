@@ -45,17 +45,19 @@ not two — some 950 generated functions, all deleted from both apps;
 the one genuinely unguarded stale press, read's `toggleEntry`, now
 guards like its siblings.)
 
-1. **Reload safety, and focus across reload.** `router.reload` starts
-   focus over by design — and both apps carry byte-identical modules
-   to cope: `reloads.zig` (25 lines re-deriving "is a reload safe
-   right now" from `focusScope`, the focused node's role, and a
-   text-input switch) and `sheets.zig` (48 lines that copy the focused
-   element's *label*, reload, then walk the tree comparing labels to
-   re-focus — correct only because the a11y audit forbids duplicate
-   labels). Both are questions nokre should answer: a
-   reload-safety predicate, and a reload that can carry focus.
+(The previous #1, reload safety and focus across reload, shipped
+2026-08-04. `App.reloadSafe` is the predicate — false while an overlay
+owns the screen or an editable holds focus — and `reload` alone now
+carries focus: by node identity when the node survived (chrome), else
+by accessible name within the active layer, leaning on the same
+duplicate-label refusal the consumers' walk did; link-span stops and
+over-long labels start over rather than guess. `reload` itself never
+asks the predicate — deliberate gestures must land mid-edit — so the
+check stays at the consumer's unprompted-reply sites. Both apps'
+`reloads.zig` and `sheets.zig` are deleted; docs/routing.md owns the
+contract.)
 
-2. **`App.Chrome` without silent English.** All 17 chrome strings
+1. **`App.Chrome` without silent English.** All 17 chrome strings
    default to English literals, so a mapping a consumer forgets
    compiles and ships English — the audit cannot object to a valid
    label in the wrong language, and the survey caught the two apps
@@ -63,7 +65,7 @@ guards like its siblings.)
    hello-world needs no catalogue); the options are a no-default
    `Chrome` for l10n'd apps or a comptime-checked catalogue hand-off.
 
-3. **The chosen locale, and route titles.** nokre owns the *device*
+2. **The chosen locale, and route titles.** nokre owns the *device*
    locale but not the app's *chosen* one, so the apps fan the choice
    out by hand (17 controller assignments in one app, 12 in the other
    — forget one line and that screen stays in the old language
@@ -73,7 +75,7 @@ guards like its siblings.)
    locale, and letting `RouteDef.title` be a function of it, deletes
    both fan-outs.
 
-4. **Worker queueing.** A worker handle answers a second ask with
+3. **Worker queueing.** A worker handle answers a second ask with
    `error.Interrupted`, so a mutation can fail because an unrelated
    solve happened to be in flight. Both apps carry a byte-identical
    220-line `QueuedPowSolver` (and a sibling for corpus reads) that
@@ -81,14 +83,14 @@ guards like its siblings.)
    grows a small FIFO or the refusal is documented as a guarantee with
    the queue as the blessed consumer pattern — today it is neither.
 
-5. **A recording headless shell.** A consumer building a headless
+4. **A recording headless shell.** A consumer building a headless
    native binary (system tests, e2e drivers) hand-declares nokre ABI
    symbols — 21 extern declarations across 4 files in the consumer,
    with exact `callconv(.c)` signatures. A rename here is at best a
    link error there. nokre should ship the null/recording shell it is
    forcing every consumer to write.
 
-6. **`expectGolden` on the harness.** Taking a golden from consumer
+5. **`expectGolden` on the harness.** Taking a golden from consumer
     code is a five-step incantation (set the module-global
     `testing.golden.update`, build a Skia surface at the viewport,
     swap the measurer, render, unpack four accessors into

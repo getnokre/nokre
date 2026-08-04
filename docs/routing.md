@@ -68,7 +68,7 @@ also move the viewport. `replace` and `switchTo` do not: neither is the
 screen you left. The rebuild itself is unchanged — still from scratch,
 still instant — and a screen that comes back a different shape restores
 what lines up and clamps the rest; positions are matched by order, not by
-identity. Focus is not restored with it: the element it named is gone,
+identity. Focus is not restored by `pop`: the element it named is gone,
 and guessing would move a screen reader's cursor somewhere nobody asked
 for.
 
@@ -79,6 +79,30 @@ framework runs that builder again, so a dialog is never the reason
 state cannot be answered. The other four motions drop it — each is a
 different screen, and a sheet belongs to the state of the one that
 opened it — and tell the builder's `on_dismiss` so.
+
+**`reload` alone carries focus, and by name, not position.** The node
+focus held goes with the rebuilt content, and an ordinal would land a
+screen reader's cursor on whatever took that place — but the
+accessible name survives, and the audit forbids two interactive
+elements in one layer from sharing one
+([accessibility.md](accessibility.md)), so within the active layer —
+the rebuilt screen, or the re-presented sheet — the same name is the
+same control. A control that kept its very node keeps focus outright
+(chrome survives rebuilds). When nothing answers to the carried name,
+focus starts over rather than guess, and a link inside prose starts
+over always: its paragraph has no name of its own, and a span index is
+exactly the ordinal the restore refuses to trust.
+
+What no carry can save is an edit in flight: caret, composition, and
+the unwritten value die with the field's node, and the on-screen
+keyboard follows them down. `app.reloadSafe()` is that question asked
+before the fact — false while an overlay owns the screen (a sheet, a
+picker, the notices pane) or while an editable holds focus. `reload`
+itself never asks it: a deliberate gesture — retry, pull-to-refresh, a
+locale change — must be honored even mid-edit. The check belongs to
+the rebuilds nobody asked for. A reply that lands between events
+writes its state either way, asks `reloadSafe` first, and leaves a
+screen it would disturb alone.
 
 ### The back gesture
 

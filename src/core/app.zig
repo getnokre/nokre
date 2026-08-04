@@ -297,6 +297,29 @@ pub const App = struct {
         try self.router.pop(self);
     }
 
+    /// Whether a `reload` right now would take something the user
+    /// holds. Two things say no: an overlay that owns the screen — a
+    /// sheet, a picker, the notices pane (`focusScope`) — and an
+    /// editable holding focus, whose caret, composition, and unwritten
+    /// value a rebuild drops along with the on-screen keyboard that
+    /// follows them. The carried focus (router.zig `restoreFocus`)
+    /// softens neither: it returns the *place*, not the edit.
+    ///
+    /// `reload` itself never asks — a deliberate gesture (retry,
+    /// pull-to-refresh, a locale change) must be honored even mid-edit.
+    /// This is for the rebuilds nobody asked for: a reply landing
+    /// between events checks first, writes its state either way, and
+    /// leaves a screen it would disturb alone.
+    pub fn reloadSafe(self: *const App) bool {
+        if (!self.focusScope().eql(self.tree.rootId())) return false;
+        const stop = self.focused orelse return true;
+        const el = self.tree.getConst(stop.node) orelse return true;
+        return switch (el.role()) {
+            .text_input, .text_area => false,
+            else => true,
+        };
+    }
+
     /// Rebuild the current screen from state — the router verb at the
     /// same hop as `navigate`, so a controller never threads the app
     /// through itself (`app.router.reload(app)`) to say it.

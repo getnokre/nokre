@@ -388,8 +388,11 @@ uses it enough to deserve a helper — the rebuild counterpart of Part 1's
 `setContent`:
 
 ```zig
-/// Rebuild the current screen from state. Focus resets to the top, so
-/// reach for this on committed changes, not keystrokes.
+/// Rebuild the current screen from state. Focus is carried by name
+/// across it, but an edit in flight is not — so reach for this on
+/// committed changes, and have a rebuild nobody asked for (a reply
+/// landing between events) check `app.reloadSafe()` first
+/// (routing.md).
 fn refresh(state: *State) void {
     state.app.router.reload(state.app) catch {};
 }

@@ -24,6 +24,7 @@ const app_mod = @import("app.zig");
 const element_mod = @import("element.zig");
 const layout = @import("layout.zig");
 const overlays = @import("overlays.zig");
+const router_mod = @import("router.zig");
 const tree_mod = @import("tree.zig");
 
 const App = app_mod.App;
@@ -229,7 +230,10 @@ pub fn clearNav(app: *App) void {
 /// A no-op when nothing it would draw has changed. That is not an
 /// optimization: a rebuild replaces the nodes, and replacing the node
 /// that focus (or an open picker) names would drop both. Chrome that
-/// redraws itself for no reason is chrome that loses your place.
+/// redraws itself for no reason is chrome that loses your place — and
+/// when the redraw is for a reason (a retitle, the collapse flipping),
+/// the place is carried across it instead (`holdNavFocus`,
+/// `reseatNavFocus`).
 pub fn syncNavChrome(app: *App) !void {
     const nav = layout.findNav(&app.tree) orelse return;
     if (app.nav_items.items.len == 0) return;
@@ -264,8 +268,10 @@ pub fn syncNavChrome(app: *App) !void {
                 std.mem.eql(u8, el.nav_current.section, cur.label) and
                 el.nav_current.icon == cur.icon) return;
         }
+        const held = holdNavFocus(app, nav);
         try clearChildren(app, nav);
         try app.tree.append(nav, .{ .nav_current = .{ .section = cur.label, .icon = cur.icon, .name = app.chrome.section } });
+        reseatNavFocus(app, nav, held);
     } else {
         // The destinations draw their own current state from the router,
         // so the row survives a move between two of them untouched. What
@@ -274,6 +280,7 @@ pub fn syncNavChrome(app: *App) !void {
         // table renames every one of them (`App.setRouteTitles`) — so the
         // guard compares the words and the tail as well as the count.
         if (rowMatches(app, nav, roster)) return;
+        const held = holdNavFocus(app, nav);
         try clearChildren(app, nav);
         for (roster) |item| {
             _ = if (item.here)
@@ -281,8 +288,73 @@ pub fn syncNavChrome(app: *App) !void {
             else
                 try app.tree.append(nav, .{ .nav_item = .{ .label = item.label, .route = item.route, .icon = item.icon } });
         }
+        reseatNavFocus(app, nav, held);
     }
     app.invalidate();
+}
+
+/// What the necessary rebuild would otherwise strand — the guard above
+/// it is a no-op precisely to protect these, so the path that must
+/// replace the nodes has to hand them across itself.
+///
+/// Focus is held in the one term of a destination a retitle cannot
+/// change: its route. The chip and the here-marker have no route, but
+/// each shape holds at most one of them, so the kind alone names it.
+const NavHold = union(enum) {
+    none,
+    chip,
+    here,
+    item: struct { route: [router_mod.max_ref_bytes]u8, len: usize },
+};
+
+/// The capture half, and the section picker with it: an open picker is
+/// anchored to a chip about to go, so it closes now, through the verb
+/// that knows how — before the focus read, the order `clearNav` uses,
+/// because closing hands focus back to that chip and the hold must see
+/// where it landed. The route is a copy: the node it borrows from is
+/// exactly what the caller is about to remove.
+fn holdNavFocus(app: *App, nav: NodeId) NavHold {
+    if (app.picker_owner) |owner| {
+        if (app.tree.isDescendant(owner, nav)) overlays.closePicker(app, null);
+    }
+    const f = app.focused orelse return .none;
+    if (!app.tree.isDescendant(f.node, nav)) return .none;
+    const el = app.tree.getConst(f.node) orelse return .none;
+    switch (el.*) {
+        .nav_current => return .chip,
+        .nav_here => return .here,
+        .nav_item => |n| {
+            if (n.route.len > router_mod.max_ref_bytes) return .none;
+            var hold: NavHold = .{ .item = .{ .route = undefined, .len = n.route.len } };
+            @memcpy(hold.item.route[0..n.route.len], n.route);
+            return hold;
+        },
+        else => return .none,
+    }
+}
+
+/// Seats the held focus on the rebuilt child that means the same
+/// thing. A hold the new shape cannot honor — the collapse flipped, or
+/// the route left the roster — starts focus over: null is a fresh
+/// start, where a dangling id is a crash and a guessed neighbor is a
+/// screen reader announcing somewhere nobody asked for.
+fn reseatNavFocus(app: *App, nav: NodeId, held: NavHold) void {
+    if (held == .none) return;
+    var it = app.tree.children(nav);
+    while (it.next()) |c| {
+        const el = app.tree.getConst(c).?;
+        const hit = switch (held) {
+            .none => false,
+            .chip => el.role() == .nav_current,
+            .here => el.role() == .nav_here,
+            .item => |h| el.* == .nav_item and std.mem.eql(u8, el.nav_item.route, h.route[0..h.len]),
+        };
+        if (hit) {
+            app.focused = .of(c);
+            return;
+        }
+    }
+    app.focused = null;
 }
 
 /// Whether the row already on screen is the one `roster` describes.

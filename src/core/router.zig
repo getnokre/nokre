@@ -40,6 +40,7 @@
 
 const std = @import("std");
 const app_mod = @import("app.zig");
+const focus_mod = @import("focus.zig");
 const nav_mod = @import("nav.zig");
 const overlays = @import("overlays.zig");
 const tree_mod = @import("tree.zig");
@@ -373,14 +374,14 @@ pub const Router = struct {
         // then strand an owned reference outside the stack.
         try self.stack.ensureUnusedCapacity(app.gpa, 1);
         self.stack.appendAssumeCapacity(try own(app.gpa, idx, reference));
-        try self.rebuild(app, .push, .fresh, .dropped);
+        try self.rebuild(app, .push, .fresh, .dropped, .fresh);
     }
 
     /// Pops back one screen. No-op at the root of the stack.
     pub fn pop(self: *Router, app: *App) !void {
         if (self.stack.items.len <= 1) return;
         self.dropTop(app.gpa);
-        try self.rebuild(app, .pop, .restored, .dropped);
+        try self.rebuild(app, .pop, .restored, .dropped, .fresh);
     }
 
     pub fn replace(self: *Router, app: *App, reference: []const u8) !void {
@@ -392,7 +393,7 @@ pub const Router = struct {
         const entry = try own(app.gpa, idx, reference);
         if (self.stack.items.len != 0) self.dropTop(app.gpa);
         self.stack.appendAssumeCapacity(entry);
-        try self.rebuild(app, .replace, .fresh, .dropped);
+        try self.rebuild(app, .replace, .fresh, .dropped, .fresh);
     }
 
     /// Enters `reference` with the stack reset to just it: arriving somewhere
@@ -410,7 +411,7 @@ pub const Router = struct {
         for (self.stack.items) |e| app.gpa.free(e.ref);
         self.stack.clearRetainingCapacity();
         self.stack.appendAssumeCapacity(entry);
-        try self.rebuild(app, .switch_to, .fresh, .dropped);
+        try self.rebuild(app, .switch_to, .fresh, .dropped, .fresh);
     }
 
     /// Rebuilds the current screen from its own reference — the way to
@@ -426,10 +427,17 @@ pub const Router = struct {
     /// An open sheet survives it too, by the same argument: its builder
     /// (`App.openSheet`) runs again over the rebuilt screen, so a sheet
     /// is never the reason state cannot be answered.
+    ///
+    /// Focus survives it by *name*: the control the keyboard was on is
+    /// re-found in the rebuilt tree by its label (`restoreFocus`), or
+    /// focus starts over when no control answers to it anymore. What a
+    /// reload cannot save is an editable mid-edit — caret, composition,
+    /// and the unwritten value go with the node — which is what
+    /// `App.reloadSafe` lets an unprompted rebuild check first.
     pub fn reload(self: *Router, app: *App) !void {
         if (self.stack.items.len == 0) return;
         captureScroll(app, self.topMut().?);
-        try self.rebuild(app, .replace, .restored, .carried);
+        try self.rebuild(app, .replace, .restored, .carried, .carried);
     }
 
     fn own(gpa: std.mem.Allocator, idx: usize, reference: []const u8) !Entry {
@@ -499,9 +507,18 @@ pub const Router = struct {
     /// the one that opened it.
     const SheetFate = enum { dropped, carried };
 
-    fn rebuild(self: *Router, app: *App, change: Change, scroll: Scroll, sheet: SheetFate) !void {
+    /// Whether the keyboard's place rides this rebuild. Only a reload
+    /// carries — a real navigation is a different screen, with no
+    /// element the old focus could mean — and it carries by *name*,
+    /// never by position (`restoreFocus`).
+    const FocusFate = enum { fresh, carried };
+
+    fn rebuild(self: *Router, app: *App, change: Change, scroll: Scroll, sheet: SheetFate, focus_fate: FocusFate) !void {
         const entry = self.stack.items[self.stack.items.len - 1];
         const def = self.routes[entry.idx];
+        // Copied out before the teardown: the node goes with the
+        // content, and the label it is re-found by goes with the arena.
+        const carried_focus: ?CarriedFocus = if (focus_fate == .carried) captureFocus(app) else null;
         try clearContent(app);
         // The arena reclaim point (tree.zig's module doc): the removed
         // screen's strings — with every editing splice copy, IME
@@ -515,6 +532,8 @@ pub const Router = struct {
         // Focus starts over even when the scroll position does not: the
         // node it named is gone, and putting a screen reader's cursor
         // back by ordinal would land it on whatever took that place.
+        // A reload alone re-finds it by name once the tree stands
+        // again (`restoreFocus`, at the end of this rebuild).
         app.focused = null;
         // The sheet's *node* went with the content either way; whether
         // its builder gets to build again is `sheet`'s call, below.
@@ -548,9 +567,73 @@ pub const Router = struct {
         // reads the current route at draw time — so this is a no-op
         // there, and a no-op with no nav at all.
         nav_mod.syncNavChrome(app) catch {};
+        // Last of the tree work, so the search runs over everything
+        // that will actually stand: the rebuilt screen, the
+        // re-presented sheet, the synced chrome.
+        if (carried_focus) |c| restoreFocus(app, c);
         app.invalidate();
         // Last, so an observer that reads the app sees the finished tree.
         if (self.observer.call) |call| call(self.observer.ctx, entry.ref, change);
+    }
+
+    /// The label cap for a carried focus. A control named past it is
+    /// simply not re-found — better than re-found wrong — and the cap
+    /// exists because the label's own memory is the tree arena, which
+    /// the rebuild reclaims mid-flight.
+    const max_carried_label = 128;
+
+    /// The keyboard's place, in the only terms that outlive a rebuild:
+    /// the node id (chrome keeps its ids across `tree.reclaim`) and a
+    /// copy of the accessible name (the audit forbids two interactive
+    /// elements in one layer from sharing one —
+    /// `duplicate_interactive_label` — so within a layer the same name
+    /// is the same control).
+    const CarriedFocus = struct {
+        node: NodeId,
+        label_len: u8 = 0,
+        label: [max_carried_label]u8 = undefined,
+    };
+
+    /// Copies the focused stop out before the rebuild takes its node. A
+    /// link span's stop is not carried at all: its paragraph has no
+    /// accessible name of its own, and the span index is exactly the
+    /// ordinal a restore must never trust.
+    fn captureFocus(app: *const App) ?CarriedFocus {
+        const stop = app.focused orelse return null;
+        if (stop.span != null) return null;
+        const el = app.tree.getConst(stop.node) orelse return null;
+        var carried: CarriedFocus = .{ .node = stop.node };
+        const label = el.label();
+        if (label.len > 0 and label.len <= max_carried_label) {
+            @memcpy(carried.label[0..label.len], label);
+            carried.label_len = @intCast(label.len);
+        }
+        return carried;
+    }
+
+    /// The mirror of `captureFocus`, over the rebuilt tree: by identity
+    /// when the node still stands (chrome survives rebuilds), else by
+    /// name — first stop in the active layer wearing the carried label.
+    /// No match leaves focus where the rebuild put it: a re-presented
+    /// sheet's first stop, or nowhere, which is the old contract.
+    fn restoreFocus(app: *App, carried: CarriedFocus) void {
+        var by_name: ?NodeId = null;
+        var it = focus_mod.stops(&app.tree, app.focusScope());
+        while (it.next()) |stop| {
+            if (stop.span != null) continue;
+            const el = app.tree.getConst(stop.node).?;
+            if (el.isFolded()) continue;
+            if (stop.node.eql(carried.node)) {
+                app.focused = .of(stop.node);
+                return;
+            }
+            if (by_name == null and carried.label_len > 0 and
+                std.mem.eql(u8, el.label(), carried.label[0..carried.label_len]))
+            {
+                by_name = stop.node;
+            }
+        }
+        if (by_name) |id| app.focused = .of(id);
     }
 
     /// Saves the current screen's scroll positions into `entry`, in the

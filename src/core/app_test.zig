@@ -304,6 +304,79 @@ test "the collapsed chip follows the router without being rebuilt for nothing" {
     try testing.expectEqualStrings("Explore", app.tree.getConst(navChip(&app).?).?.nav_current.section);
 }
 
+/// The same table, said differently — what `setRouteTitles` is for.
+const crowded_routes_de = [_]router_mod.RouteDef{
+    .{ .name = "library", .title = "Bibliothek", .build = buildNavSection },
+    .{ .name = "settings", .title = "Einstellungen", .build = buildNavSection },
+    .{ .name = "explore", .title = "Entdecken", .build = buildNavSection },
+    .{ .name = "subs", .title = "Abonnements", .build = buildNavSection },
+    .{ .name = "account", .title = "Konto", .build = buildNavSection },
+};
+
+test "a retitled table rebuilds the chip without stranding focus" {
+    var app = try crowdedApp();
+    defer app.deinit();
+    try app.setNav(&crowded_nav);
+    try app.navigate("library");
+
+    // The visitor is holding the collapsed chip when the locale changes.
+    app.focused = .of(navChip(&app).?);
+    try app.setRouteTitles(&crowded_routes_de);
+
+    // The chip was rebuilt to say the new language, and focus moved
+    // with it instead of dangling into the removed node.
+    const chip = navChip(&app).?;
+    try testing.expect(app.focused.?.node.eql(chip));
+    try testing.expectEqualStrings("Bibliothek", app.tree.getConst(chip).?.nav_current.section);
+}
+
+test "a retitled row re-seats focus on the same destination, by route" {
+    var app = try App.init(testing.allocator, .{
+        // Wide enough that two short titles stay a row through both
+        // languages.
+        .viewport = .{ .w = 800, .h = 600 },
+        .routes = &crowded_routes,
+        .services = .mocks(),
+    });
+    defer app.deinit();
+    try app.setNav(&.{
+        .{ .route = "library", .icon = .library },
+        .{ .route = "settings", .icon = .settings },
+    });
+    try app.navigate("library");
+
+    var settings: ?NodeId = null;
+    var it = app.tree.dfs();
+    while (it.next()) |id| {
+        const el = app.tree.getConst(id).?;
+        if (el.* == .nav_item and std.mem.eql(u8, el.nav_item.route, "settings")) settings = id;
+    }
+    app.focused = .of(settings.?);
+
+    try app.setRouteTitles(&crowded_routes_de);
+    const held = app.focused.?.node;
+    const el = app.tree.getConst(held).?;
+    // Not the old node — the retitle rebuilt the row — but the same
+    // destination, found by the one term the retitle cannot change.
+    try testing.expect(!held.eql(settings.?));
+    try testing.expectEqualStrings("settings", el.nav_item.route);
+    try testing.expectEqualStrings("Einstellungen", el.nav_item.label);
+}
+
+test "focus on surviving chrome carries across reload by identity, not name" {
+    var app = try crowdedApp();
+    defer app.deinit();
+    try app.setNav(&crowded_nav);
+    try app.navigate("library");
+
+    const chip = navChip(&app).?;
+    app.focused = .of(chip);
+    try app.router.reload(&app);
+    // The chip is never rebuilt (the test above), so the carried focus
+    // lands back on the very node — no name lookup to go wrong.
+    try testing.expect(app.focused.?.node.eql(chip));
+}
+
 test "the nav reshapes as the viewport crosses the threshold" {
     var app = try crowdedApp();
     defer app.deinit();
