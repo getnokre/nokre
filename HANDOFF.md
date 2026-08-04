@@ -40,11 +40,6 @@ free to move labels at runtime — and did, the same day (below).
 What remains, now that the execution-order list is done. One session
 each, any order. No consumer API changes except where noted.
 
-- **Two C copies of "open a URL" per desktop.** **Decided: dedupe.**
-  One launcher per platform, owned by the shell; oauth's loopback leg
-  names the shell symbol. The coupling is deliberate and
-  owner-approved — document it as such where the symbol lives, so the
-  next reader doesn't "fix" it back into two copies.
 - **One `services.Failure`.** http, oauth and iap each declare the
   identical `struct { name: []const u8 }`; a consumer's shared
   failure-surface helper cannot take one type. Unifying changes
@@ -57,6 +52,23 @@ each, any order. No consumer API changes except where noted.
 
 ## Shipped from this list (2026-08-04, for the record)
 
+- One URL launcher per desktop, owned by the shell: the second
+  ShellExecuteW / double-fork xdg-open each desktop carried under
+  `src/services/oauth` is deleted (windows.c, linux.c, and oauth.h's
+  `nokre_oauth_open_url` with them), and oauth's loopback leg names the
+  shell's own `nokre_open_url_open` — which now returns the honest "did
+  the handoff start" bit that leg's `BrowserUnavailable` (and its
+  blocked listener thread) needs, while the open_url service discards
+  the value by its fire-and-forget doctrine. The service→shell coupling
+  is deliberate and owner-approved, and open_url.h says so where the
+  symbol lives. All six shells and `testing.shell` moved to the
+  int-returning signature; shell32 moved onto the Windows shell's own
+  lib list, where ShellExecuteW always lived. `nokre.revision` bumped
+  to 3 — the site generator authors a shell of its own, so the hook's
+  signature is consumer-visible — and all three pins moved. Goldens
+  byte-identical on all three builds; check-targets green. open_url.h
+  owns the coupling, docs/internals/oauth.md the flow-side record
+  (nokre `1a50ac1`, rokovski `4a531865`, site `2807faf`).
 - `Button`'s form, as a tagged union: `form: union(enum) { filled,
   secondary, glyph, provider }` replaces the `secondary` / `icon` /
   `icon_only` / `provider` quartet, and the five illegal pairings the
