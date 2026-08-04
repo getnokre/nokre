@@ -5,10 +5,11 @@
 //! the system browser, never an embedded web view). nokre renders no
 //! external content — the page opens where the user's own chrome,
 //! cookies, and password manager live, and where the address bar is
-//! theirs to trust. Fire-and-forget: the only thing this call can
-//! honestly report is that the OS was asked (the same line oauth's
-//! desktop leg draws about xdg-open's grandchild), so nothing comes
-//! back and no state is kept.
+//! theirs to trust. Fire-and-forget at this surface: the only thing
+//! the launcher can honestly report is that the handoff started, and
+//! that bit belongs to oauth's loopback leg, not to an app — so
+//! nothing comes back here and no state is kept. The launcher itself
+//! is the shell's, and oauth shares it (open_url.h).
 //!
 //! The scheme set is closed — `https`, `http`, `mailto` — and checked
 //! here, before any OS call, so `UnsupportedScheme` means one thing on
@@ -36,10 +37,13 @@ const App = app_mod.App;
 
 pub const Error = error{UnsupportedScheme};
 
-// Every shell exports nokre_open_url_open.
+// Every shell exports nokre_open_url_open. The return — 0 when the
+// handoff started — exists for oauth's loopback leg, the launcher's
+// other caller (open_url.h states the coupling); this service's
+// contract stays fire-and-forget, so it discards the value.
 const has_shell_hook = services.every_shell_hooks;
 
-extern fn nokre_open_url_open(url: [*]const u8, len: usize) void;
+extern fn nokre_open_url_open(url: [*]const u8, len: usize) c_int;
 
 /// The closed scheme set: `https`, `http`, `mailto`, and nothing else.
 /// Pure — construction gates (tree.zig) and the markdown parser ask the
@@ -65,7 +69,7 @@ pub fn open(app: *const App, url: []const u8) Error!void {
     if (comptime builtin.is_test) {
         app.services.open_url.state.?.record(url);
     } else if (comptime has_shell_hook) {
-        nokre_open_url_open(url.ptr, url.len);
+        _ = nokre_open_url_open(url.ptr, url.len);
     }
 }
 

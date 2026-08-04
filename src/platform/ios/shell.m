@@ -1270,16 +1270,20 @@ void nokre_shell_write_clipboard(const char *utf8, size_t len) {
     UIPasteboard.generalPasteboard.string = text;
 }
 
-void nokre_open_url_open(const char *url, size_t len) {
+int nokre_open_url_open(const char *url, size_t len) {
     NSString *str = [[NSString alloc] initWithBytes:url
                                              length:len
                                            encoding:NSUTF8StringEncoding];
     NSURL *target = str == nil ? nil : [NSURL URLWithString:str];
-    if (target == nil) return;
+    if (target == nil) return 1;
     // The app-switch to Safari (or Mail): the OS animates away and the
-    // user comes back through their own multitasking. Fire-and-forget
-    // by contract, so the completion handler is nil.
+    // user comes back through their own multitasking. The outcome
+    // arrives only through the async completion handler, so the honest
+    // synchronous answer is "the OS was asked" (open_url.h's ceiling) —
+    // and nobody on this platform reads more: oauth's browser leg is
+    // ASWebAuthenticationSession, not the loopback flow.
     [UIApplication.sharedApplication openURL:target options:@{} completionHandler:nil];
+    return 0;
 }
 
 void nokre_share_show(const char *text, size_t len) {

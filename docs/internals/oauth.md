@@ -272,7 +272,7 @@ words; a logotype is a word.
 Only the mock path is exercised by `zig build test`; `zig build
 check-targets` compile-checks every leg's Zig (including the loopback
 listener) per target. The native halves — `apple.m`, the Custom Tab,
-the two `open_url` implementations, the popup JS in services.js — are
+the shells' URL launchers, the popup JS in services.js — are
 compile-checked where the host allows it and **otherwise unverified on
 a macOS host**, the
 same posture the Linux shell landed under (see
@@ -501,8 +501,14 @@ by the renderer, exactly like every gray.
   making `oauth` the first service to compose the worker registry, which
   would have dragged `nokreWorkers` membership into every consumer that
   signs in. The listener is `loopback.zig`; Windows and Linux share it
-  byte for byte, and their whole C surface shrinks to one
-  `nokre_oauth_open_url`. Each accepted connection gets a 5-second read
+  byte for byte, and their whole native surface shrinks to the shell's
+  own URL launcher, `nokre_open_url_open` — one launcher per platform,
+  owned by the shell, the deliberate service→shell coupling
+  `src/services/open_url/open_url.h` states (owner-approved,
+  2026-08-04; before that each desktop carried a second
+  ShellExecuteW/xdg-open copy under `src/services/oauth`, and the
+  launcher's "did the handoff start" return exists for this leg's
+  `BrowserUnavailable`). Each accepted connection gets a 5-second read
   deadline: a connection that never sends its request line — a
   browser's silent preconnect, or any local process squatting the port
   — would otherwise park the single listener in the read and stall the

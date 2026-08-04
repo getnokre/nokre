@@ -56,8 +56,12 @@ export fn nokre_locale_install(
 }
 export fn nokre_locale_uninstall() void {}
 
-export fn nokre_open_url_open(utf8: [*]const u8, len: usize) void {
+export fn nokre_open_url_open(utf8: [*]const u8, len: usize) c_int {
     record(&opened, utf8, len);
+    // 0, "the handoff started": the recording slot is this shell's
+    // browser, and it accepted — so an oauth loopback flow driven from
+    // a test proceeds to its listener instead of failing at launch.
+    return 0;
 }
 
 export fn nokre_shell_write_clipboard(utf8: [*]const u8, len: usize) void {
@@ -128,7 +132,7 @@ test "the recording hooks hand back the last payload whole" {
     try std.testing.expectEqualStrings("", lastCopied());
     const first = "https://example.test/a";
     const second = "copied text";
-    nokre_open_url_open(first.ptr, first.len);
+    _ = nokre_open_url_open(first.ptr, first.len);
     nokre_shell_write_clipboard(second.ptr, second.len);
     nokre_share_show(first.ptr, first.len);
     try std.testing.expectEqualStrings(first, lastOpened());

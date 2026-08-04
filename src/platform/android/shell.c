@@ -172,14 +172,18 @@ void nokre_shell_write_clipboard(const char *utf8, size_t len) {
 
 // ---- open_url (service outbound hook; NokreView.openUrl fires the intent) ----
 
-void nokre_open_url_open(const char *url, size_t len) {
+int nokre_open_url_open(const char *url, size_t len) {
     JNIEnv *env = mainEnv(); // main thread only, like all input callbacks
-    if (env == NULL || g_view == NULL) return;
+    if (env == NULL || g_view == NULL) return 1;
     jbyteArray bytes = (*env)->NewByteArray(env, (jsize)len);
-    if (bytes == NULL) return;
+    if (bytes == NULL) return 1;
     (*env)->SetByteArrayRegion(env, bytes, 0, (jsize)len, (const jbyte *)url);
     (*env)->CallVoidMethod(env, g_view, g_mid_open_url, bytes);
     (*env)->DeleteLocalRef(env, bytes);
+    // "The OS was asked" is the ceiling here (open_url.h): the intent
+    // fires on the Java side, and nobody on this platform reads more —
+    // oauth's browser leg is the Custom Tab, not the loopback flow.
+    return 0;
 }
 
 // ---- share (service outbound hook; NokreView.showShare fires the chooser) ----

@@ -17,7 +17,8 @@ A shell's complete job description:
    behind the clipboard service ([../services.md](../services.md)),
    which backs the `copyable` element and `App.copyText`. Hand a URL to
    the system browser when asked — open_url's hook, the same shape
-   (outbound, fire-and-forget, nothing links).
+   (outbound, nothing links; it answers only "did the handoff start",
+   and only oauth's loopback leg reads even that).
 5. Report the device locale at install and on every change — the one C
    hook behind the locale service, which is what a localized app
    resolves its strings against.
@@ -104,15 +105,20 @@ this dumb contract — the shell implements them, but they answer to a
 service header, not shell.h. `nokre_shell_write_clipboard` above is one
 (clipboard, outbound). open_url's `nokre_open_url_open`
 ([src/services/open_url/open_url.h](../../src/services/open_url/open_url.h))
-is its sibling, outbound and fire-and-forget: the scheme allowlist has
-already run in Zig, so every shell opens what it is handed
-(`NSWorkspace` on macOS, `UIApplication openURL` on iOS, ShellExecuteW
-on Windows, an ACTION_VIEW intent via `NokreView.openUrl` on Android,
-oauth's double-fork `xdg-open` on the Wayland shell; the web has no C
-shell — services.js implements the import as
-`window.open(…, "_blank", "noopener")`, reached only by keyboard
-activation, since the live driver leaves pointer clicks on external
-anchors to the browser). share's `nokre_share_show`
+is its sibling, outbound: the scheme allowlist has already run in Zig,
+so every shell opens what it is handed (`NSWorkspace` on macOS,
+`UIApplication openURL` on iOS, ShellExecuteW on Windows, an
+ACTION_VIEW intent via `NokreView.openUrl` on Android, a double-fork
+`xdg-open` on the Wayland shell; the web has no C shell — services.js
+implements the import as `window.open(…, "_blank", "noopener")`,
+reached only by keyboard activation, since the live driver leaves
+pointer clicks on external anchors to the browser). This hook is each
+desktop's *one* URL launcher: oauth's loopback leg names the same
+symbol instead of keeping its own ShellExecuteW/xdg-open copy, which
+is why the hook returns "did the handoff start" — the open_url service
+discards it (fire-and-forget at that surface), oauth's
+`BrowserUnavailable` reads it, and the coupling is deliberate and
+owner-approved (the header states it). share's `nokre_share_show`
 ([src/services/share/share.h](../../src/services/share/share.h)) is the
 same shape with one asymmetry: the Wayland shell does not export it —
 the Linux desktop has no share sheet, and the service answers

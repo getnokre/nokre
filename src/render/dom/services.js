@@ -20,7 +20,7 @@ export function silentHooks() {
   return {
     nokre_shell_request_frame: () => {},
     nokre_shell_write_clipboard: () => {},
-    nokre_open_url_open: () => {},
+    nokre_open_url_open: () => 1, // no window to open from — "did not start", honestly
     nokre_share_show: () => {},
     // A compute instance has no sheet to show, so its boot probe says
     // none — only the page's instance asks the real navigator.
@@ -378,9 +378,12 @@ export function appHooks({ nk, memory, workerUrl, wasmUrl, onWork, onMetrics }) 
     // same posture (rel="noopener noreferrer"). This import is the
     // keyboard path; a pointer click on an external anchor never gets
     // here, because live.js leaves real anchors to the browser.
+    // The null a blocked popup returns is the honest "did not start"
+    // (open_url.h) — though on this platform nobody reads it: oauth's
+    // browser leg is its own popup through nokre_oauth_js_open.
     nokre_open_url_open: (ptr, len) => {
       const url = utf8.decode(memory().subarray(ptr, ptr + len));
-      window.open(url, "_blank", "noopener");
+      return window.open(url, "_blank", "noopener") === null ? 1 : 0;
     },
 
     // ---- share (docs/services.md) ----

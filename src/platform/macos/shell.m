@@ -513,16 +513,18 @@ void nokre_shell_write_clipboard(const char *utf8, size_t len) {
     [pb setString:text forType:NSPasteboardTypeString];
 }
 
-void nokre_open_url_open(const char *url, size_t len) {
+int nokre_open_url_open(const char *url, size_t len) {
     NSString *str = [[NSString alloc] initWithBytes:url
                                              length:len
                                            encoding:NSUTF8StringEncoding];
     NSURL *target = str == nil ? nil : [NSURL URLWithString:str];
-    if (target == nil) return;
+    if (target == nil) return 1;
     // The default handler for the scheme: Safari-or-whatever for https,
-    // the user's mail client for mailto. Fire-and-forget by contract,
-    // so the BOOL result is not consulted.
-    [NSWorkspace.sharedWorkspace openURL:target];
+    // the user's mail client for mailto. The BOOL is the honest "did
+    // the handoff start" the contract asks for (open_url.h) — though on
+    // this platform nobody reads it: oauth's browser leg is
+    // ASWebAuthenticationSession, not the loopback flow.
+    return [NSWorkspace.sharedWorkspace openURL:target] ? 0 : 1;
 }
 
 // The last picker shown, held strongly: NSSharingServicePicker's menu

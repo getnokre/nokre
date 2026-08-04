@@ -451,10 +451,12 @@ fn addDesktopApp(hb: *std.Build, options: AppOptions) App {
                 .file = hb.path("src/platform/windows/shell.c"),
                 .flags = &.{"-std=c11"},
             });
-            // user32/gdi32/imm32/advapi32/dwmapi are the shell's; the rest
-            // back the AccessKit Rust static library (UIA plus the Rust std
-            // runtime).
-            for ([_][]const u8{ "user32", "gdi32", "imm32", "advapi32", "dwmapi", "uiautomationcore", "oleaut32", "ole32", "ws2_32", "userenv", "bcrypt", "ntdll" }) |lib|
+            // user32/gdi32/imm32/advapi32/dwmapi/shell32 are the shell's
+            // (shell32 is ShellExecuteW — the URL launcher, which used to
+            // ride oauth's link and is the shell's own dependency now);
+            // the rest back the AccessKit Rust static library (UIA plus
+            // the Rust std runtime).
+            for ([_][]const u8{ "user32", "gdi32", "imm32", "advapi32", "dwmapi", "shell32", "uiautomationcore", "oleaut32", "ole32", "ws2_32", "userenv", "bcrypt", "ntdll" }) |lib|
                 app_mod.linkSystemLibrary(lib, .{});
             app_mod.linkLibrary(ak);
             app_mod.addObjectFile(hb.path(accesskit_lib));
@@ -2244,10 +2246,13 @@ fn addDeepLink(b: *std.Build, mod: *std.Build.Module, decl: ?PackageDecl, enable
 // The options module is ALWAYS added (package_info's rule). Unlike
 // deep_link, oauth owns native files of its own: the browser session is
 // a service capability, not something a shell has any business knowing
-// about, so ASWebAuthenticationSession and the two desktop "open a URL"
-// verbs live under src/services/oauth — secure_store's placement, not
-// deep_link's. Android compiles android.c through the consumer's CMake
-// (the Android split), and the web leg is Zig plus services.js.
+// about, so ASWebAuthenticationSession lives under src/services/oauth —
+// secure_store's placement, not deep_link's. Android compiles android.c
+// through the consumer's CMake (the Android split), and the web leg is
+// Zig plus services.js. The desktops add no C here at all: their
+// browser handoff is the shell's own launcher, `nokre_open_url_open`
+// (src/services/open_url/open_url.h states the coupling), and the
+// listener is Zig (loopback.zig).
 fn addOauth(b: *std.Build, mod: *std.Build.Module, decl: ?PackageDecl, services: packaging.Services) void {
     var enabled = services.oauth_schemes.len != 0 or services.oauth_apple;
     if (enabled and decl == null) {
@@ -2291,25 +2296,12 @@ fn addOauth(b: *std.Build, mod: *std.Build.Module, decl: ?PackageDecl, services:
                 mod.linkFramework("AppKit", .{});
             }
         },
-        .windows => {
-            // ShellExecuteW only; zig's bundled mingw headers carry
-            // shellapi.h, so this compiles host-independently — but
-            // those headers ride along with libc linkage.
-            mod.link_libc = true;
-            mod.addCSourceFile(.{ .file = b.path("src/services/oauth/windows.c"), .flags = &.{"-std=c11"} });
-            mod.linkSystemLibrary("shell32", .{});
-        },
-        .linux => {
-            // Android's Custom Tab rides the Gradle/CMake build
-            // (android.c → NokreOAuth.java), so build.zig adds no C for
-            // it — secure_store's Android rule. Desktop Linux gets
-            // xdg-open through posix_spawn, which needs only libc, so
-            // unlike libsecret it cross-compiles from any host.
-            if (!target.abi.isAndroid()) {
-                mod.link_libc = true;
-                mod.addCSourceFile(.{ .file = b.path("src/services/oauth/linux.c"), .flags = &.{"-std=c11"} });
-            }
-        },
+        // Windows and desktop Linux add nothing: the browser handoff is
+        // the shell's launcher (nokre_open_url_open — ShellExecuteW /
+        // xdg-open, already compiled with the shell), and the listener
+        // is Zig. Android's Custom Tab rides the Gradle/CMake build
+        // (android.c → NokreOAuth.java), so build.zig adds no C for it
+        // either — secure_store's Android rule.
         else => {}, // wasm links nothing (services.js carries the popup)
     }
 }

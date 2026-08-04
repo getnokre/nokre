@@ -1036,26 +1036,32 @@ void nokre_shell_write_clipboard(const char *utf8, size_t len) {
     wl_display_flush(g.display);
 }
 
-// xdg-open rather than a portal call, for the reason oauth's desktop
-// leg states (src/services/oauth/linux.c): opening a URI is the one
-// desktop integration every environment has agreed on for two decades,
-// and the portal's OpenURI would add a D-Bus round trip to reach the
-// same handler. The shell itself never spawns processes, so the
-// double-fork is borrowed from that leg too: the intermediate exits at
-// once and is waited for here, xdg-open is re-parented to init, and
-// the app never acquires a child it must reap — a GUI app has no event
-// loop slot for SIGCHLD, and installing a handler would be a shell
-// reaching into process-wide state.
-void nokre_open_url_open(const char *url, size_t len) {
-    if (len == 0) return;
+// xdg-open rather than a portal call: opening a URI is the one desktop
+// integration every environment has agreed on for two decades, it is
+// present on any system with a browser, and the portal's OpenURI would
+// add a D-Bus round trip to reach the same handler. This is the
+// platform's one launcher — oauth's loopback leg names this symbol
+// rather than keeping a second copy (open_url.h states the coupling).
+//
+// Double fork, so the app never acquires a child it must reap: the
+// intermediate exits immediately and is waited for here, and xdg-open
+// is re-parented to init. A single fork would leave a zombie for the
+// life of the process — a GUI app has no event loop slot for SIGCHLD,
+// and installing a handler would be a shell reaching into process-wide
+// state. What the return can honestly report is whether the launch
+// *started*: the grandchild's own exit code is init's to collect, not
+// ours. A browser that opens and then fails to reach its page is the
+// user's to see.
+int nokre_open_url_open(const char *url, size_t len) {
+    if (len == 0) return 1;
     char *arg = malloc(len + 1);
-    if (arg == NULL) return;
+    if (arg == NULL) return 1;
     memcpy(arg, url, len);
     arg[len] = '\0';
     pid_t middle = fork();
     if (middle < 0) {
         free(arg);
-        return;
+        return 1;
     }
     if (middle == 0) {
         pid_t grandchild = fork();
@@ -1069,6 +1075,7 @@ void nokre_open_url_open(const char *url, size_t len) {
     while (waitpid(middle, &status, 0) < 0 && errno == EINTR) {
     }
     free(arg);
+    return (WIFEXITED(status) && WEXITSTATUS(status) == 0) ? 0 : 1;
 }
 
 // ---- deep_link: single-instance forwarding over a Unix socket ----

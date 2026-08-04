@@ -3,7 +3,8 @@
 //! worth binding — the xdg desktop portal has none, and Windows'
 //! WebAuthenticationBroker is a WinRT/UWP surface a Win32 app cannot use
 //! — so both share this one implementation, and their whole native
-//! surface shrinks to `nokre_oauth_open_url`.
+//! surface shrinks to the shell's own launcher, `nokre_open_url_open`
+//! (open_url.zig names it; open_url.h states the coupling).
 //!
 //! One detached thread per flow, blocked on `accept` until the browser
 //! redirects: the same bargain as the http service's native transport

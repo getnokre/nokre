@@ -83,12 +83,13 @@ void *nokre_oauth_apple_start(void *ctx, nokre_oauth_apple_cb cb,
 // learns what a flow is. `status` is one of the NOKRE_OAUTH_* codes above.
 void nokre_oauth_dispatch(int status, const char *text, size_t len);
 
-// ---- desktop: open a URL, and nothing else ----
+// ---- desktop ----
 // Windows and Linux have no auth-session API worth binding, so their
-// whole native surface is this one verb; the redirect comes back to a
-// loopback listener that lives in Zig (RFC 8252 §7.3, loopback.zig).
-// Returns 0 on success, nonzero if the browser could not be launched.
-int nokre_oauth_open_url(const char *url, size_t len);
+// browser handoff is the shell's own launcher, `nokre_open_url_open`
+// (src/services/open_url/open_url.h — the coupling is stated there),
+// and the redirect comes back to a loopback listener that lives in
+// Zig (RFC 8252 §7.3, loopback.zig). oauth declares no desktop C of
+// its own.
 
 #ifdef __cplusplus
 }

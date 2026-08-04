@@ -495,19 +495,26 @@ void nokre_shell_write_clipboard(const char *utf8, size_t len) {
     CloseClipboard();
 }
 
-void nokre_open_url_open(const char *url, size_t len) {
-    if (len == 0 || len > INT_MAX) return;
+// The platform's one launcher — oauth's loopback leg names this symbol
+// rather than keeping a second ShellExecuteW copy (open_url.h states
+// the coupling).
+int nokre_open_url_open(const char *url, size_t len) {
+    if (len == 0 || len > INT_MAX) return 1;
     // ShellExecuteW, not ShellExecuteA: the URL is UTF-8 and the ANSI
-    // entry point would mangle any non-ASCII byte — oauth's desktop leg
-    // (src/services/oauth/windows.c), minus the result nobody gets.
+    // entry point would mangle any non-ASCII byte in a state parameter.
     int wide_len = MultiByteToWideChar(CP_UTF8, 0, url, (int)len, NULL, 0);
-    if (wide_len <= 0) return;
+    if (wide_len <= 0) return 1;
     WCHAR *wide = (WCHAR *)calloc((size_t)wide_len + 1, sizeof(WCHAR));
-    if (wide == NULL) return;
+    if (wide == NULL) return 1;
     MultiByteToWideChar(CP_UTF8, 0, url, (int)len, wide, wide_len);
     wide[wide_len] = L'\0';
-    ShellExecuteW(NULL, L"open", wide, NULL, NULL, SW_SHOWNORMAL);
+    // The documented success test: a return value above 32. Anything at
+    // or below it is one of the legacy error codes, and none of them is
+    // worth distinguishing — the caller gets "no browser could be
+    // launched" either way, which is the only thing it can act on.
+    HINSTANCE rc = ShellExecuteW(NULL, L"open", wide, NULL, NULL, SW_SHOWNORMAL);
     free(wide);
+    return ((INT_PTR)rc > 32) ? 0 : 1;
 }
 
 // ---- share service outbound hook ----
