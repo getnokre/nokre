@@ -11,21 +11,13 @@
 const std = @import("std");
 const stylesheet = @import("nokre").render.dom.stylesheet;
 
-/// A program that links the library owes the hooks a shell owes, and
-/// `locale` is the one every non-test build names (services/locale/
-/// locale.h). This tool has no window and no device to ask, so it
-/// answers the way a shell with nothing to report does: the empty tag,
-/// never an invented one.
-export fn nokre_locale_install(
-    ctx: ?*anyopaque,
-    cb: *const fn (ctx: ?*anyopaque, tag: [*]const u8, len: usize) callconv(.c) void,
-) void {
-    cb(ctx, "", 0);
+// A program that links the library owes the hooks a shell owes, and
+// `locale` is the one every non-test build names (services/locale/
+// locale.h). Naming the shipped shell is the whole install
+// (src/testing/shell.zig).
+comptime {
+    _ = @import("nokre").testing.shell;
 }
-
-/// The install's pair (locale.h): nothing was stored, so nothing needs
-/// forgetting, but the symbol is still owed by whoever links the library.
-export fn nokre_locale_uninstall() void {}
 
 pub fn main(init: std.process.Init) !void {
     const gpa = init.arena.allocator();

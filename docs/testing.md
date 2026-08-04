@@ -828,10 +828,28 @@ turned on, and deliberately not:
   any `*App`, in any build.
 
 Two things a driver owes that a test does not. It owes the hooks a
-shell owes — `nokre_locale_install` and its pair at minimum, plus
-`nokre_open_url_open` and `nokre_shell_write_clipboard` if its screens
-reach them — exported by the program itself, answering the way a shell
-with nothing to report does. And it owes the `App` a fixed address: a
+shell owes — the free C functions the services name, which a binary
+with no shell must still resolve. nokre ships that shell:
+`testing.shell` defines all of them, and naming it in the driver is the
+whole install —
+
+```zig
+comptime {
+    _ = nokre.testing.shell;
+}
+```
+
+Each hook answers the way a shell with nothing to report does, except
+the three where a screen's outcome would otherwise vanish: what was
+last written to the clipboard, handed to a share sheet, or opened as an
+outbound URL is recorded, and the driver reads it back with
+`testing.shell.lastCopied()`, `lastShared()`, and `lastOpened()` —
+empty when the hook never fired, last write wins, matching the platform
+mocks' recordings under `zig test`. Never name it in a windowed build:
+its definitions and the real shell's collide at link time, which is
+exactly the guard. It also owns no loop — pumping `app.runtime.pump()`
+stays the driver's job, on the driver's own deadlines. And a driver
+owes the `App` a fixed address: a
 press handler holds a `*App`, so build the app into storage that
 outlives the call rather than returning one by value (`Harness` keeps it
 as a field for exactly that reason).

@@ -45,6 +45,11 @@ pub const driver = @import("driver.zig");
 pub const audit = @import("audit.zig");
 pub const golden = @import("golden.zig");
 pub const trace = @import("trace.zig");
+/// The driver tier's shell: the C hooks a headless binary owes,
+/// exported once here instead of hand-written per driver. Analyzed —
+/// and therefore linked — only when a root names it
+/// (`comptime { _ = nokre.testing.shell; }`); see its own doc comment.
+pub const shell = @import("shell.zig");
 
 const App = app_mod.App;
 const NodeId = tree_mod.NodeId;

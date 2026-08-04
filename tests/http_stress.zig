@@ -48,22 +48,10 @@ const body_text = "ok";
 
 // A program that links the library owes the hooks a shell owes
 // (docs/testing.md's "where the harness stops": the driver *is* the
-// shell's half of the line). A driver has no window and no device to
-// ask, so each one answers the way a shell with nothing to report does.
-export fn nokre_locale_install(
-    ctx: ?*anyopaque,
-    cb: *const fn (ctx: ?*anyopaque, tag: [*]const u8, len: usize) callconv(.c) void,
-) void {
-    cb(ctx, "", 0);
-}
-export fn nokre_locale_uninstall() void {}
-export fn nokre_open_url_open(url: [*]const u8, len: usize) void {
-    _ = url;
-    _ = len;
-}
-export fn nokre_shell_write_clipboard(utf8: [*]const u8, len: usize) void {
-    _ = utf8;
-    _ = len;
+// shell's half of the line). Naming the shipped shell is the whole
+// install (src/testing/shell.zig).
+comptime {
+    _ = nok.testing.shell;
 }
 
 /// A loopback origin on both families at one port, so the name

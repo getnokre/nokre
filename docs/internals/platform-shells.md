@@ -587,6 +587,26 @@ linked service calls out through are the same free functions this
 document names, answered in JavaScript
 ([services.js](../../src/render/dom/services.js)) instead of in C.
 
+## The headless shell
+
+One more program sits in the shell's seat: a *driver* — a headless
+native binary (nokre's own `tests/dev_store.zig` and
+`tests/http_stress.zig`, a consumer's system-test or e2e runner) that
+links the library and therefore owes the same free functions. nokre
+ships that shell as
+[src/testing/shell.zig](../../src/testing/shell.zig), and its doc
+comment is the contract: which hooks it defines, why three of them
+record instead of staying silent, and why naming the module
+(`comptime { _ = nokre.testing.shell; }`) is the whole install. Two
+shell-side facts belong here rather than there. It is `export`s only —
+linking it into a windowed build collides with the real shell's
+definitions, and that loud duplicate-symbol error is the intended
+guard. And it installs no wake and owns no loop: worker and http
+replies queue until the driver's own `app.runtime.pump()` runs
+([workers.md](workers.md)), which is the pump the platform shells wire
+into their main loops and a driver runs by hand — the consumer-facing
+half of that story is [testing.md](../testing.md)'s "Driving an app
+outside `zig test`".
 
 ## IME
 

@@ -175,6 +175,11 @@ test {
     _ = testing.audit;
     _ = testing.golden;
     _ = testing.trace;
+    // Unlike the platform shells this one is safe to name here: it
+    // *defines* the shell symbols (`export`) rather than referencing
+    // them (`extern`), and under `zig test` no other definition exists
+    // to collide with — the mocks are the only service path.
+    _ = testing.shell;
     // Test suites for the larger modules live in sibling *_test.zig files.
     _ = @import("core/app_test.zig");
     _ = @import("core/bidi_test.zig");

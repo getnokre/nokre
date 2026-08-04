@@ -70,6 +70,7 @@ nokre is a strict layer cake. Each layer knows only the layer below it.
 | [src/testing/queries.zig](../../src/testing/queries.zig) / [driver.zig](../../src/testing/driver.zig) | semantic queries — find by what users perceive, never by index — and the synthetic input driver, both through `App.dispatch` |
 | [src/testing/audit.zig](../../src/testing/audit.zig) | the accessibility audit: the whole-tree content rules construction-time validation cannot cover |
 | [src/testing/trace.zig](../../src/testing/trace.zig) / [golden.zig](../../src/testing/golden.zig) / [diag.zig](../../src/testing/diag.zig) | per-step tracing, byte-exact PPM goldens, and the harness's one stderr gate |
+| [src/testing/shell.zig](../../src/testing/shell.zig) | the headless shell a driver binary names instead of hand-exporting the C hooks a shell owes ([internals/platform-shells.md](platform-shells.md)) |
 | [src/core/test_app.zig](../../src/core/test_app.zig) | the mocked App nokre's *own* unit tests build on — internal, not the consumer fixture above |
 | [src/platform/platform.zig](../../src/platform/platform.zig) | comptime backend selection |
 | [src/platform/c_shell.zig](../../src/platform/c_shell.zig) | shared Zig side of the C shell contract ([shell.h](../../src/platform/shell.h)); names no rendering backend |
