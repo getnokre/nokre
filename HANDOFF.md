@@ -37,18 +37,7 @@ free to move labels at runtime — and did, the same day (below).
 
 ## Execution order
 
-### 1. `App.Chrome` without silent English
-
-**Decided: comptime-checked catalogue, opt-in.** The English defaults
-stay for the zero-config hello-world case. An app that opts into
-localization hands over a catalogue, and the hand-off is
-comptime-checked: all 17 chrome strings (re-count) covered or it does
-not compile. Missing coverage becomes a compile error, not a runtime
-drift — the failure mode the survey caught (the two apps already
-disagreed on one key) becomes unrepresentable for any app that has
-opted in.
-
-### 2. Worker queueing
+### 1. Worker queueing
 
 **Decided: the handle grows a small bounded FIFO.** A second ask
 queues instead of answering `error.Interrupted`; a mutation can no
@@ -59,7 +48,7 @@ refusal that every consumer papers over with the same code was not
 buying determinism, it was exporting complexity. Document the queue's
 bound and overflow behavior as the contract.
 
-### 3. `expectGolden` on the harness
+### 2. `expectGolden` on the harness
 
 Taking a golden from consumer code is a five-step incantation (set the
 module-global `testing.golden.update`, build a Skia surface at the
@@ -67,7 +56,7 @@ viewport, swap the measurer, render, unpack four accessors into
 `expectMatches`) — both apps carry the same 19-line wrapper. One
 harness verb, and the module-global update flag becomes an argument.
 
-### 4. A recording headless shell
+### 3. A recording headless shell
 
 A consumer building a headless native binary (system tests, e2e
 drivers) hand-declares nokre ABI symbols — 21 extern declarations
@@ -75,7 +64,7 @@ across 4 files in the consumer, with exact `callconv(.c)` signatures.
 A rename here is at best a link error there. nokre ships the
 null/recording shell it is currently forcing every consumer to write.
 
-### 5. Vendoring
+### 4. Vendoring
 
 **Decided: revision constant plus published manifest.** A `revision`
 constant in nokre source that consumers assert (replacing the prose
@@ -120,6 +109,15 @@ they don't collide. No consumer API changes except where noted.
 
 ## Shipped from this list (2026-08-04, for the record)
 
+- The chrome catalogue: `Chrome.Catalog` is `Chrome` field for field
+  with the defaults stripped — generated from `Chrome` itself, so the
+  two cannot drift — and `Chrome.fromCatalog` is the hand-off. An
+  opted-in app that misses a chrome string (16 at this writing, or one
+  nokre grows later) stops compiling instead of shipping English
+  mid-nav; the bare literal and its English defaults stay for the
+  zero-config app. Both apps' `chromeFor` opted in, words unchanged;
+  goldens byte-identical on all three builds. docs/localization.md
+  owns the wiring (nokre `f9e484c`, rokovski `cdc544da`).
 - The chosen locale, and route titles: the App owns the chosen locale
   (`Options.locale` / `setLocale` / `locale()`, a bounded tag copy,
   validated whole before commit) and `RouteDef.title` is a union —
