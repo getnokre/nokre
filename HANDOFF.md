@@ -35,23 +35,10 @@ migration shipped (2026-08-04, below): the consumer's lookups are
 role+name and its fixtures pin `en`, so the chosen-locale work was
 free to move labels at runtime — and did, the same day (below).
 
-## Execution order
-
-### 1. Vendoring
-
-**Decided: revision constant plus published manifest.** A `revision`
-constant in nokre source that consumers assert (replacing the prose
-pin in two markdown files that already disagreed when surveyed), and
-the web site's file list published as data — emitted by the build the
-way `zig build pkg` already emits manifests — so the consumer's CLI
-reads it instead of re-typing it with a comment admitting it is
-nokre's contract. Hand-bumped constant, no CI; the no-CI stance is not
-in question.
-
 ## Structural, nokre-internal
 
-One session each, any order, interleaved with the list above wherever
-they don't collide. No consumer API changes except where noted.
+What remains, now that the execution-order list is done. One session
+each, any order. No consumer API changes except where noted.
 
 - **`Button`'s form as a tagged union.** `secondary`, `icon`,
   `icon_only`, `provider` interact under five `validateAppend` rules —
@@ -82,6 +69,22 @@ they don't collide. No consumer API changes except where noted.
 
 ## Shipped from this list (2026-08-04, for the record)
 
+- Vendoring, as the library's own contract: `nokre.revision` is the
+  hand-bumped constant (no CI, deliberately) consumers assert at
+  comptime — both apps and the site generator carry the assert in
+  their root modules, and a moved checkout fails the build naming both
+  numbers — replacing the consumer's prose pins, which had already
+  drifted apart (rokovski's HANDOFF.md carried `f7c6c08` and `9a08714`
+  at once). And the site's file list is published as data:
+  `addWebSite` writes `site.manifest` — one relative path per line,
+  sorted, naming the servable content, not itself — so `unf`'s
+  `VerifySite` reads the copied site's own list and the CLI's re-typed
+  `SiteFiles` is deleted with its comment admitting the list was
+  nokre's. The manifest's font lines are read from the same directory
+  the copy reads, and the web-services gate holds manifest and site
+  directory identical both ways. docs/getting-started.md owns the
+  consumer story, docs/internals/dom-edition.md the site-set table
+  (nokre `9762b8b`, rokovski `7cadd81b`, site: assert + rebuild).
 - The recording headless shell, as the library's own:
   `testing.shell` is every free C hook a driver owes, defined once —
   the deep-link and locale pairs answering as a shell with nothing to
