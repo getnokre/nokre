@@ -224,20 +224,17 @@ fn notifyDone(state: *State, title: []const u8, comptime fmt: []const u8, args: 
     }) catch {};
 }
 
-fn onSave(ctx: ?*anyopaque) void {
-    const state: *State = @ptrCast(@alignCast(ctx.?));
+fn save(state: *State) void {
     setStatus(state, "Saved.", .{});
 }
 
 // The sink links no services, so the sign-in buttons demonstrate the
 // button, not the flow: a real app starts the oauth service here.
-fn onAppleSignIn(ctx: ?*anyopaque) void {
-    const state: *State = @ptrCast(@alignCast(ctx.?));
+fn appleSignIn(state: *State) void {
     setStatus(state, "A real app would start the Apple flow here (docs/services.md).", .{});
 }
 
-fn onGoogleSignIn(ctx: ?*anyopaque) void {
-    const state: *State = @ptrCast(@alignCast(ctx.?));
+fn googleSignIn(state: *State) void {
     setStatus(state, "A real app would start the Google flow here (docs/services.md).", .{});
 }
 
@@ -246,8 +243,7 @@ fn onGoogleSignIn(ctx: ?*anyopaque) void {
 /// stand down for `…` until the answer arrives. Nothing else on the row
 /// changes and nothing beside it appears — this is the shape a status
 /// line and a submit button used to stand in for.
-fn onToggleNotify(ctx: ?*anyopaque, checked: bool) void {
-    const state: *State = @ptrCast(@alignCast(ctx.?));
+fn toggleNotify(state: *State, checked: bool) void {
     const el = state.app.tree.get(state.notify_toggle_id) orelse return;
     el.toggle.on = !checked; // what the server still says
     el.toggle.in_progress = true;
@@ -285,28 +281,24 @@ fn onNotifyResult(ctx: ?*anyopaque, result: h.services.http.Result) void {
     state.app.invalidate();
 }
 
-fn onNameChange(ctx: ?*anyopaque, value: []const u8) void {
-    const state: *State = @ptrCast(@alignCast(ctx.?));
+fn editName(state: *State, value: []const u8) void {
     state.name_len = @min(value.len, state.name_value.len);
     @memcpy(state.name_value[0..state.name_len], value[0..state.name_len]);
 }
 
-fn onNameSubmit(ctx: ?*anyopaque) void {
-    const state: *State = @ptrCast(@alignCast(ctx.?));
+fn submitName(state: *State) void {
     setStatus(state, "Hello, {s}!", .{state.name_value[0..state.name_len]});
 }
 
 const delivery_options = [_][]const u8{ "Email", "SMS", "None" };
 
-fn onDeliverySelect(ctx: ?*anyopaque, selected: usize) void {
-    const state: *State = @ptrCast(@alignCast(ctx.?));
+fn selectDelivery(state: *State, selected: usize) void {
     setStatus(state, "Delivery via {s}.", .{delivery_options[selected]});
 }
 
 const language_options = [_][]const u8{ "English", "Deutsch", "Français", "العربية" };
 
-fn onLanguageSelect(ctx: ?*anyopaque, selected: usize) void {
-    const state: *State = @ptrCast(@alignCast(ctx.?));
+fn selectLanguage(state: *State, selected: usize) void {
     setStatus(state, "Language: {s}.", .{language_options[selected]});
 }
 
@@ -318,35 +310,31 @@ const country_options = [_][]const u8{
     "Türkiye",
 };
 
-fn onCountrySelect(ctx: ?*anyopaque, selected: usize) void {
-    const state: *State = @ptrCast(@alignCast(ctx.?));
+fn selectCountry(state: *State, selected: usize) void {
     setStatus(state, "Country: {s}.", .{country_options[selected]});
 }
 
-fn applyScheme(ctx: ?*anyopaque, scheme: h.Scheme) void {
-    const state: *State = @ptrCast(@alignCast(ctx.?));
+fn applyScheme(state: *State, scheme: h.Scheme) void {
     state.app.setScheme(scheme);
     setStatus(state, "Appearance: {s}.", .{@tagName(scheme)});
 }
 
-fn onSchemeSelect(ctx: ?*anyopaque, selected: usize) void {
-    applyScheme(ctx, switch (selected) {
+fn selectScheme(state: *State, selected: usize) void {
+    applyScheme(state, switch (selected) {
         0 => h.Scheme.light,
         1 => h.Scheme.dark,
         else => h.Scheme.auto,
     });
 }
 
-fn onOpenSheet(ctx: ?*anyopaque) void {
-    const state: *State = @ptrCast(@alignCast(ctx.?));
+fn showSheet(state: *State) void {
     const app = state.app;
     const sheet = app.presentSheet("Sheet demo") catch return;
     app.tree.append(sheet, .{ .text = .{ .content = "A modal bottom sheet. Everything behind is inert; Esc or a tap outside dismisses it and focus returns where it was." } }) catch return;
     app.tree.append(sheet, .{ .toggle = .{ .label = "A choice inside the sheet" } }) catch return;
 }
 
-fn onNotifySaved(ctx: ?*anyopaque) void {
-    const state: *State = @ptrCast(@alignCast(ctx.?));
+fn notifySaved(state: *State) void {
     // Quiet: it joins the inbox behind the nav pane's indicator.
     state.app.notify(.{
         .title = "Settings saved",
@@ -356,8 +344,7 @@ fn onNotifySaved(ctx: ?*anyopaque) void {
     }) catch return;
 }
 
-fn onNotifySync(ctx: ?*anyopaque) void {
-    const state: *State = @ptrCast(@alignCast(ctx.?));
+fn notifySync(state: *State) void {
     // Important: it interrupts as the banner.
     state.app.notify(.{
         .title = "Sync failed",
@@ -368,8 +355,7 @@ fn onNotifySync(ctx: ?*anyopaque) void {
     }) catch return;
 }
 
-fn onCountPrimes(ctx: ?*anyopaque) void {
-    const state: *State = @ptrCast(@alignCast(ctx.?));
+fn countPrimes(state: *State) void {
     const worker = ensurePrimes(state) orelse return;
     worker.send(.{ .count_below = 20_000_000 }) catch return;
     setRunning(state, state.primes_button_id, true);
@@ -419,8 +405,7 @@ fn ensurePrimes(state: *State) ?h.workers.Handle(Primes) {
     return w;
 }
 
-fn onHashPayload(ctx: ?*anyopaque) void {
-    const state: *State = @ptrCast(@alignCast(ctx.?));
+fn hashPayload(state: *State) void {
     const worker = ensureHasher(state) orelse return;
     const size: usize = 32 * 1024 * 1024;
     const blob = state.app.gpa.alloc(u8, size) catch return;
@@ -483,8 +468,7 @@ fn refreshL10n(state: *State) void {
     state.app.invalidate();
 }
 
-fn onL10nLocale(ctx: ?*anyopaque, selected: usize) void {
-    const state: *State = @ptrCast(@alignCast(ctx.?));
+fn selectL10nLocale(state: *State, selected: usize) void {
     const loc: L.Locale = switch (selected) {
         0 => .en,
         1 => .fa,
@@ -497,14 +481,12 @@ fn onL10nLocale(ctx: ?*anyopaque, selected: usize) void {
     refreshL10n(state);
 }
 
-fn onL10nAdd(ctx: ?*anyopaque) void {
-    const state: *State = @ptrCast(@alignCast(ctx.?));
+fn addL10nItem(state: *State) void {
     state.l10n_count += 1;
     refreshL10n(state);
 }
 
-fn onL10nRemove(ctx: ?*anyopaque) void {
-    const state: *State = @ptrCast(@alignCast(ctx.?));
+fn removeL10nItem(state: *State) void {
     if (state.l10n_count > 0) state.l10n_count -= 1;
     refreshL10n(state);
 }
@@ -527,13 +509,11 @@ fn startRequest(job: *HttpJob, url: []const u8, comptime said: []const u8) void 
     setText(state, state.http_result_id, said, .{});
 }
 
-fn onFetchExample(ctx: ?*anyopaque) void {
-    const state: *State = @ptrCast(@alignCast(ctx.?));
+fn fetchExample(state: *State) void {
     startRequest(&state.example_job, "https://example.com/", "GET example.com…");
 }
 
-fn onFetchNowhere(ctx: ?*anyopaque) void {
-    const state: *State = @ptrCast(@alignCast(ctx.?));
+fn fetchNowhere(state: *State) void {
     // .invalid can never resolve (RFC 2606): the failure leg of the demo
     // works without needing the network to be down.
     startRequest(&state.nowhere_job, "https://nokre.invalid/", "GET nokre.invalid…");
@@ -673,8 +653,8 @@ fn buildHome(ctx: ?*anyopaque, app: *h.App) !void {
     try tree.append(root, .{ .text_input = .{
         .label = "Your name",
         .placeholder = "Type, then press Enter",
-        .on_change = .{ .ctx = state, .call = onNameChange },
-        .on_submit = .{ .ctx = state, .call = onNameSubmit },
+        .on_change = .bind(editName, state),
+        .on_submit = .bind(submitName, state),
     } });
     try tree.append(root, .{ .text_input = .{
         .label = "Passphrase",
@@ -683,7 +663,7 @@ fn buildHome(ctx: ?*anyopaque, app: *h.App) !void {
     } });
     state.notify_toggle_id = try tree.appendId(root, .{ .toggle = .{
         .label = "Notify me",
-        .on_toggle = .{ .ctx = state, .call = onToggleNotify },
+        .on_toggle = .bind(toggleNotify, state),
     } });
     try tree.append(root, .{ .checkbox = .{
         .label = "I agree to the terms",
@@ -691,17 +671,17 @@ fn buildHome(ctx: ?*anyopaque, app: *h.App) !void {
     try tree.append(root, .{ .radio_group = .{
         .label = "Delivery",
         .options = &delivery_options,
-        .on_select = .{ .ctx = state, .call = onDeliverySelect },
+        .on_select = .bind(selectDelivery, state),
     } });
     try tree.append(root, .{ .select = .{
         .label = "Language",
         .options = &language_options,
-        .on_select = .{ .ctx = state, .call = onLanguageSelect },
+        .on_select = .bind(selectLanguage, state),
     } });
     try tree.append(root, .{ .select = .{
         .label = "Country",
         .options = &country_options,
-        .on_select = .{ .ctx = state, .call = onCountrySelect },
+        .on_select = .bind(selectCountry, state),
     } });
     try tree.append(root, .{ .text_area = .{
         .label = "Notes",
@@ -717,7 +697,7 @@ fn buildHome(ctx: ?*anyopaque, app: *h.App) !void {
     // this one does.
     try tree.append(root, .{ .text = .{ .content = "A row of actions folds when it runs out of width: the last one still fully visible becomes More, and the sheet it opens holds it and everything after it. Narrow the window to watch it happen.", .style = .{ .scale = .small, .ink = .dark } } });
     const row_stack = try tree.appendId(root, .{ .stack = .{ .axis = .horizontal } });
-    try tree.append(row_stack, .{ .button = .{ .label = "Save", .on_press = .{ .ctx = state, .call = onSave } } });
+    try tree.append(row_stack, .{ .button = .{ .label = "Save", .on_press = .bind(save, state) } });
     try tree.append(row_stack, .{ .button = .{ .label = "Cancel", .form = .{ .secondary = null } } });
     try tree.append(row_stack, .{ .button = .{ .label = "Add reminder", .form = .{ .filled = .alarm_clock_plus } } });
     try tree.append(row_stack, .{ .button = .{ .label = "Disabled", .disabled = true } });
@@ -740,12 +720,12 @@ fn buildHome(ctx: ?*anyopaque, app: *h.App) !void {
     try tree.append(root, .{ .button = .{
         .label = "Sign in with Apple",
         .form = .{ .provider = .apple },
-        .on_press = .{ .ctx = state, .call = onAppleSignIn },
+        .on_press = .bind(appleSignIn, state),
     } });
     try tree.append(root, .{ .button = .{
         .label = "Sign in with Google",
         .form = .{ .provider = .google },
-        .on_press = .{ .ctx = state, .call = onGoogleSignIn },
+        .on_press = .bind(googleSignIn, state),
     } });
 
     try tree.append(root, .{ .heading = .{ .content = "Tiles", .level = .h2 } });
@@ -759,26 +739,26 @@ fn buildHome(ctx: ?*anyopaque, app: *h.App) !void {
     } });
     try tree.append(tiles, .{ .tile = .{
         .label = "Save",
-        .on_press = .{ .ctx = state, .call = onSave },
+        .on_press = .bind(save, state),
     } });
 
     try tree.append(root, .{ .heading = .{ .content = "Layers", .level = .h2 } });
     const layer_stack = try tree.appendId(root, .{ .stack = .{ .axis = .horizontal } });
-    try tree.append(layer_stack, .{ .button = .{ .label = "Open sheet", .on_press = .{ .ctx = state, .call = onOpenSheet } } });
-    try tree.append(layer_stack, .{ .button = .{ .label = "Notify quietly", .on_press = .{ .ctx = state, .call = onNotifySaved } } });
-    try tree.append(layer_stack, .{ .button = .{ .label = "Notify important", .on_press = .{ .ctx = state, .call = onNotifySync } } });
+    try tree.append(layer_stack, .{ .button = .{ .label = "Open sheet", .on_press = .bind(showSheet, state) } });
+    try tree.append(layer_stack, .{ .button = .{ .label = "Notify quietly", .on_press = .bind(notifySaved, state) } });
+    try tree.append(layer_stack, .{ .button = .{ .label = "Notify important", .on_press = .bind(notifySync, state) } });
 
     try tree.append(root, .{ .heading = .{ .content = "Workers", .level = .h2 } });
     try tree.append(root, .{ .text = .{ .content = "Heavy synchronous compute runs on a worker: messages out, replies back on the UI thread. Press, then keep scrolling — nothing freezes, and a notice carries the result in case you wandered off. Two jobs, two worker roles, two report lines: press both and they run side by side, neither waiting on nor cancelling the other. The count reports a percentage, so its button fills as it goes; the hash reports none, so its button says `…` and nothing it cannot know.", .style = .{ .scale = .small, .ink = .dark } } });
     // Each job reports into its own nodes, right under its own button:
     // two workers running at once cannot share one bar and one line
     // without lying about which of them the numbers belong to.
-    state.primes_button_id = try tree.appendId(root, .{ .button = .{ .label = "Count primes", .on_press = .{ .ctx = state, .call = onCountPrimes } } });
+    state.primes_button_id = try tree.appendId(root, .{ .button = .{ .label = "Count primes", .on_press = .bind(countPrimes, state) } });
     // The same reading, rendered both ways on purpose: compact inside
     // the control, and full width with words beside it.
     state.primes_meter_id = try tree.appendId(root, .{ .meter = .{ .label = "Prime count progress", .value = 0, .max = 100 } });
     state.primes_result_id = try tree.appendId(root, .{ .text = .{ .content = "No count has run yet.", .style = .{ .scale = .small, .ink = .dark } } });
-    state.hash_button_id = try tree.appendId(root, .{ .button = .{ .label = "Hash 32 MB", .on_press = .{ .ctx = state, .call = onHashPayload } } });
+    state.hash_button_id = try tree.appendId(root, .{ .button = .{ .label = "Hash 32 MB", .on_press = .bind(hashPayload, state) } });
     state.hash_result_id = try tree.appendId(root, .{ .text = .{ .content = "No hash has run yet.", .style = .{ .scale = .small, .ink = .dark } } });
 
     try tree.append(root, .{ .heading = .{ .content = "HTTP", .level = .h2 } });
@@ -786,8 +766,8 @@ fn buildHome(ctx: ?*anyopaque, app: *h.App) !void {
     const http_row = try tree.appendId(root, .{ .stack = .{ .axis = .horizontal } });
     // Each button hands its own job to the request, and the job carries
     // the button back to the result.
-    state.example_job = .{ .state = state, .button_id = try tree.appendId(http_row, .{ .button = .{ .label = "GET example.com", .on_press = .{ .ctx = state, .call = onFetchExample } } }) };
-    state.nowhere_job = .{ .state = state, .button_id = try tree.appendId(http_row, .{ .button = .{ .label = "GET nowhere", .on_press = .{ .ctx = state, .call = onFetchNowhere } } }) };
+    state.example_job = .{ .state = state, .button_id = try tree.appendId(http_row, .{ .button = .{ .label = "GET example.com", .on_press = .bind(fetchExample, state) } }) };
+    state.nowhere_job = .{ .state = state, .button_id = try tree.appendId(http_row, .{ .button = .{ .label = "GET nowhere", .on_press = .bind(fetchNowhere, state) } }) };
     state.http_result_id = try tree.appendId(root, .{ .text = .{ .content = "No request has run yet.", .style = .{ .family = .mono, .scale = .small, .ink = .dark } } });
 
     try tree.append(root, .{ .heading = .{ .content = "Localization", .level = .h2 } });
@@ -800,15 +780,15 @@ fn buildHome(ctx: ?*anyopaque, app: *h.App) !void {
             .fa => 1,
             .ru => 2,
         },
-        .on_select = .{ .ctx = state, .call = onL10nLocale },
+        .on_select = .bind(selectL10nLocale, state),
     } });
     state.l10n_text_id = try tree.appendId(root, .{ .text = .{ .content = L.tr(chosenLocale(state), .l10nGreeting) } });
     var l10n_buf: [128]u8 = undefined;
     const l10n_items = try L.fmt(&l10n_buf, chosenLocale(state), .l10nItems, .{ .count = state.l10n_count });
     state.l10n_items_id = try tree.appendId(root, .{ .text = .{ .content = l10n_items } });
     const l10n_row = try tree.appendId(root, .{ .stack = .{ .axis = .horizontal } });
-    try tree.append(l10n_row, .{ .button = .{ .label = "Add item", .on_press = .{ .ctx = state, .call = onL10nAdd } } });
-    try tree.append(l10n_row, .{ .button = .{ .label = "Remove item", .on_press = .{ .ctx = state, .call = onL10nRemove } } });
+    try tree.append(l10n_row, .{ .button = .{ .label = "Add item", .on_press = .bind(addL10nItem, state) } });
+    try tree.append(l10n_row, .{ .button = .{ .label = "Remove item", .on_press = .bind(removeL10nItem, state) } });
 
     try tree.append(root, .{ .heading = .{ .content = "Appearance", .level = .h2 } });
     try tree.append(root, .{ .segmented = .{
@@ -819,7 +799,7 @@ fn buildHome(ctx: ?*anyopaque, app: *h.App) !void {
             .dark => 1,
             .auto => 2,
         },
-        .on_select = .{ .ctx = state, .call = onSchemeSelect },
+        .on_select = .bind(selectScheme, state),
     } });
     try tree.append(root, .{ .heading = .{ .content = "Overflow", .level = .h2 } });
     try tree.append(root, .{ .text = .{ .content = "A track wider than the screen scrolls to follow the selection.", .style = .{ .scale = .small, .ink = .dark } } });

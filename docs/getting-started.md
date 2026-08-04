@@ -199,16 +199,15 @@ pub const State = struct {
     count: u32 = 0,
     app: *h.App = undefined,
     label_id: h.NodeId = .invalid,
-};
 
-fn onIncrement(ctx: ?*anyopaque) void {
-    const state: *State = @ptrCast(@alignCast(ctx.?));
-    state.count += 1;
-    var buf: [32]u8 = undefined;
-    const label = std.fmt.bufPrint(&buf, "Pressed {d} times", .{state.count}) catch return;
-    state.app.tree.setContent(state.label_id, label) catch return;
-    state.app.invalidate();
-}
+    pub fn increment(state: *State) void {
+        state.count += 1;
+        var buf: [32]u8 = undefined;
+        const label = std.fmt.bufPrint(&buf, "Pressed {d} times", .{state.count}) catch return;
+        state.app.tree.setContent(state.label_id, label) catch return;
+        state.app.invalidate();
+    }
+};
 
 pub fn buildHome(ctx: ?*anyopaque, app: *h.App) !void {
     const state: *State = @ptrCast(@alignCast(ctx.?));
@@ -217,7 +216,7 @@ pub fn buildHome(ctx: ?*anyopaque, app: *h.App) !void {
     state.label_id = try app.tree.appendId(root, .{ .text = .{ .content = "Pressed 0 times" } });
     try app.tree.append(root, .{ .button = .{
         .label = "Increment",
-        .on_press = .{ .ctx = state, .call = onIncrement },
+        .on_press = .bind(State.increment, state),
     } });
 }
 
@@ -252,12 +251,14 @@ Things worth noticing, because they generalize:
   tree built, the screen is valid; an automatic audit covers what
   construction can't see. The rules are in
   [accessibility.md](accessibility.md).
-- **Actions are context + function pointer.** `.{ .ctx = state, .call =
-  onIncrement }` — nokre never allocates a closure. Every interactive
-  element takes its action the same way (`on_press`, `on_toggle`,
-  `on_change`, `on_select`), and a list row's action can carry the
-  row: `.call_indexed` plus `.index` delivers the position back at
-  press time ([elements.md](elements.md), "Actions").
+- **Actions are typed methods, bound.** `.bind(State.increment, state)`
+  pairs a method on your state type with the pointer it runs against —
+  nokre never allocates a closure. Every interactive element takes its
+  action the same way (`on_press`, `on_toggle`, `on_change`,
+  `on_select`; the latter three hand the method their payload), and a
+  list row's action can carry the row: `.bindAt(State.accept, state, i)`
+  delivers the position back at press time ([elements.md](elements.md),
+  "Actions").
 - **You mutate, then `invalidate()`.** Nothing renders until state
   changes and you say so; an app at rest costs zero CPU. Mutate the tree
   in place (as here, `setContent`) or rebuild a whole screen — Part 3
@@ -510,17 +511,17 @@ fn buildSignIn(state: *State, app: *h.App) !void {
     try app.tree.append(form, .{ .text_input = .{
         .label = "Passphrase",
         .obscured = true,
-        .on_change = .{ .ctx = state, .call = onPassphraseChange },
-        .on_submit = .{ .ctx = state, .call = onSignIn },
+        .on_change = .bind(editPassphrase, state),
+        .on_submit = .bind(signIn, state),
     } });
     try app.tree.append(form, .{ .checkbox = .{
         .label = "Stay signed in on this device",
         .checked = state.remember,
-        .on_toggle = .{ .ctx = state, .call = onRememberToggle },
+        .on_toggle = .bind(setRemember, state),
     } });
     try app.tree.append(form, .{ .button = .{
         .label = "Sign in",
-        .on_press = .{ .ctx = state, .call = onSignIn },
+        .on_press = .bind(signIn, state),
     } });
     if (state.signin_status.len != 0) {
         try app.tree.append(root, .{ .text = .{ .content = state.signin_status, .style = .{ .scale = .small, .ink = .dark } } });
@@ -533,19 +534,18 @@ pub fn buildNotes(ctx: ?*anyopaque, app: *h.App) !void {
     // …the signed-in screen, from Part 6 on.
 }
 
-fn onPassphraseChange(ctx: ?*anyopaque, value: []const u8) void {
-    const state: *State = @ptrCast(@alignCast(ctx.?));
+// Typed handlers, bound above — no `?*anyopaque` cast anywhere. A fn
+// nested in State binds the same way (`.bind(State.signIn, state)`).
+pub fn editPassphrase(state: *State, value: []const u8) void {
     state.passphrase_len = @min(value.len, state.passphrase.len);
     @memcpy(state.passphrase[0..state.passphrase_len], value[0..state.passphrase_len]);
 }
 
-fn onRememberToggle(ctx: ?*anyopaque, checked: bool) void {
-    const state: *State = @ptrCast(@alignCast(ctx.?));
+pub fn setRemember(state: *State, checked: bool) void {
     state.remember = checked;
 }
 
-fn onSignIn(ctx: ?*anyopaque) void {
-    const state: *State = @ptrCast(@alignCast(ctx.?));
+pub fn signIn(state: *State) void {
     if (!std.mem.eql(u8, state.passphrase[0..state.passphrase_len], "letmein")) {
         state.signin_status = "Wrong passphrase. (Hint: it's the one on screen.)";
         refresh(state);
@@ -610,7 +610,7 @@ becomes:
     if (!state.signed_in) return buildSignIn(state, app);
 ```
 
-Persist on sign-in (inside `onSignIn`, after the passphrase check) —
+Persist on sign-in (inside `signIn`, after the passphrase check) —
 and note the degrade: a locked keychain must not gate the session:
 
 ```zig
@@ -626,8 +626,7 @@ and note the degrade: a locked keychain must not gate the session:
 And sign out, wired to a Settings button in Part 10:
 
 ```zig
-fn onSignOut(ctx: ?*anyopaque) void {
-    const state: *State = @ptrCast(@alignCast(ctx.?));
+pub fn signOut(state: *State) void {
     // Idempotent: signing out when nothing was stored is still success.
     h.services.secure_store.delete(state.app, "auth.token") catch {};
     state.signed_in = false;
@@ -753,10 +752,6 @@ pub const Note = struct {
     }
 };
 
-/// ctx for per-row actions: which note a tile press means. Builders
-/// fill one ref per visible row; the action reads it back.
-pub const NoteRef = struct { state: *State, index: usize };
-
 fn addNote(state: *State, text: []const u8) void {
     if (state.note_count == max_notes) return; // full — the meter says so
     const note = &state.notes[state.note_count];
@@ -771,7 +766,6 @@ and the new `State` fields:
 ```zig
     notes: [max_notes]Note = @splat(.{}),
     note_count: usize = 0,
-    refs: [max_notes]NoteRef = undefined,
     newest_first: bool = true,
     status: []const u8 = "Ready.",
     offline: bool = false,
@@ -792,12 +786,12 @@ The signed-in half of `buildNotes`:
     const actions = try app.tree.appendId(root, .{ .stack = .{ .axis = .horizontal } });
     try app.tree.append(actions, .{ .button = .{
         .label = "New note",
-        .on_press = .{ .ctx = state, .call = onOpenNewNote },
+        .on_press = .bind(openNewNote, state),
     } });
     try app.tree.append(actions, .{ .button = .{
         .label = "Sync", // Part 7
         .form = .{ .secondary = null },
-        .on_press = .{ .ctx = state, .call = onSyncPressed },
+        .on_press = .bind(sync, state),
     } });
     try app.tree.append(root, .{ .text = .{ .content = state.status, .style = .{ .scale = .small, .ink = .dark } } });
 
@@ -809,10 +803,11 @@ The signed-in half of `buildNotes`:
         } });
         for (0..state.note_count) |i| {
             const index = if (state.newest_first) state.note_count - 1 - i else i;
-            state.refs[index] = .{ .state = state, .index = index };
+            // A per-row action carries its row as data on the element —
+            // `bindAt` sets it at append, the method receives it at press.
             try app.tree.append(group, .{ .tile = .{
                 .label = state.notes[index].slice(),
-                .on_press = .{ .ctx = &state.refs[index], .call = onOpenNote },
+                .on_press = .bindAt(openNote, state, index),
             } });
         }
     }
@@ -840,8 +835,7 @@ framework-owned too — close control pinned, focus moved in, everything
 behind inert, Esc/scrim dismissal, focus returned:
 
 ```zig
-fn onOpenNewNote(ctx: ?*anyopaque) void {
-    const state: *State = @ptrCast(@alignCast(ctx.?));
+pub fn openNewNote(state: *State) void {
     state.draft_len = 0;
     state.app.openSheet(.{ .ctx = state, .call = buildNewNote }) catch return;
 }
@@ -852,16 +846,15 @@ fn buildNewNote(ctx: ?*anyopaque, app: *nokre.App) anyerror!void {
     try app.tree.append(sheet, .{ .text_area = .{
         .label = "Note",
         .placeholder = "Write it down…",
-        .on_change = .{ .ctx = state, .call = onDraftChange },
+        .on_change = .bind(editDraft, state),
     } });
     try app.tree.append(sheet, .{ .button = .{
         .label = "Add",
-        .on_press = .{ .ctx = state, .call = onAddNote },
+        .on_press = .bind(commitDraft, state),
     } });
 }
 
-fn onAddNote(ctx: ?*anyopaque) void {
-    const state: *State = @ptrCast(@alignCast(ctx.?));
+pub fn commitDraft(state: *State) void {
     state.app.dismissSheet();
     if (state.draft_len != 0) {
         addNote(state, state.draft[0..state.draft_len]);
@@ -877,7 +870,7 @@ builder one, and the framework tells it on Esc, the scrim, and every
 other closure the consumer did not make — [elements.md](elements.md),
 "sheet", has the full contract.)
 
-(`onDraftChange` copies like `onPassphraseChange`. A `text_area`
+(`editDraft` copies like `editPassphrase`. A `text_area`
 because Enter must insert a newline; submission belongs to the explicit
 button beside it.)
 
@@ -931,8 +924,7 @@ every platform, no futures, no locks, exactly one typed `Result` back on
 the UI thread ([services.md](services.md)):
 
 ```zig
-fn onSyncPressed(ctx: ?*anyopaque) void {
-    const state: *State = @ptrCast(@alignCast(ctx.?));
+pub fn sync(state: *State) void {
     _ = h.services.http.request(.{
         .app = state.app,
         .url = "https://api.example.com/notes",
@@ -1122,8 +1114,7 @@ pub const nokreWorkers = .{Stats};
 Spawn lazily, send from an action, and let the reply land in state:
 
 ```zig
-fn onStatsPressed(ctx: ?*anyopaque) void {
-    const state: *State = @ptrCast(@alignCast(ctx.?));
+pub fn countWords(state: *State) void {
     const worker = ensureStats(state) orelse return;
     var corpus: Stats.Corpus = .{ .text = undefined, .len = 0 };
     for (state.notes[0..state.note_count]) |*note| {
@@ -1225,20 +1216,18 @@ pub fn buildNote(ctx: ?*anyopaque, app: *h.App) !void {
     try app.tree.append(root, .{ .button = .{
         .label = "Delete",
         .form = .{ .secondary = null },
-        .on_press = .{ .ctx = state, .call = onDeleteNote },
+        .on_press = .bind(deleteNote, state),
     } });
 }
 
-fn onOpenNote(ctx: ?*anyopaque) void {
-    const ref: *NoteRef = @ptrCast(@alignCast(ctx.?));
+pub fn openNote(state: *State, index: usize) void {
     // A stack buffer is enough: the entry copies the reference.
     var buf: [32]u8 = undefined;
-    const dest = std.fmt.bufPrint(&buf, "note~{d}", .{ref.index}) catch return;
-    ref.state.app.navigate(dest) catch {};
+    const dest = std.fmt.bufPrint(&buf, "note~{d}", .{index}) catch return;
+    state.app.navigate(dest) catch {};
 }
 
-fn onDeleteNote(ctx: ?*anyopaque) void {
-    const state: *State = @ptrCast(@alignCast(ctx.?));
+pub fn deleteNote(state: *State) void {
     // The action runs on the note screen, so the entry's argument is
     // still the one to read.
     const arg = state.app.routeArg(0) orelse return;
@@ -1308,18 +1297,18 @@ pub fn buildSettings(ctx: ?*anyopaque, app: *h.App) !void {
             .dark => 1,
             .auto => 2,
         },
-        .on_select = .{ .ctx = state, .call = onSchemeSelect },
+        .on_select = .bind(selectScheme, state),
     } });
     try app.tree.append(root, .{ .radio_group = .{
         .label = "Order",
         .options = &.{ "Newest first", "Oldest first" },
         .selected = if (state.newest_first) 0 else 1,
-        .on_select = .{ .ctx = state, .call = onOrderSelect },
+        .on_select = .bind(selectOrder, state),
     } });
     try app.tree.append(root, .{ .toggle = .{
         .label = "Show word-count stats",
         .on = state.show_stats,
-        .on_toggle = .{ .ctx = state, .call = onStatsToggle },
+        .on_toggle = .bind(setShowStats, state),
     } });
 
     try app.tree.append(root, .{ .divider = .{} });
@@ -1327,7 +1316,7 @@ pub fn buildSettings(ctx: ?*anyopaque, app: *h.App) !void {
         try app.tree.append(root, .{ .button = .{
             .label = "Sign out",
             .form = .{ .secondary = null },
-            .on_press = .{ .ctx = state, .call = onSignOut },
+            .on_press = .bind(signOut, state),
         } });
     } else {
         try app.tree.append(root, .{ .text = .{ .content = "Not signed in." } });
@@ -1345,10 +1334,11 @@ pub fn buildSettings(ctx: ?*anyopaque, app: *h.App) !void {
 }
 ```
 
-The handlers are one-liners: `onSchemeSelect` maps the index to
-`state.app.setScheme(…)` (dark mode is a scheme, not a style — the
-palette flips, contrast guarantees hold); `onOrderSelect` sets
-`state.newest_first`; `onStatsToggle` sets `state.show_stats`. No
+The handlers are one-liners typed on `*State`: `selectScheme(state,
+selected)` maps the index to `state.app.setScheme(…)` (dark mode is a
+scheme, not a style — the palette flips, contrast guarantees hold);
+`selectOrder` sets `state.newest_first`; `setShowStats(state, on)` sets
+`state.show_stats`. No
 `refresh` needed — the controls carry their own selected state, and the
 notes screen reads the flags at its next build. The `package_info` line
 at the bottom is the declaration from Part 1's build.zig read back —
@@ -1501,13 +1491,12 @@ arrow keys like the rest of Part 10:
         .label = "Language",
         .options = &.{ "English", "فارسی" },
         .selected = if (loc(app) == .en) 0 else 1,
-        .on_select = .{ .ctx = state, .call = onLanguageSelect },
+        .on_select = .bind(selectLanguage, state),
     } });
 ```
 
 ```zig
-fn onLanguageSelect(ctx: ?*anyopaque, selected: usize) void {
-    const state: *State = @ptrCast(@alignCast(ctx.?));
+pub fn selectLanguage(state: *State, selected: usize) void {
     const chosen: L.Locale = if (selected == 0) .en else .fa;
     // The three surfaces the app does not write inline: the names of
     // the screens, nokre's own chrome, and which way the chrome runs.

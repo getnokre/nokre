@@ -13,8 +13,7 @@ const State = struct {
 
 const N = h.services.notification;
 
-fn onIncrement(ctx: ?*anyopaque) void {
-    const state: *State = @ptrCast(@alignCast(ctx.?));
+fn increment(state: *State) void {
     state.count += 1;
     var buf: [32]u8 = undefined;
     const label = std.fmt.bufPrint(&buf, "Pressed {d} times", .{state.count}) catch return;
@@ -33,8 +32,7 @@ fn onIncrement(ctx: ?*anyopaque) void {
 /// only when the user pressed something, and post only once the answer
 /// is yes. The prompt has one answer per install, so an app that asks at
 /// boot gets the reflexive no it can never take back.
-fn onNotify(ctx: ?*anyopaque) void {
-    const state: *State = @ptrCast(@alignCast(ctx.?));
+fn notify(state: *State) void {
     switch (N.status(state.app)) {
         .not_determined => {
             N.authorize(state.app) catch return;
@@ -122,7 +120,7 @@ fn buildHome(ctx: ?*anyopaque, app: *h.App) !void {
     state.label_id = try app.tree.appendId(root, .{ .text = .{ .content = count_label } });
     try app.tree.append(root, .{ .button = .{
         .label = "Increment",
-        .on_press = .{ .ctx = state, .call = onIncrement },
+        .on_press = .bind(increment, state),
     } });
 
     // notification service: three synchronous boot answers, so the row
@@ -137,7 +135,7 @@ fn buildHome(ctx: ?*anyopaque, app: *h.App) !void {
         } });
         try app.tree.append(root, .{ .button = .{
             .label = "Notify me",
-            .on_press = .{ .ctx = state, .call = onNotify },
+            .on_press = .bind(notify, state),
         } });
     } else {
         // The honest degrade: a Linux session with no daemon on the bus,

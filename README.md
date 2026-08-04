@@ -36,13 +36,14 @@ headlessly. The argument is
 ```zig
 const nok = @import("nokre");
 
-fn buildHome(_: ?*anyopaque, app: *nok.App) !void {
+fn buildHome(ctx: ?*anyopaque, app: *nok.App) !void {
+    const state: *Notes = @ptrCast(@alignCast(ctx.?));
     const root = app.tree.rootId();
     _ = try app.tree.append(root, .{ .heading = .{ .content = "Notes", .level = .h1 } });
     _ = try app.tree.append(root, .{ .text = .{ .content = "Everything here is accessible by construction." } });
     _ = try app.tree.append(root, .{ .button = .{
         .label = "New note",
-        .on_press = .{ .call = onNewNote },
+        .on_press = .bind(Notes.newNote, state),
     } });
 }
 ```

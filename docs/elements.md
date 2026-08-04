@@ -452,7 +452,7 @@ invitation to violate the guidelines the button exists to satisfy.
 try tree.append(root, .{ .button = .{
     .label = "Sign in with Apple", // the vendor's published wording, your locale
     .form = .{ .provider = .apple },
-    .on_press = .{ .ctx = state, .call = startSignIn },
+    .on_press = .bind(State.startSignIn, state),
 } });
 ```
 
@@ -1262,14 +1262,15 @@ built again — never appended directly to build content:
 
 ```zig
 fn buildFilter(ctx: ?*anyopaque, app: *nokre.App) anyerror!void {
-    const c = nokre.ctx(Filters, ctx);
+    const c: *Filters = @ptrCast(@alignCast(ctx.?));
     if (!c.filtering) return; // declining is the builder's to do
     const sheet = try app.presentSheet("Filter results");
     try app.tree.append(sheet, .{ .toggle = .{ .label = "Only unread" } });
 }
 
 fn onFilterDismissed(ctx: ?*anyopaque) void {
-    nokre.ctx(Filters, ctx).filtering = false;
+    const c: *Filters = @ptrCast(@alignCast(ctx.?));
+    c.filtering = false;
 }
 
 // at the point the user asks for it:
@@ -1379,23 +1380,41 @@ as a status live region.
 ## Actions
 
 Actions are context + function-pointer pairs (`Action`, `ToggleAction`,
-`ChangeAction`, `SelectAction`) — nokre never allocates closures:
+`ChangeAction`, `SelectAction`) — nokre never allocates closures.
+`bind` builds the pair from a typed method, so the handler is written
+against your state type and the `?*anyopaque` plumbing never appears in
+app code:
 
 ```zig
-.on_press = .{ .ctx = state, .call = onSave }
+.on_press = .bind(State.save, state)
+
+// in State:
+pub fn save(self: *State) void { ... }
 ```
 
-A list row's action carries the row. Set `index` when the row is
-appended and the function receives it at dispatch:
+The payload-carrying actions hand their payload to the bound method —
+`ToggleAction` a `bool`, `ChangeAction` the `[]const u8` value,
+`SelectAction` the selected `usize`:
 
 ```zig
-.on_press = .{ .ctx = state, .call_indexed = onAccept, .index = i }
+.on_toggle = .bind(State.setNotify, state)   // fn (self: *State, checked: bool)
+.on_change = .bind(State.editName, state)    // fn (self: *State, value: []const u8)
+.on_select = .bind(State.chooseScheme, state) // fn (self: *State, selected: usize)
+```
 
-fn onAccept(ctx: ?*anyopaque, index: usize) void { ... }
+A list row's action carries the row. `bindAt` sets the element's
+`index` when the row is appended and the method receives it at
+dispatch:
+
+```zig
+.on_press = .bindAt(State.accept, state, i)
+
+// in State:
+pub fn accept(self: *State, index: usize) void { ... }
 ```
 
 (`ToggleAction`'s indexed form adds the index *before* the checked
-state: `fn (ctx, index, checked)`.) An action names one function:
+state: `fn (self, index, checked)`.) An action names one function:
 setting both `call` and `call_indexed` is refused at `append`.
 
 The index is data on the element, so it is exactly as fresh as the tree

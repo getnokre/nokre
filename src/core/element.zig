@@ -60,6 +60,32 @@ pub const Action = struct {
     pub fn wired(self: Action) bool {
         return self.call != null or self.call_indexed != null;
     }
+
+    /// Synthesizes the `ctx`+`call` pair from a typed method, so the
+    /// `?*anyopaque` boundary never appears in consumer source:
+    /// `.on_press = .bind(State.retry, state)` generates the same
+    /// trampoline a consumer would otherwise write by hand — the cast
+    /// (with its loud null unwrap) and the forward, minus the lines.
+    /// `f` takes the state pointer and nothing else.
+    pub fn bind(comptime f: anytype, state: anytype) Action {
+        const T = @typeInfo(@TypeOf(state)).pointer.child;
+        return .{ .ctx = state, .call = struct {
+            fn call(c: ?*anyopaque) void {
+                f(@as(*T, @ptrCast(@alignCast(c.?))));
+            }
+        }.call };
+    }
+
+    /// `bind` for the `call_indexed` shape: `f(state, index)`, the row
+    /// arriving as data per the `index` contract above.
+    pub fn bindAt(comptime f: anytype, state: anytype, index: usize) Action {
+        const T = @typeInfo(@TypeOf(state)).pointer.child;
+        return .{ .ctx = state, .index = index, .call_indexed = struct {
+            fn call(c: ?*anyopaque, i: usize) void {
+                f(@as(*T, @ptrCast(@alignCast(c.?))), i);
+            }
+        }.call };
+    }
 };
 
 pub const ToggleAction = struct {
@@ -74,6 +100,27 @@ pub const ToggleAction = struct {
         if (self.call_indexed) |f| return f(self.ctx, self.index, checked);
         if (self.call) |f| f(self.ctx, checked);
     }
+
+    /// Same contract as `Action.bind`; `f(state, checked)`.
+    pub fn bind(comptime f: anytype, state: anytype) ToggleAction {
+        const T = @typeInfo(@TypeOf(state)).pointer.child;
+        return .{ .ctx = state, .call = struct {
+            fn call(c: ?*anyopaque, checked: bool) void {
+                f(@as(*T, @ptrCast(@alignCast(c.?))), checked);
+            }
+        }.call };
+    }
+
+    /// Same contract as `Action.bindAt`; `f(state, index, checked)` —
+    /// the payload keeps its dispatch position, after the index.
+    pub fn bindAt(comptime f: anytype, state: anytype, index: usize) ToggleAction {
+        const T = @typeInfo(@TypeOf(state)).pointer.child;
+        return .{ .ctx = state, .index = index, .call_indexed = struct {
+            fn call(c: ?*anyopaque, i: usize, checked: bool) void {
+                f(@as(*T, @ptrCast(@alignCast(c.?))), i, checked);
+            }
+        }.call };
+    }
 };
 
 pub const ChangeAction = struct {
@@ -83,6 +130,16 @@ pub const ChangeAction = struct {
     pub fn invoke(self: ChangeAction, value: []const u8) void {
         if (self.call) |f| f(self.ctx, value);
     }
+
+    /// Same contract as `Action.bind`; `f(state, value)`.
+    pub fn bind(comptime f: anytype, state: anytype) ChangeAction {
+        const T = @typeInfo(@TypeOf(state)).pointer.child;
+        return .{ .ctx = state, .call = struct {
+            fn call(c: ?*anyopaque, value: []const u8) void {
+                f(@as(*T, @ptrCast(@alignCast(c.?))), value);
+            }
+        }.call };
+    }
 };
 
 pub const SelectAction = struct {
@@ -91,6 +148,16 @@ pub const SelectAction = struct {
 
     pub fn invoke(self: SelectAction, selected: usize) void {
         if (self.call) |f| f(self.ctx, selected);
+    }
+
+    /// Same contract as `Action.bind`; `f(state, selected)`.
+    pub fn bind(comptime f: anytype, state: anytype) SelectAction {
+        const T = @typeInfo(@TypeOf(state)).pointer.child;
+        return .{ .ctx = state, .call = struct {
+            fn call(c: ?*anyopaque, selected: usize) void {
+                f(@as(*T, @ptrCast(@alignCast(c.?))), selected);
+            }
+        }.call };
     }
 };
 
@@ -1851,4 +1918,81 @@ test "every icon name encodes its own codepoint" {
     // codepoint would leave the two disagreeing and drawing tofu.
     try std.testing.expectEqualStrings(back_chevron, IconName.chevron_left.utf8());
     try std.testing.expectEqualStrings(tile_chevron, IconName.chevron_right.utf8());
+}
+
+test "bind synthesizes the trampoline: dispatch reaches the typed method" {
+    // The generated fn must be indistinguishable from the hand-written
+    // one it replaces: same ctx round-trip, same null-unwrap safety.
+    const Counter = struct {
+        hits: u32 = 0,
+        fn bump(self: *@This()) void {
+            self.hits += 1;
+        }
+    };
+    var c: Counter = .{};
+    const a: Action = .bind(Counter.bump, &c);
+    try std.testing.expect(a.wired());
+    a.invoke();
+    a.invoke();
+    try std.testing.expectEqual(@as(u32, 2), c.hits);
+}
+
+test "bindAt forwards the element's index as data" {
+    // The index rides the element, not the function: two bindings of one
+    // method must dispatch with their own rows.
+    const Rows = struct {
+        last: usize = 0,
+        fn pick(self: *@This(), index: usize) void {
+            self.last = index;
+        }
+    };
+    var r: Rows = .{};
+    const third: Action = .bindAt(Rows.pick, &r, 3);
+    const seventh: Action = .bindAt(Rows.pick, &r, 7);
+    third.invoke();
+    try std.testing.expectEqual(@as(usize, 3), r.last);
+    seventh.invoke();
+    try std.testing.expectEqual(@as(usize, 7), r.last);
+}
+
+test "payload-carrying binds forward their payloads" {
+    const Form = struct {
+        on: bool = false,
+        row: usize = 0,
+        row_on: bool = false,
+        text: []const u8 = "",
+        choice: usize = 0,
+        fn setOn(self: *@This(), checked: bool) void {
+            self.on = checked;
+        }
+        fn setRowOn(self: *@This(), index: usize, checked: bool) void {
+            self.row = index;
+            self.row_on = checked;
+        }
+        fn edit(self: *@This(), value: []const u8) void {
+            self.text = value;
+        }
+        fn choose(self: *@This(), selected: usize) void {
+            self.choice = selected;
+        }
+    };
+    var f: Form = .{};
+
+    const toggle: ToggleAction = .bind(Form.setOn, &f);
+    toggle.invoke(true);
+    try std.testing.expect(f.on);
+
+    // The indexed toggle shape carries both: which row, and to what.
+    const row_toggle: ToggleAction = .bindAt(Form.setRowOn, &f, 5);
+    row_toggle.invoke(true);
+    try std.testing.expectEqual(@as(usize, 5), f.row);
+    try std.testing.expect(f.row_on);
+
+    const change: ChangeAction = .bind(Form.edit, &f);
+    change.invoke("draft");
+    try std.testing.expectEqualStrings("draft", f.text);
+
+    const select: SelectAction = .bind(Form.choose, &f);
+    select.invoke(2);
+    try std.testing.expectEqual(@as(usize, 2), f.choice);
 }

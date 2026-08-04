@@ -526,7 +526,7 @@ try state.solver.ask(.{ .solve = spec }, state, onSolved);
 // Exactly one answer per accepted ask: the worker's one reply, or the
 // fault that took its place.
 fn onSolved(ctx: ?*anyopaque, answer: h.workers.Answer(Pow)) void {
-    const state = h.ctx(State, ctx);
+    const state: *State = @ptrCast(@alignCast(ctx.?));
     switch (answer) {
         .reply => |r| acceptProof(state, r),
         .fault => |f| failPending(state, f),
