@@ -21,9 +21,14 @@ fact has one home; complement, never duplicate. Start with
 
 - `zig build test` — pure unit tests, plus a real parse of the five
   JavaScript files that ship into a web build (the one thing here no Zig
-  test can read). That parse is the build's only external tool: it wants
-  `node` on PATH and **fails without it** rather than passing a check it
-  did not run — `-Djs-parse=false` is how you say you meant to skip it.
+  test can read), plus `tests/web_services.mjs`, which *runs* them: a
+  real wasm app in `tests/web_services.zig` is built into a site and
+  booted by node against the browser stub `tests/web_browser.mjs`, the
+  one gate where the three web-only service legs (deep_link, oauth,
+  secure_store) execute at all (`docs/testing.md`, "The web's own
+  gate"). node is the build's only external tool and both steps want it
+  on PATH; the build **fails without it** rather than passing a check it
+  did not run — `-Djs-parse=false` is how you say you meant to skip both.
   With `-Dskia` it also links the examples, which is the desktop link
   `check-targets` cannot do. On a macOS or desktop-Linux host it also
   builds `tests/dev_store.zig` as an *executable* and runs it: the one

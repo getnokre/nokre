@@ -258,6 +258,27 @@ way. The shell's complete job description is in
   crashes the process on 20 runs out of 20. Failures the *machine*
   produces — no thread to spawn, no ephemeral port left — are counted
   and reported, never failed on; a resource limit is not a defect.
+- **The three web-only service legs, executed**, in `zig build test`:
+  [tests/web_services.zig](../../tests/web_services.zig) is an ordinary
+  nokre app with deep_link, oauth and secure_store linked, built into a
+  site by the same `addApp` path a consumer takes, and booted by node
+  against [tests/web_browser.mjs](../../tests/web_browser.mjs) — a
+  browser stub that knows nothing about nokre and implements only
+  platform APIs (a document, a location, a session storage, a window
+  that can open another and be posted to). The JavaScript under test is
+  the *site's own* `live.js` and `services.js`, imported unmodified, and
+  every assertion reads back what the wasm app recorded through probe
+  exports: a harness that restated a line of the driver would prove that
+  line twice and the real one never. Those three legs exist on no other
+  platform, so `zig test` reaches none of them and `check-targets`
+  compiles them into objects it never runs — the fragment that arrives,
+  the popup that reports to its opener, and the seed that beats the
+  first `build` were, until this gate, asserted by nothing.
+  [testing.md](../testing.md) lists what it covers and what it still
+  does not: the stub is not a browser, and nothing in it asserts layout,
+  styling, or how a page looks. It rides `-Djs-parse`, because that is
+  one question asked once — node, and the shipped JavaScript really
+  read.
 
 Goldens are byte-exact and must stay byte-identical unless a change is
 intentionally visual — then regenerate, eyeball the image, and commit it

@@ -710,18 +710,82 @@ test, because two hops are substituted rather than executed:
   keychain, socket, and browser-session code is not merely unused, it is
   not compiled into the test binary. So the mocks are contracts asserted
   against themselves — their fidelity to the platform is asserted by
-  nothing here.
+  nothing *in this harness*.
 
 This is a deliberate boundary, not an oversight. The determinism this
 document keeps promising — no flakiness, byte-exact frames, races
 reproduced identically every run — holds *because* the nondeterministic
 layer is excluded. Widening the harness to reach through a real window
 and a real socket would buy a little coverage and lose the property the
-whole design is built on. The gap is real, and it is nokre's to close on
-its own side, in its own tier — never by making your tests heavier.
+whole design is built on. The gap is nokre's to close on its own side,
+in its own tier — never by making your tests heavier.
+
+That tier now has four gates, all of them on every `zig build test`:
+
+| gate | what reaches a real implementation |
+| --- | --- |
+| `tests/dev_store.zig` | the secure_store verbs, against a store the OS answers (desktop POSIX) |
+| `tests/http_stress.zig` | the native http transport's threads, against a loopback socket |
+| `node --check` × 5 | every JavaScript file a web build ships, parsed by the engine that runs it |
+| `tests/web_services.mjs` | the three service legs that exist **only** on the web, executed |
+
+The last one is the newest and the least obvious, so it is spelled out
+below. What no gate reaches is still a real list: the native backends of
+secure_store (Keychain, CredMan, libsecret, the Android Keystore),
+oauth's `ASWebAuthenticationSession` and its Android and loopback legs,
+all four notification systems, StoreKit and Play Billing, and every
+shell's event translation. `zig build check-targets` compiles them; the
+examples link two of them; nothing runs them.
+
+### The web's own gate
+
+`zig build test` builds `tests/web_services.zig` — an ordinary nokre app
+with deep_link, oauth and secure_store linked — into a site the same way
+`addApp` builds a consumer's, then boots that site in node against
+`tests/web_browser.mjs`, a browser stub carrying nothing but platform
+APIs (a document, a location, a session storage, a window that can open
+another and be posted to). The JavaScript under test is the site's own
+`live.js` and `services.js`, imported unmodified; every assertion reads
+back what the *wasm app* recorded through probe exports. So the seam
+that breaks — bytes crossing between Zig and JavaScript — is executed
+rather than analyzed:
+
+- **deep_link** — a launch fragment reaches the handler the app
+  registered in its first `build`, exactly once; every later
+  `hashchange` reaches it too; and a percent-encoded payload with
+  multi-byte characters arrives byte for byte.
+- **oauth** — a press opens the popup with the app's authorize URL and
+  the page's own address as the redirect; the popup's `postMessage` ends
+  the flow and the callback URL lands whole; a message from another
+  origin, from another window on this origin, or of another shape is
+  refused, and the genuine one after them still works; a blocked popup
+  arrives as `PopupBlocked` a task later and never synchronously; a
+  popup the user closes arrives as `cancelled` after the poll's grace;
+  `Handle.cancel` closes the popup and delivers nothing; and a page URL
+  over the redirect cap seeds nothing, so the first sign-in fails with
+  `RedirectTooLong` instead of sending a truncated URI.
+- **secure_store** — the sessionStorage snapshot lands in the in-wasm
+  table before the first `build` reads it; entries from another
+  namespace, out-of-contract keys and values that do not decode are
+  dropped at the door; writes and deletes mirror out under the one
+  prefix, with base64 carrying bytes a string cannot; a value survives a
+  reload and a deleted one does not come back; and a storage that is
+  blocked or full costs reload-survival and nothing else — the table
+  still answers, which is why this leg has no `Unavailable`.
+
+What that gate is **not** is a browser. Layout, styling, the real event
+loop, a real popup's window management and a real storage's quota
+behaviour are the stub's approximations, and nothing there asserts how a
+page *looks* or where text wrapped — the golden tests are that, on the
+desktop editions. Still uncovered on the web specifically: the compute
+worker (`live-worker.js` in a real `Worker`), the service worker
+(`sw.js`, and therefore the notification leg), the http leg's `fetch`,
+the static driver's hydration handover, and IME and scrolling, which
+belong to the browser rather than to a service. Those remain
+browser-only, asserted by no test on either side.
 
 Practically, for your app: an integration bug in nokre's shell or in a
-real service backend will not fail your test suite. Everything above
+native service backend will not fail your test suite. Everything above
 `App.dispatch` will.
 
 ## Driving an app outside `zig test`
@@ -779,7 +843,10 @@ whole shape, and it runs on every `zig build test` on a desktop POSIX
 host — the one place in the repository where the store verbs reach a
 store the OS answers. `tests/http_stress.zig` is the second worked
 example, and the other half of the same tier: the one place where the
-http verbs reach a socket the OS answers.
+http verbs reach a socket the OS answers. `tests/web_services.zig` is
+the third, in the one place a driver cannot be a Zig program at all —
+the browser, where half of every service leg is JavaScript, so the
+driver is `tests/web_services.mjs` and the app it drives is a wasm site.
 
 What nokre tests for *itself* — and the guarantees those tests prove on
 your behalf — is catalogued in

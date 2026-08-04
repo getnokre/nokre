@@ -180,7 +180,11 @@ session. (Client-side JS encryption is refused as theater: the key
 would live beside the data.) sessionStorage is also per-tab — a
 duplicated tab forks the store — and `error.Unavailable` never occurs
 on the web: the in-memory table always answers. That asymmetry is
-stated posture, not a bug.
+stated posture, not a bug — and a tested one: nokre boots a real wasm
+app against a stubbed browser on every `zig build test`, including with
+sessionStorage blocked and with it full, where every verb keeps its
+answers and only reload-survival is lost
+([testing.md](testing.md#the-webs-own-gate)).
 
 **macOS dev builds** may show an authorization prompt that shipping
 builds do not. Signed apps (Developer ID / App Store) use the
@@ -671,7 +675,10 @@ one.
 **On the web** the deep link is the URL fragment: a `hashchange` is a
 runtime link, and a fragment present at load is the launch URL, delivered
 once after boot. No entitlement, no server file — the origin already
-proves ownership.
+proves ownership. It is also the one leg here nokre executes rather than
+mocks on its own side: a launch fragment, a later `hashchange`, and a
+percent-encoded payload byte for byte, on every `zig build test`
+([testing.md](testing.md#the-webs-own-gate)).
 
 In tests the mock is one app's fake link source: `deliver(url)` is the
 launch URL as the first call, then any runtime link, journaled in order
@@ -898,7 +905,11 @@ In tests the mock is one app's fake browser: `start` parks and journals
 what the app actually built — so "the app requested the wrong scopes"
 and "the app never sent a PKCE challenge" are assertions — and nothing
 moves until the test says what the user did (`completeAuth`,
-`cancelAuth`, `failAuth`; [testing.md](testing.md)).
+`cancelAuth`, `failAuth`; [testing.md](testing.md)). The web's popup
+flow is additionally executed on nokre's own side — the redirect it
+seeds, the message it accepts, and the three it refuses
+([testing.md](testing.md#the-webs-own-gate)); the native browser
+sessions are still asserted by nothing but their mock.
 
 ### iap: the stores, and the money nokre never formats
 

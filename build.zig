@@ -907,7 +907,7 @@ pub fn build(b: *std.Build) void {
     const enable_golden = b.option(bool, "golden", "Run golden screenshot tests (requires -Dskia)") orelse false;
     const update_goldens = b.option(bool, "update-goldens", "Create missing goldens and rewrite mismatched ones in place (requires -Dgolden)") orelse false;
     const port = b.option(u16, "port", "The port `zig build serve` serves the web build on") orelse 8000;
-    const js_parse = b.option(bool, "js-parse", "Parse the shipped JavaScript with node during `zig build test` (default true; false ships it unparsed)") orelse true;
+    const js_parse = b.option(bool, "js-parse", "Parse the shipped JavaScript with node during `zig build test`, and run the web services check through it (default true; false ships it unparsed and unrun)") orelse true;
 
     // The Windows Skia prebuilt is MSVC-ABI (clang-cl), so -Dskia builds
     // must be too; defaulting the ABI here keeps `zig build run-… -Dskia`
@@ -1078,6 +1078,11 @@ pub fn build(b: *std.Build) void {
 
     // The other half of the web edition, which no Zig test can reach.
     addJsParseCheck(b, test_step, js_parse);
+
+    // And the question a parse cannot answer: do the three legs that
+    // exist only on the web actually work when the shipped JavaScript
+    // calls them? A wasm app, the site's own live.js, and node.
+    addWebServicesCheck(b, test_step, js_parse);
 
     if (update_goldens and !enable_golden) {
         const fail = b.addFail("-Dupdate-goldens requires -Dgolden: `zig build test -Dskia -Dgolden -Dupdate-goldens`");
@@ -1686,6 +1691,71 @@ fn addJsParseCheck(b: *std.Build, step: *std.Build.Step, enabled: bool) void {
         run.setName(b.fmt("parse {s}", .{js.path}));
         step.dependOn(&run.step);
     }
+}
+
+/// The web's own gate, and the only step in this repository where the
+/// three legs that exist *only* on the web actually run:
+/// `tests/web_services.zig` built as a site — the same site a consumer
+/// gets from `App.web` — and booted by node against
+/// `tests/web_browser.mjs`, a browser stub that owns nothing but the
+/// platform APIs (a document, a location, a session storage, a window
+/// that can open another).
+///
+/// The JavaScript under test is not restated anywhere: the harness
+/// imports the site's own `live.js`, which imports the site's own
+/// `services.js`, and every assertion is about what the wasm app
+/// recorded. So `deliverDeepLink` really reaches
+/// `nokre_deep_link_receive`, a popup's `postMessage` really ends the
+/// flow the opener started, and a seed really lands in the in-wasm
+/// table before the first `build` reads it — the seam that breaks,
+/// executed rather than analyzed (docs/testing.md).
+///
+/// It rides `-Djs-parse` because it asks for exactly what that option
+/// already promises: node, and the shipped JavaScript actually read. A
+/// machine without node fails in `addJsParseCheck` with the message
+/// that names the fix, so this step stands aside quietly rather than
+/// repeating it. ReleaseSmall is not taken from `-Doptimize`: every
+/// path a consumer has builds a web app ReleaseSmall (`addWebApp`
+/// forces it), so the gate honors the one build a browser will see.
+fn addWebServicesCheck(b: *std.Build, step: *std.Build.Step, enabled: bool) void {
+    if (!enabled) return;
+    const node = b.findProgram(&.{"node"}, &.{}) catch return;
+
+    const decl: PackageDecl = .{
+        .name = "web services check",
+        .id = "dev.nokre.webcheck",
+        .version = "0.0.0",
+        .build = 1,
+    };
+    // Every web-only leg linked at once, under one identity: the store
+    // is namespaced by it, and oauth's scheme is the app's own — which
+    // is also what the harness asserts the seeded redirect is *not*, in
+    // a browser the origin being the registration.
+    const app = addAppTo(b, .{
+        .name = "web-services-check",
+        .root_source_file = b.path("tests/web_services.zig"),
+        .target = webTarget(b),
+        .optimize = .ReleaseSmall,
+        .pkg = decl,
+        .secure_store = true,
+        .deep_link_domains = &.{"nokre.dev"},
+        .oauth_schemes = &.{"dev.nokre.webcheck"},
+    });
+
+    const run = b.addSystemCommand(&.{node});
+    run.addFileArg(b.path("tests/web_services.mjs"));
+    // The site, not the sources: what a consumer deploys is a copy of
+    // those files, and a copy is what this boots.
+    run.addDirectoryArg(app.web.?);
+    // Imported by the harness, so an edit to it is an edit to this
+    // step's inputs.
+    run.addFileInput(b.path("tests/web_browser.mjs"));
+    run.setName("run tests/web_services.mjs");
+    // A substring, on stderr, for addDevStoreCheck's reason: asserting
+    // the program's last line asserts every scenario before it ran.
+    run.expectStdErrMatch("web services: deep_link, oauth, secure_store — all ok");
+    run.expectExitCode(0);
+    step.dependOn(&run.step);
 }
 
 /// One compile-check object: the library built for `query` with exactly

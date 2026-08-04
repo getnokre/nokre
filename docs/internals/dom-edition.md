@@ -611,6 +611,19 @@ stand in its place, and both are in
   one tree are byte-identical and a review is a *text* diff. That is the
   golden discipline one layer out, and more diffable than a picture.
 
+Both of those stop at the seam. The markup is the serializer's output;
+what the *driver* does with it, and what the service legs on the far
+side of the wasm boundary do, is JavaScript that no Zig test can read.
+A third gate covers that half and only that half:
+[tests/web_services.mjs](../../tests/web_services.mjs) boots a real wasm
+app into the shipped `live.js` under a browser stub and asserts what the
+app recorded — the deep link that arrived, the popup message that ended
+an oauth flow, the seed that beat the first `build`. It asserts nothing
+about how the page looks, which is the one thing this edition traded
+away; [../testing.md](../testing.md#the-webs-own-gate) has the whole
+list, including what it still does not reach (the compute worker, the
+service worker, `fetch`, and the hydration handover).
+
 The closed set is enforced by the language: the switch in `node` has no
 `else`. An element added to `Element` without a case here fails to
 compile rather than rendering as a `<div>`.
