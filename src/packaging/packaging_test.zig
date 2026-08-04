@@ -352,6 +352,83 @@ test "declared hosts join connect-src and no other directive" {
     try std.testing.expectEqual(null, declared.next());
 }
 
+/// The policy as a browser reads it: the content attribute of the one
+/// meta tag that carries it. Everything below asserts against this
+/// rather than against the file, because a directive is what the page
+/// grants and a line is only how it was written.
+fn policyOf(html: []const u8) []const u8 {
+    const open = "<meta http-equiv=\"Content-Security-Policy\" content=\"";
+    const at = std.mem.indexOf(u8, html, open).?;
+    const rest = html[at + open.len ..];
+    return rest[0..std.mem.indexOfScalar(u8, rest, '"').?];
+}
+
+test "the page's policy is the stated directive set, once each" {
+    const html = try packaging.webIndexHtml(std.testing.allocator, fixture, .{});
+    defer std.testing.allocator.free(html);
+
+    // The set every nokre page carries, in order — a consumer trusting
+    // nokre to emit this is trusting *this list*, so it is written out
+    // here rather than left implied by a golden that a regeneration
+    // could quietly rewrite. Each entry's rationale is webIndexHtml's
+    // doc comment; what this asserts is that the page grants these
+    // eleven powers and no twelfth.
+    const directives = [_][]const u8{
+        "default-src 'none'",
+        "script-src 'self' 'wasm-unsafe-eval'",
+        "worker-src 'self'",
+        "style-src 'self' 'unsafe-inline'",
+        "style-src-elem 'self'",
+        "img-src 'self'",
+        "font-src 'self'",
+        "connect-src 'self'",
+        "manifest-src 'self'",
+        "base-uri 'none'",
+        "form-action 'none'",
+    };
+    var it = std.mem.splitScalar(u8, policyOf(html), ';');
+    var seen: usize = 0;
+    while (it.next()) |raw| : (seen += 1) {
+        try std.testing.expect(seen < directives.len);
+        try std.testing.expectEqualStrings(directives[seen], std.mem.trim(u8, raw, " \n"));
+    }
+    try std.testing.expectEqual(directives.len, seen);
+
+    // One policy on the page, and it is in the head before anything it
+    // governs: a second meta tag would be a second policy, and the
+    // intersection of two is not what either says.
+    try std.testing.expectEqual(1, std.mem.count(u8, html, "Content-Security-Policy"));
+    try std.testing.expect(std.mem.indexOf(u8, html, "Content-Security-Policy").? < std.mem.indexOf(u8, html, "<title>").?);
+}
+
+test "connect-src carries 'self', the declared origins, and nothing else" {
+    const declared = [_][]const u8{ "https://api.example.com", "wss://live.example.com:8443", "*.example.com" };
+    const html = try packaging.webIndexHtml(std.testing.allocator, fixture, .{ .connect_src = &declared });
+    defer std.testing.allocator.free(html);
+
+    const policy = policyOf(html);
+    const at = std.mem.indexOf(u8, policy, "connect-src").?;
+    const line = policy[at..][0..std.mem.indexOfScalar(u8, policy[at..], ';').?];
+
+    // Token by token, because that is how the directive is parsed: the
+    // origin the page was served from, then the declaration's own, in
+    // the order it was declared and with nothing between them.
+    var tokens = std.mem.tokenizeScalar(u8, line, ' ');
+    try std.testing.expectEqualStrings("connect-src", tokens.next().?);
+    try std.testing.expectEqualStrings("'self'", tokens.next().?);
+    for (declared) |src| try std.testing.expectEqualStrings(src, tokens.next().?);
+    try std.testing.expectEqual(null, tokens.next());
+
+    // And the directive count did not move: a declared host is a
+    // source, never a directive.
+    const plain = try packaging.webIndexHtml(std.testing.allocator, fixture, .{});
+    defer std.testing.allocator.free(plain);
+    try std.testing.expectEqual(
+        std.mem.count(u8, policyOf(plain), ";"),
+        std.mem.count(u8, policy, ";"),
+    );
+}
+
 test "a source that could end its own directive is refused" {
     // The shapes a policy carries.
     try std.testing.expectEqual(null, packaging.badConnectSrc(&.{
@@ -366,6 +443,45 @@ test "a source that could end its own directive is refused" {
     // And the one that needs no smuggling: every host there is.
     try std.testing.expectEqualStrings("*", packaging.badConnectSrc(&.{"*"}).?);
     try std.testing.expectEqualStrings("", packaging.badConnectSrc(&.{""}).?);
+}
+
+test "no byte a consumer supplies can smuggle a directive" {
+    // The policy is written on one line inside one attribute, so three
+    // bytes end it and every one of them has a name: `;` starts the
+    // next directive, a space starts the next *source* — which is how
+    // `'unsafe-inline'` arrives — and `"` closes the attribute. A
+    // newline is the same story told by a config file: a value read out
+    // of YAML or an environment variable carries the line break with
+    // it, and the page's policy is line-oriented to read.
+    for ("; \"\n\r\t,'\\<>&") |c| {
+        var buf: [4]u8 = .{ 'x', '.', c, 0 };
+        try std.testing.expectEqualStrings(buf[0..3], packaging.badConnectSrc(&.{buf[0..3]}).?);
+    }
+
+    // The sweep the three cases above are examples of: for every byte
+    // there is, the answer is the charset's — a source expression is
+    // letters, digits and the punctuation a scheme, host, port, path
+    // and wildcard need, and nothing outside it reaches a page. Checked
+    // in the middle of a source rather than alone, because that is
+    // where a smuggled byte would hide.
+    for (0..256) |b| {
+        const c: u8 = @intCast(b);
+        const in_charset = switch (c) {
+            'a'...'z', 'A'...'Z', '0'...'9', '.', '-', '_', ':', '/', '*', '+', '[', ']' => true,
+            else => false,
+        };
+        const src = [_]u8{ 'x', c, 'y' };
+        try std.testing.expectEqual(in_charset, packaging.badConnectSrc(&.{&src}) == null);
+    }
+
+    // The refusal is the whole gate: `webIndexHtml` writes what it is
+    // handed, and `build.zig` runs `badConnectSrc` over the declaration
+    // before any emitter sees it (the `web_connect_src` failure there
+    // names the option and the rule). So this test is what stands
+    // between a consumer's string and a second directive — the reason
+    // it sweeps every byte instead of naming the ones someone thought
+    // of.
+    try std.testing.expectEqual(null, packaging.badConnectSrc(&.{}));
 }
 
 test "web boot.js is byte-exact" {
