@@ -209,8 +209,8 @@ test "sign-in buttons carry the vendor mark, and the markup carries no color" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
     const root = app.tree.rootId();
-    try app.tree.append(root, .{ .button = .{ .label = "Sign in with Apple", .provider = .apple } });
-    try app.tree.append(root, .{ .button = .{ .label = "Sign in with Google", .provider = .google } });
+    try app.tree.append(root, .{ .button = .{ .label = "Sign in with Apple", .form = .{ .provider = .apple } } });
+    try app.tree.append(root, .{ .button = .{ .label = "Sign in with Google", .form = .{ .provider = .google } } });
 
     const html = try render(&app);
     defer testing.allocator.free(html);
@@ -677,7 +677,7 @@ test "a mark costs its glyph; only the icon element takes the square box" {
     defer app.deinit();
     const root = app.tree.rootId();
     try app.tree.append(root, .{ .icon = .{ .name = .settings, .label = "Settings" } });
-    try app.tree.append(root, .{ .button = .{ .label = "Save", .icon = .check } });
+    try app.tree.append(root, .{ .button = .{ .label = "Save", .form = .{ .filled = .check } } });
 
     const html = try render(&app);
     defer testing.allocator.free(html);

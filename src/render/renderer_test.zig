@@ -224,7 +224,7 @@ fn hasStroke(rec: *const Recording, r: Rect) bool {
 test "glyph-form button draws the quiet glyph, no pill and no label text" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const btn = try app.tree.appendId(app.tree.rootId(), .{ .button = .{ .label = "Next cycle", .icon = .chevron_right, .icon_only = true } });
+    const btn = try app.tree.appendId(app.tree.rootId(), .{ .button = .{ .label = "Next cycle", .form = .{ .glyph = .chevron_right } } });
     app.focused = .of(btn);
 
     var rec = frameOf(&app);
@@ -254,7 +254,7 @@ test "glyph-form button draws the quiet glyph, no pill and no label text" {
 test "a pill with an icon draws glyph and label inside the fill" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const btn = try app.tree.appendId(app.tree.rootId(), .{ .button = .{ .label = "Add reminder", .icon = .alarm_clock_plus } });
+    const btn = try app.tree.appendId(app.tree.rootId(), .{ .button = .{ .label = "Add reminder", .form = .{ .filled = .alarm_clock_plus } } });
 
     var rec = frameOf(&app);
     defer rec.deinit();
@@ -289,7 +289,7 @@ test "a pill with an icon draws glyph and label inside the fill" {
 test "secondary button draws an outline on the ambient, never a fill" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const btn = try app.tree.appendId(app.tree.rootId(), .{ .button = .{ .label = "Cancel", .secondary = true } });
+    const btn = try app.tree.appendId(app.tree.rootId(), .{ .button = .{ .label = "Cancel", .form = .{ .secondary = null } } });
 
     var rec = frameOf(&app);
     defer rec.deinit();
@@ -327,7 +327,7 @@ test "secondary button draws an outline on the ambient, never a fill" {
 test "the Google button overlays four arc glyphs in the mandated colors at one origin" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const btn = try app.tree.appendId(app.tree.rootId(), .{ .button = .{ .label = "Sign in with Google", .provider = .google } });
+    const btn = try app.tree.appendId(app.tree.rootId(), .{ .button = .{ .label = "Sign in with Google", .form = .{ .provider = .google } } });
 
     var rec = frameOf(&app);
     defer rec.deinit();
@@ -380,7 +380,7 @@ test "the dark appearance flips the Google button to its dark theme, G unchanged
     var app = try test_app.init(400, 400);
     defer app.deinit();
     app.setScheme(.dark);
-    const btn = try app.tree.appendId(app.tree.rootId(), .{ .button = .{ .label = "Sign in with Google", .provider = .google } });
+    const btn = try app.tree.appendId(app.tree.rootId(), .{ .button = .{ .label = "Sign in with Google", .form = .{ .provider = .google } } });
 
     var rec = frameOf(&app);
     defer rec.deinit();
@@ -405,7 +405,7 @@ test "the dark appearance flips the Google button to its dark theme, G unchanged
 test "a dimmed Google button draws the G as a silhouette, not in color" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Sign in with Google", .provider = .google, .disabled = true } });
+    try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Sign in with Google", .form = .{ .provider = .google }, .disabled = true } });
 
     var rec = frameOf(&app);
     defer rec.deinit();
@@ -430,8 +430,8 @@ test "no frame without a Google button carries a colored op" {
     defer app.deinit();
     const root = app.tree.rootId();
     try app.tree.append(root, .{ .heading = .{ .content = "Sign in", .level = .h1 } });
-    try app.tree.append(root, .{ .button = .{ .label = "Sign in with Apple", .provider = .apple } });
-    try app.tree.append(root, .{ .button = .{ .label = "Continue", .icon = .chevron_right } });
+    try app.tree.append(root, .{ .button = .{ .label = "Sign in with Apple", .form = .{ .provider = .apple } } });
+    try app.tree.append(root, .{ .button = .{ .label = "Continue", .form = .{ .filled = .chevron_right } } });
 
     var rec = frameOf(&app);
     defer rec.deinit();
@@ -442,7 +442,7 @@ test "no frame without a Google button carries a colored op" {
 test "disabled glyph-form button dims its glyph" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Next cycle", .icon = .chevron_right, .icon_only = true, .disabled = true } });
+    try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Next cycle", .form = .{ .glyph = .chevron_right }, .disabled = true } });
 
     var rec = frameOf(&app);
     defer rec.deinit();
@@ -460,10 +460,10 @@ test "disabled glyph-form button dims its glyph" {
 test "an in-progress button swaps its words for a centered ellipsis, at the size the words asked for" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const running = try app.tree.appendId(app.tree.rootId(), .{ .button = .{ .label = "Save changes", .icon = .alarm_clock_plus, .in_progress = true } });
+    const running = try app.tree.appendId(app.tree.rootId(), .{ .button = .{ .label = "Save changes", .form = .{ .filled = .alarm_clock_plus }, .in_progress = true } });
     // The same button at rest: the pill must measure identically, so
     // starting the work moves nothing on the screen.
-    const resting = try app.tree.appendId(app.tree.rootId(), .{ .button = .{ .label = "Save changes", .icon = .alarm_clock_plus } });
+    const resting = try app.tree.appendId(app.tree.rootId(), .{ .button = .{ .label = "Save changes", .form = .{ .filled = .alarm_clock_plus } } });
 
     var rec = frameOf(&app);
     defer rec.deinit();
@@ -621,7 +621,7 @@ test "an outlined button at a known percentage reuses the standalone meter's ton
     defer app.deinit();
     const id = try app.tree.appendId(app.tree.rootId(), .{ .button = .{
         .label = "Cancel upload",
-        .secondary = true,
+        .form = .{ .secondary = null },
         .in_progress = true,
         .progress_percent = 25,
     } });
@@ -683,8 +683,7 @@ test "an in-progress glyph-form button stands the ellipsis where its glyph was" 
     defer app.deinit();
     const id = try app.tree.appendId(app.tree.rootId(), .{ .button = .{
         .label = "Next cycle",
-        .icon = .chevron_right,
-        .icon_only = true,
+        .form = .{ .glyph = .chevron_right },
         .in_progress = true,
     } });
 

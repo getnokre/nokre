@@ -211,7 +211,7 @@ wrong answer for the appearance where halation is worse); a test in
 interactive element can lay out below the 24×24 minimum target size
 (WCAG 2.5.8), and a second one that every control which is *nothing but
 a target* — a bare glyph (`icon_button`, `back`, `sheet_close`, an
-`icon_only` button, the notices indicator) or a `checkbox`/`toggle` row —
+glyph-form `button`, the notices indicator) or a `checkbox`/`toggle` row —
 lays out at the full 44×44 of WCAG 2.5.5 (AAA), which is also Apple's
 44pt. The 24px floor is what conformance permits; it is not a size a
 finger can reliably hit, and a control with no pill and no words draws

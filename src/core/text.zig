@@ -19,7 +19,7 @@ pub const Family = enum {
     /// The vendor sign-in marks, and nothing else
     /// (src/assets/fonts/LICENSE-Brand.txt). A closed set of trademark
     /// glyphs — five: Apple's logo and the Google G's four arcs —
-    /// reachable only from the renderer's `button.provider` arm: it is
+    /// reachable only from the renderer's provider-form button arm: it is
     /// not a face consumers may set on a span or a text element, and
     /// the element set gives them no way to name it.
     brand,

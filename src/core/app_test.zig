@@ -3128,7 +3128,7 @@ test "a row of buttons and a link folds, and the link is still a link in the she
 fn buildHomeWithActionRow(_: ?*anyopaque, app: *App) anyerror!void {
     const row = try app.tree.appendId(app.tree.rootId(), .{ .stack = .{ .axis = .horizontal } });
     try app.tree.append(row, .{ .button = .{ .label = "Save" } });
-    try app.tree.append(row, .{ .button = .{ .label = "Cancel", .secondary = true } });
+    try app.tree.append(row, .{ .button = .{ .label = "Cancel", .form = .{ .secondary = null } } });
     try app.tree.append(row, .{ .button = .{ .label = "Add reminder" } });
     try app.tree.append(row, .{ .button = .{ .label = "Disabled", .disabled = true } });
     try app.tree.append(row, .{ .link = .{ .label = "More details", .route = "details" } });

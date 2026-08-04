@@ -358,25 +358,16 @@ pub const Button = struct {
     /// say, which is the honest default: `…` means *no estimate*, and a
     /// bar that moves on a guess is worse than one that isn't there.
     ///
-    /// Only with `in_progress`, and never on `icon_only` — a percentage
-    /// on a button that is not working means nothing, and a 24px glyph
-    /// target has no room to read a bar. Both are rejected at append,
-    /// along with a value past 100.
+    /// Only with `in_progress`, and never on the glyph form — a
+    /// percentage on a button that is not working means nothing, and a
+    /// 24px glyph target has no room to read a bar. Both are rejected at
+    /// append, along with a value past 100.
     ///
     /// The words do not change and neither does the accessible name;
     /// assistive tech gets the number as the node's value, so it hears
     /// "Save changes, 60%" — the same trade `meter` makes, where the
     /// state is in the words and the bar only restates it.
     progress_percent: ?u8 = null,
-    /// Secondary emphasis: an outlined pill — ambient background, 1px
-    /// `.g6` border (the same WCAG 1.4.11 carrier as segmented chips),
-    /// ink text — instead of the filled primary. Same geometry, so the
-    /// pair aligns side by side. Meaningless on `icon_only` (no pill to
-    /// outline) and rejected there at append.
-    secondary: bool = false,
-    /// Renders this Lucide glyph inside the pill, leading the label —
-    /// both stay visible. An icon never hides the words by itself.
-    icon: ?IconName = null,
     /// Folded away by an overflowing row of actions: the row could not
     /// fit this button, so a `more` control stands where it was and the
     /// sheet that control opens is where it can be reached
@@ -387,42 +378,107 @@ pub const Button = struct {
     /// `Element.foldable` for which elements a row may fold, and why the
     /// set stops where it does.
     folded: bool = false,
-    /// Glyph form: drops the pill and renders only the icon, quiet on
-    /// the ambient surface, on the standard 24px tap target — the form
-    /// framework chrome uses (back, sheet close). Requires `icon`
-    /// (rejected at append without one). The label stays mandatory and
-    /// is what assistive tech announces.
-    icon_only: bool = false,
-    /// Makes this a conforming vendor sign-in button: the vendor's mark
-    /// leads the label. The button is otherwise an ordinary button —
-    /// same geometry, same activation, same a11y — because that is what
-    /// the vendors' own specs describe.
-    ///
-    /// `label` stays the app's to supply, and stays mandatory. nokre
-    /// ships the mark, which is artwork it can hold; it does not ship
-    /// the words, which are a translation problem it cannot: the vendors
-    /// require their string localized, and nokre has no idea which
-    /// languages an app ships. A default here would only make the
-    /// unlocalized button the silent path. Take the wording from the
-    /// vendor's own published strings for each locale you support
-    /// (Apple's ship with the button assets, alongside the mark).
-    ///
-    /// The emphasis pair maps onto the sanctioned styles rather than
-    /// adding new ones: for Apple the filled default is the solid
-    /// button (black on light, and automatically white on dark, since
-    /// the true endpoints flip with the appearance), and `secondary` is
-    /// the outlined one — all three of Apple's sanctioned styles fall
-    /// out of the palette nokre already has. Google sanctions *themes*
-    /// (a light button and a dark one), not emphases: the appearance
-    /// picks the theme, and `secondary` is rejected at append because
-    /// there is no outlined Google button to map it to. The G on that
-    /// button is the one colored thing nokre ever draws — the
-    /// renderer's doing, not a field here; see `AuthProvider`.
-    ///
-    /// Rejected at append alongside `icon` or `icon_only`: the mark
-    /// occupies the icon slot, and a glyph-only sign-in button is not a
-    /// form any vendor sanctions.
-    provider: ?AuthProvider = null,
+    /// Which button this is. Once four independent flags (`secondary`,
+    /// `icon`, `icon_only`, `provider`) whose five illegal combinations
+    /// append had to refuse one by one; as a union those states cannot
+    /// be written, and the checks are gone with them.
+    form: Form = .{ .filled = null },
+
+    pub const Form = union(enum) {
+        /// The filled primary pill — ink fill, paper text. The payload
+        /// is an optional Lucide glyph leading the label; both stay
+        /// visible, because an icon never hides the words by itself.
+        filled: ?IconName,
+        /// Secondary emphasis: an outlined pill — ambient background,
+        /// 1px `.g6` border (the same WCAG 1.4.11 carrier as segmented
+        /// chips), ink text — instead of the filled primary. Same
+        /// geometry, so the pair aligns side by side; same optional
+        /// leading glyph.
+        secondary: ?IconName,
+        /// Glyph form: drops the pill and renders only this glyph,
+        /// quiet on the ambient surface, on the standard 24px tap
+        /// target — the form framework chrome uses (back, sheet
+        /// close). The glyph *is* the payload, which is what makes a
+        /// glyph form without one unbuildable; there is no pill, so
+        /// there is no emphasis to vary. The label stays mandatory and
+        /// is what assistive tech announces.
+        glyph: IconName,
+        /// A conforming vendor sign-in button: the vendor's mark leads
+        /// the label, occupying the glyph slot — which is why neither
+        /// an icon nor the glyph form can be asked for beside it. The
+        /// button is otherwise an ordinary button — same geometry, same
+        /// activation, same a11y — because that is what the vendors'
+        /// own specs describe.
+        ///
+        /// `label` stays the app's to supply, and stays mandatory.
+        /// nokre ships the mark, which is artwork it can hold; it does
+        /// not ship the words, which are a translation problem it
+        /// cannot: the vendors require their string localized, and
+        /// nokre has no idea which languages an app ships. A default
+        /// here would only make the unlocalized button the silent
+        /// path. Take the wording from the vendor's own published
+        /// strings for each locale you support (Apple's ship with the
+        /// button assets, alongside the mark).
+        ///
+        /// The G on Google's button is the one colored thing nokre
+        /// ever draws — the renderer's doing, not a field here; see
+        /// `AuthProvider`.
+        provider: Provider,
+
+        /// The sanctioned vendor styles, spelled out rather than
+        /// composed: Apple sanctions three (black, white, and a white
+        /// outlined third — the filled pair falls out of the true
+        /// endpoints flipping with the appearance, so `.apple` covers
+        /// both and `.apple_outlined` is the third). Google sanctions
+        /// *themes* (a light button and a dark one), not emphases: the
+        /// appearance picks the theme, and the outlined Google button
+        /// this enum has no member for is not a form their guidelines
+        /// describe.
+        pub const Provider = enum {
+            apple,
+            apple_outlined,
+            google,
+
+            /// Whose mark this style carries.
+            pub fn vendor(self: Provider) AuthProvider {
+                return switch (self) {
+                    .apple, .apple_outlined => .apple,
+                    .google => .google,
+                };
+            }
+        };
+
+        /// The Lucide glyph this form carries, wherever it stands — a
+        /// pill's lead or the glyph form's whole face. Null for the
+        /// vendor forms: the mark owns that slot.
+        pub fn icon(self: Form) ?IconName {
+            return switch (self) {
+                .filled, .secondary => |ic| ic,
+                .glyph => |ic| ic,
+                .provider => null,
+            };
+        }
+
+        /// The outlined pill faces — `secondary`, and Apple's outlined
+        /// third — which draw ink on the ambient and take focus as a
+        /// thickened edge rather than a ring.
+        pub fn outlined(self: Form) bool {
+            return switch (self) {
+                .secondary => true,
+                .provider => |p| p == .apple_outlined,
+                .filled, .glyph => false,
+            };
+        }
+
+        /// The vendor whose mark leads the label, when this is a
+        /// sign-in button.
+        pub fn vendor(self: Form) ?AuthProvider {
+            return switch (self) {
+                .provider => |p| p.vendor(),
+                else => null,
+            };
+        }
+    };
 };
 
 pub const Link = struct {
@@ -1502,7 +1558,7 @@ pub const Element = union(Role) {
             // stays at full ink and gates like any other words.
             // A folded control paints nothing at all, so there is no
             // pair for the contrast gate to judge.
-            .button => |b| if (b.folded) null else if ((b.icon_only or b.secondary) and !b.disabled) .ink else null,
+            .button => |b| if (b.folded) null else if ((b.form == .glyph or b.form.outlined()) and !b.disabled) .ink else null,
             .link => |l| if (l.folded) null else .ink,
             // Drawn as the outlined pill, so its words gate exactly like
             // a secondary button's.
@@ -1563,9 +1619,9 @@ test "an in-progress button stops activating but keeps its focus stop" {
 
     // Busy is not unavailable: an outlined or glyph-form button keeps
     // full ink while it runs, so the gate still judges it.
-    const outlined: Element = .{ .button = .{ .label = "Cancel", .secondary = true, .in_progress = true } };
+    const outlined: Element = .{ .button = .{ .label = "Cancel", .form = .{ .secondary = null }, .in_progress = true } };
     try std.testing.expectEqual(@as(?@import("color.zig").Gray, .ink), outlined.ambientTextInk());
-    const glyph: Element = .{ .button = .{ .label = "Next cycle", .icon = .chevron_right, .icon_only = true, .in_progress = true } };
+    const glyph: Element = .{ .button = .{ .label = "Next cycle", .form = .{ .glyph = .chevron_right }, .in_progress = true } };
     try std.testing.expectEqual(@as(?@import("color.zig").Gray, .ink), glyph.ambientTextInk());
 }
 
@@ -1720,46 +1776,49 @@ test "icon names encode their own codepoint" {
 }
 
 test "glyph-form buttons stay buttons and gate their ink like chrome" {
-    const b: Element = .{ .button = .{ .label = "Next cycle", .icon = .chevron_right, .icon_only = true } };
+    const b: Element = .{ .button = .{ .label = "Next cycle", .form = .{ .glyph = .chevron_right } } };
     try std.testing.expect(b.isInteractive());
     try std.testing.expect(b.isFocusable());
     try std.testing.expectEqualStrings("Next cycle", b.label());
     try std.testing.expectEqual(@as(?@import("color.zig").Gray, .ink), b.ambientTextInk());
 
-    const disabled: Element = .{ .button = .{ .label = "Next cycle", .icon = .chevron_right, .icon_only = true, .disabled = true } };
+    const disabled: Element = .{ .button = .{ .label = "Next cycle", .form = .{ .glyph = .chevron_right }, .disabled = true } };
     try std.testing.expect(!disabled.isInteractive());
     try std.testing.expectEqual(@as(?@import("color.zig").Gray, null), disabled.ambientTextInk());
 
     // A pill carrying an icon still paints its own background: no gate.
-    const pill: Element = .{ .button = .{ .label = "Add reminder", .icon = .alarm_clock_plus } };
+    const pill: Element = .{ .button = .{ .label = "Add reminder", .form = .{ .filled = .alarm_clock_plus } } };
     try std.testing.expectEqual(@as(?@import("color.zig").Gray, null), pill.ambientTextInk());
 
     // A secondary button draws ink on the ambient and gates like text.
-    const sec: Element = .{ .button = .{ .label = "Cancel", .secondary = true } };
+    const sec: Element = .{ .button = .{ .label = "Cancel", .form = .{ .secondary = null } } };
     try std.testing.expectEqual(@as(?@import("color.zig").Gray, .ink), sec.ambientTextInk());
-    const sec_disabled: Element = .{ .button = .{ .label = "Cancel", .secondary = true, .disabled = true } };
+    const sec_disabled: Element = .{ .button = .{ .label = "Cancel", .form = .{ .secondary = null }, .disabled = true } };
     try std.testing.expectEqual(@as(?@import("color.zig").Gray, null), sec_disabled.ambientTextInk());
 }
 
 test "a provider button carries the vendor mark and the app's own words" {
-    const b: Element = .{ .button = .{ .label = "Sign in with Apple", .provider = .apple } };
+    const b: Element = .{ .button = .{ .label = "Sign in with Apple", .form = .{ .provider = .apple } } };
     try std.testing.expect(b.isInteractive());
     try std.testing.expect(b.isFocusable());
     // The words are the app's — nokre ships the mark, never a
     // translation of the vendor's string.
     try std.testing.expectEqualStrings("Sign in with Apple", b.label());
-    const localized: Element = .{ .button = .{ .label = "Mit Apple anmelden", .provider = .apple } };
+    const localized: Element = .{ .button = .{ .label = "Mit Apple anmelden", .form = .{ .provider = .apple } } };
     try std.testing.expectEqualStrings("Mit Apple anmelden", localized.label());
     try std.testing.expectEqualStrings("\u{e900}", AuthProvider.apple.mark());
     // Google's mark answers with the first of its four arc glyphs —
     // the one layout measures; the colors live in the renderer.
     try std.testing.expectEqualStrings("\u{e901}", AuthProvider.google.mark());
+    // Both Apple styles carry Apple's mark; the style names the pill,
+    // the vendor names the artwork.
+    try std.testing.expectEqual(AuthProvider.apple, Button.Form.Provider.apple_outlined.vendor());
 
-    // Emphasis maps onto the vendor's sanctioned styles rather than
-    // adding any: filled paints its own ground, outlined draws ink on
-    // the ambient and gates like text.
+    // Emphasis is spelled per vendor style rather than composed:
+    // filled paints its own ground, Apple's outlined third draws ink
+    // on the ambient and gates like text.
     try std.testing.expectEqual(@as(?@import("color.zig").Gray, null), b.ambientTextInk());
-    const outlined: Element = .{ .button = .{ .label = "x", .provider = .apple, .secondary = true } };
+    const outlined: Element = .{ .button = .{ .label = "x", .form = .{ .provider = .apple_outlined } } };
     try std.testing.expectEqual(@as(?@import("color.zig").Gray, .ink), outlined.ambientTextInk());
 }
 

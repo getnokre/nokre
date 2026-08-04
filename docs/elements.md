@@ -306,12 +306,20 @@ and not a lint: `tree.append` refuses to construct an interactive element
 with an empty label — an inaccessible control cannot exist.
 
 ### `button`
-`label`, `on_press`, `disabled`, `in_progress`. A filled pill — ink
-fill, paper text — ringed on keyboard-origin focus
+`label`, `on_press`, `disabled`, `in_progress`, `form`. A filled pill —
+ink fill, paper text — ringed on keyboard-origin focus
 ([accessibility.md](accessibility.md#focus)). Activated by tap, Enter,
 or Space.
 
-`secondary` is the one emphasis knob: an outlined pill — ambient
+`form` says which button this is, as a tagged union with four faces:
+`.filled` (the default), `.secondary`, `.glyph`, and `.provider`. One
+field rather than four flags, because the flags' illegal combinations —
+a glyph form without a glyph or with an emphasis, an icon beside a
+vendor mark, a glyph-only sign-in, an outlined Google — used to be five
+separate refusals at `append`; as a union they are not states the type
+can spell, and what compiles, appends.
+
+`.secondary` is the one emphasis: an outlined pill — ambient
 background, 1px `.g6` border (the segmented/toggle WCAG 1.4.11
 carrier), `.ink` text — beside the filled primary. Identical geometry,
 so the pair aligns; identical semantics, so assistive tech hears no
@@ -384,10 +392,10 @@ reason the pill may dim at all, and a dim pill is not a ground a meter
 can be read on.
 
 Rejected at `append`: a percentage without `in_progress` (it measures
-nothing), past 100, on `icon_only` (a bare glyph target has nowhere to
-read a bar), or on a `provider` button (no vendor sanctions a bar inside
-their artwork). Mutating into any of those afterwards is the audit's
-`malformed_progress`.
+nothing), past 100, on the glyph form (a bare glyph target has nowhere
+to read a bar), or on a `provider` button (no vendor sanctions a bar
+inside their artwork). Mutating into any of those afterwards is the
+audit's `malformed_progress`.
 
 The words and the accessible name do not change. Assistive tech gets the
 number as the node's *value* — "Save changes, 60%" — rather than a
@@ -406,39 +414,44 @@ btn.in_progress = false;
 btn.progress_percent = null;
 ```
 
-Setting `icon` (an `IconName`) draws the named Lucide glyph inside the
-pill, leading the label — both stay visible. An icon never hides the
-words by itself; the pill just grows by one glyph advance.
+The pill forms carry an optional Lucide glyph as their payload —
+`.form = .{ .filled = .alarm_clock_plus }` or
+`.{ .secondary = .refresh }` — drawn inside the pill, leading the label;
+both stay visible. An icon never hides the words by itself; the pill
+just grows by one glyph advance. A pill with no icon says so with
+`null`: `.{ .secondary = null }`.
 
-Setting `icon_only` as well drops the pill: only the glyph renders,
-quiet on the ambient surface, centered on the standard 44px touch
-target — the exact control framework chrome already uses for Back and
-the sheet close, opened to consumers. Icon-only is an explicit
-exception, not an inference: it requires `icon` (`append` rejects it
-without one), and nothing else changes — the label stays mandatory, is
-what assistive tech announces, and is how tests reach it
-(`tapLabel("Next cycle")`); disabled dims the glyph as the pill dims
-its text. Reach for it where a compact repeated control sits beside the
-words that explain it — a prev/next pager flanking a heading, a row's
-trailing action. An icon-only button whose meaning isn't obvious from
-its surroundings should have kept its words — the labeled pill is the
-default, the bare glyph is the exception.
+`.glyph` drops the pill: only its glyph renders, quiet on the ambient
+surface, centered on the standard 44px touch target — the exact
+control framework chrome already uses for Back and the sheet close,
+opened to consumers. The glyph *is* the payload
+(`.form = .{ .glyph = .chevron_right }`), so a glyph form without one
+cannot be written, and there is no pill for an emphasis to vary.
+Nothing else changes — the label stays mandatory, is what assistive
+tech announces, and is how tests reach it (`tapLabel("Next cycle")`);
+disabled dims the glyph as the pill dims its text. Reach for it where
+a compact repeated control sits beside the words that explain it — a
+prev/next pager flanking a heading, a row's trailing action. A glyph
+button whose meaning isn't obvious from its surroundings should have
+kept its words — the labeled pill is the default, the bare glyph is
+the exception.
 
-Setting `provider` makes it a conforming vendor sign-in button: the
-vendor's mark leads the label, and the label stays yours to supply —
-`append` rejects an empty one (`error.AuthButtonNeedsVendorLabel`),
-because nokre ships the mark and no translation of the vendor's
-mandated string (see the localization note below). This is the one
-place in nokre where the visual spec is **not nokre's to choose** —
-every detail of these buttons is the vendor's, which is exactly why
-`provider` is the whole API. There is no size, no ink, no corner
-radius: a knob here would be an invitation to violate the guidelines
-the button exists to satisfy.
+`.provider` makes it a conforming vendor sign-in button: the vendor's
+mark leads the label — occupying the glyph slot, which is why the type
+offers no icon beside it and no glyph-only sign-in — and the label
+stays yours to supply. `append` rejects an empty one
+(`error.AuthButtonNeedsVendorLabel`), because nokre ships the mark and
+no translation of the vendor's mandated string (see the localization
+note below). This is the one place in nokre where the visual spec is
+**not nokre's to choose** — every detail of these buttons is the
+vendor's, which is exactly why the vendor style is the whole API.
+There is no size, no ink, no corner radius: a knob here would be an
+invitation to violate the guidelines the button exists to satisfy.
 
 ```zig
 try tree.append(root, .{ .button = .{
     .label = "Sign in with Apple", // the vendor's published wording, your locale
-    .provider = .apple,
+    .form = .{ .provider = .apple },
     .on_press = .{ .ctx = state, .call = startSignIn },
 } });
 ```
@@ -451,17 +464,15 @@ rule an unlabeled `icon` follows. It does **not** mirror under RTL: a
 logotype is not directional, the same reason a `qr` symbol never flips.
 Its *position* does mirror, because leading is leading.
 
-The emphasis pair maps onto the vendor's sanctioned styles instead of
-adding new ones. Apple sanctions three — black, white, and white with a
-black outline: the filled default is the black button in light
-appearance and, because the endpoints flip, the white one in dark; and
-`secondary` is the outlined third. Google sanctions *themes* rather
-than emphases — a light button (white, hairline border) and a dark one
-— so the appearance picks the theme and `secondary` is rejected at
-`append` (`error.GoogleButtonHasOneEmphasis`): there is no outlined
-Google button to map it to. `icon` and `icon_only` are rejected on both
-— the mark occupies the icon slot, and no vendor sanctions a glyph-only
-sign-in button.
+The vendor styles are spelled out per vendor instead of composed from
+an emphasis flag. Apple sanctions three — black, white, and white with
+a black outline: `.apple` is the filled pair (the black button in
+light appearance and, because the endpoints flip, the white one in
+dark) and `.apple_outlined` is the outlined third. Google sanctions
+*themes* rather than emphases — a light button (white, hairline
+border) and a dark one — so the appearance picks the theme and the
+outlined Google button no guideline describes is simply not a member
+the type has.
 
 The Google button's G is drawn in the vendor's four colors — the one
 colored thing nokre ever puts on screen, painted by the renderer from
@@ -552,7 +563,7 @@ Details worth knowing:
   grew and the actions are back on the row; it folded deeper and the
   open list no longer names everything hidden; or a folded original
   changed *state* — its words, `disabled`, `in_progress`, progress,
-  emphasis, icon or provider mark, a link's destination, or the action
+  form (emphasis, icon, or provider mark), a link's destination, or the action
   itself. The sheet restates each action whole, so on any of these it
   is dismissed rather than left saying something untrue.
 - **In tests**, a folded action is not addressable by its words:
@@ -627,7 +638,7 @@ button left there: it is the one control on the row that cannot be
 pressed to recover. Clear it on failure and cancellation too.
 
 There is deliberately no `progress_percent` twin: a 20px track has
-nowhere to read a bar, which is the same reason an `icon_only` button is
+nowhere to read a bar, which is the same reason a glyph-form button is
 refused one. And no `disabled`, still — a switch that cannot be flipped
 at all is a screen that should not be drawing one.
 

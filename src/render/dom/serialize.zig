@@ -687,10 +687,10 @@ fn button(em: *Emitter, id: NodeId, b: element_mod.Button) !void {
     // beside it is what stands there.
     if (b.folded) return;
     try em.raw("<button type=\"button\" class=\"btn");
-    if (b.secondary) try em.raw(" secondary");
-    if (b.provider != null) try em.raw(" auth");
-    if (b.provider == .google) try em.raw(" google");
-    if (b.icon_only) try em.raw(" icon-only");
+    if (b.form.outlined()) try em.raw(" secondary");
+    if (b.form == .provider) try em.raw(" auth");
+    if (b.form.vendor() == .google) try em.raw(" google");
+    if (b.form == .glyph) try em.raw(" icon-only");
     try em.raw("\"");
     if (b.disabled) try em.raw(" disabled");
     try em.stop(id);
@@ -738,13 +738,13 @@ fn button(em: *Emitter, id: NodeId, b: element_mod.Button) !void {
         // the stylesheet overlays into one drawing and colors
         // on the live pill — the markup itself carries no
         // color, here or anywhere.
-        if (b.provider) |p| switch (p) {
+        if (b.form.vendor()) |v| switch (v) {
             .apple => try em.raw("<span class=\"brand-mark\" aria-hidden=\"true\">&#xE900;</span>"),
             .google => try em.raw("<span class=\"brand-mark g\" aria-hidden=\"true\">" ++
                 "<span>&#xE901;</span><span>&#xE902;</span><span>&#xE903;</span><span>&#xE904;</span></span>"),
         };
-        if (b.icon) |name| try icon(em, name, "", .ink, .body, .mark);
-        if (b.icon_only) {
+        if (b.form.icon()) |name| try icon(em, name, "", .ink, .body, .mark);
+        if (b.form == .glyph) {
             try em.raw("<span class=\"visually-hidden\">");
             try em.text(b.label);
             try em.raw("</span>");

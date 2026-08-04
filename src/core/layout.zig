@@ -1996,18 +1996,18 @@ const Ctx = struct {
             // the work runs, so the press does not reflow the screen out
             // from under the finger that made it. The renderer draws the
             // `…` centered in exactly this box.
-            .button => |b| if (b.icon_only) .{
+            .button => |b| if (b.form == .glyph) .{
                 .w = metrics.touch_target,
                 .h = metrics.touch_target,
             } else blk: {
                 var w = self.measure(.prose, .body, b.label) + 2 * (metrics.button_pad_h + metrics.border);
-                if (b.icon) |ic| w += self.measurer.measure(.icons, text.Scale.body.px(), ic.utf8()) + metrics.icon_gap;
-                // A vendor mark sits where an icon would, and is
-                // mutually exclusive with one (tree.validateAppend). The
+                if (b.form.icon()) |ic| w += self.measurer.measure(.icons, text.Scale.body.px(), ic.utf8()) + metrics.icon_gap;
+                // A vendor mark sits where an icon would — the form has
+                // one slot, so the two cannot both be asked for. The
                 // pill's height already clears Apple's 30pt floor —
                 // body line height plus the pad is 36 — so the mark
                 // costs width and nothing else.
-                if (b.provider) |p| w += self.measurer.measure(.brand, text.Scale.body.px(), p.mark()) + metrics.icon_gap;
+                if (b.form.vendor()) |v| w += self.measurer.measure(.brand, text.Scale.body.px(), v.mark()) + metrics.icon_gap;
                 break :blk .{
                     .w = w,
                     .h = text.Scale.body.lineHeight() + 2 * (metrics.button_pad_v + metrics.border),

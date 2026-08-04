@@ -796,7 +796,7 @@ The signed-in half of `buildNotes`:
     } });
     try app.tree.append(actions, .{ .button = .{
         .label = "Sync", // Part 7
-        .secondary = true,
+        .form = .{ .secondary = null },
         .on_press = .{ .ctx = state, .call = onSyncPressed },
     } });
     try app.tree.append(root, .{ .text = .{ .content = state.status, .style = .{ .scale = .small, .ink = .dark } } });
@@ -1224,7 +1224,7 @@ pub fn buildNote(ctx: ?*anyopaque, app: *h.App) !void {
     try app.tree.append(root, .{ .qr = .{ .label = "Scan to take it with you", .value = note.slice() } });
     try app.tree.append(root, .{ .button = .{
         .label = "Delete",
-        .secondary = true,
+        .form = .{ .secondary = null },
         .on_press = .{ .ctx = state, .call = onDeleteNote },
     } });
 }
@@ -1326,7 +1326,7 @@ pub fn buildSettings(ctx: ?*anyopaque, app: *h.App) !void {
     if (state.signed_in) {
         try app.tree.append(root, .{ .button = .{
             .label = "Sign out",
-            .secondary = true,
+            .form = .{ .secondary = null },
             .on_press = .{ .ctx = state, .call = onSignOut },
         } });
     } else {

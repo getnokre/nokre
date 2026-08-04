@@ -69,7 +69,7 @@ fn dumpNode(gpa: std.mem.Allocator, out: *std.ArrayList(u8), app: *App, id: Node
             // (overflow.zig): the trace says so, and the zero rect
             // beside it says the rest.
             if (b.folded) try out.appendSlice(gpa, " folded");
-            if (b.secondary) try out.appendSlice(gpa, " secondary");
+            if (b.form.outlined()) try out.appendSlice(gpa, " secondary");
             if (b.disabled) try out.appendSlice(gpa, " disabled");
             if (b.in_progress) try out.appendSlice(gpa, " in_progress");
             if (b.progress_percent) |pct| try out.print(gpa, " {d}%", .{pct});

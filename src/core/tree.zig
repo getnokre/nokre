@@ -466,7 +466,7 @@ pub const Tree = struct {
         // general one so the error names the specific fix: the vendor's
         // own published string for the locale being rendered
         // (element.zig). nokre ships the mark, never a translation.
-        if (element == .button and element.button.provider != null and element.button.label.len == 0)
+        if (element == .button and element.button.form == .provider and element.button.label.len == 0)
             return error.AuthButtonNeedsVendorLabel;
         if (element.role().requiresLabel() and element.label().len == 0)
             return error.UnlabeledInteractive;
@@ -513,40 +513,25 @@ pub const Tree = struct {
                     if (!open_url.schemeAllowed(url)) return error.UnsupportedScheme;
                 } else if (l.route.len == 0) return error.EmptyRoute;
             },
-            // Icon-only is a rendering exception, not a state of its own:
-            // without a glyph there is nothing to render, and without a
-            // pill there is no emphasis to vary.
+            // The form quartet's illegal pairings (a glyph form without
+            // a glyph, or with an emphasis; a vendor mark beside an
+            // icon; a glyph-only sign-in; an outlined Google) are not
+            // checked here because `Button.Form` cannot spell them —
+            // what remains is the one field that still crosses it.
             .button => |b| {
-                // The vendor's mark occupies the icon slot, and no
-                // vendor sanctions a glyph-only sign-in button — so
-                // neither combination is a thing to resolve, and both
-                // are refused at the call site instead. These come first
-                // because they name the more specific misuse: a
-                // provider button asking for the glyph form should hear
-                // about the provider, not about a missing icon.
-                if (b.provider != null and b.icon != null) return error.AuthButtonHasNoIcon;
-                if (b.provider != null and b.icon_only) return error.AuthButtonNeedsItsLabel;
-                // Apple sanctions an outlined third style and `secondary`
-                // maps onto it; Google sanctions themes the appearance
-                // already picks, and no outlined form exists to map to —
-                // so the flag would render a button no guideline
-                // describes, and is refused instead (element.zig).
-                if (b.provider == .google and b.secondary) return error.GoogleButtonHasOneEmphasis;
                 // No vendor sanctions a progress bar inside their
                 // button, and the brand pill is drawn through a
                 // light-pinned canvas at the true endpoints — a track on
                 // that ground would be nokre restyling artwork that is
                 // not nokre's. Sign-in has no percentage anyway.
-                if (b.provider != null and b.progress_percent != null) return error.AuthButtonHasNoMeter;
-                if (b.icon_only and b.icon == null) return error.IconOnlyButtonNeedsIcon;
-                if (b.icon_only and b.secondary) return error.IconOnlyButtonHasNoEmphasis;
+                if (b.form == .provider and b.progress_percent != null) return error.AuthButtonHasNoMeter;
                 // A percentage describes work; without work there is
                 // nothing for it to describe, and on a 24px glyph target
                 // there is nowhere to read it. Both are call-site
                 // mistakes, not states to resolve at draw time.
                 if (b.progress_percent) |pct| {
                     if (!b.in_progress) return error.ProgressNeedsInProgress;
-                    if (b.icon_only) return error.IconOnlyButtonHasNoMeter;
+                    if (b.form == .glyph) return error.GlyphButtonHasNoMeter;
                     if (pct > 100) return error.ProgressOutOfRange;
                 }
             },

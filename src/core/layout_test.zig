@@ -121,7 +121,7 @@ test "layout: button takes intrinsic width, not full width" {
 test "layout: glyph-form button is the bare touch-target square" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
-    const btn = try tree.appendId(tree.rootId(), .{ .button = .{ .label = "Next cycle", .icon = .chevron_right, .icon_only = true } });
+    const btn = try tree.appendId(tree.rootId(), .{ .button = .{ .label = "Next cycle", .form = .{ .glyph = .chevron_right } } });
     compute(&tree, text.Measurer.fixed, .{ .w = 640, .h = 480 });
     const r = tree.rectOf(btn);
     try testing.expectEqual(@as(i32, metrics.touch_target), r.w);
@@ -132,7 +132,7 @@ test "layout: a pill with an icon grows by the glyph and its gap" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
     const plain = try tree.appendId(tree.rootId(), .{ .button = .{ .label = "OK" } });
-    const iconed = try tree.appendId(tree.rootId(), .{ .button = .{ .label = "OK", .icon = .alarm_clock_plus } });
+    const iconed = try tree.appendId(tree.rootId(), .{ .button = .{ .label = "OK", .form = .{ .filled = .alarm_clock_plus } } });
     compute(&tree, text.Measurer.fixed, .{ .w = 640, .h = 480 });
     // Fixed measurer: one glyph codepoint at body(16px) is 9px wide.
     try testing.expectEqual(tree.rectOf(plain).w + 9 + metrics.icon_gap, tree.rectOf(iconed).w);
@@ -1051,8 +1051,7 @@ test "design proof: a control that is nothing but a target gets the full 44 (WCA
     try tree.append(tree.rootId(), .{ .heading = .{ .content = "T" } }); // the back control's row
     const glyph_btn = try tree.appendId(tree.rootId(), .{ .button = .{
         .label = "K",
-        .icon = .chevron_right,
-        .icon_only = true,
+        .form = .{ .glyph = .chevron_right },
     } });
     const check = try tree.appendId(tree.rootId(), .{ .checkbox = .{ .label = "K" } });
     const toggle = try tree.appendId(tree.rootId(), .{ .toggle = .{ .label = "K" } });

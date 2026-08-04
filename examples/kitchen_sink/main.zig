@@ -718,16 +718,16 @@ fn buildHome(ctx: ?*anyopaque, app: *h.App) !void {
     try tree.append(root, .{ .text = .{ .content = "A row of actions folds when it runs out of width: the last one still fully visible becomes More, and the sheet it opens holds it and everything after it. Narrow the window to watch it happen.", .style = .{ .scale = .small, .ink = .dark } } });
     const row_stack = try tree.appendId(root, .{ .stack = .{ .axis = .horizontal } });
     try tree.append(row_stack, .{ .button = .{ .label = "Save", .on_press = .{ .ctx = state, .call = onSave } } });
-    try tree.append(row_stack, .{ .button = .{ .label = "Cancel", .secondary = true } });
-    try tree.append(row_stack, .{ .button = .{ .label = "Add reminder", .icon = .alarm_clock_plus } });
+    try tree.append(row_stack, .{ .button = .{ .label = "Cancel", .form = .{ .secondary = null } } });
+    try tree.append(row_stack, .{ .button = .{ .label = "Add reminder", .form = .{ .filled = .alarm_clock_plus } } });
     try tree.append(row_stack, .{ .button = .{ .label = "Disabled", .disabled = true } });
     try tree.append(row_stack, .{ .link = .{ .label = "More details", .route = "details" } });
 
     try tree.append(root, .{ .text = .{ .content = "Icon-only buttons: a named glyph on the 24px target, label announced.", .style = .{ .scale = .small, .ink = .dark } } });
     const pager_row = try tree.appendId(root, .{ .stack = .{ .axis = .horizontal } });
-    try tree.append(pager_row, .{ .button = .{ .label = "Previous month", .icon = .chevron_left, .icon_only = true } });
+    try tree.append(pager_row, .{ .button = .{ .label = "Previous month", .form = .{ .glyph = .chevron_left } } });
     try tree.append(pager_row, .{ .text = .{ .content = "March" } });
-    try tree.append(pager_row, .{ .button = .{ .label = "Next month", .icon = .chevron_right, .icon_only = true } });
+    try tree.append(pager_row, .{ .button = .{ .label = "Next month", .form = .{ .glyph = .chevron_right } } });
 
     try tree.append(root, .{ .heading = .{ .content = "Vendor sign-in", .level = .h3 } });
     // `provider` is rendering only — the sink links no services, and a
@@ -739,12 +739,12 @@ fn buildHome(ctx: ?*anyopaque, app: *h.App) !void {
     try tree.append(root, .{ .text = .{ .content = "Conforming vendor buttons: the mark is nokre's to draw, the words are yours. Apple's flips black/white with the appearance; Google's G keeps the vendor's colors on either theme.", .style = .{ .scale = .small, .ink = .dark } } });
     try tree.append(root, .{ .button = .{
         .label = "Sign in with Apple",
-        .provider = .apple,
+        .form = .{ .provider = .apple },
         .on_press = .{ .ctx = state, .call = onAppleSignIn },
     } });
     try tree.append(root, .{ .button = .{
         .label = "Sign in with Google",
-        .provider = .google,
+        .form = .{ .provider = .google },
         .on_press = .{ .ctx = state, .call = onGoogleSignIn },
     } });
 

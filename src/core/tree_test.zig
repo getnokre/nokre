@@ -217,17 +217,16 @@ test "append rejects a percentage with nothing to measure" {
     // Percent means percent.
     try std.testing.expectError(error.ProgressOutOfRange, tree.append(root, .{ .button = .{ .label = "Save", .in_progress = true, .progress_percent = 101 } }));
     // A 24px glyph target has nowhere to read a bar…
-    try std.testing.expectError(error.IconOnlyButtonHasNoMeter, tree.append(root, .{ .button = .{
+    try std.testing.expectError(error.GlyphButtonHasNoMeter, tree.append(root, .{ .button = .{
         .label = "Next",
-        .icon = .chevron_right,
-        .icon_only = true,
+        .form = .{ .glyph = .chevron_right },
         .in_progress = true,
         .progress_percent = 40,
     } }));
     // …and a vendor's button is not nokre's to draw a bar inside.
     try std.testing.expectError(error.AuthButtonHasNoMeter, tree.append(root, .{ .button = .{
         .label = "Sign in with Apple",
-        .provider = .apple,
+        .form = .{ .provider = .apple },
         .in_progress = true,
         .progress_percent = 40,
     } }));
@@ -249,31 +248,27 @@ test "append rejects negative spacing" {
     try tree.append(root, .{ .stack = .{ .padding = 0, .gap = 0 } });
 }
 
-test "append rejects icon-only buttons without an icon" {
+test "every button form appends without a runtime gate" {
     var tree = try Tree.init(std.testing.allocator);
     defer tree.deinit();
     const root = tree.rootId();
 
-    try std.testing.expectError(error.IconOnlyButtonNeedsIcon, tree.append(root, .{ .button = .{ .label = "Next", .icon_only = true } }));
-    try tree.append(root, .{ .button = .{ .label = "Next", .icon = .chevron_right, .icon_only = true } });
-    try tree.append(root, .{ .button = .{ .label = "Add", .icon = .alarm_clock_plus } });
+    // The states append once refused one by one — a glyph form without
+    // an icon or with an emphasis, an icon or the glyph form beside a
+    // vendor mark, an outlined Google — are not literals `Button.Form`
+    // can spell, so there is nothing left here to expect an error from:
+    // what compiles, appends.
+    try tree.append(root, .{ .button = .{ .label = "Next", .form = .{ .glyph = .chevron_right } } });
+    try tree.append(root, .{ .button = .{ .label = "Add", .form = .{ .filled = .alarm_clock_plus } } });
+    try tree.append(root, .{ .button = .{ .label = "Cancel", .form = .{ .secondary = null } } });
+    // Outlined is Apple's third sanctioned style, not a new one; the
+    // outlined Google button no guideline describes is the member
+    // `Form.Provider` does not have.
+    try tree.append(root, .{ .button = .{ .label = "Sign in with Apple", .form = .{ .provider = .apple_outlined } } });
+    try tree.append(root, .{ .button = .{ .label = "Sign in with Google", .form = .{ .provider = .google } } });
 }
 
-test "append rejects secondary emphasis on icon-only buttons" {
-    var tree = try Tree.init(std.testing.allocator);
-    defer tree.deinit();
-    const root = tree.rootId();
-
-    try std.testing.expectError(error.IconOnlyButtonHasNoEmphasis, tree.append(root, .{ .button = .{
-        .label = "Next",
-        .icon = .chevron_right,
-        .icon_only = true,
-        .secondary = true,
-    } }));
-    try tree.append(root, .{ .button = .{ .label = "Cancel", .secondary = true } });
-}
-
-test "append demands the vendor's words on a sign-in button, and refuses an icon beside the mark" {
+test "append demands the vendor's words on a sign-in button" {
     var tree = try Tree.init(std.testing.allocator);
     defer tree.deinit();
     const root = tree.rootId();
@@ -285,41 +280,10 @@ test "append demands the vendor's words on a sign-in button, and refuses an icon
     // non-empty string" is not the fix.
     try std.testing.expectError(error.AuthButtonNeedsVendorLabel, tree.append(root, .{ .button = .{
         .label = "",
-        .provider = .apple,
+        .form = .{ .provider = .apple },
     } }));
-    const id = try tree.appendId(root, .{ .button = .{ .label = "Mit Apple anmelden", .provider = .apple } });
+    const id = try tree.appendId(root, .{ .button = .{ .label = "Mit Apple anmelden", .form = .{ .provider = .apple } } });
     try std.testing.expectEqualStrings("Mit Apple anmelden", tree.getConst(id).?.button.label);
-
-    // The mark occupies the icon slot, and no vendor sanctions a
-    // glyph-only sign-in button.
-    try std.testing.expectError(error.AuthButtonHasNoIcon, tree.append(root, .{ .button = .{
-        .label = "Sign in with Apple",
-        .provider = .apple,
-        .icon = .chevron_right,
-    } }));
-    try std.testing.expectError(error.AuthButtonNeedsItsLabel, tree.append(root, .{ .button = .{
-        .label = "Sign in with Apple",
-        .provider = .apple,
-        .icon_only = true,
-    } }));
-    // Outlined is Apple's third sanctioned style, not a new one.
-    try tree.append(root, .{ .button = .{
-        .label = "Sign in with Apple",
-        .provider = .apple,
-        .secondary = true,
-    } });
-
-    // Google sanctions themes, which the appearance already picks —
-    // there is no outlined Google button for `secondary` to map onto.
-    try std.testing.expectError(error.GoogleButtonHasOneEmphasis, tree.append(root, .{ .button = .{
-        .label = "Mit Google anmelden",
-        .provider = .google,
-        .secondary = true,
-    } }));
-    try tree.append(root, .{ .button = .{
-        .label = "Sign in with Google",
-        .provider = .google,
-    } });
 }
 
 test "append rejects malformed table structure" {

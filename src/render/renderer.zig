@@ -296,8 +296,7 @@ fn drawNode(app: *App, canvas: Painter, id: NodeId) void {
         // actions, never one of them.
         .more => |m| drawButton(app, canvas, r, .{
             .label = m.label,
-            .icon = .ellipsis,
-            .secondary = true,
+            .form = .{ .secondary = .ellipsis },
         }, ring),
         .link => |l| if (!l.folded) {
             canvas.drawText(r.x, r.y + text.Scale.body.baseline(), .prose, text.Scale.body.px(), l.label, .ink);
@@ -1144,26 +1143,24 @@ fn drawCenteredText(app: *App, canvas: Painter, r: Rect, bytes: []const u8, ink:
 /// happening. A leading icon or vendor mark stands down with the words
 /// — it names the action, and the action is already underway.
 fn drawButton(app: *App, canvas: Painter, r: Rect, b: element_mod.Button, focused: bool) void {
-    // icon_only without an icon can't be appended; if mutation degrades
-    // one, it falls back to the pill rather than vanish.
-    if (b.icon_only and b.icon != null) {
+    if (b.form == .glyph) {
         const ink: Gray = if (b.disabled) .g6 else .ink;
         // The glyph form has no pill, so the ellipsis stands on the bare
         // tap target exactly where the glyph did.
         if (b.in_progress)
             drawCenteredText(app, canvas, r, wrap.ellipsis, ink)
         else
-            drawGlyph(app, canvas, r, b.icon.?.utf8(), ink);
+            drawGlyph(app, canvas, r, b.form.glyph.utf8(), ink);
     } else {
         drawPillButton(app, canvas, r, b, focused);
     }
     // The outlined pill took its own edge inside `drawPillButton`; a
     // filled one and a bare glyph get the ring.
-    if (focused and !b.secondary) drawFocusRing(canvas, r, metrics.radius);
+    if (focused and !b.form.outlined()) drawFocusRing(canvas, r, metrics.radius);
 }
 
 /// The mark that leads a pill's label: a vendor logotype or an icon.
-/// The two are mutually exclusive (`tree.validateAppend`) and sit
+/// The two are mutually exclusive (`Button.Form` has one slot) and sit
 /// differently — the mark aligns with the *words*, standing on the text
 /// baseline at cap height the way it does in the vendor's own button
 /// art, while an icon centres in its em box, because an icon is not a
@@ -1195,7 +1192,7 @@ const google_g = blk: {
 /// gray pill would make the dimmed state the loudest thing on screen,
 /// and Google's own disabled spec grays the G too).
 fn drawLead(canvas: Painter, tx: i32, l: Lead, size: i32, fg: Gray, b: element_mod.Button, branded: bool) void {
-    if (b.provider == .google) {
+    if (b.form.vendor() == .google) {
         for (google_g) |arc| {
             if (branded)
                 canvas.drawTextRgb(tx, l.baseline, l.face, size, arc.glyph, arc.rgb)
@@ -1216,10 +1213,10 @@ fn drawPillButton(app: *App, canvas: Painter, r: Rect, b: element_mod.Button, fo
     // the softened `ink` and `paper` no longer reach. It still flips
     // with the appearance: the dark screen *is* Apple's white button,
     // with no second style and no palette escape hatch.
-    const branded = b.provider != null and !b.secondary and !b.disabled;
+    const branded = b.form == .provider and !b.form.outlined() and !b.disabled;
     const pen = if (branded) canvas.lightPinned() else canvas;
     var fg: Gray = undefined;
-    if (b.secondary) {
+    if (b.form.outlined()) {
         // An outline is a boundary focus can take over, so a focused one
         // thickens in place and no ring is drawn — 10.6:1 where the
         // outline was 3:1, and the pill stays exactly the size it was.
@@ -1234,7 +1231,7 @@ fn drawPillButton(app: *App, canvas: Painter, r: Rect, b: element_mod.Button, fo
         fg = if (b.disabled) .g6 else .ink;
     } else if (branded) {
         const on_dark = app.appearance() == .dark;
-        switch (b.provider.?) {
+        switch (b.form.provider.vendor()) {
             // Apple's solid pair: black on the light screen, white on
             // the dark one, one style flipping with the appearance.
             .apple => {
@@ -1262,9 +1259,9 @@ fn drawPillButton(app: *App, canvas: Painter, r: Rect, b: element_mod.Button, fo
         fg = if (b.disabled) .g11 else .paper;
     }
     const ty = r.y + metrics.border + metrics.button_pad_v + text.Scale.body.baseline();
-    const lead: ?Lead = if (b.provider) |p|
-        .{ .face = .brand, .glyph = p.mark(), .baseline = ty }
-    else if (b.icon) |ic|
+    const lead: ?Lead = if (b.form.vendor()) |v|
+        .{ .face = .brand, .glyph = v.mark(), .baseline = ty }
+    else if (b.form.icon()) |ic|
         .{ .face = .icons, .glyph = ic.utf8(), .baseline = emCenterBaseline(r, size) }
     else
         null;
@@ -1278,7 +1275,7 @@ fn drawPillButton(app: *App, canvas: Painter, r: Rect, b: element_mod.Button, fo
         // disabled is deliberately not for reading — so it keeps the
         // `…`, and the number still reaches assistive tech on the node.
         if (b.progress_percent != null and !b.disabled)
-            drawButtonProgress(app, canvas, r, b.progress_percent.?, b.secondary)
+            drawButtonProgress(app, canvas, r, b.progress_percent.?, b.form.outlined())
         else
             drawCenteredText(app, pen, r, wrap.ellipsis, fg);
         return;

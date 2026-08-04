@@ -138,9 +138,9 @@ fn buildGlyphButtons(_: ?*anyopaque, app: *h.App) !void {
     const root = tree.rootId();
     try tree.append(root, .{ .heading = .{ .content = "Cycle", .level = .h1 } });
     const pager = try tree.appendId(root, .{ .stack = .{ .axis = .horizontal } });
-    try tree.append(pager, .{ .button = .{ .label = "Previous month", .icon = .chevron_left, .icon_only = true } });
+    try tree.append(pager, .{ .button = .{ .label = "Previous month", .form = .{ .glyph = .chevron_left } } });
     try tree.append(pager, .{ .text = .{ .content = "March" } });
-    try tree.append(pager, .{ .button = .{ .label = "Next month", .icon = .chevron_right, .icon_only = true, .disabled = true } });
+    try tree.append(pager, .{ .button = .{ .label = "Next month", .form = .{ .glyph = .chevron_right }, .disabled = true } });
 }
 
 test "golden: glyph-form buttons flanking words, focused and disabled" {
@@ -157,15 +157,15 @@ fn buildButtonForms(_: ?*anyopaque, app: *h.App) !void {
     try tree.append(root, .{ .heading = .{ .content = "Emphasis", .level = .h1 } });
     const pair = try tree.appendId(root, .{ .stack = .{ .axis = .horizontal } });
     try tree.append(pair, .{ .button = .{ .label = "Save" } });
-    try tree.append(pair, .{ .button = .{ .label = "Cancel", .secondary = true } });
+    try tree.append(pair, .{ .button = .{ .label = "Cancel", .form = .{ .secondary = null } } });
     // Icon pill and icon-only side by side; icon-only has no emphasis
     // variants by design (no pill to outline — append rejects it).
     const icon_row = try tree.appendId(root, .{ .stack = .{ .axis = .horizontal } });
-    try tree.append(icon_row, .{ .button = .{ .label = "Add reminder", .icon = .alarm_clock_plus } });
-    try tree.append(icon_row, .{ .button = .{ .label = "Next month", .icon = .chevron_right, .icon_only = true } });
+    try tree.append(icon_row, .{ .button = .{ .label = "Add reminder", .form = .{ .filled = .alarm_clock_plus } } });
+    try tree.append(icon_row, .{ .button = .{ .label = "Next month", .form = .{ .glyph = .chevron_right } } });
     const dimmed = try tree.appendId(root, .{ .stack = .{ .axis = .horizontal } });
     try tree.append(dimmed, .{ .button = .{ .label = "Filled off", .disabled = true } });
-    try tree.append(dimmed, .{ .button = .{ .label = "Outlined off", .secondary = true, .disabled = true } });
+    try tree.append(dimmed, .{ .button = .{ .label = "Outlined off", .form = .{ .secondary = null }, .disabled = true } });
 }
 
 test "golden: button emphasis — filled, outlined, icon pill, icon-only, disabled pair" {
@@ -224,9 +224,9 @@ fn buildInProgressButtons(_: ?*anyopaque, app: *h.App) !void {
     // border, the icon pill holds the width its glyph and words bought,
     // and the glyph form stands the `…` on the bare tap target.
     const forms = try tree.appendId(root, .{ .stack = .{ .axis = .horizontal } });
-    try tree.append(forms, .{ .button = .{ .label = "Cancel upload", .secondary = true, .in_progress = true } });
-    try tree.append(forms, .{ .button = .{ .label = "Add reminder", .icon = .alarm_clock_plus, .in_progress = true } });
-    try tree.append(forms, .{ .button = .{ .label = "Next month", .icon = .chevron_right, .icon_only = true, .in_progress = true } });
+    try tree.append(forms, .{ .button = .{ .label = "Cancel upload", .form = .{ .secondary = null }, .in_progress = true } });
+    try tree.append(forms, .{ .button = .{ .label = "Add reminder", .form = .{ .filled = .alarm_clock_plus }, .in_progress = true } });
+    try tree.append(forms, .{ .button = .{ .label = "Next month", .form = .{ .glyph = .chevron_right }, .in_progress = true } });
     // Both flags at once: `in_progress` wins the pixels, `disabled` wins
     // the focus stop — so this one dims and Tab passes it by.
     try tree.append(root, .{ .button = .{ .label = "Retry", .disabled = true, .in_progress = true } });
@@ -235,7 +235,7 @@ fn buildInProgressButtons(_: ?*anyopaque, app: *h.App) !void {
     // keeps its `…` (above): the meter's tones exist to be read.
     const measured = try tree.appendId(root, .{ .stack = .{ .axis = .horizontal } });
     try tree.append(measured, .{ .button = .{ .label = "Upload photos", .in_progress = true, .progress_percent = 60 } });
-    try tree.append(measured, .{ .button = .{ .label = "Sync library", .secondary = true, .in_progress = true, .progress_percent = 25 } });
+    try tree.append(measured, .{ .button = .{ .label = "Sync library", .form = .{ .secondary = null }, .in_progress = true, .progress_percent = 25 } });
 }
 
 test "golden: buttons at work — the ellipsis in every form, each holding its size" {
@@ -256,7 +256,7 @@ fn buildAuthButtons(_: ?*anyopaque, app: *h.App) !void {
     // The words are the app's on both — nokre ships the mark and no
     // translation of the vendor's string, so every sign-in button names
     // its own wording.
-    try tree.append(root, .{ .button = .{ .label = "Sign in with Apple", .provider = .apple } });
+    try tree.append(root, .{ .button = .{ .label = "Sign in with Apple", .form = .{ .provider = .apple } } });
     // The outlined emphasis — Apple's third sanctioned style — with the
     // same button localized, which is how a translated app renders it.
     // Two *identically* named sign-in buttons on one screen would fail
@@ -264,17 +264,16 @@ fn buildAuthButtons(_: ?*anyopaque, app: *h.App) !void {
     // them apart.
     try tree.append(root, .{ .button = .{
         .label = "Mit Apple anmelden",
-        .provider = .apple,
-        .secondary = true,
+        .form = .{ .provider = .apple_outlined },
     } });
     // Beside an ordinary pill, so the mark's optical size against a
     // Lucide glyph at the same scale is reviewable in one image.
-    try tree.append(root, .{ .button = .{ .label = "Add reminder", .icon = .alarm_clock_plus } });
+    try tree.append(root, .{ .button = .{ .label = "Add reminder", .form = .{ .filled = .alarm_clock_plus } } });
     // The Google button: the four G arcs are the only colored pixels
     // any golden carries, and this pair of images (light and dark) is
     // where a reviewer sees them — white pill with the hairline border
     // in light, near-black pill in dark, the G identical in both.
-    try tree.append(root, .{ .button = .{ .label = "Sign in with Google", .provider = .google } });
+    try tree.append(root, .{ .button = .{ .label = "Sign in with Google", .form = .{ .provider = .google } } });
 }
 
 test "golden: sign-in buttons carry the vendor mark in both emphases" {
