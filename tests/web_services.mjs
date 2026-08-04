@@ -20,6 +20,8 @@
 // modified, stubbed, or asked to be testable.
 
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { makeBrowser, Storage } from "./web_browser.mjs";
@@ -464,9 +466,40 @@ async function storeWithoutStorage() {
   done("secure_store — a blocked or full storage costs reload-survival and nothing else");
 }
 
+// ---- the site's own manifest -------------------------------------
+
+// The one non-service scenario, and it rides this gate because this is
+// the one place a built site sits on disk during `zig build test`.
+// `site.manifest` (build.zig's addWebSite) is the site's file list
+// published as data — what a consumer's deploy tooling verifies a
+// copied site against instead of re-typing nokre's contract — so it
+// must agree with the directory it ships in, both ways: a file the
+// manifest names but the site lacks is a verifier that would pass a
+// broken deploy, and a file the site carries but the manifest misses is
+// the drift the manifest exists to end.
+async function siteManifest() {
+  const listed = (await fs.readFile(path.join(site, "site.manifest"), "utf8"))
+    .split("\n")
+    .filter(Boolean);
+  const actual = [];
+  const walk = async (dir, prefix) => {
+    for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        await walk(path.join(dir, entry.name), prefix + entry.name + "/");
+      } else {
+        actual.push(prefix + entry.name);
+      }
+    }
+  };
+  await walk(site, "");
+  const expected = actual.filter((f) => f !== "site.manifest").sort();
+  assert.deepEqual(listed, expected);
+}
+
 // ---- the run -----------------------------------------------------
 
 const scenarios = [
+  siteManifest,
   deepLink,
   deepLinkQuiet,
   oauthPopupReports,

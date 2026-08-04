@@ -124,6 +124,7 @@ What it writes:
 | `style.css` | *generated*, by running `emit_css.zig` on the host |
 | `fonts/*.ttf` | `src/assets/fonts` |
 | `index.html`, `page.css`, `boot.js`, `manifest.webmanifest`, `icon-*.png` | the packaging tree's `web/` corner (packaging.zig) |
+| `site.manifest` | *generated*: every row above as data — one path per line, sorted |
 
 Two properties follow, and they are the reason for the shape. Nothing
 in a site can be stale, because nothing in it is a copy a human made:
@@ -136,6 +137,14 @@ new module added to `src/render/dom` is one edit here and it is in
 every consumer's next build. (`sw.js` is the one member that is not a
 module import but a file the origin serves — why every site carries it
 is [notifications.md](notifications.md).)
+
+`site.manifest` is the same set, stated as data for whatever *deploys*
+the site: tooling that copies `App.web` somewhere and wants to verify
+the copy landed whole reads the list instead of re-typing this table
+and drifting — the consumer story is getting-started.md's web section.
+It names the servable content, not itself, and the web services gate
+(tests/web_services.mjs) holds it identical to the directory it ships
+in, both ways.
 
 The page is the declaration's, which is why a web target without one
 fails: `packaging.webIndexHtml` needs a title, and the manifest and

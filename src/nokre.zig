@@ -3,6 +3,19 @@
 
 const std = @import("std");
 
+/// The vendoring pin. Consumers reach nokre by bare relative path — a
+/// sibling checkout, not a registry — so the checkout itself carries no
+/// version a build can check, and a prose pin in a consumer's docs
+/// drifts (two of them already disagreed when surveyed). This constant
+/// is the one machine-checked statement of which nokre a consumer was
+/// written against: assert it at comptime beside your app's declaration
+/// and a mismatched checkout fails the build naming both numbers,
+/// instead of failing at whatever call site the contract moved under.
+/// Hand-bumped on every consumer-visible contract change, never by
+/// machinery — the no-CI stance is deliberate
+/// (docs/getting-started.md).
+pub const revision: u32 = 1;
+
 pub const geometry = @import("core/geometry.zig");
 pub const color = @import("core/color.zig");
 pub const bidi = @import("core/bidi.zig");

@@ -127,6 +127,24 @@ stale `.fingerprint` and prints the value to paste:
 }
 ```
 
+That path is the whole dependency — a sibling checkout, not a registry
+fetch — so nothing above records *which* nokre your app was written
+against. `nokre.revision` does: a hand-bumped constant in
+`src/nokre.zig`, deliberately not machinery. Assert it once, anywhere
+your root module reaches:
+
+```zig
+comptime {
+    if (nokre.revision != 1) @compileError(
+        "written against nokre revision 1 — survey the app against the checkout before bumping this assert",
+    );
+}
+```
+
+A checkout that moved under you then fails the build naming the
+mismatch, instead of failing at whatever call site the contract moved
+under — or, worse, not failing.
+
 `build.zig` — nokre's build.zig is importable by package name, and
 `addApp` assembles the right artifact for whatever target you pass: the
 windowed executable on macOS and Windows, the static libraries an
@@ -1941,6 +1959,13 @@ a blank page in a browser rather than an error in a build — so there is
 nothing here to copy by hand and nothing that can fall behind the nokre
 you built against. Upload the directory to any static host and you have
 shipped; there is no server-side anything.
+
+The directory also carries its own file list as data: `site.manifest`,
+one relative path per line, sorted. If tooling of yours copies the site
+toward a host and wants to verify the copy landed whole, check the
+files the manifest names instead of keeping a list of your own — the
+list is nokre's contract, this file is where nokre publishes it, and a
+re-typed copy is a list that drifts.
 
 Name the `serve` step whether or not the flag is set. Built for a native
 target, `app.web` is null and the step you get says so when it runs,
