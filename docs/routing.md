@@ -161,6 +161,27 @@ fn buildNote(_: ?*anyopaque, app: *h.App) !void {
 given, so a builder may format a reference into a stack buffer and append
 it — the same rule labels already follow.
 
+### Building a reference
+
+Writing one is `routeArg`'s mirror — `App.routeRef` (`router.ref`
+underneath) formats a name and its arguments into a buffer you hand it,
+validated against the same table `navigate` resolves through:
+
+```zig
+var buf: [h.router.max_ref_bytes]u8 = undefined;
+const ref = try app.routeRef(&buf, "note", &.{id});   // "note~42"
+try app.tree.append(list, .{ .link = .{ .label = title, .route = ref } });
+```
+
+Everything resolution would refuse is refused here, at the site that
+*builds* the reference rather than the one that later opens it: an
+unknown name, the wrong arity, an argument outside the charset — a `~`
+inside an argument included, so content can never read as a second
+separator — or a result past `max_ref_bytes`. A failed call writes
+nothing. `[h.router.max_ref_bytes]u8` always fits, so there is no
+buffer size to guess and no separator literal to hold; a reference this
+returns is one `navigate` will take.
+
 ### Arity is declared
 
 `RouteDef.args` says how many arguments a screen takes, defaulting to

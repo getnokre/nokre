@@ -255,6 +255,40 @@ pub const Router = struct {
         return self.routes[i];
     }
 
+    /// Formats a reference — `name`, then `args` joined by
+    /// `arg_separator` — into `buf`, and refuses everything `resolve`
+    /// would refuse: an unknown name, the wrong arity, an argument
+    /// outside the charset (`~` included, so an argument can never
+    /// smuggle a second separator in), a result past `max_ref_bytes`.
+    /// Refused before a byte is written, so a failed call leaves `buf`
+    /// meaningless rather than half a reference.
+    ///
+    /// This is the writing mirror of `resolve`: one parses, one prints,
+    /// and nothing else touches the separator. A consumer formatting a
+    /// reference by hand holds a `~` literal it cannot check and a
+    /// buffer size it guessed; here the table checks the reference at
+    /// the site that builds it, and `[max_ref_bytes]u8` is always
+    /// enough — a reference this accepts is one `resolve` will.
+    pub fn ref(self: *const Router, buf: []u8, name: []const u8, args: []const []const u8) ![]u8 {
+        const idx = self.find(name) orelse return error.UnknownRoute;
+        if (args.len != self.routes[idx].args) return error.RouteArgCount;
+        var len: usize = name.len;
+        for (args) |a| {
+            if (!validIdent(a)) return error.RouteArgCharset;
+            len += 1 + a.len;
+        }
+        if (len > max_ref_bytes or len > buf.len) return error.RouteRefTooLong;
+        @memcpy(buf[0..name.len], name);
+        var at = name.len;
+        for (args) |a| {
+            buf[at] = arg_separator;
+            at += 1;
+            @memcpy(buf[at..][0..a.len], a);
+            at += a.len;
+        }
+        return buf[0..len];
+    }
+
     /// The `i`th positional argument of the current screen, or null past
     /// the end. Borrowed from the entry, so it lives exactly as long as
     /// the screen does — a builder may keep it for the tree, which copies.
@@ -283,8 +317,8 @@ pub const Router = struct {
         return &self.stack.items[self.stack.items.len - 1];
     }
 
-    pub fn push(self: *Router, app: *App, ref: []const u8) !void {
-        const idx = try self.resolve(ref);
+    pub fn push(self: *Router, app: *App, reference: []const u8) !void {
+        const idx = try self.resolve(reference);
         // Where the outgoing screen was scrolled to, saved into the entry
         // that survives underneath. This is the only motion that has to:
         // pop, replace and switchTo all drop the entry they would be
@@ -293,7 +327,7 @@ pub const Router = struct {
         // Room first, then the copy: the only fallible step left cannot
         // then strand an owned reference outside the stack.
         try self.stack.ensureUnusedCapacity(app.gpa, 1);
-        self.stack.appendAssumeCapacity(try own(app.gpa, idx, ref));
+        self.stack.appendAssumeCapacity(try own(app.gpa, idx, reference));
         try self.rebuild(app, .push, .fresh);
     }
 
@@ -304,24 +338,24 @@ pub const Router = struct {
         try self.rebuild(app, .pop, .restored);
     }
 
-    pub fn replace(self: *Router, app: *App, ref: []const u8) !void {
-        const idx = try self.resolve(ref);
+    pub fn replace(self: *Router, app: *App, reference: []const u8) !void {
+        const idx = try self.resolve(reference);
         try self.stack.ensureUnusedCapacity(app.gpa, 1);
-        const entry = try own(app.gpa, idx, ref);
+        const entry = try own(app.gpa, idx, reference);
         if (self.stack.items.len != 0) self.dropTop(app.gpa);
         self.stack.appendAssumeCapacity(entry);
         try self.rebuild(app, .replace, .fresh);
     }
 
-    /// Enters `ref` with the stack reset to just it: arriving somewhere
+    /// Enters `reference` with the stack reset to just it: arriving somewhere
     /// with nothing behind you — which is what a visitor following a
     /// shared link has (`navigate` in render/dom/live.zig), and not what
     /// a visitor crossing the nav has: that pushes, so the section they
     /// were in stays behind them (nav.zig).
-    pub fn switchTo(self: *Router, app: *App, ref: []const u8) !void {
-        const idx = try self.resolve(ref);
+    pub fn switchTo(self: *Router, app: *App, reference: []const u8) !void {
+        const idx = try self.resolve(reference);
         try self.stack.ensureTotalCapacity(app.gpa, 1);
-        const entry = try own(app.gpa, idx, ref);
+        const entry = try own(app.gpa, idx, reference);
         for (self.stack.items) |e| app.gpa.free(e.ref);
         self.stack.clearRetainingCapacity();
         self.stack.appendAssumeCapacity(entry);
@@ -343,8 +377,8 @@ pub const Router = struct {
         try self.rebuild(app, .replace, .restored);
     }
 
-    fn own(gpa: std.mem.Allocator, idx: usize, ref: []const u8) !Entry {
-        return .{ .idx = idx, .ref = try gpa.dupe(u8, ref) };
+    fn own(gpa: std.mem.Allocator, idx: usize, reference: []const u8) !Entry {
+        return .{ .idx = idx, .ref = try gpa.dupe(u8, reference) };
     }
 
     fn dropTop(self: *Router, gpa: std.mem.Allocator) void {
@@ -354,9 +388,9 @@ pub const Router = struct {
     /// A reference to a route index, validating everything about it
     /// before anything is committed: a bad one leaves the stack exactly
     /// as it was.
-    fn resolve(self: *const Router, ref: []const u8) !usize {
-        if (ref.len > max_ref_bytes) return error.RouteRefTooLong;
-        var it = std.mem.splitScalar(u8, ref, arg_separator);
+    fn resolve(self: *const Router, reference: []const u8) !usize {
+        if (reference.len > max_ref_bytes) return error.RouteRefTooLong;
+        var it = std.mem.splitScalar(u8, reference, arg_separator);
         const name = it.next() orelse return error.UnknownRoute;
         const idx = self.find(name) orelse return error.UnknownRoute;
         var n: usize = 0;

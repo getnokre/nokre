@@ -310,6 +310,16 @@ pub const App = struct {
         return self.router.arg(i);
     }
 
+    /// Formats a reference into `buf` — `routeArg`'s writing mirror,
+    /// at the same hop for the same reason. The router validates it
+    /// against the table before a byte lands (router.zig `ref`), so
+    /// the site that builds a reference is the site that learns it is
+    /// wrong, and no consumer holds the `~` literal or a guessed
+    /// buffer size. `[Router.max_ref_bytes]u8` always fits.
+    pub fn routeRef(self: *const App, buf: []u8, name: []const u8, args: []const []const u8) ![]u8 {
+        return self.router.ref(buf, name, args);
+    }
+
     /// Writes `utf8` to the platform clipboard (the clipboard service —
     /// in tests, the app's journaling mock). Activating a `copyable`
     /// lands here; app actions may also call it directly. What to show

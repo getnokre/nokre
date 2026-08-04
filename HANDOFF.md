@@ -58,15 +58,7 @@ this writing; re-count before acting, the apps move.
    labels). Both are questions nokre should answer: a
    reload-safety predicate, and a reload that can carry focus.
 
-5. **A route-reference builder.** `router.arg_separator` exists and is
-   referenced zero times: the `~` is hardcoded in ~20 consumer format
-   strings over four different ad-hoc buffer sizes, with overflow
-   landing as a dead tile in controllers and a failed screen in
-   builders. `Router.ref(buf, name, args)` — separator, charset and
-   arity validated inside — removes the literal, the size guesses, and
-   the split failure behaviour in one move.
-
-6. **`App.Chrome` without silent English.** All 17 chrome strings
+5. **`App.Chrome` without silent English.** All 17 chrome strings
    default to English literals, so a mapping a consumer forgets
    compiles and ships English — the audit cannot object to a valid
    label in the wrong language, and the survey caught the two apps
@@ -74,7 +66,7 @@ this writing; re-count before acting, the apps move.
    hello-world needs no catalogue); the options are a no-default
    `Chrome` for l10n'd apps or a comptime-checked catalogue hand-off.
 
-7. **The chosen locale, and route titles.** nokre owns the *device*
+6. **The chosen locale, and route titles.** nokre owns the *device*
    locale but not the app's *chosen* one, so the apps fan the choice
    out by hand (17 controller assignments in one app, 12 in the other
    — forget one line and that screen stays in the old language
@@ -84,7 +76,7 @@ this writing; re-count before acting, the apps move.
    locale, and letting `RouteDef.title` be a function of it, deletes
    both fan-outs.
 
-8. **Worker queueing.** A worker handle answers a second ask with
+7. **Worker queueing.** A worker handle answers a second ask with
    `error.Interrupted`, so a mutation can fail because an unrelated
    solve happened to be in flight. Both apps carry a byte-identical
    220-line `QueuedPowSolver` (and a sibling for corpus reads) that
@@ -92,14 +84,14 @@ this writing; re-count before acting, the apps move.
    grows a small FIFO or the refusal is documented as a guarantee with
    the queue as the blessed consumer pattern — today it is neither.
 
-9. **A recording headless shell.** A consumer building a headless
+8. **A recording headless shell.** A consumer building a headless
    native binary (system tests, e2e drivers) hand-declares nokre ABI
    symbols — 21 extern declarations across 4 files in the consumer,
    with exact `callconv(.c)` signatures. A rename here is at best a
    link error there. nokre should ship the null/recording shell it is
    forcing every consumer to write.
 
-10. **`expectGolden` on the harness.** Taking a golden from consumer
+9. **`expectGolden` on the harness.** Taking a golden from consumer
     code is a five-step incantation (set the module-global
     `testing.golden.update`, build a Skia surface at the viewport,
     swap the measurer, render, unpack four accessors into

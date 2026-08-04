@@ -2238,6 +2238,38 @@ test "an argument is an identifier, not a payload" {
     try testing.expectError(error.RouteRefTooLong, app.navigate(&long));
 }
 
+test "routeRef is resolve's writing mirror" {
+    var data: CtxData = .{};
+    var app = try argApp(&data);
+    defer app.deinit();
+    try app.navigate("home");
+
+    // What it writes, resolve accepts — separator included, which no
+    // consumer spells anymore.
+    var buf: [router_mod.max_ref_bytes]u8 = undefined;
+    try testing.expectEqualStrings("home", try app.routeRef(&buf, "home", &.{}));
+    const ticket = try app.routeRef(&buf, "ticket", &.{"1.2.3-rc1"});
+    try testing.expectEqualStrings("ticket~1.2.3-rc1", ticket);
+    try app.navigate(ticket);
+    try testing.expectEqualStrings("1.2.3-rc1", app.routeArg(0).?);
+
+    // And it refuses what resolve refuses, at the site that builds the
+    // reference instead of the one that opens it.
+    try testing.expectError(error.UnknownRoute, app.routeRef(&buf, "nope", &.{}));
+    try testing.expectError(error.RouteArgCount, app.routeRef(&buf, "ticket", &.{}));
+    try testing.expectError(error.RouteArgCount, app.routeRef(&buf, "home", &.{"1"}));
+    try testing.expectError(error.RouteArgCharset, app.routeRef(&buf, "ticket", &.{"has space"}));
+    // An argument cannot smuggle the separator in as content.
+    try testing.expectError(error.RouteArgCharset, app.routeRef(&buf, "ticket", &.{"1~2"}));
+    try testing.expectError(error.RouteArgCharset, app.routeRef(&buf, "ticket", &.{""}));
+
+    // Bounded like an arriving reference, and refused before a byte
+    // lands — a failed call leaves no half-written reference behind.
+    var tiny: [4]u8 = .{ 'x', 'x', 'x', 'x' };
+    try testing.expectError(error.RouteRefTooLong, app.routeRef(&tiny, "ticket", &.{"12345"}));
+    try testing.expectEqualStrings("xxxx", &tiny);
+}
+
 test "the route table is validated at init, not at first navigation" {
     try testing.expectError(error.EmptyRouteName, App.init(testing.allocator, .{
         .viewport = .{ .w = 400, .h = 400 },
