@@ -47,11 +47,6 @@ each, any order. No consumer API changes except where noted.
   them unrepresentable. Touches every consumer call site and the
   goldens; the largest single runtime-check-that-could-be-comptime
   left in the public surface.
-- **The four desktop platform shells are one file.** macOS, Windows,
-  Linux, iOS differ only in adapter type, one attach argument, and
-  which of them call `workersViewReady` — invisible asymmetries unless
-  all four are diffed. A `Runner(comptime Adapter)` in `c_shell.zig`
-  drops each to ~12 lines.
 - **Two C copies of "open a URL" per desktop.** **Decided: dedupe.**
   One launcher per platform, owned by the shell; oauth's loopback leg
   names the shell symbol. The coupling is deliberate and
@@ -69,6 +64,22 @@ each, any order. No consumer API changes except where noted.
 
 ## Shipped from this list (2026-08-04, for the record)
 
+- The four desktop shells, as one Runner:
+  `c_shell.Runner(Adapter, install_frame)` is the whole `run` for the
+  four shells whose loop `nokre_shell_run` owns — every formerly
+  invisible asymmetry (window-focus forwarding, the post-main worker
+  wake, Wayland's `app_id`, macOS's window-class attach argument) now a
+  comptime branch derived from the adapter's own surface (`@hasDecl`
+  for `detach`/`focusState`, attach's arity for the window class) or
+  the platform predicates c_shell already had. Each platform file
+  drops to naming its a11y adapter and frame-source installer; the
+  frame-source seam survives as the Runner's second parameter, so
+  c_shell still names no backend. Android stays its own wiring by
+  design — its loop is the Activity's, not `nokre_shell_run`'s. No
+  consumer surface moved, revision stays 1, goldens byte-identical,
+  both apps and the site generator green untouched.
+  docs/internals/platform-shells.md owns the shell-side facts (nokre
+  `5bbdae9`).
 - Vendoring, as the library's own contract: `nokre.revision` is the
   hand-bumped constant (no CI, deliberately) consumers assert at
   comptime — both apps and the site generator carry the assert in
