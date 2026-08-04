@@ -5,7 +5,12 @@ Status: **in execution** (started 2026-08-05). Landed so far: A1
 deleted, both apps + site + docs migrated; A2 (revision 7) —
 `App.refresh` + the `reload_in_build` refusal, 39 hand policies and
 every `issuing` guard deleted (refresh declines quietly in-build; bare
-`reload` is the recorded refusal); A6 scope decided by owner
+`reload` is the recorded refusal); A3 (revision 8) — `tag: u64` on
+`RequestOptions`, echoed structurally by the delivery slot below all
+transports; consumer client-array collapse examined and correctly
+declined (every slot is a distinct named adapter, not correlation
+plumbing — the doctrine change in PORTING.md is the consumer payoff);
+A6 scope decided by owner
 2026-08-04: minimal as written. Everything else below is unexecuted. The first
 handoff (deleted at `b3518a2`) was executed whole; this one comes from a
 full vocabulary-and-ergonomics review of nokre against its three real

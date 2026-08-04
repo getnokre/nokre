@@ -461,8 +461,8 @@ pub const Harness = struct {
         try self.afterStep("settle http", .{});
     }
 
-    /// Every http request this app issued, in request order — method
-    /// and url, surviving fulfill/fail/cancel. Reads the journaling
+    /// Every http request this app issued, in request order — method,
+    /// url, and tag, surviving fulfill/fail/cancel. Reads the journaling
     /// mock directly, like `knocks()`: "these requests, in this
     /// order" is an assertion, not a reconstruction from whatever is
     /// still parked.

@@ -596,12 +596,20 @@ from here is a `web_connect_src` entry there
 _ = try nokre.services.http.request(.{
     .app = app,
     .url = "https://api.example.com/notes",
+    // Echoed to on_result untouched, on success and failure alike. The
+    // caller's correlation tag: a generation, an index, a packed pair —
+    // the receiver's business. Answers "which ask is this the answer
+    // to?" without a client instance per outstanding request.
+    .tag = state.notes_generation,
     .ctx = state,
     .on_result = onNotes,
 });
 
-fn onNotes(ctx: ?*anyopaque, result: nokre.services.http.Result) void {
+fn onNotes(ctx: ?*anyopaque, tag: u64, result: nokre.services.http.Result) void {
     const state: *State = @ptrCast(@alignCast(ctx.?));
+    // The stale-response race, closed by comparison: a reply to a
+    // superseded ask identifies itself and is dropped whole.
+    if (tag != state.notes_generation) return;
     switch (result) {
         // Status codes are data — a 404 lands here, whole, once the
         // body has fully arrived. Slices are valid only for the call;

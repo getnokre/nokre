@@ -28,10 +28,12 @@ const State = struct {
     hasher: ?h.workers.Handle(Hasher) = null,
     hash_button_id: h.NodeId = .invalid,
     hash_result_id: h.NodeId = .invalid,
-    // One in-flight request each. `on_result` is handed nothing but its
-    // ctx, so the ctx *is* the identity: point both at the same one and
-    // a reply cannot say which button it belongs to — the lesson the two
-    // workers learned by taking a role each.
+    // One in-flight request each. A reply names its request twice: the
+    // `tag` echoes whatever identity the caller packed in, and the ctx
+    // is whatever state the callback needs. These jobs carry per-request
+    // *state* (whose button to give back), so the ctx does the work and
+    // the tag stays 0 — a caller with shared state and many requests
+    // would lean the other way.
     example_job: HttpJob = .{},
     nowhere_job: HttpJob = .{},
     // The server-backed switch and the value it is asking for. A switch
@@ -266,7 +268,7 @@ fn toggleNotify(state: *State, checked: bool) void {
 /// released only when the request succeeds is a switch stuck at `…` the
 /// first time the network isn't there — and it is the one control on the
 /// row that cannot be pressed to recover.
-fn onNotifyResult(ctx: ?*anyopaque, result: h.services.http.Result) void {
+fn onNotifyResult(ctx: ?*anyopaque, _: u64, result: h.services.http.Result) void {
     const state: *State = @ptrCast(@alignCast(ctx.?));
     const el = state.app.tree.get(state.notify_toggle_id) orelse return;
     el.toggle.in_progress = false;
@@ -530,7 +532,7 @@ fn asciiPreview(bytes: []const u8, buf: []u8) []const u8 {
     return buf[0..n];
 }
 
-fn onHttpResult(ctx: ?*anyopaque, result: h.services.http.Result) void {
+fn onHttpResult(ctx: ?*anyopaque, _: u64, result: h.services.http.Result) void {
     const job: *HttpJob = @ptrCast(@alignCast(ctx.?));
     const state = job.state;
     // Before the switch, so *both* legs clear it. The failure leg is the

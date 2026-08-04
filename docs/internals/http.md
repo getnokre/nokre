@@ -36,6 +36,17 @@ encoded with the worker codec; the body rides as a `Bytes` attachment,
 so on native it moves whole from the request thread to the handler
 with zero copies.
 
+The request's correlation `tag` is deliberately *not* on that wire.
+`request` parks it in the delivery slot (`openOneShotTagged`), on the
+UI thread, before any transport sees the request; the pump reads it
+back out of the slot when it runs `on_result`. So the echo is
+structural, not per-leg plumbing: a canned answer, a native transfer,
+the watchdog's `"TimedOut"`, the web's `"FetchFailed"` — every
+delivery against the ticket carries the tag untouched, because no
+transport ever held it to begin with. The mock additionally records
+the tag on the parked request and in the journal, where it is data for
+the test's assertions, not the echo path.
+
 ## The transports
 
 | Transport | Where | Request | Response |
@@ -106,7 +117,7 @@ with zero copies.
   ([../testing.md](../testing.md)) is the mock's own handler, so it
   cannot answer anyone else's traffic. `fulfill` honors `max_body`
   the way the real transports do, so the cap is testable. Every ask
-  also lands in the mock's journal (method + url, request order,
+  also lands in the mock's journal (method + url + tag, request order,
   surviving fulfill/fail/cancel — `journal()`/`clearJournal()`, the
   harness's `httpJournal()`), the register every journaling mock
   keeps: "these requests, in this order" outlives the answers. The
@@ -185,6 +196,10 @@ code that does.
    deliberate exception: parked requests stay parked, so time never
    becomes a hidden test input ([../services.md](../services.md) for
    the consumer contract).
+8. The `tag` comes back untouched, on every `Result` — response,
+   transport failure, timeout — because it never left: it is parked in
+   the delivery slot at `request` and read back at the pump, on no
+   transport's wire (the section above).
 
 ## Refusals
 

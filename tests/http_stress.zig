@@ -130,10 +130,18 @@ const State = struct {
     delivered: u32 = 0,
     /// Requests this app could not issue at all — see `onFetch`.
     refused: u32 = 0,
+    /// The next request's tag, 0..in_flight-1 within a round: with two
+    /// apps' deliveries interleaving on two runtimes, the echoed tag is
+    /// what proves each result reached *its* request's callback with
+    /// *its* identity — attribution, not just arrival.
+    next_tag: u64 = 0,
+    /// Which tags this app has seen back, exactly-once by round's end.
+    seen: [in_flight]bool = @splat(false),
 };
 
 var wrong_status: u32 = 0;
 var wrong_body: u32 = 0;
+var wrong_tag: u32 = 0;
 var transport_failures: u32 = 0;
 /// Failures the *machine* produced, not the transport: on loopback,
 /// nearly four thousand short-lived connections a run is enough to run
@@ -151,9 +159,16 @@ var first_failures: [4][]const u8 = @splat("");
 
 /// The UI thread, between events — every delivery lands here, so these
 /// counters need no atomics.
-fn onResult(ctx: ?*anyopaque, result: http.Result) void {
+fn onResult(ctx: ?*anyopaque, tag: u64, result: http.Result) void {
     const state: *State = @ptrCast(@alignCast(ctx.?));
     state.delivered += 1;
+    // Untouched and exactly-once: a tag out of range, or one already
+    // seen this round, is a delivery wearing another request's identity.
+    if (tag >= state.next_tag or state.seen[@intCast(tag)]) {
+        wrong_tag += 1;
+    } else {
+        state.seen[@intCast(tag)] = true;
+    }
     // A delivery may write the tree, which is the point of arriving on
     // the UI thread rather than on the transport's.
     state.app.tree.setContent(state.status, "Fetched") catch {};
@@ -179,6 +194,9 @@ fn onFetch(ctx: ?*anyopaque) void {
     _ = http.request(.{
         .app = state.app,
         .url = state.url,
+        // Dense per-round tags; a refused request never consumes one,
+        // so `seen[0..next_tag]` is exactly the issued set.
+        .tag = state.next_tag,
         .ctx = state,
         .on_result = onResult,
     }) catch {
@@ -187,7 +205,9 @@ fn onFetch(ctx: ?*anyopaque) void {
         // arithmetic honest, and goes on with a lighter load rather
         // than reporting a failure it did not observe.
         state.refused += 1;
+        return;
     };
+    state.next_tag += 1;
 }
 
 fn buildHome(ctx: ?*anyopaque, app: *nok.App) !void {
@@ -268,10 +288,10 @@ pub fn main() !void {
         }
     }
 
-    if (wrong_status != 0 or wrong_body != 0 or transport_failures != 0) {
+    if (wrong_status != 0 or wrong_body != 0 or wrong_tag != 0 or transport_failures != 0) {
         std.debug.print(
-            "http stress: {d} bad statuses, {d} bad bodies, {d} transport failures\n",
-            .{ wrong_status, wrong_body, transport_failures },
+            "http stress: {d} bad statuses, {d} bad bodies, {d} bad tags, {d} transport failures\n",
+            .{ wrong_status, wrong_body, wrong_tag, transport_failures },
         );
         for (first_failures) |name| {
             if (name.len != 0) std.debug.print("http stress:   failure {s}\n", .{name});

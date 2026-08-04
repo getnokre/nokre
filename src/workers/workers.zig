@@ -227,7 +227,14 @@ const Slot = struct {
     /// The typed on_reply, erased for storage; `deliver` casts it back.
     on_reply: *const anyopaque = undefined,
     on_fault: ?*const fn (ctx: ?*anyopaque, fault: Fault) void = null,
-    deliver: *const fn (ctx: ?*anyopaque, on_reply: *const anyopaque, payload: []const u8, attachments: []?[]u8, arena: std.mem.Allocator) codec.DecodeError!void = undefined,
+    /// A tagged one-shot's correlation tag (`openOneShotTagged`),
+    /// parked here at open — never encoded, never on the wire — so
+    /// every delivery against the ticket, success or failure, echoes
+    /// it untouched *by construction*: no transport leg carries it, so
+    /// none can drop or alter it. Workers and untagged one-shots leave
+    /// it 0 and their shims never read it.
+    tag: u64 = 0,
+    deliver: *const fn (ctx: ?*anyopaque, on_reply: *const anyopaque, tag: u64, payload: []const u8, attachments: []?[]u8, arena: std.mem.Allocator) codec.DecodeError!void = undefined,
     transport: Transport = .none,
     /// Non-null makes this an asker slot: replies answer the FIFO below
     /// instead of the spawn-time stream (`dispatchAsk`).
@@ -450,12 +457,13 @@ pub const Runtime = struct {
         const ctx = slot.ctx;
         const on_reply = slot.on_reply;
         const on_fault = slot.on_fault;
+        const tag = slot.tag;
         const deliver = slot.deliver;
         switch (frame[0]) {
             reply_frame => {
                 var arena_state = std.heap.ArenaAllocator.init(self.gpa);
                 defer arena_state.deinit();
-                deliver(ctx, on_reply, frame[1..], attachments, arena_state.allocator()) catch |e| {
+                deliver(ctx, on_reply, tag, frame[1..], attachments, arena_state.allocator()) catch |e| {
                     if (on_fault) |f| f(ctx, .{ .err = @errorName(e) });
                 };
             },
@@ -969,11 +977,23 @@ fn askFaultShim(comptime T: type) *const fn (?*anyopaque, *const anyopaque, Faul
     }.deliver;
 }
 
-fn deliverShim(comptime Reply: type) *const fn (?*anyopaque, *const anyopaque, []const u8, []?[]u8, std.mem.Allocator) codec.DecodeError!void {
+fn deliverShim(comptime Reply: type) *const fn (?*anyopaque, *const anyopaque, u64, []const u8, []?[]u8, std.mem.Allocator) codec.DecodeError!void {
     return struct {
-        fn deliver(ctx: ?*anyopaque, on_reply: *const anyopaque, payload: []const u8, attachments: []?[]u8, arena: std.mem.Allocator) codec.DecodeError!void {
+        fn deliver(ctx: ?*anyopaque, on_reply: *const anyopaque, tag: u64, payload: []const u8, attachments: []?[]u8, arena: std.mem.Allocator) codec.DecodeError!void {
+            // Untagged callbacks predate the tag and never asked for
+            // one; the slot's 0 is dropped here, not surfaced.
+            _ = tag;
             const cb: *const fn (ctx: ?*anyopaque, reply: Reply) void = @ptrCast(@alignCast(on_reply));
             cb(ctx, try codec.decode(Reply, arena, payload, attachments));
+        }
+    }.deliver;
+}
+
+fn deliverShimTagged(comptime Reply: type) *const fn (?*anyopaque, *const anyopaque, u64, []const u8, []?[]u8, std.mem.Allocator) codec.DecodeError!void {
+    return struct {
+        fn deliver(ctx: ?*anyopaque, on_reply: *const anyopaque, tag: u64, payload: []const u8, attachments: []?[]u8, arena: std.mem.Allocator) codec.DecodeError!void {
+            const cb: *const fn (ctx: ?*anyopaque, tag: u64, reply: Reply) void = @ptrCast(@alignCast(on_reply));
+            cb(ctx, tag, try codec.decode(Reply, arena, payload, attachments));
         }
     }.deliver;
 }
@@ -1047,6 +1067,36 @@ pub fn openOneShotOn(
         .ctx = ctx,
         .on_reply = @ptrCast(on_reply),
         .deliver = deliverShim(Reply),
+        .transport = .none,
+    };
+    return .{ .runtime = rt, .index = index, .gen = gen };
+}
+
+/// `openOneShot` with a caller correlation tag: parked in the slot at
+/// open — on the UI thread, before any transport sees the request —
+/// and handed back with the one delivery, whatever thread produced it
+/// and whichever way it went. The echo is structural: the tag never
+/// rides a wire a transport leg could drop it from. The http service
+/// is the consumer (docs/internals/http.md). UI thread only.
+pub fn openOneShotTagged(
+    comptime Reply: type,
+    app: *App,
+    ctx: ?*anyopaque,
+    tag: u64,
+    on_reply: *const fn (ctx: ?*anyopaque, tag: u64, reply: Reply) void,
+) !Ticket {
+    comptime codec.assertMessage(Reply);
+    const rt = app.runtime;
+    const index = try rt.allocSlot();
+    const slot = &rt.slots.items[index];
+    const gen = slot.gen;
+    slot.* = .{
+        .gen = gen,
+        .state = .live,
+        .ctx = ctx,
+        .on_reply = @ptrCast(on_reply),
+        .tag = tag,
+        .deliver = deliverShimTagged(Reply),
         .transport = .none,
     };
     return .{ .runtime = rt, .index = index, .gen = gen };

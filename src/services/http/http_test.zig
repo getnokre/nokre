@@ -26,7 +26,7 @@ const Sink = struct {
         self.log.appendSlice(self.gpa, s) catch {};
     }
 
-    fn onResult(ctx: ?*anyopaque, result: http.Result) void {
+    fn onResult(ctx: ?*anyopaque, _: u64, result: http.Result) void {
         const self: *Sink = @ptrCast(@alignCast(ctx.?));
         switch (result) {
             .response => |r| self.append("{d} \"{s}\" h{d};", .{ r.status, r.body.view(), r.headers.len }),
@@ -34,9 +34,19 @@ const Sink = struct {
         }
     }
 
+    /// onResult with the tag in the log — for the tests where *which*
+    /// request an answer belongs to is the subject.
+    fn onResultTagged(ctx: ?*anyopaque, tag: u64, result: http.Result) void {
+        const self: *Sink = @ptrCast(@alignCast(ctx.?));
+        switch (result) {
+            .response => |r| self.append("t{d} {d};", .{ tag, r.status }),
+            .failure => |f| self.append("t{d} failure {s};", .{ tag, f.name }),
+        }
+    }
+
     /// A callback that keeps the body past the call — the Bytes.take
     /// contract.
-    fn onResultTake(ctx: ?*anyopaque, result: http.Result) void {
+    fn onResultTake(ctx: ?*anyopaque, _: u64, result: http.Result) void {
         const self: *Sink = @ptrCast(@alignCast(ctx.?));
         switch (result) {
             .response => |r| self.kept = r.body.take(),
@@ -287,6 +297,67 @@ test "two apps are two disjoint networks" {
     try std.testing.expectEqualStrings("https://b.test/", b.services.http.journal()[0].url);
 }
 
+test "the tag rides the request and is echoed untouched, whatever the answer order" {
+    const gpa = std.testing.allocator;
+    var app = try testApp(gpa);
+    defer app.deinit();
+    var sink: Sink = .{ .gpa = gpa };
+    defer sink.deinit();
+
+    // Two tags no index arithmetic would produce, so an echo of the
+    // wrong request's tag cannot pass by coincidence.
+    _ = try http.request(.{ .app = &app, .url = "https://a.test/", .tag = 7001, .ctx = &sink, .on_result = Sink.onResultTagged });
+    _ = try http.request(.{ .app = &app, .url = "https://b.test/", .tag = 42, .ctx = &sink, .on_result = Sink.onResultTagged });
+
+    // The mock records the tag on the parked request and in the
+    // journal — the fake-server and these-requests-in-this-order
+    // surfaces both know which ask is which.
+    const mock = app.services.http;
+    try std.testing.expectEqual(7001, mock.pendingAt(0).tag);
+    try std.testing.expectEqual(42, mock.pendingAt(1).tag);
+    try std.testing.expectEqual(7001, mock.journal()[0].tag);
+    try std.testing.expectEqual(42, mock.journal()[1].tag);
+
+    // Answered out of order: the tag is the request's, not the
+    // delivery position's.
+    try mock.fulfillAt(1, .{ .status = 200 });
+    try mock.fulfillAt(0, .{ .status = 201 });
+    app.runtime.pumpAll();
+    try std.testing.expectEqualStrings("t42 200;t7001 201;", sink.log.items);
+}
+
+test "the tag is echoed on failure too — transport names and BodyTooLarge alike" {
+    const gpa = std.testing.allocator;
+    var app = try testApp(gpa);
+    defer app.deinit();
+    var sink: Sink = .{ .gpa = gpa };
+    defer sink.deinit();
+
+    _ = try http.request(.{ .app = &app, .url = "https://down.test/", .tag = 9, .ctx = &sink, .on_result = Sink.onResultTagged });
+    _ = try http.request(.{ .app = &app, .url = "https://big.test/", .max_body = 4, .tag = 10, .ctx = &sink, .on_result = Sink.onResultTagged });
+    try app.services.http.fail("ConnectionRefused");
+    // The oversized canned body fails inside the mock's own max_body
+    // enforcement — a failure the fulfiller did not spell, and the tag
+    // still rides it.
+    try app.services.http.fulfill(.{ .body = "12345" });
+    app.runtime.pumpAll();
+    try std.testing.expectEqualStrings("t9 failure ConnectionRefused;t10 failure BodyTooLarge;", sink.log.items);
+}
+
+test "the default tag is 0 — a caller that never asked for one is undisturbed" {
+    const gpa = std.testing.allocator;
+    var app = try testApp(gpa);
+    defer app.deinit();
+    var sink: Sink = .{ .gpa = gpa };
+    defer sink.deinit();
+
+    _ = try http.request(.{ .app = &app, .url = "https://plain.test/", .ctx = &sink, .on_result = Sink.onResultTagged });
+    try std.testing.expectEqual(0, app.services.http.journal()[0].tag);
+    try app.services.http.fulfill(.{ .status = 200 });
+    app.runtime.pumpAll();
+    try std.testing.expectEqualStrings("t0 200;", sink.log.items);
+}
+
 test "harness: fulfillHttp and failHttp land the result at the call" {
     const gpa = std.testing.allocator;
     const Ctx = struct {
@@ -330,9 +401,9 @@ test "harness: onHttp is the fake server; settleHttp answers to quiescence" {
 
         // First response in hand, the app asks a follow-up question —
         // settleHttp must see the new request within the same settle.
-        fn onChain(ctx_: ?*anyopaque, result: http.Result) void {
+        fn onChain(ctx_: ?*anyopaque, tag: u64, result: http.Result) void {
             const self: *@This() = @ptrCast(@alignCast(ctx_.?));
-            Sink.onResult(&self.sink, result);
+            Sink.onResult(&self.sink, tag, result);
             if (!self.chained) {
                 self.chained = true;
                 _ = http.request(.{ .app = self.app, .url = "https://api.test/second", .ctx = self, .on_result = onChain }) catch {};
@@ -375,4 +446,34 @@ test "harness: onHttp is the fake server; settleHttp answers to quiescence" {
     try t.fulfillHttpAt(0, .{ .status = 204 });
     try std.testing.expectEqualStrings("200 \"one\" h0;failure FetchFailed;200 \"two\" h0;204 \"\" h0;", ctx.sink.log.items);
     try std.testing.expectEqual(0, t.app.services.http.pendingCount());
+}
+
+test "harness: answering by path echoes each request's own tag, and the journal keeps it" {
+    const gpa = std.testing.allocator;
+    const Ctx = struct {
+        sink: Sink,
+        fn build(_: ?*anyopaque, app: *App) !void {
+            const root = app.tree.rootId();
+            try app.tree.append(root, .{ .heading = .{ .content = "Fetch", .level = .h1 } });
+        }
+    };
+    var ctx: Ctx = .{ .sink = .{ .gpa = gpa } };
+    defer ctx.sink.deinit();
+
+    var t = try harness_mod.Harness.init(gpa, .{ .w = 320, .h = 240 }, &ctx, Ctx.build);
+    defer t.deinit();
+
+    // The test addresses requests by path — issue order stays the
+    // app's business — and each answer must land with the tag *its*
+    // request carried, response and failure alike.
+    _ = try http.request(.{ .app = &t.app, .url = "https://api.test/notes", .tag = 3, .ctx = &ctx.sink, .on_result = Sink.onResultTagged });
+    _ = try http.request(.{ .app = &t.app, .url = "https://api.test/profile", .tag = 8, .ctx = &ctx.sink, .on_result = Sink.onResultTagged });
+    try t.fulfillHttpPath("/profile", .{ .status = 200 });
+    try t.failHttpPath("/notes", "ConnectionRefused");
+    try std.testing.expectEqualStrings("t8 200;t3 failure ConnectionRefused;", ctx.sink.log.items);
+
+    // The journal outlives the answers, tag included.
+    try std.testing.expectEqual(2, t.httpJournal().len);
+    try std.testing.expectEqual(3, t.httpJournal()[0].tag);
+    try std.testing.expectEqual(8, t.httpJournal()[1].tag);
 }

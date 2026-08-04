@@ -931,7 +931,7 @@ pub fn sync(state: *State) void {
     state.app.refresh(.{});
 }
 
-fn onSyncResult(ctx: ?*anyopaque, result: h.services.http.Result) void {
+fn onSyncResult(ctx: ?*anyopaque, _: u64, result: h.services.http.Result) void {
     const state: *State = @ptrCast(@alignCast(ctx.?));
     switch (result) {
         .response => |r| {

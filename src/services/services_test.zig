@@ -79,7 +79,7 @@ const Session = struct {
         self.last_doubled = reply.doubled;
     }
 
-    fn onResult(ctx: ?*anyopaque, result: http.Result) void {
+    fn onResult(ctx: ?*anyopaque, _: u64, result: http.Result) void {
         const self: *Session = @ptrCast(@alignCast(ctx.?));
         self.http_status = switch (result) {
             .response => |r| r.status,

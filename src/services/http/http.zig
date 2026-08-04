@@ -114,7 +114,10 @@ pub const RequestOptions = struct {
     /// and on wasm the heap it would balloon is the UI's own.
     max_body: u32 = 16 * 1024 * 1024,
     ctx: ?*anyopaque = null,
-    on_result: *const fn (ctx: ?*anyopaque, result: Result) void,
+    /// Echoed to `on_result` untouched. The caller's correlation tag:
+    /// a generation, an index, a packed pair — the receiver's business.
+    tag: u64 = 0,
+    on_result: *const fn (ctx: ?*anyopaque, tag: u64, result: Result) void,
 };
 
 /// Generation-checked, like a worker handle: after the result (or a
@@ -151,7 +154,11 @@ pub fn request(opts: RequestOptions) !Handle {
     // rather than a shipped app. Same class as web.zig's newline
     // assertion on a header.
     std.debug.assert(opts.body.len == 0 or opts.method.asStd().requestHasBody());
-    const ticket = try workers.openOneShot(Result, opts.app, opts.ctx, opts.on_result);
+    // The tag parks in the delivery slot here, before any transport
+    // sees the request: every Result against this ticket — canned,
+    // wire, timeout — echoes it by construction, so no transport leg
+    // can drop or alter it (docs/internals/http.md).
+    const ticket = try workers.openOneShotTagged(Result, opts.app, opts.ctx, opts.tag, opts.on_result);
     errdefer workers.cancelOneShot(ticket);
     if (comptime builtin.is_test) {
         const state = opts.app.services.http.state.?;
@@ -201,6 +208,11 @@ pub const PendingRequest = struct {
     headers: []const Header,
     body: []const u8,
     max_body: u32,
+    /// The request's correlation tag, for a fake server or a test
+    /// asserting *which* ask this is. Echo is not its job — the
+    /// delivery slot holds the authoritative copy and echoes it on
+    /// every answer, however the request is fulfilled.
+    tag: u64,
 
     /// The named header's value, or null — what a fake server asks of
     /// nearly every request, so the lookup lives on the request rather
@@ -218,7 +230,7 @@ pub const PendingRequest = struct {
 /// journal is what keeps "these requests, in this order" assertable
 /// after the answers land, the same register every journaling mock
 /// keeps (secure_store's ops, iap's queries).
-pub const Op = struct { method: Method, url: []const u8 };
+pub const Op = struct { method: Method, url: []const u8, tag: u64 };
 
 pub const CannedResponse = struct {
     status: u16 = 200,
@@ -282,8 +294,9 @@ pub const MockState = struct {
             .headers = headers,
             .body = body,
             .max_body = opts.max_body,
+            .tag = opts.tag,
         });
-        self.ops.appendAssumeCapacity(.{ .method = opts.method, .url = journal_url });
+        self.ops.appendAssumeCapacity(.{ .method = opts.method, .url = journal_url, .tag = opts.tag });
     }
 
     fn freePending(self: *MockState, p: PendingRequest) void {
