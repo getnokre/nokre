@@ -58,6 +58,20 @@ pub fn queryByRole(tree: *const Tree, role: Role, name: []const u8) ?NodeId {
     return null;
 }
 
+/// First *folded* node with the role and name — the deliberate
+/// exception to `onScreen`, for exactly one caller: the harness's
+/// `press` has to notice that an action went behind its row's "More"
+/// before it can take the user's route there (More, then the sheet).
+/// Everything else keeps seeing folded content as the absence it is.
+pub fn queryFolded(tree: *const Tree, role: Role, name: []const u8) ?NodeId {
+    var it = tree.dfs();
+    while (it.next()) |id| {
+        const el = tree.getConst(id).?;
+        if (el.isFolded() and el.role() == role and std.mem.eql(u8, el.label(), name)) return id;
+    }
+    return null;
+}
+
 /// First inline link whose words equal `label`. Link spans are not
 /// nodes, so they cannot come back as a `NodeId` — but they are
 /// controls, and a control tests cannot reach is a control consumers

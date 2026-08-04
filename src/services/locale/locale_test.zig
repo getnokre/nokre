@@ -46,7 +46,7 @@ const BootReader = struct {
 
 test "the boot tag is readable inside the first build" {
     var ctx: BootReader = .{};
-    var t = try Harness.initWith(std.testing.allocator, .{ .w = 320, .h = 480 }, .{
+    var t = try Harness.init(std.testing.allocator, .{ .w = 320, .h = 480 }, .{
         .ctx = &ctx,
         .build = BootReader.build,
         .locale = .{ .tag = "fa-IR" },
@@ -263,7 +263,7 @@ const Screen = struct {
 
 test "capstone: the device tag resolves the bundle and mirrors the chrome" {
     var ctx: Screen = .{};
-    var t = try Harness.initWith(std.testing.allocator, .{ .w = 320, .h = 480 }, .{
+    var t = try Harness.init(std.testing.allocator, .{ .w = 320, .h = 480 }, .{
         .ctx = &ctx,
         .build = Screen.build,
         .locale = .{ .tag = "fa-IR" },

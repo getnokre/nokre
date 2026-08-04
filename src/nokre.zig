@@ -14,7 +14,7 @@ const std = @import("std");
 /// Hand-bumped on every consumer-visible contract change, never by
 /// machinery — the no-CI stance is deliberate
 /// (docs/getting-started.md).
-pub const revision: u32 = 8;
+pub const revision: u32 = 9;
 
 pub const geometry = @import("core/geometry.zig");
 pub const color = @import("core/color.zig");
@@ -184,6 +184,7 @@ test {
     _ = testing.audit;
     _ = testing.golden;
     _ = testing.trace;
+    _ = testing.wait;
     // Unlike the platform shells this one is safe to name here: it
     // *defines* the shell symbols (`export`) rather than referencing
     // them (`extern`), and under `zig test` no other definition exists

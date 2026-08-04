@@ -731,7 +731,7 @@ test "harness: settleWorkers is the moment async work lands" {
     var ctx: Ctx = .{ .sink = .{ .gpa = gpa } };
     defer ctx.sink.deinit();
 
-    var t = try harness_mod.Harness.init(gpa, .{ .w = 320, .h = 240 }, &ctx, Ctx.build);
+    var t = try harness_mod.Harness.init(gpa, .{ .w = 320, .h = 240 }, .{ .ctx = &ctx, .build = Ctx.build });
     defer t.deinit(); // harness deinit shuts workers down
 
     ctx.handle = try workers.spawn(Doubler, .{ .app = &t.app, .ctx = &ctx.sink, .on_reply = Sink.onReply });

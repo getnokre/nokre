@@ -10,6 +10,10 @@ every `issuing` guard deleted (refresh declines quietly in-build; bare
 transports; consumer client-array collapse examined and correctly
 declined (every slot is a distinct named adapter, not correlation
 plumbing — the doctrine change in PORTING.md is the consumer payoff);
+A8 (revision 9) — one harness door (`init(gpa, viewport, opts)`),
+the proven verbs (press/typeInto/goTab/expectPresent/expectDisabled)
+and `testing.wait.waitUntil` with injected Pacer; both fixtures
+shrunk, 682 discarded getByRole asserts became expectPresent;
 A6 scope decided by owner
 2026-08-04: minimal as written. Everything else below is unexecuted. The first
 handoff (deleted at `b3518a2`) was executed whole; this one comes from a

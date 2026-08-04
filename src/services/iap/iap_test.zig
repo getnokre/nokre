@@ -534,7 +534,7 @@ const Screen = struct {
 
 test "harness: a paywall prices itself, buys, and finishes the transaction" {
     var screen: Screen = .{};
-    var t = try Harness.initWith(std.testing.allocator, .{ .w = 320, .h = 480 }, .{
+    var t = try Harness.init(std.testing.allocator, .{ .w = 320, .h = 480 }, .{
         .ctx = &screen,
         .build = Screen.build,
         .iap = .{ .auto = .purchased },
@@ -565,7 +565,7 @@ test "harness: a paywall prices itself, buys, and finishes the transaction" {
 
 test "harness: a cancelled purchase leaves the screen alive" {
     var screen: Screen = .{};
-    var t = try Harness.initWith(std.testing.allocator, .{ .w = 320, .h = 480 }, .{
+    var t = try Harness.init(std.testing.allocator, .{ .w = 320, .h = 480 }, .{
         .ctx = &screen,
         .build = Screen.build,
     });

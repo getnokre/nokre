@@ -42,6 +42,11 @@ pub const Knock = haptic.Knock;
 pub const diag = @import("diag.zig");
 pub const queries = @import("queries.zig");
 pub const driver = @import("driver.zig");
+/// Deadline-bounded waiting for the driver tier — `wait.waitUntil`
+/// and the `Pacer` a driver hands its own clock in with. Not a
+/// harness verb on purpose: under the mocks nothing ever waits
+/// (see wait.zig's own rationale).
+pub const wait = @import("wait.zig");
 pub const audit = @import("audit.zig");
 pub const golden = @import("golden.zig");
 pub const trace = @import("trace.zig");
@@ -94,13 +99,16 @@ pub const Harness = struct {
     step_observer: ?trace.StepObserver = null,
     step_index: u32 = 0,
 
-    /// The general form the named variants wrap. The app is
-    /// constructed with its mocks — `opts.store` and `opts.locale`
-    /// apply inside App.init, before `build`/`navigate` runs, so a
-    /// boot-time read sees the seeded state synchronously.
-    pub fn initWith(gpa: std.mem.Allocator, viewport: geometry.Size, opts: InitOptions) !Harness {
+    /// The one construction door: everything a boot can vary — screen
+    /// or routes, nav, seeded services — is a field of `InitOptions`,
+    /// so there is exactly one way to spell every boot and nothing to
+    /// choose between. The app is constructed with its mocks —
+    /// `opts.store` and `opts.locale` apply inside App.init, before
+    /// `build`/`navigate` runs, so a boot-time read sees the seeded
+    /// state synchronously.
+    pub fn init(gpa: std.mem.Allocator, viewport: geometry.Size, opts: InitOptions) !Harness {
         if ((opts.build == null) == (opts.routes.len == 0)) {
-            diag.print("initWith needs exactly one of build/routes\n", .{});
+            diag.print("init needs exactly one of build/routes\n", .{});
             return error.InitOptionsShape;
         }
         var self: Harness = .{
@@ -135,57 +143,6 @@ pub const Harness = struct {
         }
         try self.audit();
         return self;
-    }
-
-    /// Builds a single screen. Uses the fixed measurer: layout in harness
-    /// tests is deterministic without any native dependency.
-    pub fn init(gpa: std.mem.Allocator, viewport: geometry.Size, ctx: ?*anyopaque, build: BuildFn) !Harness {
-        return initWith(gpa, viewport, .{ .ctx = ctx, .build = build });
-    }
-
-    /// Builds a routed app and navigates to `initial_route`.
-    pub fn initWithRoutes(
-        gpa: std.mem.Allocator,
-        viewport: geometry.Size,
-        routes: []const router_mod.RouteDef,
-        ctx: ?*anyopaque,
-        initial_route: []const u8,
-    ) !Harness {
-        return initWith(gpa, viewport, .{
-            .routes = routes,
-            .ctx = ctx,
-            .initial_route = initial_route,
-        });
-    }
-
-    /// Same, with app-level nav chrome installed before the first route.
-    pub fn initWithNav(
-        gpa: std.mem.Allocator,
-        viewport: geometry.Size,
-        routes: []const router_mod.RouteDef,
-        nav_items: []const nav_mod.Destination,
-        ctx: ?*anyopaque,
-        initial_route: []const u8,
-    ) !Harness {
-        return initWith(gpa, viewport, .{
-            .routes = routes,
-            .nav = nav_items,
-            .ctx = ctx,
-            .initial_route = initial_route,
-        });
-    }
-
-    /// Boot with a populated (or unavailable) store — the seeded
-    /// token is readable inside `build`, synchronously; available =
-    /// false boots the app into a locked keychain.
-    pub fn initWithStore(
-        gpa: std.mem.Allocator,
-        viewport: geometry.Size,
-        boot: secure_store.Mock.Config,
-        ctx: ?*anyopaque,
-        build: BuildFn,
-    ) !Harness {
-        return initWith(gpa, viewport, .{ .store = boot, .ctx = ctx, .build = build });
     }
 
     pub fn deinit(self: *Harness) void {
@@ -348,6 +305,90 @@ pub const Harness = struct {
     pub fn focusVia(self: *Harness, id: NodeId) !void {
         try driver.focusVia(&self.app, id);
         try self.afterStep("focus {s}", .{self.labelOf(id)});
+    }
+
+    // ---- the verbs consumers rebuilt ----
+    // Both shipped apps grew the same four verbs over the primitives
+    // above, with the same fallbacks, under the same rationale: a
+    // control is named by role plus accessible name — semantic
+    // identity — because a bare label stops being an identity the
+    // moment the chosen locale can change under it. Folded into the
+    // framework so the next app does not write them a third time.
+
+    /// Presses a control the way a user would: a tap where the control
+    /// is on screen, the keyboard where a long screen has pushed it
+    /// past the fold, and More-then-the-action where a narrow row
+    /// folded it away. Not for text fields — the keyboard fallback's
+    /// Enter in a field it just focused is a submit, not a focus;
+    /// `typeInto` is the field verb.
+    pub fn press(self: *Harness, role: element_mod.Role, label: []const u8) !void {
+        // Folded first, silently: a folded control is off the screen
+        // as far as the queries are concerned, so asking for it loudly
+        // would print a miss for an action that is one More-press away.
+        self.app.performLayout();
+        if (queries.queryFolded(&self.app.tree, role, label) != null) return self.pressFolded(role, label);
+        const id = try self.getByRole(role, label);
+        // Probe the finger's route before taking it: a control past
+        // the fold is this verb's business, not a failure, and letting
+        // `tap` refuse it would print a diagnostic from a passing test
+        // (the build runner banners any stderr). A tap that would land
+        // on *another* element stays `tap`'s loud Obscured refusal.
+        if (self.app.hitTest(self.app.tree.rectOf(id).center()) == null) {
+            try self.focusVia(id);
+            return self.pressKey(.enter, .{});
+        }
+        try self.tap(id);
+    }
+
+    /// A row that ran out of width put this action behind "More"; the
+    /// sheet that control opens restates it whole — same role, same
+    /// words (overflow.zig) — so the press lands there.
+    fn pressFolded(self: *Harness, role: element_mod.Role, label: []const u8) !void {
+        try self.tap(try self.getByRole(.more, self.app.chrome.more));
+        try self.tap(try self.getByRole(role, label));
+    }
+
+    /// Puts the caret in a named field and types, the way a user fills
+    /// one — appending to what the field already holds, exactly as
+    /// typing does. The label is looked up among the two text-entry
+    /// roles only, so the words can never land on a control that
+    /// merely shares them.
+    pub fn typeInto(self: *Harness, label: []const u8, bytes: []const u8) !void {
+        const id = queries.queryByRole(&self.app.tree, .text_input, label) orelse
+            queries.queryByRole(&self.app.tree, .text_area, label) orelse
+            return queries.noMatch(&self.app.tree, "text field label", label);
+        try self.focusVia(id);
+        try self.typeText(bytes);
+    }
+
+    /// Crosses the nav to the destination with this title, whichever
+    /// shape the nav is in: the collapsed chip's picker where the
+    /// labels did not fit, the row of destinations where they did, and
+    /// the `nav_here` marker when the title is the screen already under
+    /// foot — that marker is deliberately not a control (element.zig),
+    /// so "go where you stand" is the no-op it is for a user. The chip
+    /// is named by the app's chrome, so a localized app crosses its
+    /// bar in its own words.
+    pub fn goTab(self: *Harness, title: []const u8) !void {
+        // `query`, not `get`: a wide viewport lays the destinations
+        // out as a row and has no chip at all, and a `get` miss prints
+        // a diagnostic even from a passing test.
+        if (self.queryByRole(.nav_current, self.app.chrome.section)) |chip| {
+            try self.tap(chip);
+            // The picker restates the roster as its own rows.
+            return self.tap(try self.getByRole(.picker_item, title));
+        }
+        // The wide shape: a row of destinations, the current one a
+        // `nav_here` whose *value* is the title (its accessible name
+        // is the chrome's "Current screen", so it is matched on the
+        // element, not through the name queries).
+        if (self.queryByRole(.nav_item, title)) |id| return self.tap(id);
+        var it = self.app.tree.dfs();
+        while (it.next()) |id| {
+            const el = self.app.tree.getConst(id).?;
+            if (el.* == .nav_here and std.mem.eql(u8, el.nav_here.label, title)) return;
+        }
+        return queries.noMatch(&self.app.tree, "nav destination titled", title);
     }
 
     /// Runs every queued worker message and delivers every queued
@@ -948,6 +989,28 @@ pub const Harness = struct {
         const el = self.app.tree.getConst(id).?;
         diag.print("expected no element labeled \"{s}\", but found a {s}\n", .{ label, @tagName(el.role()) });
         return error.UnexpectedlyPresent;
+    }
+
+    /// `expectAbsent`'s positive twin, by semantic identity: the
+    /// discarded `getByRole` is the assertion, and a miss lists every
+    /// labeled node on screen — presence claimed by role plus name,
+    /// never by a bare label.
+    pub fn expectPresent(self: *Harness, role: element_mod.Role, name: []const u8) !void {
+        _ = try self.getByRole(role, name);
+    }
+
+    /// A control that declines rather than acts. Read off the node
+    /// instead of pressed: `tap` refuses a disabled control loudly,
+    /// and a diagnostic from a passing test reads as a failure to
+    /// whoever is watching the build. Buttons only — the one element
+    /// that carries `disabled` (element.zig); everything else declines
+    /// by not being built.
+    pub fn expectDisabled(self: *Harness, label: []const u8) !void {
+        const id = try self.getByRole(.button, label);
+        const el = self.app.tree.getConst(id).?;
+        if (el.button.disabled) return;
+        diag.print("expected \"{s}\" disabled, but it takes presses\n", .{label});
+        return error.DisabledMismatch;
     }
 
     /// Inline snapshot of the whole laid-out tree in the trace format

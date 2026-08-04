@@ -21,8 +21,8 @@ Everything below runs headless. Only golden tests need Skia.
 const nok = @import("nokre");
 
 test "checkout flow" {
-    var t = try nok.testing.Harness.init(gpa, .{ .w = 480, .h = 640 }, &state, buildCheckout);
-    // or: initWithRoutes(gpa, viewport, &routes, &state, "home")
+    var t = try nok.testing.Harness.init(gpa, .{ .w = 480, .h = 640 }, .{ .ctx = &state, .build = buildCheckout });
+    // or routed: .{ .routes = &routes, .ctx = &state, .initial_route = "home" }
     defer t.deinit();
     // The a11y audit already ran; a screen that fails it never builds.
 
@@ -81,6 +81,35 @@ have already told you so.
 `composeText(composition, committed)` (full IME start→update→commit
 sequence), `selectOption(group_label, option)`, `scroll(id, delta)`,
 `focusVia(id)`, `edgePanBack()`.
+
+Three verbs sit above those primitives, because every consumer ends up
+wanting exactly them — both shipped apps wrote the same three, with
+the same fallbacks, before they moved here. Each names its control by
+**role plus accessible name**: a bare label stops being an identity
+the moment the chosen locale can change under it.
+
+- `press(role, label)` presses a control the way a user would: a tap
+  where it is on screen, Tab-and-Enter where a long screen has pushed
+  it past the fold (stepping is what scrolls it into view), and
+  More-then-the-action where a narrow row folded it away
+  ([elements.md](elements.md#the-folded-tail-more)). Not for text
+  fields — the keyboard fallback's Enter in a field it just focused is
+  a submit, not a focus; that is `typeInto`'s job. `tap`'s other
+  refusals stand: an obscured, disabled, or busy control is still a
+  loud failure, because no fallback reaches one of those.
+- `typeInto(label, text)` puts the caret in the named field and types,
+  appending like typing does. The label is looked up among the two
+  text-entry roles only (`text_input`, `text_area`), so the words can
+  never land on a control that merely shares them.
+- `goTab(title)` crosses the nav to the destination with that title,
+  whichever shape the nav is in
+  ([elements.md](elements.md#navigation-chrome)): the
+  row of destinations where the labels fit, the collapsed chip's
+  picker where they do not, and the `nav_here` marker when the title
+  is the screen already under foot — that marker is deliberately not a
+  control, so going where you stand is a no-op, not a refusal. The
+  chip is addressed through the app's chrome, so a localized app
+  crosses its bar in its own words.
 
 `selectOption` makes an exclusive choice in a `segmented`, a
 `radio_group`, or a `select`, both ends named — the control by its label,
@@ -207,7 +236,7 @@ fn serve(_: ?*anyopaque, req: nok.services.http.PendingRequest) ?nok.testing.Htt
 }
 
 test "sync round-trip" {
-    var t = try nok.testing.Harness.init(gpa, .{ .w = 480, .h = 640 }, &state, buildNotes);
+    var t = try nok.testing.Harness.init(gpa, .{ .w = 480, .h = 640 }, .{ .ctx = &state, .build = buildNotes });
     defer t.deinit();
     t.onHttp(null, serve);
 
@@ -249,11 +278,11 @@ rather than merely checked is
 test` the fake is the only store that exists, on every platform; the
 real keychain is never an option.
 
-Boot state goes in at construction: the general `initWith(gpa,
-viewport, opts)` takes a `.store` of type `secure_store.Mock.Config`
-(seeds plus availability) alongside `build`/`routes` and the `.locale`
-below, and `initWithStore(gpa, viewport, boot, ctx, build)` is the
-shorthand for the common plain-screen case. Seeds apply inside
+Boot state goes in at construction: `init(gpa, viewport, opts)` takes
+a `.store` of type `secure_store.Mock.Config` (seeds plus
+availability) alongside `build`/`routes` and the `.locale`
+below — one options struct, one door, nothing to choose between.
+Seeds apply inside
 `App.init`, so a seeded token is readable inside `build`,
 synchronously — harness or no harness; `.available = false` boots the
 app into a locked keychain. After boot:
@@ -285,8 +314,7 @@ that degrades gracefully under it is ready everywhere.
 ```zig
 test "stored token skips sign-in; sign-out deletes it; locked keychain degrades" {
     var state: State = .{};
-    var t = try nok.testing.Harness.initWithStore(std.testing.allocator, .{ .w = 480, .h = 640 },
-        .{ .seeds = &.{.{ .key = "auth.token", .value = "tk_123" }} }, &state, State.build);
+    var t = try nok.testing.Harness.init(std.testing.allocator, .{ .w = 480, .h = 640 }, .{ .store = .{ .seeds = &.{.{ .key = "auth.token", .value = "tk_123" }} }, .ctx = &state, .build = State.build });
     defer t.deinit(); // the fake dies here — nothing leaks to the next test
 
     _ = try t.getByLabel("Inbox");             // boot read is sync: no settle, no loading frame
@@ -323,13 +351,13 @@ Why a sync store needs no settle at all is
 ## The device locale
 
 `locale` is boot state like the store's seeds, and synchronous like
-them: `initWith`'s `.locale` applies inside `App.init`, so the first
+them: `init`'s `.locale` applies inside `App.init`, so the first
 `build` already reads the tag. There is no frame before the locale
 arrives — no shell produces one — so there is no such state for a test
 to rehearse.
 
 ```zig
-var t = try nok.testing.Harness.initWith(gpa, .{ .w = 480, .h = 640 }, .{
+var t = try nok.testing.Harness.init(gpa, .{ .w = 480, .h = 640 }, .{
     .ctx = &state,
     .build = State.build,
     .locale = .{ .tag = "fa-IR" },       // the device at boot; the default
@@ -375,7 +403,7 @@ every run and goldens byte-for-byte. Time moves where the test moves it
 and nowhere else — there is no ticker to move it behind your back.
 
 ```zig
-var t = try nok.testing.Harness.initWith(gpa, .{ .w = 320, .h = 480 }, .{
+var t = try nok.testing.Harness.init(gpa, .{ .w = 320, .h = 480 }, .{
     .ctx = &state,
     .build = State.build,
     // The device's clock at boot; the default is a fixed, fake instant.
@@ -443,7 +471,7 @@ other action.
 PKCE is seeded, not random: `pkce.verifier(app, &buf)` and
 `pkce.state(app, &buf)` read the mock, so a screen that renders an
 authorize URL renders the same one every run and goldens byte-match.
-`initWith`'s `.oauth` carries the seeds — and, optionally, `.auto`,
+`init`'s `.oauth` carries the seeds — and, optionally, `.auto`,
 which answers every flow without a settle verb for tests where the
 sign-in is setup rather than subject:
 
@@ -474,7 +502,7 @@ const shelf = [_]nokre.services.iap.Product{.{
     .kind = .consumable,
 }};
 
-var t = try Harness.initWith(gpa, .{ .w = 320, .h = 480 }, .{
+var t = try Harness.init(gpa, .{ .w = 320, .h = 480 }, .{
     .ctx = &state,
     .build = buildPaywall,
     .iap = .{ .catalog = &shelf },    // a seeded catalog answers queries
@@ -582,6 +610,13 @@ expectation can't be met there, a screen reader user can't meet it either.
   pair it with `app.router.depth()` when the depth is the point, since
   a push and a `switchTo` land on the same route
 - `expectAbsent(label)`
+- `expectPresent(role, name)` — absence's positive twin, by semantic
+  identity: presence claimed by role plus accessible name, and a miss
+  lists every labeled node on screen.
+- `expectDisabled(label)` — a button that declines rather than acts,
+  read off the node instead of pressed: `tap` refuses a disabled
+  control loudly, and a diagnostic from a passing test reads as a
+  failure to whoever is watching the build.
 - `expectCopied(text)` — the most recent clipboard write, read from
   the app's journaling clipboard mock: "activating this copyable wrote
   X", first class. Sync, like the store — nothing settles.
@@ -821,11 +856,46 @@ turned on, and deliberately not:
   carry every mock into it, which is the exact thing that rule exists to
   make unrepresentable. So the seam is one layer down.
 - **The driver layer already is that seam.** `testing.driver`,
-  `testing.queries`, `testing.audit`, `testing.trace` and
-  `testing.golden` name no `builtin.is_test` at all and are exported
-  unconditionally. `driver.tap(app, id)`,
+  `testing.queries`, `testing.audit`, `testing.trace`, `testing.wait`
+  and `testing.golden` name no `builtin.is_test` at all and are
+  exported unconditionally. `driver.tap(app, id)`,
   `queries.queryByLabel(&app.tree, …)` and `audit.audit(app)` work on
   any `*App`, in any build.
+
+A driver's synchronization story is different from the harness's, and
+`testing.wait` owns it. Under the mocks nothing ever waits — every
+settle is a verb — but a real server answers when it answers, so a
+driver's only move is "pump until the screen says what it came to say,
+or a deadline passes". `wait.waitUntil(app, pacer, what, ctx, ready)`
+is that loop, once: it pumps the delivery queue, asks the predicate
+after each pump, and on timeout prints what was waited for plus the
+whole screen as it stands — route, every labeled element with its
+user-visible state (working, disabled, folded), pending notices, and
+the laid-out tree — then returns `error.WaitTimeout`. The `Pacer` is
+the driver's own clock and its own nap, handed in as function
+pointers: nokre reads no wall clock and sleeps no thread itself, which
+keeps the library deterministic and makes the timeout path itself
+testable against a fake clock. A driver's verbs stay one predicate
+each:
+
+```zig
+const wait = nokre.testing.wait;
+
+fn waitFor(d: *Device, label: []const u8) !nokre.NodeId {
+    var target = label;
+    try wait.waitUntil(&d.app, d.pacer(), label, &target, struct {
+        fn ready(ctx: ?*anyopaque, app: *nokre.App) bool {
+            const l: *[]const u8 = @ptrCast(@alignCast(ctx.?));
+            return nokre.testing.queries.queryByLabel(&app.tree, l.*) != null;
+        }
+    }.ready);
+    return nokre.testing.queries.queryByLabel(&d.app.tree, label).?;
+}
+```
+
+`wait.dumpScreen(app)` is the same failure picture on demand, for the
+driver's own refusal paths — a tap that could not land owes the reader
+the screen it could not land on.
 
 Two things a driver owes that a test does not. It owes the hooks a
 shell owes — the free C functions the services name, which a binary

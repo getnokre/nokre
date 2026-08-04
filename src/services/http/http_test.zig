@@ -370,7 +370,7 @@ test "harness: fulfillHttp and failHttp land the result at the call" {
     var ctx: Ctx = .{ .sink = .{ .gpa = gpa } };
     defer ctx.sink.deinit();
 
-    var t = try harness_mod.Harness.init(gpa, .{ .w = 320, .h = 240 }, &ctx, Ctx.build);
+    var t = try harness_mod.Harness.init(gpa, .{ .w = 320, .h = 240 }, .{ .ctx = &ctx, .build = Ctx.build });
     defer t.deinit();
 
     _ = try http.request(.{ .app = &t.app, .url = "https://one.test/", .ctx = &ctx.sink, .on_result = Sink.onResult });
@@ -420,7 +420,7 @@ test "harness: onHttp is the fake server; settleHttp answers to quiescence" {
     var ctx: Ctx = .{ .sink = .{ .gpa = gpa } };
     defer ctx.sink.deinit();
 
-    var t = try harness_mod.Harness.init(gpa, .{ .w = 320, .h = 240 }, &ctx, Ctx.build);
+    var t = try harness_mod.Harness.init(gpa, .{ .w = 320, .h = 240 }, .{ .ctx = &ctx, .build = Ctx.build });
     defer t.deinit();
     ctx.app = &t.app;
 
@@ -460,7 +460,7 @@ test "harness: answering by path echoes each request's own tag, and the journal 
     var ctx: Ctx = .{ .sink = .{ .gpa = gpa } };
     defer ctx.sink.deinit();
 
-    var t = try harness_mod.Harness.init(gpa, .{ .w = 320, .h = 240 }, &ctx, Ctx.build);
+    var t = try harness_mod.Harness.init(gpa, .{ .w = 320, .h = 240 }, .{ .ctx = &ctx, .build = Ctx.build });
     defer t.deinit();
 
     // The test addresses requests by path — issue order stays the

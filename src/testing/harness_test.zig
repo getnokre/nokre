@@ -43,7 +43,7 @@ fn buildTodo(ctx: ?*anyopaque, app: *App) anyerror!void {
 
 test "e2e: fill a form with keyboard only" {
     var ctx: TodoCtx = .{};
-    var h = try Harness.init(testing.allocator, .{ .w = 480, .h = 640 }, &ctx, buildTodo);
+    var h = try Harness.init(testing.allocator, .{ .w = 480, .h = 640 }, .{ .ctx = &ctx, .build = buildTodo });
     defer h.deinit();
 
     const input = try h.getByLabel("New item");
@@ -58,7 +58,7 @@ test "e2e: fill a form with keyboard only" {
 
 test "e2e: tap flips toggle and moves focus" {
     var ctx: TodoCtx = .{};
-    var h = try Harness.init(testing.allocator, .{ .w = 480, .h = 640 }, &ctx, buildTodo);
+    var h = try Harness.init(testing.allocator, .{ .w = 480, .h = 640 }, .{ .ctx = &ctx, .build = buildTodo });
     defer h.deinit();
 
     try h.tapLabel("Show done");
@@ -68,7 +68,7 @@ test "e2e: tap flips toggle and moves focus" {
 
 test "e2e: ime composition through the harness" {
     var ctx: TodoCtx = .{};
-    var h = try Harness.init(testing.allocator, .{ .w = 480, .h = 640 }, &ctx, buildTodo);
+    var h = try Harness.init(testing.allocator, .{ .w = 480, .h = 640 }, .{ .ctx = &ctx, .build = buildTodo });
     defer h.deinit();
 
     try h.focusVia(try h.getByLabel("New item"));
@@ -78,7 +78,7 @@ test "e2e: ime composition through the harness" {
 
 test "e2e: a11y snapshot reflects interaction state" {
     var ctx: TodoCtx = .{};
-    var h = try Harness.init(testing.allocator, .{ .w = 480, .h = 640 }, &ctx, buildTodo);
+    var h = try Harness.init(testing.allocator, .{ .w = 480, .h = 640 }, .{ .ctx = &ctx, .build = buildTodo });
     defer h.deinit();
 
     try h.tapLabel("Show done");
@@ -92,7 +92,7 @@ test "e2e: a11y snapshot reflects interaction state" {
 
 test "e2e: get queries fail loudly, query queries assert absence" {
     var ctx: TodoCtx = .{};
-    var h = try Harness.init(testing.allocator, .{ .w = 480, .h = 640 }, &ctx, buildTodo);
+    var h = try Harness.init(testing.allocator, .{ .w = 480, .h = 640 }, .{ .ctx = &ctx, .build = buildTodo });
     defer h.deinit();
 
     // Expected failures run muted so their diagnostics never reach
@@ -109,7 +109,7 @@ test "e2e: get queries fail loudly, query queries assert absence" {
 
 test "e2e: tap refuses targets a finger could not hit" {
     var ctx: TodoCtx = .{};
-    var h = try Harness.init(testing.allocator, .{ .w = 480, .h = 640 }, &ctx, buildTodo);
+    var h = try Harness.init(testing.allocator, .{ .w = 480, .h = 640 }, .{ .ctx = &ctx, .build = buildTodo });
     defer h.deinit();
 
     // Static text is not a tap target.
@@ -136,7 +136,7 @@ test "e2e: tap refuses targets a finger could not hit" {
 
 test "e2e: tap refuses a button whose work is still running" {
     var ctx: TodoCtx = .{};
-    var h = try Harness.init(testing.allocator, .{ .w = 480, .h = 640 }, &ctx, buildTodo);
+    var h = try Harness.init(testing.allocator, .{ .w = 480, .h = 640 }, .{ .ctx = &ctx, .build = buildTodo });
     defer h.deinit();
     const btn = try h.app.tree.appendId(h.app.tree.rootId(), .{ .button = .{ .label = "Count primes", .in_progress = true } });
     h.app.invalidate();
@@ -158,7 +158,7 @@ test "e2e: tap refuses a button whose work is still running" {
 
 test "e2e: a switch with work in flight takes no press and loses no place" {
     var ctx: TodoCtx = .{};
-    var h = try Harness.init(testing.allocator, .{ .w = 480, .h = 640 }, &ctx, buildTodo);
+    var h = try Harness.init(testing.allocator, .{ .w = 480, .h = 640 }, .{ .ctx = &ctx, .build = buildTodo });
     defer h.deinit();
     const sw = try h.app.tree.appendId(h.app.tree.rootId(), .{ .toggle = .{ .label = "Push to phone", .in_progress = true } });
     h.app.invalidate();
@@ -229,7 +229,7 @@ fn buildChoices(ctx: ?*anyopaque, app: *App) anyerror!void {
 
 test "e2e: selectOption names the option in all three exclusive controls" {
     var ctx: ChoiceCtx = .{};
-    var h = try Harness.init(testing.allocator, .{ .w = 480, .h = 640 }, &ctx, buildChoices);
+    var h = try Harness.init(testing.allocator, .{ .w = 480, .h = 640 }, .{ .ctx = &ctx, .build = buildChoices });
     defer h.deinit();
 
     // A track: forward along the chips, committing at each step like the
@@ -264,7 +264,7 @@ test "e2e: selectOption names the option in all three exclusive controls" {
 
 test "e2e: selectOption walks a mirrored track the way it looks" {
     var ctx: ChoiceCtx = .{};
-    var h = try Harness.init(testing.allocator, .{ .w = 480, .h = 640 }, &ctx, buildChoices);
+    var h = try Harness.init(testing.allocator, .{ .w = 480, .h = 640 }, .{ .ctx = &ctx, .build = buildChoices });
     defer h.deinit();
     // Under mirrored chrome the chips lay right-to-left and ←/→ swap
     // roles with them, so the verb asks the app which way forward is
@@ -279,7 +279,7 @@ test "e2e: selectOption walks a mirrored track the way it looks" {
 
 test "e2e: selectOption refuses what a user could not choose" {
     var ctx: ChoiceCtx = .{};
-    var h = try Harness.init(testing.allocator, .{ .w = 480, .h = 640 }, &ctx, buildChoices);
+    var h = try Harness.init(testing.allocator, .{ .w = 480, .h = 640 }, .{ .ctx = &ctx, .build = buildChoices });
     defer h.deinit();
 
     diag.quiet = true;
@@ -295,7 +295,7 @@ test "e2e: selectOption refuses what a user could not choose" {
 
 test "e2e: pending notices are assertable where the snapshot cannot see them" {
     var ctx: TodoCtx = .{};
-    var h = try Harness.init(testing.allocator, .{ .w = 480, .h = 640 }, &ctx, buildTodo);
+    var h = try Harness.init(testing.allocator, .{ .w = 480, .h = 640 }, .{ .ctx = &ctx, .build = buildTodo });
     defer h.deinit();
 
     // Quiet: nothing but the indicator appears, so the only trace on
@@ -338,7 +338,7 @@ test "e2e: pending notices are assertable where the snapshot cannot see them" {
 
 test "e2e: the notice verbs fail loudly when the title is not pending" {
     var ctx: TodoCtx = .{};
-    var h = try Harness.init(testing.allocator, .{ .w = 480, .h = 640 }, &ctx, buildTodo);
+    var h = try Harness.init(testing.allocator, .{ .w = 480, .h = 640 }, .{ .ctx = &ctx, .build = buildTodo });
     defer h.deinit();
     try h.app.notify(.{ .title = "Draft saved" });
 
@@ -361,13 +361,13 @@ test "e2e: harness rejects screens that fail the audit" {
     defer diag.quiet = false;
     try testing.expectError(
         error.A11yAuditFailed,
-        Harness.init(testing.allocator, .{ .w = 480, .h = 640 }, null, bad.build),
+        Harness.init(testing.allocator, .{ .w = 480, .h = 640 }, .{ .build = bad.build }),
     );
 }
 
 test "e2e: expectTree snapshots the laid-out tree inline" {
     var ctx: TodoCtx = .{};
-    var h = try Harness.init(testing.allocator, .{ .w = 200, .h = 200 }, &ctx, buildMinimal);
+    var h = try Harness.init(testing.allocator, .{ .w = 200, .h = 200 }, .{ .ctx = &ctx, .build = buildMinimal });
     defer h.deinit();
 
     try h.tapLabel("Show done");
@@ -392,7 +392,7 @@ test "e2e: step trace writes a tree snapshot per action" {
     defer tmp.cleanup();
 
     var ctx: TodoCtx = .{};
-    var h = try Harness.init(testing.allocator, .{ .w = 480, .h = 640 }, &ctx, buildTodo);
+    var h = try Harness.init(testing.allocator, .{ .w = 480, .h = 640 }, .{ .ctx = &ctx, .build = buildTodo });
     defer h.deinit();
 
     var sink = try trace.TreeSink.init(testing.io, tmp.dir, testing.allocator, "trace");
@@ -423,7 +423,7 @@ fn buildRecovery(_: ?*anyopaque, app: *App) anyerror!void {
 }
 
 test "e2e: expectCopied asserts the last clipboard write" {
-    var h = try Harness.init(testing.allocator, .{ .w = 480, .h = 640 }, null, buildRecovery);
+    var h = try Harness.init(testing.allocator, .{ .w = 480, .h = 640 }, .{ .build = buildRecovery });
     defer h.deinit();
 
     {
@@ -460,7 +460,7 @@ fn buildTermsTarget(_: ?*anyopaque, app: *App) anyerror!void {
 }
 
 test "e2e: an inline link is tapped and tabbed to by its words" {
-    var harness = try Harness.initWithRoutes(testing.allocator, .{ .w = 360, .h = 300 }, &consent_routes, null, "consent");
+    var harness = try Harness.init(testing.allocator, .{ .w = 360, .h = 300 }, .{ .routes = &consent_routes, .initial_route = "consent" });
     defer harness.deinit();
 
     // A link has no node of its own, but to a user it is a control with
@@ -496,7 +496,7 @@ fn buildTicketScreen(_: ?*anyopaque, app: *App) anyerror!void {
 }
 
 test "e2e: a Markdown link carries route arguments" {
-    var harness = try Harness.initWithRoutes(testing.allocator, .{ .w = 360, .h = 300 }, &ticket_routes, null, "inbox");
+    var harness = try Harness.init(testing.allocator, .{ .w = 360, .h = 300 }, .{ .routes = &ticket_routes, .initial_route = "inbox" });
     defer harness.deinit();
 
     // `~` is not a URI scheme, so the destination stays an in-app route
@@ -531,17 +531,10 @@ const shop_routes = [_]@import("../core/router.zig").RouteDef{
 };
 
 test "e2e: a Farsi app ships a Farsi nav bar and a Farsi back control" {
-    var h = try Harness.initWithNav(
-        testing.allocator,
-        .{ .w = 900, .h = 480 },
-        &shop_routes,
-        &.{
-            .{ .route = "inbox", .icon = .inbox },
-            .{ .route = "archive", .icon = .archive },
-        },
-        null,
-        "inbox",
-    );
+    var h = try Harness.init(testing.allocator, .{ .w = 900, .h = 480 }, .{ .routes = &shop_routes, .nav = &.{
+        .{ .route = "inbox", .icon = .inbox },
+        .{ .route = "archive", .icon = .archive },
+    }, .initial_route = "inbox" });
     defer h.deinit();
     _ = try h.getByRole(.nav_item, "Archive");
 
@@ -568,7 +561,7 @@ test "e2e: a Farsi app ships a Farsi nav bar and a Farsi back control" {
 }
 
 test "e2e: the back gesture is an action like any other" {
-    var harness = try Harness.initWithRoutes(testing.allocator, .{ .w = 360, .h = 300 }, &ticket_routes, null, "inbox");
+    var harness = try Harness.init(testing.allocator, .{ .w = 360, .h = 300 }, .{ .routes = &ticket_routes, .initial_route = "inbox" });
     defer harness.deinit();
     try harness.tapLabel("the flaky build");
     try harness.expectRoute("ticket");
@@ -583,7 +576,7 @@ test "e2e: the back gesture is an action like any other" {
 }
 
 test "e2e: a missing link is diagnosed alongside the labels that do exist" {
-    var harness = try Harness.initWithRoutes(testing.allocator, .{ .w = 360, .h = 300 }, &consent_routes, null, "consent");
+    var harness = try Harness.init(testing.allocator, .{ .w = 360, .h = 300 }, .{ .routes = &consent_routes, .initial_route = "consent" });
     defer harness.deinit();
 
     try testing.expect(harness.queryLink("terms of service") != null);
@@ -604,7 +597,7 @@ test "e2e: a folded button is reached through More, and says so when it is not" 
     // Narrow enough that the row cannot hold five actions: the tail
     // folds, and the screen still passes the audit the harness runs
     // after every step.
-    var h = try Harness.init(testing.allocator, .{ .w = 400, .h = 640 }, null, buildActionRow);
+    var h = try Harness.init(testing.allocator, .{ .w = 400, .h = 640 }, .{ .build = buildActionRow });
     defer h.deinit();
 
     // A folded button is not on the screen, so its words do not address
@@ -628,4 +621,187 @@ test "e2e: a folded button is reached through More, and says so when it is not" 
     try h.tapLabel("More");
     try h.tapLabel("Archive");
     try testing.expect(h.app.more_sheet == null);
+}
+
+// ---- the consumer-proven verbs ----
+// press, typeInto, goTab, expectPresent, expectDisabled: the verbs both
+// shipped apps wrote over the primitives above, folded into the harness
+// with their fallback behavior intact (docs/testing.md).
+
+const PressCtx = struct {
+    pressed: u32 = 0,
+
+    fn onPress(ctx: ?*anyopaque) void {
+        @as(*PressCtx, @ptrCast(@alignCast(ctx.?))).pressed += 1;
+    }
+};
+
+fn buildFoldedActions(ctx: ?*anyopaque, app: *App) anyerror!void {
+    const data: *PressCtx = @ptrCast(@alignCast(ctx.?));
+    const row = try app.tree.appendId(app.tree.rootId(), .{ .stack = .{ .axis = .horizontal, .gap = 8 } });
+    for ([_][]const u8{ "Publish", "Save draft", "Duplicate" }) |label| {
+        try app.tree.append(row, .{ .button = .{ .label = label } });
+    }
+    try app.tree.append(row, .{ .button = .{
+        .label = "Archive",
+        .on_press = .{ .ctx = data, .call = PressCtx.onPress },
+    } });
+    try app.tree.append(row, .{ .button = .{ .label = "Delete" } });
+}
+
+test "e2e: press reaches a folded action through More, like a user would" {
+    var ctx: PressCtx = .{};
+    // Narrow enough that the row cannot hold five actions: the tail
+    // folds, and "Archive" is invisible to every on-screen query.
+    var h = try Harness.init(testing.allocator, .{ .w = 400, .h = 640 }, .{ .ctx = &ctx, .build = buildFoldedActions });
+    defer h.deinit();
+
+    try testing.expectError(error.NoSuchElement, blk: {
+        diag.quiet = true;
+        defer diag.quiet = false;
+        break :blk h.getByLabel("Archive");
+    });
+    try h.press(.button, "Archive");
+    try testing.expectEqual(@as(u32, 1), ctx.pressed);
+    // The overflow sheet closed behind the press.
+    try testing.expect(h.app.more_sheet == null);
+}
+
+fn buildLongForm(ctx: ?*anyopaque, app: *App) anyerror!void {
+    const data: *PressCtx = @ptrCast(@alignCast(ctx.?));
+    for (0..40) |i| {
+        var buf: [16]u8 = undefined;
+        const label = try std.fmt.bufPrint(&buf, "Filler {d}", .{i});
+        try app.tree.append(app.tree.rootId(), .{ .toggle = .{ .label = label } });
+    }
+    try app.tree.append(app.tree.rootId(), .{ .button = .{
+        .label = "Submit",
+        .on_press = .{ .ctx = data, .call = PressCtx.onPress },
+    } });
+}
+
+test "e2e: press falls back to the keyboard when the control is past the fold" {
+    var ctx: PressCtx = .{};
+    var h = try Harness.init(testing.allocator, .{ .w = 480, .h = 400 }, .{ .ctx = &ctx, .build = buildLongForm });
+    defer h.deinit();
+
+    // A tap at the button's center would land below the viewport —
+    // `tap` alone refuses. press takes the route a user takes: Tab to
+    // it (which scrolls it into view) and Enter.
+    {
+        diag.quiet = true;
+        defer diag.quiet = false;
+        try testing.expectError(error.NotVisible, h.tap(try h.getByLabel("Submit")));
+    }
+    try h.press(.button, "Submit");
+    try testing.expectEqual(@as(u32, 1), ctx.pressed);
+}
+
+test "e2e: press taps by semantic identity when the control is simply there" {
+    var ctx: TodoCtx = .{};
+    var h = try Harness.init(testing.allocator, .{ .w = 480, .h = 640 }, .{ .ctx = &ctx, .build = buildTodo });
+    defer h.deinit();
+
+    try h.press(.toggle, "Show done");
+    try h.expectChecked("Show done", true);
+    // The role half is load-bearing: the same words under another role
+    // are a loud miss, not a press on whatever matched first.
+    diag.quiet = true;
+    defer diag.quiet = false;
+    try testing.expectError(error.NoSuchElement, h.press(.button, "Show done"));
+}
+
+fn buildComposer(_: ?*anyopaque, app: *App) anyerror!void {
+    try app.tree.append(app.tree.rootId(), .{ .text_input = .{ .label = "Subject" } });
+    try app.tree.append(app.tree.rootId(), .{ .text_area = .{ .label = "Body" } });
+}
+
+test "e2e: typeInto puts the caret in a named field and types" {
+    var h = try Harness.init(testing.allocator, .{ .w = 480, .h = 640 }, .{ .build = buildComposer });
+    defer h.deinit();
+
+    // Both text-entry roles answer to the one verb…
+    try h.typeInto("Subject", "Hello");
+    try h.expectValue("Subject", "Hello");
+    try h.typeInto("Body", "First line.");
+    try h.expectValue("Body", "First line.");
+    // …and typing types: a second call appends, like a user's fingers.
+    try h.typeInto("Subject", " again");
+    try h.expectValue("Subject", "Hello again");
+
+    diag.quiet = true;
+    defer diag.quiet = false;
+    try testing.expectError(error.NoSuchElement, h.typeInto("Recipient", "x"));
+}
+
+test "e2e: expectPresent and expectDisabled assert what a user meets" {
+    const Form = struct {
+        fn build(_: ?*anyopaque, app: *App) anyerror!void {
+            try app.tree.append(app.tree.rootId(), .{ .toggle = .{ .label = "Show done" } });
+            try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Send", .disabled = true } });
+            try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Save" } });
+        }
+    };
+    var h = try Harness.init(testing.allocator, .{ .w = 480, .h = 640 }, .{ .build = Form.build });
+    defer h.deinit();
+
+    try h.expectPresent(.toggle, "Show done");
+    // A control that declines rather than acts, read off the node —
+    // pressing it would print a diagnostic from a passing test.
+    try h.expectDisabled("Send");
+
+    diag.quiet = true;
+    defer diag.quiet = false;
+    try testing.expectError(error.NoSuchElement, h.expectPresent(.button, "Show done"));
+    try testing.expectError(error.DisabledMismatch, h.expectDisabled("Save"));
+    try testing.expectError(error.NoSuchElement, h.expectDisabled("Publish"));
+}
+
+// Five destinations that cannot fit a phone's width: the roster golden
+// tests prove 375 collapses this set to the chip and 1000 lays it out
+// as a row, so the same table drives goTab through both shapes.
+const tab_routes = [_]@import("../core/router.zig").RouteDef{
+    .{ .name = "library", .title = .{ .fixed = "Library" }, .build = buildBlank },
+    .{ .name = "settings", .title = .{ .fixed = "Settings" }, .build = buildBlank },
+    .{ .name = "explore", .title = .{ .fixed = "Explore" }, .build = buildBlank },
+    .{ .name = "downloads", .title = .{ .fixed = "Downloads" }, .build = buildBlank },
+    .{ .name = "subs", .title = .{ .fixed = "Subscriptions" }, .build = buildBlank },
+};
+const tab_items = [_]@import("../core/nav.zig").Destination{
+    .{ .route = "library", .icon = .library },
+    .{ .route = "settings", .icon = .settings },
+    .{ .route = "explore", .icon = .compass },
+    .{ .route = "downloads", .icon = .download },
+    .{ .route = "subs", .icon = .user },
+};
+
+test "e2e: goTab crosses the wide row, and going where you stand is done already" {
+    var h = try Harness.init(testing.allocator, .{ .w = 1000, .h = 300 }, .{ .routes = &tab_routes, .nav = &tab_items, .initial_route = "explore" });
+    defer h.deinit();
+
+    // Shape one: a row of destinations, each a `nav_item`.
+    try h.goTab("Library");
+    try h.expectRoute("library");
+
+    // Shape two: the destination under foot is the `nav_here` marker —
+    // deliberately not a control — so crossing to it is a no-op, not a
+    // refused tap.
+    try h.goTab("Library");
+    try h.expectRoute("library");
+
+    // A title no destination carries is a loud miss.
+    diag.quiet = true;
+    defer diag.quiet = false;
+    try testing.expectError(error.NoSuchElement, h.goTab("Nowhere"));
+}
+
+test "e2e: goTab crosses the collapsed chip's picker" {
+    var h = try Harness.init(testing.allocator, .{ .w = 375, .h = 300 }, .{ .routes = &tab_routes, .nav = &tab_items, .initial_route = "explore" });
+    defer h.deinit();
+
+    // Shape three: the roster did not fit, so the bar is one chip and
+    // the roster is the picker it opens.
+    _ = try h.getByRole(.nav_current, h.app.chrome.section);
+    try h.goTab("Downloads");
+    try h.expectRoute("downloads");
 }

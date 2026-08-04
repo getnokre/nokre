@@ -43,7 +43,7 @@ fn buildElements(_: ?*anyopaque, app: *h.App) !void {
 }
 
 test "golden: elements screen" {
-    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 400, .h = 480 }, null, buildElements);
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 400, .h = 480 }, .{ .build = buildElements });
     defer harness.deinit();
     try renderGolden(&harness, "elements");
 }
@@ -100,13 +100,13 @@ fn buildSpans(_: ?*anyopaque, app: *h.App) !void {
 }
 
 test "golden: span faces across families" {
-    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 400, .h = 320 }, null, buildSpans);
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 400, .h = 320 }, .{ .build = buildSpans });
     defer harness.deinit();
     try renderGolden(&harness, "spans");
 }
 
 test "golden: form with focused input caret" {
-    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 280 }, null, buildForm);
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 280 }, .{ .build = buildForm });
     defer harness.deinit();
     // Focus the second input so the golden pins caret + focus ring drawing.
     try harness.pressKey(.tab, .{});
@@ -127,7 +127,7 @@ fn buildPassword(_: ?*anyopaque, app: *h.App) !void {
 }
 
 test "golden: obscured input draws a bullet run with the caret after it" {
-    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 200 }, null, buildPassword);
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 200 }, .{ .build = buildPassword });
     defer harness.deinit();
     try harness.pressKey(.tab, .{});
     try renderGolden(&harness, "password");
@@ -144,7 +144,7 @@ fn buildGlyphButtons(_: ?*anyopaque, app: *h.App) !void {
 }
 
 test "golden: glyph-form buttons flanking words, focused and disabled" {
-    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 160 }, null, buildGlyphButtons);
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 160 }, .{ .build = buildGlyphButtons });
     defer harness.deinit();
     // Focus the enabled glyph button: pins the ring on the bare square.
     try harness.pressKey(.tab, .{});
@@ -169,7 +169,7 @@ fn buildButtonForms(_: ?*anyopaque, app: *h.App) !void {
 }
 
 test "golden: button emphasis — filled, outlined, icon pill, icon-only, disabled pair" {
-    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 280 }, null, buildButtonForms);
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 280 }, .{ .build = buildButtonForms });
     defer harness.deinit();
     // Focus the secondary: pins the ring against the outline, not a fill.
     try harness.pressKey(.tab, .{});
@@ -178,7 +178,7 @@ test "golden: button emphasis — filled, outlined, icon pill, icon-only, disabl
 }
 
 test "golden: the ring around a filled button keeps its gap" {
-    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 280 }, null, buildButtonForms);
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 280 }, .{ .build = buildButtonForms });
     defer harness.deinit();
     // The other half of the pair: focus the filled pill. Two rounded
     // shapes at the same corner is where an abutting ring used to leave
@@ -201,7 +201,7 @@ test "golden: an overflowing button row folds its tail behind More" {
     // Too narrow for five actions: pins the pills that stay standing,
     // the outlined control at the row's trailing end, and the fact that
     // nothing is left clipped at the edge.
-    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 200 }, null, buildActionRow);
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 200 }, .{ .build = buildActionRow });
     defer harness.deinit();
     try renderGolden(&harness, "button-row-folded");
     // The sheet it opens: the button that gave up its slot leading the
@@ -239,7 +239,7 @@ fn buildInProgressButtons(_: ?*anyopaque, app: *h.App) !void {
 }
 
 test "golden: buttons at work — the ellipsis in every form, each holding its size" {
-    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 440, .h = 300 }, null, buildInProgressButtons);
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 440, .h = 300 }, .{ .build = buildInProgressButtons });
     defer harness.deinit();
     // Two tabs: past the resting pill and onto the running one. A busy
     // button keeps its focus stop, so the ring has to draw on it — that
@@ -277,7 +277,7 @@ fn buildAuthButtons(_: ?*anyopaque, app: *h.App) !void {
 }
 
 test "golden: sign-in buttons carry the vendor mark in both emphases" {
-    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 300 }, null, buildAuthButtons);
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 300 }, .{ .build = buildAuthButtons });
     defer harness.deinit();
     try renderGolden(&harness, "auth-button");
 }
@@ -287,7 +287,7 @@ test "golden: the filled sign-in button inverts with the appearance" {
     // is `.ink` on `.paper`, and both flip with the appearance — so the
     // dark screen *is* Apple's white button, with no second style and no
     // colour anywhere.
-    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 300 }, null, buildAuthButtons);
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 300 }, .{ .build = buildAuthButtons });
     defer harness.deinit();
     harness.app.setScheme(.dark);
     try renderGolden(&harness, "auth-button-dark");
@@ -323,7 +323,7 @@ fn buildLists(_: ?*anyopaque, app: *h.App) !void {
 }
 
 test "golden: ordered and unordered lists with a shared marker column" {
-    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 400, .h = 400 }, null, buildLists);
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 400, .h = 400 }, .{ .build = buildLists });
     defer harness.deinit();
     try renderGolden(&harness, "lists");
 }
@@ -345,7 +345,7 @@ fn buildCodeBlock(_: ?*anyopaque, app: *h.App) !void {
 }
 
 test "golden: a code block that fits, and one that bleeds and clips" {
-    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 400, .h = 280 }, null, buildCodeBlock);
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 400, .h = 280 }, .{ .build = buildCodeBlock });
     defer harness.deinit();
     try renderGolden(&harness, "code-block");
 }
@@ -362,7 +362,7 @@ fn buildBlockquote(_: ?*anyopaque, app: *h.App) !void {
 }
 
 test "golden: a blockquote's leading rule spans everything it quotes" {
-    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 400, .h = 240 }, null, buildBlockquote);
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 400, .h = 240 }, .{ .build = buildBlockquote });
     defer harness.deinit();
     try renderGolden(&harness, "blockquote");
 }
@@ -395,7 +395,7 @@ fn buildInlineLinks(_: ?*anyopaque, app: *h.App) !void {
 }
 
 test "golden: inline links underline, and a focused one rings every line" {
-    var harness = try h.testing.Harness.initWithRoutes(std.testing.allocator, .{ .w = 360, .h = 220 }, &inline_link_routes, null, "home");
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 220 }, .{ .routes = &inline_link_routes, .initial_route = "home" });
     defer harness.deinit();
     // Tab to the first link: it wraps, so the ring is two boxes.
     try harness.pressKey(.tab, .{});
@@ -428,7 +428,7 @@ fn buildDocument(_: ?*anyopaque, app: *h.App) !void {
 }
 
 test "golden: a fetched Markdown document expands into ordinary elements" {
-    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 400, .h = 460 }, null, buildDocument);
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 400, .h = 460 }, .{ .build = buildDocument });
     defer harness.deinit();
     try renderGolden(&harness, "document");
 }
@@ -444,7 +444,7 @@ fn buildBadges(_: ?*anyopaque, app: *h.App) !void {
 }
 
 test "golden: badges are intrinsic-width chips in a horizontal row" {
-    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 160 }, null, buildBadges);
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 160 }, .{ .build = buildBadges });
     defer harness.deinit();
     try renderGolden(&harness, "badge");
 }
@@ -465,7 +465,7 @@ fn buildMarkedBadges(_: ?*anyopaque, app: *h.App) !void {
 }
 
 test "golden: a row of chips carrying decorative marks" {
-    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 160 }, null, buildMarkedBadges);
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 160 }, .{ .build = buildMarkedBadges });
     defer harness.deinit();
     try renderGolden(&harness, "badge-marked");
 }
@@ -497,7 +497,7 @@ fn buildWrappedChips(_: ?*anyopaque, app: *h.App) !void {
 }
 
 test "golden: a row of chips too wide for the line wraps instead of folding" {
-    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 320, .h = 220 }, null, buildWrappedChips);
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 320, .h = 220 }, .{ .build = buildWrappedChips });
     defer harness.deinit();
     try renderGolden(&harness, "chips-wrapped");
 }
@@ -519,7 +519,7 @@ fn buildWrappedChipsRtl(_: ?*anyopaque, app: *h.App) !void {
 }
 
 test "golden: a wrapped row mirrors, filling each line from the right" {
-    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 320, .h = 160 }, null, buildWrappedChipsRtl);
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 320, .h = 160 }, .{ .build = buildWrappedChipsRtl });
     defer harness.deinit();
     try renderGolden(&harness, "chips-wrapped-rtl");
 }
@@ -534,7 +534,7 @@ fn buildCheckboxes(_: ?*anyopaque, app: *h.App) !void {
 }
 
 test "golden: checkboxes checked, unchecked, and focused" {
-    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 240 }, null, buildCheckboxes);
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 240 }, .{ .build = buildCheckboxes });
     defer harness.deinit();
     // Focus the first checkbox: pins the check mark under the focus ring.
     try harness.pressKey(.tab, .{});
@@ -555,7 +555,7 @@ fn buildSwitchesAtWork(_: ?*anyopaque, app: *h.App) !void {
 }
 
 test "golden: switches at work — the ellipsis in the control's slot, the row unmoved" {
-    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 240 }, null, buildSwitchesAtWork);
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 240 }, .{ .build = buildSwitchesAtWork });
     defer harness.deinit();
     // Two tabs: past the resting switch and onto the busy one. A busy
     // control keeps its focus stop, so the ring has to draw on it — that
@@ -576,7 +576,7 @@ fn buildMeters(_: ?*anyopaque, app: *h.App) !void {
 }
 
 test "golden: meters at empty, partial, and full fill" {
-    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 240 }, null, buildMeters);
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 240 }, .{ .build = buildMeters });
     defer harness.deinit();
     try renderGolden(&harness, "meter");
 }
@@ -590,13 +590,13 @@ fn buildQr(_: ?*anyopaque, app: *h.App) !void {
 }
 
 test "golden: qr code with its copyable twin" {
-    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 480 }, null, buildQr);
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 480 }, .{ .build = buildQr });
     defer harness.deinit();
     try renderGolden(&harness, "qr");
 }
 
 test "golden: qr code stays ink-on-paper in dark appearance" {
-    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 480 }, null, buildQr);
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 480 }, .{ .build = buildQr });
     defer harness.deinit();
     harness.app.setScheme(.dark);
     try renderGolden(&harness, "qr-dark");
@@ -625,7 +625,7 @@ const tile_routes = [_]h.RouteDef{
 };
 
 test "golden: tile group with focused row, details, chevrons, and description" {
-    var harness = try h.testing.Harness.initWithRoutes(std.testing.allocator, .{ .w = 360, .h = 280 }, &tile_routes, null, "home");
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 280 }, .{ .routes = &tile_routes, .initial_route = "home" });
     defer harness.deinit();
     // Focus the first tile: pins the mixed-radius stroke (top corners
     // curving with the group border, bottom at the row radius) and the
@@ -657,7 +657,7 @@ const marked_tile_routes = [_]h.RouteDef{
 };
 
 test "golden: a tile group's marks share one leading band" {
-    var harness = try h.testing.Harness.initWithRoutes(std.testing.allocator, .{ .w = 360, .h = 220 }, &marked_tile_routes, null, "home");
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 220 }, .{ .routes = &marked_tile_routes, .initial_route = "home" });
     defer harness.deinit();
     try renderGolden(&harness, "tiles-marked");
 }
@@ -690,13 +690,13 @@ fn buildIcons(_: ?*anyopaque, app: *h.App) !void {
 }
 
 test "golden: icons across scales and beside text" {
-    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 200 }, null, buildIcons);
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 200 }, .{ .build = buildIcons });
     defer harness.deinit();
     try renderGolden(&harness, "icons");
 }
 
 test "golden: radio group with focus ring" {
-    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 240 }, null, buildRadioGroup);
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 240 }, .{ .build = buildRadioGroup });
     defer harness.deinit();
     // Focused so the golden pins selected dot, unselected rings, and ring.
     try harness.pressKey(.tab, .{});
@@ -716,7 +716,7 @@ fn buildSelect(_: ?*anyopaque, app: *h.App) !void {
 }
 
 test "golden: select field and its open picker" {
-    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 400 }, null, buildSelect);
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 400 }, .{ .build = buildSelect });
     defer harness.deinit();
     // Focused field: pins the chevron, value text, and field-hugging ring.
     try harness.pressKey(.tab, .{});
@@ -737,7 +737,7 @@ fn buildCountrySelect(_: ?*anyopaque, app: *h.App) !void {
 }
 
 test "golden: long select picker carries a filter that narrows the rows" {
-    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 560 }, null, buildCountrySelect);
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 560 }, .{ .build = buildCountrySelect });
     defer harness.deinit();
     try harness.pressKey(.tab, .{});
     try harness.pressKey(.enter, .{});
@@ -761,7 +761,7 @@ fn buildCopyable(_: ?*anyopaque, app: *h.App) !void {
 }
 
 test "golden: copyable fields with mono value, copy glyph, and focus ring" {
-    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 300 }, null, buildCopyable);
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 300 }, .{ .build = buildCopyable });
     defer harness.deinit();
     // Focused first field: pins the field-hugging ring, the mono value,
     // and the trailing copy glyph.
@@ -791,7 +791,7 @@ fn buildTextArea(_: ?*anyopaque, app: *h.App) !void {
 }
 
 test "golden: text area grows with content, sibling shows the empty minimum" {
-    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 400 }, null, buildTextArea);
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 400 }, .{ .build = buildTextArea });
     defer harness.deinit();
     // Focused first area: pins wrapped lines, hard break, and the caret
     // on the second line's start.
@@ -829,13 +829,13 @@ fn buildTableScroll(_: ?*anyopaque, app: *h.App) !void {
 }
 
 test "golden: table and scrolled region" {
-    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 320 }, null, buildTableScroll);
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 320 }, .{ .build = buildTableScroll });
     defer harness.deinit();
     try renderGolden(&harness, "table-scroll");
 }
 
 test "golden: 2x integer scale is pixel-doubled" {
-    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 200, .h = 120 }, null, buildForm);
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 200, .h = 120 }, .{ .build = buildForm });
     defer harness.deinit();
     harness.app.setMeasurer(skia.measurer());
 
@@ -868,13 +868,13 @@ const nav_items = [_]h.Destination{
 };
 
 test "golden: wide viewport centers the capped bottom pane" {
-    var harness = try h.testing.Harness.initWithNav(std.testing.allocator, .{ .w = 640, .h = 300 }, &nav_routes, &nav_items, null, "library");
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 640, .h = 300 }, .{ .routes = &nav_routes, .nav = &nav_items, .initial_route = "library" });
     defer harness.deinit();
     try renderGolden(&harness, "nav-wide");
 }
 
 test "golden: narrow viewport gives the bottom pane the full width" {
-    var harness = try h.testing.Harness.initWithNav(std.testing.allocator, .{ .w = 400, .h = 300 }, &nav_routes, &nav_items, null, "library");
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 400, .h = 300 }, .{ .routes = &nav_routes, .nav = &nav_items, .initial_route = "library" });
     defer harness.deinit();
     try renderGolden(&harness, "nav-bottom");
 }
@@ -898,7 +898,7 @@ const long_nav_routes = [_]h.RouteDef{
 };
 
 test "golden: mid-scroll, the page runs on behind and between the items" {
-    var harness = try h.testing.Harness.initWithNav(std.testing.allocator, .{ .w = 400, .h = 300 }, &long_nav_routes, &nav_items, null, "library");
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 400, .h = 300 }, .{ .routes = &long_nav_routes, .nav = &nav_items, .initial_route = "library" });
     defer harness.deinit();
     harness.app.setSafeBottom(34);
     try harness.scroll(harness.app.tree.rootId(), 40);
@@ -906,7 +906,7 @@ test "golden: mid-scroll, the page runs on behind and between the items" {
 }
 
 test "golden: scrolled to the end, the page stands clear of the items" {
-    var harness = try h.testing.Harness.initWithNav(std.testing.allocator, .{ .w = 400, .h = 300 }, &long_nav_routes, &nav_items, null, "library");
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 400, .h = 300 }, .{ .routes = &long_nav_routes, .nav = &nav_items, .initial_route = "library" });
     defer harness.deinit();
     harness.app.setSafeBottom(34);
     // Past the end: the clamp lands on the last line, `nav_content_gap`
@@ -916,7 +916,7 @@ test "golden: scrolled to the end, the page stands clear of the items" {
 }
 
 test "golden: safe_bottom keeps nav items above the band, fill runs through it" {
-    var harness = try h.testing.Harness.initWithNav(std.testing.allocator, .{ .w = 400, .h = 300 }, &nav_routes, &nav_items, null, "library");
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 400, .h = 300 }, .{ .routes = &nav_routes, .nav = &nav_items, .initial_route = "library" });
     defer harness.deinit();
     // The iPhone home-indicator inset: 34 logical px.
     harness.app.setSafeBottom(34);
@@ -942,13 +942,13 @@ const crowded_nav_items = [_]h.Destination{
 };
 
 test "golden: a nav too crowded for a row collapses to the current section" {
-    var harness = try h.testing.Harness.initWithNav(std.testing.allocator, .{ .w = 375, .h = 300 }, &crowded_nav_routes, &crowded_nav_items, null, "explore");
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 375, .h = 300 }, .{ .routes = &crowded_nav_routes, .nav = &crowded_nav_items, .initial_route = "explore" });
     defer harness.deinit();
     try renderGolden(&harness, "nav-collapsed");
 }
 
 test "golden: the crowded roster reopens as a row once the window can hold it" {
-    var harness = try h.testing.Harness.initWithNav(std.testing.allocator, .{ .w = 1000, .h = 300 }, &crowded_nav_routes, &crowded_nav_items, null, "explore");
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 1000, .h = 300 }, .{ .routes = &crowded_nav_routes, .nav = &crowded_nav_items, .initial_route = "explore" });
     defer harness.deinit();
     // Past the 560px cap the row takes its natural width and centers —
     // the shape a wide window has always been able to hold, and used to
@@ -957,7 +957,7 @@ test "golden: the crowded roster reopens as a row once the window can hold it" {
 }
 
 test "golden: the collapsed chip stops short of the notices indicator" {
-    var harness = try h.testing.Harness.initWithNav(std.testing.allocator, .{ .w = 375, .h = 300 }, &crowded_nav_routes, &crowded_nav_items, null, "explore");
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 375, .h = 300 }, .{ .routes = &crowded_nav_routes, .nav = &crowded_nav_items, .initial_route = "explore" });
     defer harness.deinit();
     try harness.app.notify(.{ .title = "Sync failed", .description = "Changes are kept locally.", .route = "library" });
     harness.app.minimizeNotices();
@@ -968,7 +968,7 @@ test "golden: the collapsed chip stops short of the notices indicator" {
 }
 
 test "golden: the collapsed nav's picker lists the sections above the chip" {
-    var harness = try h.testing.Harness.initWithNav(std.testing.allocator, .{ .w = 375, .h = 420 }, &crowded_nav_routes, &crowded_nav_items, null, "explore");
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 375, .h = 420 }, .{ .routes = &crowded_nav_routes, .nav = &crowded_nav_items, .initial_route = "explore" });
     defer harness.deinit();
     harness.app.setMeasurer(skia.measurer());
     harness.app.performLayout();
@@ -982,7 +982,7 @@ test "golden: the collapsed nav's picker lists the sections above the chip" {
 }
 
 test "golden: the section menu clears the home-indicator band" {
-    var harness = try h.testing.Harness.initWithNav(std.testing.allocator, .{ .w = 375, .h = 420 }, &crowded_nav_routes, &crowded_nav_items, null, "explore");
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 375, .h = 420 }, .{ .routes = &crowded_nav_routes, .nav = &crowded_nav_items, .initial_route = "explore" });
     defer harness.deinit();
     // The phone the shape was got wrong on. Every other picker golden
     // runs at `safe_bottom = 0`, where a bottom-anchored pane's fill
@@ -998,7 +998,7 @@ test "golden: the section menu clears the home-indicator band" {
 }
 
 test "golden: the collapsed nav mirrors under RTL chrome" {
-    var harness = try h.testing.Harness.initWithNav(std.testing.allocator, .{ .w = 375, .h = 300 }, &crowded_nav_routes, &crowded_nav_items, null, "explore");
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 375, .h = 300 }, .{ .routes = &crowded_nav_routes, .nav = &crowded_nav_items, .initial_route = "explore" });
     defer harness.deinit();
     // The label leads from the right and the chevron takes the left —
     // the chevron itself does not flip, being vertically symmetric.
@@ -1016,7 +1016,7 @@ const offroster_nav_routes = [_]h.RouteDef{
 };
 
 test "golden: the row names a screen that is none of its destinations" {
-    var harness = try h.testing.Harness.initWithNav(std.testing.allocator, .{ .w = 640, .h = 300 }, &offroster_nav_routes, &nav_items, null, "terms");
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 640, .h = 300 }, .{ .routes = &offroster_nav_routes, .nav = &nav_items, .initial_route = "terms" });
     defer harness.deinit();
     // The marker wears a current destination's plating and the shared
     // file-text mark — the same chip, minus the focus ring it can never
@@ -1025,13 +1025,13 @@ test "golden: the row names a screen that is none of its destinations" {
 }
 
 test "golden: the collapsed chip carries the off-roster screen too" {
-    var harness = try h.testing.Harness.initWithNav(std.testing.allocator, .{ .w = 375, .h = 300 }, &offroster_nav_routes, &nav_items, null, "terms");
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 375, .h = 300 }, .{ .routes = &offroster_nav_routes, .nav = &nav_items, .initial_route = "terms" });
     defer harness.deinit();
     try renderGolden(&harness, "nav-here-collapsed");
 }
 
 test "golden: the off-roster marker mirrors under RTL chrome" {
-    var harness = try h.testing.Harness.initWithNav(std.testing.allocator, .{ .w = 640, .h = 300 }, &offroster_nav_routes, &nav_items, null, "terms");
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 640, .h = 300 }, .{ .routes = &offroster_nav_routes, .nav = &nav_items, .initial_route = "terms" });
     defer harness.deinit();
     // The whole row runs from the trailing edge, marker last — which
     // under RTL is the leftmost plate, its glyph on the right of its
@@ -1052,13 +1052,13 @@ fn buildSegmentedOverflow(_: ?*anyopaque, app: *h.App) !void {
 }
 
 test "golden: overflowing segmented scrolls to the selected chip" {
-    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 320, .h = 140 }, null, buildSegmentedOverflow);
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 320, .h = 140 }, .{ .build = buildSegmentedOverflow });
     defer harness.deinit();
     try renderGolden(&harness, "segmented-overflow");
 }
 
 test "golden: the focused track's ring clears the fill and the selected chip" {
-    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 320, .h = 140 }, null, buildSegmentedOverflow);
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 320, .h = 140 }, .{ .build = buildSegmentedOverflow });
     defer harness.deinit();
     // The other rounded fill a ring has to stand off from, and the one
     // case where a chip's own outline sits inside a focused element.
@@ -1076,7 +1076,7 @@ fn buildSheetScreen(_: ?*anyopaque, app: *h.App) !void {
 }
 
 test "golden: modal sheet over a dithered scrim" {
-    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 400, .h = 360 }, null, buildSheetScreen);
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 400, .h = 360 }, .{ .build = buildSheetScreen });
     defer harness.deinit();
     try renderGolden(&harness, "sheet");
 }
@@ -1095,7 +1095,7 @@ const notice_routes = [_]h.RouteDef{
 };
 
 test "golden: notice banner in the bottom pane" {
-    var harness = try h.testing.Harness.initWithRoutes(std.testing.allocator, .{ .w = 400, .h = 300 }, &notice_routes, null, "home");
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 400, .h = 300 }, .{ .routes = &notice_routes, .initial_route = "home" });
     defer harness.deinit();
     try renderGolden(&harness, "notice-banner");
 }
@@ -1116,7 +1116,7 @@ const notices_pane_routes = [_]h.RouteDef{
 };
 
 test "golden: notices pane lists every pending notice" {
-    var harness = try h.testing.Harness.initWithRoutes(std.testing.allocator, .{ .w = 400, .h = 360 }, &notices_pane_routes, null, "home");
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 400, .h = 360 }, .{ .routes = &notices_pane_routes, .initial_route = "home" });
     defer harness.deinit();
     try renderGolden(&harness, "notices-pane");
 }
@@ -1146,7 +1146,7 @@ test "golden: a notices pane past its cap scrolls instead of clipping its rows" 
     // tall; the rows go in a scroll region and the last visible one is
     // cut by the region's edge with the indicator beside it, rather than
     // drawn past the pane and lost.
-    var harness = try h.testing.Harness.initWithRoutes(std.testing.allocator, .{ .w = 844, .h = 390 }, &crowded_pane_routes, null, "home");
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 844, .h = 390 }, .{ .routes = &crowded_pane_routes, .initial_route = "home" });
     defer harness.deinit();
     try renderGolden(&harness, "notices-pane-scrolled");
 }
@@ -1166,13 +1166,13 @@ const indicator_routes = [_]h.RouteDef{
 };
 
 test "golden: minimized notices leave only the indicator" {
-    var harness = try h.testing.Harness.initWithRoutes(std.testing.allocator, .{ .w = 400, .h = 300 }, &indicator_routes, null, "home");
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 400, .h = 300 }, .{ .routes = &indicator_routes, .initial_route = "home" });
     defer harness.deinit();
     try renderGolden(&harness, "notices-minimized");
 }
 
 test "golden: the indicator rides at the end of the destinations' row" {
-    var harness = try h.testing.Harness.initWithNav(std.testing.allocator, .{ .w = 500, .h = 300 }, &nav_routes, &nav_items, null, "library");
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 500, .h = 300 }, .{ .routes = &nav_routes, .nav = &nav_items, .initial_route = "library" });
     defer harness.deinit();
     try harness.app.notify(.{ .title = "Sync failed", .description = "Changes are kept locally.", .route = "library" });
     harness.app.minimizeNotices();
@@ -1197,7 +1197,7 @@ test "golden: pushed screen gets back chrome on the title line" {
         .{ .name = "home", .title = .{ .fixed = "Home" }, .build = buildBackHome },
         .{ .name = "detail", .title = .{ .fixed = "Detail" }, .build = buildBackDetail },
     };
-    var harness = try h.testing.Harness.initWithRoutes(std.testing.allocator, .{ .w = 360, .h = 200 }, &routes, null, "home");
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 200 }, .{ .routes = &routes, .initial_route = "home" });
     defer harness.deinit();
     try harness.app.navigate("detail");
     try renderGolden(&harness, "back-chrome");
@@ -1208,7 +1208,7 @@ test "golden: the back gesture past its threshold draws the control engaged" {
         .{ .name = "home", .title = .{ .fixed = "Home" }, .build = buildBackHome },
         .{ .name = "detail", .title = .{ .fixed = "Detail" }, .build = buildBackDetail },
     };
-    var harness = try h.testing.Harness.initWithRoutes(std.testing.allocator, .{ .w = 360, .h = 200 }, &routes, null, "home");
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 200 }, .{ .routes = &routes, .initial_route = "home" });
     defer harness.deinit();
     try harness.app.navigate("detail");
     // Mid-gesture, past the point of no return: the only thing on screen
@@ -1240,7 +1240,7 @@ fn buildPersian(_: ?*anyopaque, app: *h.App) !void {
 }
 
 test "golden: Persian text is shaped, reordered, and right-aligned" {
-    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 400, .h = 480 }, null, buildPersian);
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 400, .h = 480 }, .{ .build = buildPersian });
     defer harness.deinit();
     // Focus the input: pins the RTL value at the field's right edge.
     // Focus homes the cursor to the value's end (input.zig), which in
@@ -1279,7 +1279,7 @@ const rtl_routes = [_]h.RouteDef{
 };
 
 test "golden: RTL locale mirrors the chrome; text still aligns by content" {
-    var harness = try h.testing.Harness.initWithRoutes(std.testing.allocator, .{ .w = 400, .h = 480 }, &rtl_routes, null, "home");
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 400, .h = 480 }, .{ .routes = &rtl_routes, .initial_route = "home" });
     defer harness.deinit();
     try renderGolden(&harness, "persian-rtl-chrome");
 }
@@ -1288,7 +1288,7 @@ test "trace: PixelSink writes a PPM frame per step" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 280 }, null, buildForm);
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 280 }, .{ .build = buildForm });
     defer harness.deinit();
     harness.app.setMeasurer(skia.measurer());
 

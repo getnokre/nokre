@@ -139,7 +139,7 @@ const Notes = struct {
 
 test "capstone: the app stamps a screen, and the harness owns when time moves" {
     var ctx: Notes = .{};
-    var t = try Harness.initWith(std.testing.allocator, .{ .w = 320, .h = 480 }, .{
+    var t = try Harness.init(std.testing.allocator, .{ .w = 320, .h = 480 }, .{
         .ctx = &ctx,
         .build = Notes.build,
         .clock = .{ .millis = 1_700_000_000_000 },

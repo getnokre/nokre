@@ -417,7 +417,7 @@ const Screen = struct {
 
 test "harness: tap sign in, complete the auth, assert the screen it produced" {
     var screen: Screen = .{ .app = undefined };
-    var t = try Harness.init(std.testing.allocator, .{ .w = 320, .h = 480 }, &screen, Screen.build);
+    var t = try Harness.init(std.testing.allocator, .{ .w = 320, .h = 480 }, .{ .ctx = &screen, .build = Screen.build });
     defer t.deinit();
     // The harness moved out of init by value; handlers reach the app
     // through the ctx, bound here (secure_store_test's pattern).
@@ -433,7 +433,7 @@ test "harness: tap sign in, complete the auth, assert the screen it produced" {
 
 test "harness: cancelling leaves the screen where it was" {
     var screen: Screen = .{ .app = undefined };
-    var t = try Harness.init(std.testing.allocator, .{ .w = 320, .h = 480 }, &screen, Screen.build);
+    var t = try Harness.init(std.testing.allocator, .{ .w = 320, .h = 480 }, .{ .ctx = &screen, .build = Screen.build });
     defer t.deinit();
     // The harness moved out of init by value; handlers reach the app
     // through the ctx, bound here (secure_store_test's pattern).
@@ -446,7 +446,7 @@ test "harness: cancelling leaves the screen where it was" {
 
 test "harness: a named failure is the offline case, one call" {
     var screen: Screen = .{ .app = undefined };
-    var t = try Harness.init(std.testing.allocator, .{ .w = 320, .h = 480 }, &screen, Screen.build);
+    var t = try Harness.init(std.testing.allocator, .{ .w = 320, .h = 480 }, .{ .ctx = &screen, .build = Screen.build });
     defer t.deinit();
     // The harness moved out of init by value; handlers reach the app
     // through the ctx, bound here (secure_store_test's pattern).

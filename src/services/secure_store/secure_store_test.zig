@@ -409,9 +409,9 @@ const SessionCtx = struct {
 
 test "harness: stored token skips sign-in; sign-out deletes it; locked keychain degrades" {
     var state: SessionCtx = .{};
-    var h = try Harness.initWithStore(std.testing.allocator, .{ .w = 480, .h = 640 }, .{
+    var h = try Harness.init(std.testing.allocator, .{ .w = 480, .h = 640 }, .{ .store = .{
         .seeds = &.{.{ .key = "auth.token", .value = "tk_123" }},
-    }, &state, SessionCtx.build);
+    }, .ctx = &state, .build = SessionCtx.build });
     defer h.deinit(); // the fake dies here — nothing leaks to the next test
     // The harness moved out of init by value; handlers hold the app
     // through the ctx, bound here (http_test's pattern).
@@ -430,7 +430,7 @@ test "harness: stored token skips sign-in; sign-out deletes it; locked keychain 
     try h.expectStoredAbsent("auth.token"); // and nothing leaked into the store
 }
 
-test "harness: initWith boots a routed app reading the seeded store inside its route" {
+test "harness: init boots a routed app reading the seeded store inside its route" {
     const Routed = struct {
         fn home(_: ?*anyopaque, app: *App) anyerror!void {
             var buf: secure_store.ValueBuf = undefined;
@@ -441,7 +441,7 @@ test "harness: initWith boots a routed app reading the seeded store inside its r
             try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = label, .level = .h1 } });
         }
     };
-    var h = try Harness.initWith(std.testing.allocator, .{ .w = 320, .h = 240 }, .{
+    var h = try Harness.init(std.testing.allocator, .{ .w = 320, .h = 240 }, .{
         .routes = &.{.{ .name = "home", .title = .{ .fixed = "Home" }, .build = Routed.home }},
         .initial_route = "home",
         .store = .{ .seeds = &.{.{ .key = "auth.token", .value = "tk" }} },
@@ -451,11 +451,11 @@ test "harness: initWith boots a routed app reading the seeded store inside its r
     try h.expectRoute("home");
 }
 
-test "harness: initWith refuses an ambiguous shape, loudly" {
+test "harness: init refuses an ambiguous shape, loudly" {
     diag.quiet = true;
     defer diag.quiet = false;
     // Neither build nor routes: nothing to boot.
-    try std.testing.expectError(error.InitOptionsShape, Harness.initWith(
+    try std.testing.expectError(error.InitOptionsShape, Harness.init(
         std.testing.allocator,
         .{ .w = 320, .h = 240 },
         .{},
@@ -468,7 +468,7 @@ test "harness: seedStore, expectStored, expectStoredAbsent" {
             try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Home", .level = .h1 } });
         }
     };
-    var h = try Harness.init(std.testing.allocator, .{ .w = 320, .h = 240 }, null, Minimal.build);
+    var h = try Harness.init(std.testing.allocator, .{ .w = 320, .h = 240 }, .{ .build = Minimal.build });
     defer h.deinit();
 
     try h.expectStoredAbsent("session.id");

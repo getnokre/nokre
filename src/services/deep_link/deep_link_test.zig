@@ -163,7 +163,7 @@ test "harness: an inbound link routes the app" {
         .{ .name = "home", .title = .{ .fixed = "Home" }, .build = buildHome },
         .{ .name = "note", .title = .{ .fixed = "Note" }, .build = buildNote },
     };
-    var t = try Harness.initWithRoutes(std.testing.allocator, .{ .w = 320, .h = 480 }, &routes, &ctx, "home");
+    var t = try Harness.init(std.testing.allocator, .{ .w = 320, .h = 480 }, .{ .routes = &routes, .ctx = &ctx, .initial_route = "home" });
     defer t.deinit();
     // Now that init has returned, the app address is stable: wire it, the
     // way a real shell hands the booted *App to the routing state.
