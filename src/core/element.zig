@@ -763,6 +763,13 @@ pub const Nav = struct {};
 /// every one of them at once. A field per control would let a nav bar
 /// be half translated.
 ///
+/// The defaults cut the other way for that app: a `Chrome` literal
+/// that misses a field compiles, and the miss ships as English in the
+/// middle of a translated nav bar. `Catalog` is the opt-in that closes
+/// this — the same fields with no defaults, so full coverage is
+/// checked where every other catalog mistake is checked here: at
+/// compile time.
+///
 /// Borrowed, never owned, exactly like `RouteDef.title`: an ARB
 /// catalog's `tr` hands back constant data, which is what these are for.
 pub const Chrome = struct {
@@ -819,6 +826,35 @@ pub const Chrome = struct {
     /// struct layout is told about, because it is the only control whose
     /// room is claimed before there is anything to measure.
     more: []const u8 = "More",
+
+    /// The localized app's opt-in: `Chrome`, field for field, with the
+    /// defaults stripped — so a catalog that misses a chrome string
+    /// does not compile. Generated from `Chrome` itself rather than
+    /// written twice, which is what makes the guarantee total: a
+    /// string added above is a field required here in the same breath,
+    /// and every app that opted in stops compiling until its catalog
+    /// says the new word — the drift the defaults would have absorbed
+    /// silently.
+    pub const Catalog = blk: {
+        const src = @typeInfo(Chrome).@"struct".fields;
+        var names: [src.len][]const u8 = undefined;
+        var types: [src.len]type = undefined;
+        for (src, &names, &types) |f, *name, *T| {
+            name.* = f.name;
+            T.* = f.type;
+        }
+        break :blk @Struct(.auto, null, &names, &types, &@splat(.{}));
+    };
+
+    /// A full catalog, said as the `Chrome` it covers — the shape a
+    /// localized app hands `App.setChrome`.
+    pub fn fromCatalog(catalog: Catalog) Chrome {
+        var chrome: Chrome = undefined;
+        inline for (@typeInfo(Chrome).@"struct".fields) |f| {
+            @field(chrome, f.name) = @field(catalog, f.name);
+        }
+        return chrome;
+    }
 };
 
 /// The English nokre ships, and what every chrome element's own field

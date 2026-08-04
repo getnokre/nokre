@@ -418,8 +418,14 @@ pub const App = struct {
     /// `setDirection` wherever the locale changes:
     ///
     ///     try app.setLocale(L.tag(loc));
-    ///     app.setChrome(.{ .back = L.tr(loc, .back), … });
+    ///     app.setChrome(.fromCatalog(.{ .back = L.tr(loc, .back), … }));
     ///     app.setDirection(L.dir(loc));
+    ///
+    /// `.fromCatalog` is the localized app's shape on purpose: its
+    /// argument has no defaults, so missing a chrome string is a
+    /// compile error there, where a bare `Chrome` literal would ship
+    /// the miss as English (`Chrome.Catalog`). The bare literal stays
+    /// for what the defaults are for — an app saying one or two words.
     ///
     /// Chrome standing in the tree right now is re-said on the spot —
     /// the back control, the nav's shape, the whole notice chrome — so

@@ -1085,6 +1085,35 @@ test "setChrome re-says the framework's own words, in place" {
     try testing.expect(queryLabel(&app, "Kapat") != null);
 }
 
+test "Chrome.Catalog is Chrome with the defaults stripped" {
+    // The guarantee is structural, so the proof is too: same fields in
+    // the same order, every one defaulted on `Chrome` (the zero-config
+    // app), none defaulted on `Catalog` (the opted-in app, for whom a
+    // missed chrome string must not compile). A chrome string added
+    // without a default would fail here before any consumer sees it.
+    comptime {
+        const chrome = @typeInfo(App.Chrome).@"struct".fields;
+        const catalog = @typeInfo(App.Chrome.Catalog).@"struct".fields;
+        std.debug.assert(chrome.len == catalog.len);
+        for (chrome, catalog) |c, k| {
+            std.debug.assert(std.mem.eql(u8, c.name, k.name));
+            std.debug.assert(c.type == k.type);
+            std.debug.assert(c.default_value_ptr != null);
+            std.debug.assert(k.default_value_ptr == null);
+        }
+    }
+    // And the hand-off forwards every word unchanged — each field set
+    // to its own name, so a crossed wire would name itself.
+    var catalog: App.Chrome.Catalog = undefined;
+    inline for (@typeInfo(App.Chrome.Catalog).@"struct".fields) |f| {
+        @field(catalog, f.name) = f.name;
+    }
+    const chrome = App.Chrome.fromCatalog(catalog);
+    inline for (@typeInfo(App.Chrome).@"struct".fields) |f| {
+        try testing.expectEqualStrings(f.name, @field(chrome, f.name));
+    }
+}
+
 fn findBack(app: *App) ?NodeId {
     var it = app.tree.dfs();
     while (it.next()) |id| {

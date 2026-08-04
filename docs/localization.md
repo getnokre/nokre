@@ -235,13 +235,27 @@ English until an app says otherwise:
 
 ```zig
 fn chromeFor(loc: L.Locale) nok.App.Chrome {
-    return .{
+    return .fromCatalog(.{
         .back = L.tr(loc, .back),
         .close = L.tr(loc, .close),
-        // …and the rest; anything left out stays English.
-    };
+        // …and the rest — all of it, or this does not compile.
+    });
 }
 ```
+
+`.fromCatalog` is the localized app's opt-in, and the shape to reach
+for the moment a second language exists: its argument
+(`App.Chrome.Catalog`) is `Chrome` field for field with the defaults
+stripped, so covering every chrome string is checked at compile time.
+That is the posture the rest of this document already holds — a catalog
+mistake is a build error — extended to the one place it could not
+reach: a bare `Chrome` literal compiles with a field missing, and the
+miss ships as English in the middle of a translated nav bar, silently,
+until a reader of that language hears it. The bare literal stays for
+what its defaults are for: the zero-config app, or one saying a word
+or two. Nothing to re-declare when nokre grows a chrome string,
+either — `Catalog` is generated from `Chrome`, so the new field simply
+stops an opted-in app compiling until its catalog says the new word.
 
 One struct and one call, not a setter per control: these are one fact —
 what nokre calls its own chrome — and a locale changes every one of them
