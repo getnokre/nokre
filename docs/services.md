@@ -497,13 +497,72 @@ What a consumer can rely on:
   message, reports a `Fault` to spawn's optional `on_fault`, and the
   worker lives on; a dead worker is `Fault.died` and the handle retires.
 
+#### ask: a question with exactly one answer
+
+`send` feeds a reply *stream*: which reply answers which message is the
+app's own bookkeeping, which is right for progress and sessions and
+wrong for request/response — every consumer that wanted "solve this,
+tell *this* callback" ended up hand-rolling a pending-callback queue in
+front of the handle. `spawnAsker` is the same worker struct behind that
+contract, kept by the library instead:
+
+```zig
+state.solver = try h.workers.spawnAsker(Pow, app);
+
+// Each ask carries its own callback; the message is serialized inside
+// the call, exactly like `send`.
+try state.solver.ask(.{ .solve = spec }, state, onSolved);
+
+// Exactly one answer per accepted ask: the worker's one reply, or the
+// fault that took its place.
+fn onSolved(ctx: ?*anyopaque, answer: h.workers.Answer(Pow)) void {
+    const state = h.ctx(State, ctx);
+    switch (answer) {
+        .reply => |r| acceptProof(state, r),
+        .fault => |f| failPending(state, f),
+    }
+    state.app.invalidate();
+}
+```
+
+The contract, each line load-bearing:
+
+- **Exactly one answer per accepted ask, in ask order.** A reply, a
+  `handle` error's fault, or `.died` — never zero, never two. The
+  order is part of the contract: a consumer whose per-ask context is
+  wider than one pointer keeps its own plain FIFO and pops in
+  lockstep.
+- **The queue is bounded**: `max_pending_asks` (32) questions open at
+  once, counting the one in flight. A full queue refuses at the call —
+  `error.TooManyAsks`, nothing queued, no callback coming — rather
+  than hiding an unbounded backlog behind a growing latency.
+- **Only the front question is in the worker's inbox**; the next
+  routes when it answers. So `interrupted()` mid-answer means
+  retirement, never an unrelated ask — queueing a mutation cannot make
+  an in-flight solve stale.
+- **The worker's side of the bargain**: exactly one reply per message
+  on this surface. Extra replies have no question left and are
+  dropped; a message answered by silence leaves the next answer
+  landing on the wrong question — the same class of bug as yielding
+  silently under `interrupted()`.
+- **`retire()` drains.** Every queued question still reaches the
+  worker — mid-retirement it sees `interrupted()` and may answer cheap,
+  but it answers — then `deinit` runs and the transport falls.
+- **`pending()`** is the questions still open — an e2e driver's idle
+  probe: settled when zero.
+
+A port that is single-flight *without* a worker behind it — an adapter
+that can hold only one caller's callback — queues the same way with
+`h.Queue`, the bounded FIFO this surface grew from
+(src/core/queue.zig owns its contract).
+
 Like `http` — and unlike `package_info` — nothing links: the service is
 always available, and an app that spawns no worker pays nothing.
-Request/response, progress streams, and long-lived stateful sessions are
-all the same three verbs. The wiring — the per-platform transports, the
-wire codec, why there is one artifact per thread, and the refusals (no
-shared memory, no futures, no thread pool, no forced kill) — is
-[internals/workers.md](internals/workers.md).
+Request/response is `spawnAsker`/`ask`; progress streams and long-lived
+stateful sessions are `spawn`/`send`. The wiring — the per-platform
+transports, the wire codec, why there is one artifact per thread, and
+the refusals (no shared memory, no futures, no thread pool, no forced
+kill) — is [internals/workers.md](internals/workers.md).
 
 ### http: the network as a message
 

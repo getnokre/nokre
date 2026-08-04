@@ -42,6 +42,11 @@ pub const platform = @import("platform/platform.zig");
 /// in docs/internals/workers.md.
 pub const workers = @import("workers/workers.zig");
 
+/// A bounded FIFO in front of a single-flight port: submissions past
+/// the one in flight wait their turn, a full queue refuses at the
+/// call. The contract lives on the module (core/queue.zig).
+pub const Queue = @import("core/queue.zig").Queue;
+
 /// ARB message catalogs compiled at comptime: @embedFile the .arb
 /// sources, get typed keys, per-locale CLDR plural validation, and
 /// call-site-checked placeholders. Pure module, no state, no linking.
@@ -162,6 +167,7 @@ test {
     _ = a11y.semantics;
     _ = a11y.accesskit;
     _ = workers;
+    _ = @import("core/queue.zig");
     _ = l10n;
     _ = testing;
     _ = testing.queries;

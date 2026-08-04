@@ -1,6 +1,7 @@
 //! Workers — long-lived compute actors off the UI thread. The contract
 //! is docs/internals/workers.md; this module is its pure heart: worker
-//! validation, the registry, framing, queues, and UI-thread delivery.
+//! validation, the registry, framing, queues, the ask FIFO, and
+//! UI-thread delivery.
 //! Threads live in thread.zig (native), the Web Worker hop in post.zig
 //! (wasm) — and tests run the inline transport in this file: the same
 //! init/handle/deinit, no threads, delivery on an explicit pump, so a
@@ -117,7 +118,7 @@ pub fn Outbox(comptime Reply: type) type {
         /// is untouched and still the caller's.
         pub fn send(self: *@This(), reply: Reply) !void {
             if (self.raw.send_owned_fn) |send_owned| {
-                const frame = try encodeReplyFrame(Reply, self.raw.gpa.?, reply);
+                const frame = try encodeFrame(Reply, reply_frame, self.raw.gpa.?, reply);
                 send_owned(self.raw.ctx, frame);
                 return;
             }
@@ -228,6 +229,44 @@ const Slot = struct {
     on_fault: ?*const fn (ctx: ?*anyopaque, fault: Fault) void = null,
     deliver: *const fn (ctx: ?*anyopaque, on_reply: *const anyopaque, payload: []const u8, attachments: []?[]u8, arena: std.mem.Allocator) codec.DecodeError!void = undefined,
     transport: Transport = .none,
+    /// Non-null makes this an asker slot: replies answer the FIFO below
+    /// instead of the spawn-time stream (`dispatchAsk`).
+    asks: ?*AskState = null,
+};
+
+const AskEntry = struct {
+    /// The encoded question, until it routes to the worker. The front
+    /// entry's frame is always gone — routed the moment it reached the
+    /// front — so only queued entries still own one.
+    frame: ?Frame,
+    ctx: ?*anyopaque,
+    /// The typed on_answer, erased for storage; the shims cast it back.
+    on_answer: *const anyopaque,
+};
+
+/// An asker slot's pending questions. Heap-pinned beside the slot table
+/// (the table's ArrayList moves when a callback spawns; this must not),
+/// and UI-thread only like the table itself — the one-loop model is
+/// what lets a queue exist here without a lock.
+const AskState = struct {
+    head: usize = 0,
+    len: usize = 0,
+    entries: [max_pending_asks]AskEntry = undefined,
+    deliver_reply: *const fn (ctx: ?*anyopaque, on_answer: *const anyopaque, payload: []const u8, attachments: []?[]u8, arena: std.mem.Allocator) codec.DecodeError!void,
+    deliver_fault: *const fn (ctx: ?*anyopaque, on_answer: *const anyopaque, fault: Fault) void,
+
+    fn push(self: *AskState, entry: AskEntry) void {
+        self.entries[(self.head + self.len) % max_pending_asks] = entry;
+        self.len += 1;
+    }
+
+    fn pop(self: *AskState) ?AskEntry {
+        if (self.len == 0) return null;
+        const entry = self.entries[self.head];
+        self.head = (self.head + 1) % max_pending_asks;
+        self.len -= 1;
+        return entry;
+    }
 };
 
 const Transport = union(enum) {
@@ -406,6 +445,7 @@ pub const Runtime = struct {
 
     fn dispatchFrame(self: *Runtime, index: u32, slot: *Slot, frame: []const u8, attachments: []?[]u8) void {
         if (frame.len == 0) return;
+        if (slot.asks != null) return self.dispatchAsk(index, slot, frame, attachments);
         // Read before the callback: a handler may spawn and move the table.
         const ctx = slot.ctx;
         const on_reply = slot.on_reply;
@@ -429,6 +469,80 @@ pub const Runtime = struct {
         }
     }
 
+    /// The asker's arm of `dispatchFrame`: answers pop the FIFO in ask
+    /// order. Slot access happens before each consumer callback — a
+    /// callback may spawn (moving the slot table) or ask again
+    /// (mutating the heap-pinned AskState, which survives both).
+    fn dispatchAsk(self: *Runtime, index: u32, slot: *Slot, frame: []const u8, attachments: []?[]u8) void {
+        const asks = slot.asks.?;
+        switch (frame[0]) {
+            reply_frame => {
+                // A worker on the ask surface answers exactly once per
+                // message; a reply with no question left drops here.
+                const entry = asks.pop() orelse return;
+                var arena_state = std.heap.ArenaAllocator.init(self.gpa);
+                defer arena_state.deinit();
+                asks.deliver_reply(entry.ctx, entry.on_answer, frame[1..], attachments, arena_state.allocator()) catch |e|
+                    asks.deliver_fault(entry.ctx, entry.on_answer, .{ .err = @errorName(e) });
+                self.askAdvance(index);
+            },
+            fault_frame => {
+                const entry = asks.pop() orelse return;
+                asks.deliver_fault(entry.ctx, entry.on_answer, .{ .err = frame[1..] });
+                self.askAdvance(index);
+            },
+            retired_frame => self.finalizeSlot(index),
+            died_frame => {
+                // The death answers every pending question, oldest
+                // first, then the slot falls with the ask state. The
+                // state flip lands before any callback so a re-entrant
+                // ask refuses instead of queueing into a corpse.
+                slot.state = .retiring;
+                while (asks.pop()) |entry| {
+                    if (entry.frame) |f| f.free(self.gpa);
+                    asks.deliver_fault(entry.ctx, entry.on_answer, .died);
+                }
+                self.finalizeSlot(index);
+            },
+            else => {},
+        }
+    }
+
+    /// Route the next queued question, if the FIFO's front still holds
+    /// one. Re-derives the slot each pass: the answer callback that
+    /// just ran may have grown the table.
+    fn askAdvance(self: *Runtime, index: u32) void {
+        while (true) {
+            if (index >= self.slots.items.len) return;
+            const slot = &self.slots.items[index];
+            if (slot.state == .free) return;
+            const asks = slot.asks orelse return;
+            if (asks.len == 0) return;
+            const entry = &asks.entries[asks.head];
+            const frame = entry.frame orelse return; // already routed (a flush)
+            entry.frame = null;
+            if (routeToWorker(self, index, slot, frame)) |_| {
+                return;
+            } else |e| {
+                // This question can no longer reach the worker: the
+                // failure is its answer, and the next gets its turn.
+                frame.free(self.gpa);
+                const dead = asks.pop().?;
+                asks.deliver_fault(dead.ctx, dead.on_answer, .{ .err = @errorName(e) });
+            }
+        }
+    }
+
+    /// Free an asker slot's FIFO. On the normal paths (retired, died)
+    /// the queue drained first; anything still here — shutdown — frees
+    /// without answering, because there is nobody left to answer on.
+    fn freeAskState(self: *Runtime, slot: *Slot) void {
+        const asks = slot.asks orelse return;
+        while (asks.pop()) |entry| if (entry.frame) |f| f.free(self.gpa);
+        self.gpa.destroy(asks);
+        slot.asks = null;
+    }
+
     fn allocSlot(self: *Runtime) !u32 {
         for (self.slots.items, 0..) |*s, i| {
             if (s.state == .free) return @intCast(i);
@@ -446,6 +560,7 @@ pub const Runtime = struct {
 
     fn finalizeSlot(self: *Runtime, index: u32) void {
         const slot = &self.slots.items[index];
+        self.freeAskState(slot);
         switch (slot.transport) {
             .inl => |*iw| {
                 for (iw.inbox.items) |f| f.free(self.gpa);
@@ -529,6 +644,7 @@ pub const Runtime = struct {
         self.down.store(true, .release);
         for (self.slots.items, 0..) |*slot, i| {
             if (slot.state == .free) continue;
+            self.freeAskState(slot);
             switch (slot.transport) {
                 .inl => |*iw| {
                     for (iw.inbox.items) |f| f.free(g);
@@ -602,18 +718,14 @@ pub fn Handle(comptime T: type) type {
             const rt = self.runtime;
             const slot = rt.liveSlot(self.index, self.gen) orelse return error.WorkerRetired;
             const g = rt.gpa;
-            var frame: std.ArrayList(u8) = .empty;
-            errdefer frame.deinit(g);
-            // Until routeToWorker succeeds, the list holds borrows.
-            var atts: std.ArrayList([]u8) = .empty;
-            errdefer atts.deinit(g);
-            try frame.append(g, msg_frame);
-            try codec.encode(T.Msg, g, &frame, &atts, msg);
-            const bytes = try frame.toOwnedSlice(g);
-            errdefer g.free(bytes);
-            const attachments = try sealAttachments(g, &atts);
-            errdefer if (attachments.len > 0) g.free(attachments);
-            try routeToWorker(rt, self.index, slot, .{ .bytes = bytes, .attachments = attachments });
+            const frame = try encodeFrame(T.Msg, msg_frame, g, msg);
+            routeToWorker(rt, self.index, slot, frame) catch |e| {
+                // The encode's borrows still hold: the bytes and the
+                // attachment table free, the blobs stay the caller's.
+                g.free(frame.bytes);
+                if (frame.attachments.len > 0) g.free(frame.attachments);
+                return e;
+            };
         }
 
         /// No more sends; queued messages drain, `deinit` runs, the
@@ -634,16 +746,7 @@ pub fn Handle(comptime T: type) type {
 }
 
 pub fn spawn(comptime T: type, opts: SpawnOptions(T)) !Handle(T) {
-    const vt = comptime vtFor(T);
-    const reg = comptime registryIndex(T);
-    if (comptime is_wasm and reg == null) @compileError(
-        \\workers on the web need the registry: declare
-        \\`pub const nokreWorkers = .{ ... };` in the root module and
-        \\include this worker type. docs/internals/workers.md.
-    );
-
     const rt = opts.app.runtime;
-    const g = rt.gpa;
     const index = try rt.allocSlot();
     const slot = &rt.slots.items[index];
     const gen = slot.gen;
@@ -663,18 +766,207 @@ pub fn spawn(comptime T: type, opts: SpawnOptions(T)) !Handle(T) {
         slot.state = .free;
         slot.gen +%= 1;
     }
+    try startTransport(T, rt, slot, index, gen);
+    return .{ .runtime = rt, .index = index, .gen = gen };
+}
+
+/// The transport half of a spawn, shared by `spawn` and `spawnAsker`.
+/// On error nothing started; the caller unwinds its slot.
+fn startTransport(comptime T: type, rt: *Runtime, slot: *Slot, index: u32, gen: u32) !void {
+    const vt = comptime vtFor(T);
+    const reg = comptime registryIndex(T);
+    if (comptime is_wasm and reg == null) @compileError(
+        \\workers on the web need the registry: declare
+        \\`pub const nokreWorkers = .{ ... };` in the root module and
+        \\include this worker type. docs/internals/workers.md.
+    );
     if (rt.mode == .inline_pump) {
         // Inline creation is eager, so a failing `init` surfaces at the
         // spawn (a test wants the error now, not a died fault later).
-        const inst = try vt.create(g);
+        const inst = try vt.create(rt.gpa);
         slot.transport = .{ .inl = .{ .vt = vt, .inst = inst } };
     } else if (comptime is_wasm) {
         post_transport.spawn(reg.?, index);
         slot.transport = .post;
     } else {
-        slot.transport = .{ .thread = try spawnThread(g, rt, vt, index, gen) };
+        slot.transport = .{ .thread = try spawnThread(rt.gpa, rt, vt, index, gen) };
     }
+}
+
+// ---- the ask surface ----
+// Request/response over a worker: `spawnAsker` opens the same worker
+// struct behind a different contract — every message is a question,
+// and every question is answered exactly once, in ask order. The
+// pending questions are a small bounded FIFO on the slot, and only the
+// front one is ever in the worker's inbox — the next routes when the
+// front answers — so a worker mid-answer sees `interrupted()` only for
+// retirement, and an unrelated ask can never make in-flight work
+// stale. What used to force every consumer to hand-roll a
+// pending-callback queue is the library's own bookkeeping now.
+
+/// Questions an asker holds open at once, counting the one in flight —
+/// one per screen or client that can keep a request pending, with room
+/// to spare. Past it `ask` refuses with `error.TooManyAsks`: the bound
+/// is the contract, a queue that bounds latency instead of hiding an
+/// unbounded backlog.
+pub const max_pending_asks = 32;
+
+/// What an ask resolves to: the worker's one reply, or the fault that
+/// took its place (a `handle` error, a route failure, `.died`).
+pub fn Answer(comptime T: type) type {
+    return union(enum) {
+        reply: T.Reply,
+        fault: Fault,
+    };
+}
+
+/// A generation-checked asker — `Handle`'s request/response sibling.
+/// Same staleness contract (`error.WorkerRetired`, never a dangling
+/// pointer); the difference is the answer's address: each ask carries
+/// its own callback, and answers arrive in ask order, exactly one per
+/// accepted ask. That order is load-bearing: a consumer whose per-ask
+/// context is wider than one pointer can keep it in a plain FIFO of
+/// its own and pop in lockstep.
+pub fn Asker(comptime T: type) type {
+    return struct {
+        runtime: *Runtime,
+        index: u32,
+        gen: u32,
+
+        /// Queue a question. Serialize-and-copy happens inside the
+        /// call — `msg`'s slices are borrowed only for its duration,
+        /// and a `Bytes` moves on success, stays the caller's on
+        /// error. A full queue refuses with `error.TooManyAsks` and
+        /// nothing is queued.
+        pub fn ask(self: @This(), msg: T.Msg, ctx: ?*anyopaque, on_answer: *const fn (ctx: ?*anyopaque, answer: Answer(T)) void) !void {
+            const rt = self.runtime;
+            const slot = rt.liveSlot(self.index, self.gen) orelse return error.WorkerRetired;
+            const asks = slot.asks.?;
+            if (asks.len == max_pending_asks) return error.TooManyAsks;
+            const g = rt.gpa;
+            const frame = try encodeFrame(T.Msg, msg_frame, g, msg);
+            if (asks.len == 0) {
+                routeToWorker(rt, self.index, slot, frame) catch |e| {
+                    // The encode's borrows still hold: the bytes and
+                    // the attachment table free, the blobs stay the
+                    // caller's.
+                    g.free(frame.bytes);
+                    if (frame.attachments.len > 0) g.free(frame.attachments);
+                    return e;
+                };
+                asks.push(.{ .frame = null, .ctx = ctx, .on_answer = @ptrCast(on_answer) });
+            } else {
+                asks.push(.{ .frame = frame, .ctx = ctx, .on_answer = @ptrCast(on_answer) });
+            }
+        }
+
+        /// Questions still awaiting answers, counting the one in
+        /// flight — the e2e idle probe: settled when zero. Zero once
+        /// the asker is stale.
+        pub fn pending(self: @This()) usize {
+            const rt = self.runtime;
+            if (self.index >= rt.slots.items.len) return 0;
+            const slot = &rt.slots.items[self.index];
+            if (slot.gen != self.gen or slot.state == .free) return 0;
+            const asks = slot.asks orelse return 0;
+            return asks.len;
+        }
+
+        /// No more asks; every queued question still reaches the
+        /// worker — the flush below — so each is answered before
+        /// `deinit` runs and the transport falls. Mid-retirement the
+        /// worker sees `interrupted()` and may answer cheap, but it
+        /// answers. Idempotent. Unlike `Handle.retire` this may
+        /// allocate: the flush routes real frames.
+        pub fn retire(self: @This()) void {
+            const rt = self.runtime;
+            const slot = rt.liveSlot(self.index, self.gen) orelse return;
+            const asks = slot.asks.?;
+            // Flush the queue into the worker's inbox so the drain
+            // contract covers every question. If a route fails (OOM),
+            // that question and everything behind it are answered by
+            // the failure instead — routing past a hole would answer
+            // later asks with earlier replies.
+            var dropped: [max_pending_asks]AskEntry = undefined;
+            var dropped_n: usize = 0;
+            var fault_name: []const u8 = undefined;
+            var i: usize = 0;
+            while (i < asks.len) : (i += 1) {
+                const entry = &asks.entries[(asks.head + i) % max_pending_asks];
+                const frame = entry.frame orelse continue;
+                entry.frame = null;
+                if (dropped_n > 0) {
+                    frame.free(rt.gpa);
+                    dropped[dropped_n] = entry.*;
+                    dropped_n += 1;
+                    continue;
+                }
+                routeToWorker(rt, self.index, slot, frame) catch |e| {
+                    fault_name = @errorName(e);
+                    frame.free(rt.gpa);
+                    dropped[0] = entry.*;
+                    dropped_n = 1;
+                };
+            }
+            asks.len -= dropped_n;
+            slot.state = .retiring;
+            switch (slot.transport) {
+                .inl => {}, // the pump drains, then destroys
+                .thread => |w| requestThreadRetire(w),
+                .post => postSend(self.index, &[1]u8{retire_frame}),
+                .none => {},
+            }
+            // Callbacks last: the state flip above already refuses a
+            // re-entrant ask, and the AskState is heap-pinned.
+            for (dropped[0..dropped_n]) |entry|
+                asks.deliver_fault(entry.ctx, entry.on_answer, .{ .err = fault_name });
+        }
+    };
+}
+
+/// `spawn`'s request/response sibling. No spawn-time callbacks — each
+/// ask carries its own — so the options collapse to the app.
+pub fn spawnAsker(comptime T: type, app: *App) !Asker(T) {
+    const rt = app.runtime;
+    const g = rt.gpa;
+    const asks = try g.create(AskState);
+    errdefer g.destroy(asks);
+    asks.* = .{
+        .deliver_reply = askReplyShim(T),
+        .deliver_fault = askFaultShim(T),
+    };
+    const index = try rt.allocSlot();
+    const slot = &rt.slots.items[index];
+    const gen = slot.gen;
+    slot.* = .{ .gen = gen, .state = .live, .asks = asks };
+    // Same unwind as spawn's, plus the ask state: a failed transport
+    // must not leave a live slot, and the freed AskState must not leak
+    // a dangling pointer behind it.
+    errdefer {
+        slot.asks = null;
+        slot.state = .free;
+        slot.gen +%= 1;
+    }
+    try startTransport(T, rt, slot, index, gen);
     return .{ .runtime = rt, .index = index, .gen = gen };
+}
+
+fn askReplyShim(comptime T: type) *const fn (?*anyopaque, *const anyopaque, []const u8, []?[]u8, std.mem.Allocator) codec.DecodeError!void {
+    return struct {
+        fn deliver(ctx: ?*anyopaque, on_answer: *const anyopaque, payload: []const u8, attachments: []?[]u8, arena: std.mem.Allocator) codec.DecodeError!void {
+            const cb: *const fn (ctx: ?*anyopaque, answer: Answer(T)) void = @ptrCast(@alignCast(on_answer));
+            cb(ctx, .{ .reply = try codec.decode(T.Reply, arena, payload, attachments) });
+        }
+    }.deliver;
+}
+
+fn askFaultShim(comptime T: type) *const fn (?*anyopaque, *const anyopaque, Fault) void {
+    return struct {
+        fn deliver(ctx: ?*anyopaque, on_answer: *const anyopaque, fault: Fault) void {
+            const cb: *const fn (ctx: ?*anyopaque, answer: Answer(T)) void = @ptrCast(@alignCast(on_answer));
+            cb(ctx, .{ .fault = fault });
+        }
+    }.deliver;
 }
 
 fn deliverShim(comptime Reply: type) *const fn (?*anyopaque, *const anyopaque, []const u8, []?[]u8, std.mem.Allocator) codec.DecodeError!void {
@@ -686,19 +978,20 @@ fn deliverShim(comptime Reply: type) *const fn (?*anyopaque, *const anyopaque, [
     }.deliver;
 }
 
-/// Encode a reply into a deliverable frame — the owned-buffer shape
-/// `enqueueDeliveryOwned` moves whole. `g` must be the allocator the
-/// queue frees with (the runtime's gpa; on a worker thread, its own
-/// gpa, which spawn made the same one). On error nothing moved: a
-/// `Bytes` in the reply is still the caller's.
-fn encodeReplyFrame(comptime Reply: type, g: std.mem.Allocator, reply: Reply) codec.EncodeError!Frame {
+/// Encode a value into a routable frame — the owned-buffer shape
+/// `routeToWorker` consumes and `enqueueDeliveryOwned` moves whole.
+/// `g` must be the allocator the receiving end frees with (the
+/// runtime's gpa; on a worker thread, its own gpa, which spawn made
+/// the same one). On error nothing moved: a `Bytes` in the value is
+/// still the caller's.
+fn encodeFrame(comptime M: type, kind: u8, g: std.mem.Allocator, value: M) codec.EncodeError!Frame {
     var frame: std.ArrayList(u8) = .empty;
     errdefer frame.deinit(g);
     // Until the hand-off below, the list holds borrows.
     var atts: std.ArrayList([]u8) = .empty;
     errdefer atts.deinit(g);
-    try frame.append(g, reply_frame);
-    try codec.encode(Reply, g, &frame, &atts, reply);
+    try frame.append(g, kind);
+    try codec.encode(M, g, &frame, &atts, value);
     const bytes = try frame.toOwnedSlice(g);
     errdefer g.free(bytes);
     const attachments = try sealAttachments(g, &atts);
@@ -774,7 +1067,7 @@ pub fn deliverOneShot(comptime Reply: type, ticket: Ticket, g: std.mem.Allocator
     errdefer rt.gpa.destroy(node);
     const bytes = try rt.gpa.dupe(u8, &[1]u8{retired_frame});
     errdefer rt.gpa.free(bytes);
-    const frame = try encodeReplyFrame(Reply, g, reply);
+    const frame = try encodeFrame(Reply, reply_frame, g, reply);
     rt.enqueueDeliveryOwned(ticket.index, ticket.gen, frame);
     node.* = .{ .index = ticket.index, .gen = ticket.gen, .bytes = bytes };
     rt.enqueueDeliveryPrepared(node);

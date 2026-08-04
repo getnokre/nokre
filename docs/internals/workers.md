@@ -169,6 +169,49 @@ pump, and shutdown — so a network response crosses to the UI thread on
 exactly this machinery and no second cross-thread structure exists
 ([http.md](http.md)).
 
+## The ask FIFO
+
+The consumer contract — ask/answer, the bound, the overflow refusal —
+is stated in [../services.md](../services.md); this is the machinery.
+An asker slot carries an `AskState`: a fixed ring of
+`max_pending_asks` entries, each an encoded-but-unrouted frame plus the
+ask's own erased callback. The state is **UI-thread only, like the
+slot table itself** — the one-loop model is what lets a request queue
+exist here without a lock — and it is heap-pinned beside the table
+because an answer callback may spawn, and a spawn may move the table's
+ArrayList out from under a raw slot pointer.
+
+The load-bearing choice is that **only the front entry's frame is ever
+routed**; the next routes when an answer (reply or fault) pops the
+front. That single rule buys three things at once. Correlation: the
+worker handles one message per outstanding answer, so answer order is
+ask order and the pop is the correlation — no ids on the wire.
+Cancellation semantics: the worker's inbox never holds a second
+question during normal flow, so `interrupted()` keeps meaning
+"retirement" mid-answer instead of "any unrelated ask", and the
+send-surface rule ("any waiting message makes work stale") stays true
+without making asks dangerous. Bounded memory: queued questions live
+as encoded frames on the app side, counted against the bound, not as
+an invisible pile in a transport inbox.
+
+Answers dispatch in `dispatchAsk`, the asker's arm of the pump. All
+slot access happens before the consumer callback (the same discipline
+`dispatchFrame` already keeps), and the route-next step re-derives the
+slot by index afterwards. A reply with no question left is dropped —
+the worker broke the one-answer rule, and inventing a question for it
+would be worse. Retirement flushes the ring into the worker's inbox
+first, so the retire contract ("queued messages drain") covers every
+question; a worker death answers every pending question with `.died`,
+oldest first, before the slot falls. The one path that frees without
+answering is `Runtime.shutdown` — App teardown — where running app
+callbacks would be reaching into a dying app, exactly like the pending
+deliveries it already drops.
+
+`h.Queue` (src/core/queue.zig) is this shape without the worker: the
+same bounded FIFO and overflow refusal in front of any single-flight
+port, for the consumer whose one-at-a-time constraint is an adapter,
+not a thread.
+
 ## Testing
 
 The harness spawns workers inline: real `init`/`handle`/`deinit`, no

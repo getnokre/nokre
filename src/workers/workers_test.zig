@@ -381,6 +381,192 @@ test "thread transport: a reply crosses a real thread" {
     w.retire(); // shutdown (deferred) joins the thread either way
 }
 
+// ---- the ask surface ----
+
+/// Answers every probe with whether it ran calm — `interrupted()`
+/// false — so a test can prove queued asks never make in-flight work
+/// stale (the exact failure the ask FIFO exists to delete).
+const Prober = struct {
+    pub const Msg = union(enum) { probe: u32 };
+    pub const Reply = union(enum) { probed: struct { id: u32, calm: bool } };
+
+    pub fn init(_: std.mem.Allocator) !Prober {
+        return .{};
+    }
+    pub fn deinit(_: *Prober) void {}
+    pub fn handle(_: *Prober, msg: Msg, out: *workers.Outbox(Reply)) !void {
+        switch (msg) {
+            .probe => |id| try out.send(.{ .probed = .{ .id = id, .calm = !out.interrupted() } }),
+        }
+    }
+};
+
+/// Answer handlers log into one string, like Sink: content and order
+/// in a single compare.
+const AskSink = struct {
+    gpa: std.mem.Allocator,
+    log: std.ArrayList(u8) = .empty,
+
+    fn deinit(self: *AskSink) void {
+        self.log.deinit(self.gpa);
+    }
+    fn append(self: *AskSink, comptime fmt: []const u8, args: anytype) void {
+        var buf: [64]u8 = undefined;
+        const s = std.fmt.bufPrint(&buf, fmt, args) catch return;
+        self.log.appendSlice(self.gpa, s) catch {};
+    }
+    fn onProbe(ctx: ?*anyopaque, answer: workers.Answer(Prober)) void {
+        const self: *AskSink = @ptrCast(@alignCast(ctx.?));
+        switch (answer) {
+            .reply => |r| switch (r) {
+                .probed => |p| self.append("probed {d} {s};", .{ p.id, if (p.calm) @as([]const u8, "calm") else "interrupted" }),
+            },
+            .fault => |f| self.appendFault(f),
+        }
+    }
+    fn onDoubler(ctx: ?*anyopaque, answer: workers.Answer(Doubler)) void {
+        const self: *AskSink = @ptrCast(@alignCast(ctx.?));
+        switch (answer) {
+            .reply => |r| switch (r) {
+                .doubled => |v| self.append("doubled {d};", .{v}),
+                else => self.append("other;", .{}),
+            },
+            .fault => |f| self.appendFault(f),
+        }
+    }
+    fn appendFault(self: *AskSink, fault: workers.Fault) void {
+        switch (fault) {
+            .err => |name| self.append("fault {s};", .{name}),
+            .died => self.append("died;", .{}),
+        }
+    }
+};
+
+test "ask: answers arrive in ask order, and no question interrupts another" {
+    const gpa = std.testing.allocator;
+    var app = try testApp(gpa);
+    defer app.deinit();
+    var sink: AskSink = .{ .gpa = gpa };
+    defer sink.deinit();
+
+    const a = try workers.spawnAsker(Prober, &app);
+    // Three at once. Through `send` the first two would run interrupted
+    // (anything queued behind marks them stale); through `ask` only the
+    // front question is ever in the worker's inbox.
+    try a.ask(.{ .probe = 1 }, &sink, AskSink.onProbe);
+    try a.ask(.{ .probe = 2 }, &sink, AskSink.onProbe);
+    try a.ask(.{ .probe = 3 }, &sink, AskSink.onProbe);
+    try std.testing.expectEqual(@as(usize, 3), a.pending());
+    app.runtime.pumpAll();
+    try std.testing.expectEqualStrings("probed 1 calm;probed 2 calm;probed 3 calm;", sink.log.items);
+    try std.testing.expectEqual(@as(usize, 0), a.pending());
+}
+
+test "ask: a full queue refuses, and nothing queued is lost" {
+    const gpa = std.testing.allocator;
+    var app = try testApp(gpa);
+    defer app.deinit();
+    var sink: AskSink = .{ .gpa = gpa };
+    defer sink.deinit();
+
+    const a = try workers.spawnAsker(Prober, &app);
+    var i: u32 = 0;
+    while (i < workers.max_pending_asks) : (i += 1)
+        try a.ask(.{ .probe = i }, &sink, AskSink.onProbe);
+    try std.testing.expectError(error.TooManyAsks, a.ask(.{ .probe = 99 }, &sink, AskSink.onProbe));
+    try std.testing.expectEqual(@as(usize, workers.max_pending_asks), a.pending());
+    app.runtime.pumpAll();
+    try std.testing.expectEqual(@as(usize, 0), a.pending());
+    try std.testing.expectEqual(workers.max_pending_asks, std.mem.count(u8, sink.log.items, "probed "));
+    try std.testing.expect(std.mem.indexOf(u8, sink.log.items, "probed 99") == null);
+}
+
+test "ask: a handler error answers only its own question" {
+    const gpa = std.testing.allocator;
+    var app = try testApp(gpa);
+    defer app.deinit();
+    var sink: AskSink = .{ .gpa = gpa };
+    defer sink.deinit();
+
+    const a = try workers.spawnAsker(Doubler, &app);
+    try a.ask(.boom, &sink, AskSink.onDoubler);
+    try a.ask(.{ .double = 2 }, &sink, AskSink.onDoubler);
+    app.runtime.pumpAll();
+    try std.testing.expectEqualStrings("fault Kaboom;doubled 4;", sink.log.items);
+}
+
+test "ask: retire drains — every accepted question is answered" {
+    const gpa = std.testing.allocator;
+    var app = try testApp(gpa);
+    defer app.deinit();
+    var sink: AskSink = .{ .gpa = gpa };
+    defer sink.deinit();
+
+    const a = try workers.spawnAsker(Doubler, &app);
+    try a.ask(.{ .double = 1 }, &sink, AskSink.onDoubler);
+    try a.ask(.{ .double = 2 }, &sink, AskSink.onDoubler);
+    try a.ask(.{ .double = 3 }, &sink, AskSink.onDoubler);
+    a.retire();
+    try std.testing.expectError(error.WorkerRetired, a.ask(.{ .double = 4 }, &sink, AskSink.onDoubler));
+    app.runtime.pumpAll();
+    try std.testing.expectEqualStrings("doubled 2;doubled 4;doubled 6;", sink.log.items);
+    try std.testing.expectEqual(@as(usize, 0), a.pending());
+    a.retire(); // idempotent on a dead asker
+}
+
+test "ask: an answer may ask again; it joins the back of the line" {
+    const gpa = std.testing.allocator;
+    var app = try testApp(gpa);
+    defer app.deinit();
+
+    const Reasker = struct {
+        asker: workers.Asker(Doubler) = undefined,
+        sink: AskSink,
+        fed: bool = false,
+
+        fn onAnswer(ctx: ?*anyopaque, answer: workers.Answer(Doubler)) void {
+            const self: *@This() = @ptrCast(@alignCast(ctx.?));
+            AskSink.onDoubler(&self.sink, answer);
+            if (!self.fed) {
+                self.fed = true;
+                self.asker.ask(.{ .double = 30 }, self, onAnswer) catch unreachable;
+            }
+        }
+    };
+    var re: Reasker = .{ .sink = .{ .gpa = gpa } };
+    defer re.sink.deinit();
+
+    re.asker = try workers.spawnAsker(Doubler, &app);
+    try re.asker.ask(.{ .double = 1 }, &re, Reasker.onAnswer);
+    try re.asker.ask(.{ .double = 2 }, &re, Reasker.onAnswer);
+    app.runtime.pumpAll();
+    // The re-entrant ask (fired from the first answer) lands behind the
+    // already-queued second question, not ahead of it.
+    try std.testing.expectEqualStrings("doubled 2;doubled 4;doubled 60;", re.sink.log.items);
+}
+
+test "ask: thread transport answers across a real thread, in order" {
+    if (builtin.single_threaded) return error.SkipZigTest;
+    const gpa = std.testing.allocator;
+    var app = try testApp(gpa);
+    defer app.deinit();
+    var sink: AskSink = .{ .gpa = gpa };
+    defer sink.deinit();
+
+    app.runtime.mode = .platform;
+
+    const a = try workers.spawnAsker(Doubler, &app);
+    try a.ask(.{ .double = 21 }, &sink, AskSink.onDoubler);
+    try a.ask(.{ .double = 30 }, &sink, AskSink.onDoubler); // queued: the advance crosses threads too
+    var tries: u32 = 0;
+    while (a.pending() > 0 and tries < 10_000_000) : (tries += 1) {
+        _ = app.runtime.pump();
+        std.Thread.yield() catch {};
+    }
+    try std.testing.expectEqualStrings("doubled 42;doubled 60;", sink.log.items);
+    a.retire(); // shutdown (deferred) joins the thread either way
+}
+
 // ---- transferable blobs (docs/internals/workers.md) ----
 
 const Blober = struct {
