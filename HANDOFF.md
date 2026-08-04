@@ -2,7 +2,10 @@
 
 Status: **in execution** (started 2026-08-05). Landed so far: A1
 (revision 6) — bind/bindAt on all four action types, `nokre.ctx`
-deleted, both apps + site + docs migrated; A6 scope decided by owner
+deleted, both apps + site + docs migrated; A2 (revision 7) —
+`App.refresh` + the `reload_in_build` refusal, 39 hand policies and
+every `issuing` guard deleted (refresh declines quietly in-build; bare
+`reload` is the recorded refusal); A6 scope decided by owner
 2026-08-04: minimal as written. Everything else below is unexecuted. The first
 handoff (deleted at `b3518a2`) was executed whole; this one comes from a
 full vocabulary-and-ergonomics review of nokre against its three real

@@ -2250,6 +2250,125 @@ test "a builder that fails strands no half-built sheet" {
     try testing.expect(app.focused.?.on(behind));
 }
 
+// ---- refresh: the composed polite-update verb (docs/routing.md) ----
+
+/// A controller in miniature for `App.refresh`: state the builders
+/// read, counting every run, over a screen that carries an editable —
+/// the thing a polite rebuild must leave alone.
+const RefreshHost = struct {
+    screen_builds: u32 = 0,
+    sheet_builds: u32 = 0,
+    refresh_in_build: bool = false,
+
+    fn buildScreen(ctx: ?*anyopaque, app: *App) anyerror!void {
+        const self: *RefreshHost = @ptrCast(@alignCast(ctx.?));
+        self.screen_builds += 1;
+        try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Notes" } });
+        try app.tree.append(app.tree.rootId(), .{ .text_input = .{ .label = "Title" } });
+        // A builder-issued load answered synchronously: its callback
+        // says refresh, and the polite verb declines quietly — the
+        // builder reads the answered state the line after.
+        if (self.refresh_in_build) app.refresh(.{});
+    }
+
+    fn buildSheet(ctx: ?*anyopaque, app: *App) anyerror!void {
+        const self: *RefreshHost = @ptrCast(@alignCast(ctx.?));
+        self.sheet_builds += 1;
+        const sheet = try app.presentSheet("Confirm");
+        try app.tree.append(sheet, .{ .button = .{ .label = "Delete" } });
+    }
+
+    fn fixture(self: *RefreshHost) !App {
+        return App.init(testing.allocator, .{
+            .viewport = .{ .w = 400, .h = 600 },
+            .routes = &.{
+                .{ .name = "notes", .title = .{ .fixed = "Notes" }, .build = buildScreen },
+                .{ .name = "docs", .title = .{ .fixed = "Docs" }, .build = buildLabeled },
+            },
+            .ctx = self,
+            .services = .mocks(),
+        });
+    }
+};
+
+fn buildLabeled(_: ?*anyopaque, app: *App) anyerror!void {
+    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Docs" } });
+}
+
+test "refresh reloads, and the route filter scopes it to the screen on top" {
+    var host: RefreshHost = .{};
+    var app = try host.fixture();
+    defer app.deinit();
+    try app.navigate("notes");
+    try testing.expectEqual(@as(u32, 1), host.screen_builds);
+
+    // Nothing held: a refresh is a reload, scroll-and-focus semantics
+    // and all (the router's own verb underneath).
+    app.refresh(.{});
+    try testing.expectEqual(@as(u32, 2), host.screen_builds);
+
+    // The reply that lands after the user walked away: the named route
+    // is not on top, so the screen it no longer owns is left alone —
+    // and naming the one showing still reloads.
+    app.refresh(.{ .route = "docs" });
+    try testing.expectEqual(@as(u32, 2), host.screen_builds);
+    app.refresh(.{ .route = "notes" });
+    try testing.expectEqual(@as(u32, 3), host.screen_builds);
+}
+
+test "refresh leaves an edit in flight alone; reload takes it" {
+    var host: RefreshHost = .{};
+    var app = try host.fixture();
+    defer app.deinit();
+    try app.navigate("notes");
+
+    // The user is mid-edit: caret, composition, and the unwritten
+    // value die with the field's node, so the polite verb declines.
+    var it = app.tree.dfs();
+    while (it.next()) |id| {
+        if (app.tree.getConst(id).?.* == .text_input) app.focused = .of(id);
+    }
+    app.refresh(.{});
+    try testing.expectEqual(@as(u32, 1), host.screen_builds);
+
+    // The deliberate gesture never asks — same state, same screen, and
+    // the edit goes with it, which is what deliberate means.
+    try app.reload();
+    try testing.expectEqual(@as(u32, 2), host.screen_builds);
+}
+
+test "refresh re-runs the open sheet's builder instead of reloading under it" {
+    var host: RefreshHost = .{};
+    var app = try host.fixture();
+    defer app.deinit();
+    try app.navigate("notes");
+    try app.openSheet(.{ .ctx = &host, .call = RefreshHost.buildSheet });
+    try testing.expectEqual(@as(u32, 1), host.sheet_builds);
+
+    // The sheet owns the screen, so it is what answers the changed
+    // state: rebuilt in place, while the content behind it — and the
+    // route filter's meaning — stay exactly as the hand policies kept
+    // them (the sheet stands on the route that opened it).
+    app.refresh(.{});
+    try testing.expectEqual(@as(u32, 2), host.sheet_builds);
+    try testing.expectEqual(@as(u32, 1), host.screen_builds);
+    app.refresh(.{ .route = "notes" });
+    try testing.expectEqual(@as(u32, 3), host.sheet_builds);
+}
+
+test "refresh from inside a build declines quietly, with nothing on the record" {
+    var host: RefreshHost = .{ .refresh_in_build = true };
+    var app = try host.fixture();
+    defer app.deinit();
+    try app.navigate("notes");
+
+    // One build, one screen — and unlike a re-entrant `reload`, no
+    // refusal: from a synchronously-answered load's callback the polite
+    // verb declining is a normal flow, not a programmer error.
+    try testing.expectEqual(@as(u32, 1), host.screen_builds);
+    try testing.expect(app.router.refused == null);
+}
+
 test "tap on the scrim dismisses the sheet; background is not hittable" {
     var counter: PressCounter = .{};
     var app = try test_app.init(400, 600);

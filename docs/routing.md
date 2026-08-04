@@ -60,7 +60,8 @@ screen's subtree from scratch:
 | `App.navigateBack()` / `router.pop` | up one; a no-op at the root |
 | `router.replace(app, ref)` | the same depth, a different screen |
 | `router.switchTo(app, ref)` | arriving with no trail: **the stack resets to depth 1** |
-| `router.reload(app)` | this screen, rebuilt from its own reference — how a screen reacts to changed state |
+| `App.reload()` / `router.reload` | this screen, rebuilt from its own reference — the *deliberate* answer to changed state |
+| `App.refresh(opts)` | the *polite* one: the open sheet rebuilt if one owns the screen, else a reload unless the user holds something a rebuild would take |
 
 **Going back returns the screen, not just its name.** Each entry
 remembers where its screen was scrolled to — the window and every
@@ -103,9 +104,38 @@ before the fact — false while an overlay owns the screen (a sheet, a
 picker, the notices pane) or while an editable holds focus. `reload`
 itself never asks it: a deliberate gesture — retry, pull-to-refresh, a
 locale change — must be honored even mid-edit. The check belongs to
-the rebuilds nobody asked for. A reply that lands between events
-writes its state either way, asks `reloadSafe` first, and leaves a
-screen it would disturb alone.
+the rebuilds nobody asked for, and those say **`App.refresh`**, which
+composes it once:
+
+```zig
+fn onSaved(state: *State, result: Result) void {
+    state.apply(result);                      // the state is written either way
+    state.app.refresh(.{ .route = "note" });  // the screen follows, politely
+}
+```
+
+`refresh` is "this state changed; update whatever is showing,
+politely." If an open sheet owns the screen its builder runs again — a
+sheet is a tree node a reload would take with it, so the state change
+re-presents it instead, and the content behind it waits for whatever
+closes the sheet. Otherwise it reloads, unless `reloadSafe` says the
+user holds something a rebuild would take — then it declines, and
+declining is fine by construction: the state is already written, and
+the next navigation or gesture rebuilds from it. `Refresh.route` scopes
+the whole thing to a screen: a reply that lands after the user has
+walked away leaves the screen it no longer owns alone (`""`, the
+default, means whatever is on top; the comparison is by route *name*,
+so `"note"` covers `note~42`). Called from inside a builder — a load
+the builder issued, answered synchronously — it declines quietly too:
+the builder reads the answered state the line after. Every consumer
+used to compose all of this by hand, per controller; the survey found
+22 copies.
+
+`reload` from inside a route builder is different: the deliberate verb
+has no polite decline, so tearing down the half-built screen to run its
+builder again — which would duplicate the screen — is **refused and
+recorded** (`reload_in_build` below), and the audit fails the first
+test that trips it.
 
 ### The back gesture
 
@@ -272,9 +302,10 @@ name to surface as a mystery at first navigation:
 | `error.DuplicateRouteName` | two routes sharing a name — otherwise every reference would quietly resolve to the first |
 
 A reference is validated at resolution — but a bad one is a **refusal,
-not an error**. `navigate`, `switchTo` and `router.replace` leave the
-stack exactly as it was, return normally, and record what they refused
-in `router.refused`: the reference (bounded to `max_ref_bytes`) and a
+not an error**. `navigate`, `switchTo`, `router.replace` — and
+`reload`, for the one thing it can refuse — leave the stack exactly as
+it was, return normally, and record what they refused in
+`router.refused`: the reference (bounded to `max_ref_bytes`) and a
 reason —
 
 | | |
@@ -283,6 +314,7 @@ reason —
 | `arg_count` | not the number of arguments the route declares |
 | `arg_charset` | an argument outside the charset, or empty (a trailing `~` is a *missing* argument, not an empty one) |
 | `ref_too_long` | past 256 bytes — a reference can arrive from outside the app, and one enormous argument would pass the arity check |
+| `reload_in_build` | a `reload` issued while the screen's builder was already running — honoring it would rebuild the screen over its own half-built output, duplicating it. The record carries the reference of the screen being built. (`refresh` never trips this: the polite verb declines the same call quietly.) |
 
 Every one of these is a programmer error, and nothing at a navigation
 call site can do about one but drop it — so no error asks to be

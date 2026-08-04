@@ -25,7 +25,9 @@
 //!
 //! A reference that does not resolve is a *refusal*, not an error. The
 //! four ways one can be wrong — unknown name, wrong arity, an argument
-//! outside the charset, over-long — are all programmer errors, and no
+//! outside the charset, over-long — plus the one wrong *moment*, a
+//! `reload` issued while its own screen's builder is running
+//! (`building`), are all programmer errors, and no
 //! call site has anything to do with one but drop it: the consumer
 //! survey that drove this found 87 `catch {}` around navigation and not
 //! one handler. So the navigating verbs leave the stack exactly as it
@@ -183,11 +185,15 @@ pub const Refusal = struct {
     len: u16,
     bytes: [max_ref_bytes]u8,
 
-    /// One name per way `resolve` can say no. The same taxonomy `ref`
-    /// reports as errors — there the caller is the site *building* the
+    /// One name per way `resolve` can say no — the same taxonomy `ref`
+    /// reports as errors: there the caller is the site *building* the
     /// reference and can act; here nobody can, which is the whole
-    /// argument for a record over an error.
-    pub const Reason = enum { unknown_route, arg_count, arg_charset, ref_too_long };
+    /// argument for a record over an error. Plus the one refusal that
+    /// is not `resolve`'s: a `reload` issued while `rebuild` is already
+    /// running a builder (see `Router.building`), which no error set
+    /// could reach either — the call site is a callback three frames
+    /// from the builder that makes it wrong.
+    pub const Reason = enum { unknown_route, arg_count, arg_charset, ref_too_long, reload_in_build };
 
     pub fn ref(self: *const Refusal) []const u8 {
         return self.bytes[0..self.len];
@@ -204,6 +210,17 @@ pub const Router = struct {
     /// finds. Only the navigating verbs write it: `vet` answers without
     /// recording, which is what the untrusted entry points use.
     refused: ?Refusal = null,
+    /// True while `rebuild` runs — the route builder, and everything a
+    /// rebuild runs after it (the re-presented sheet's builder, the nav
+    /// resync). A `reload` from inside that window would tear down the
+    /// half-built content and run the builder again over its own
+    /// output, duplicating the screen — the one hazard the consumer
+    /// survey found every controller guarding by hand — so `reload`
+    /// refuses it instead (recorded, `.reload_in_build`), and the
+    /// polite verb (`App.refresh`) declines it quietly: a load a
+    /// builder issues can be answered synchronously, and the state that
+    /// answer wrote is exactly what the running builder reads next.
+    building: bool = false,
 
     /// One screen on the stack. It owns the reference it was entered
     /// with, arguments and all — which is the point: two `note` screens
@@ -445,6 +462,13 @@ pub const Router = struct {
     /// `App.reloadSafe` lets an unprompted rebuild check first.
     pub fn reload(self: *Router, app: *App) !void {
         if (self.stack.items.len == 0) return;
+        // Re-entrant: some callback inside the running builder asked
+        // for the screen the builder is mid-way through producing. A
+        // refusal, not an error, by `refused`'s own argument — the
+        // caller is a callback with nothing to do about it, and the
+        // audit fails the first test that trips one. The record carries
+        // the reference of the screen being built: the culprit's name.
+        if (self.building) return self.refuse(self.top().?.ref, .reload_in_build);
         captureScroll(app, self.topMut().?);
         try self.rebuild(app, .replace, .restored, .carried, .carried);
     }
@@ -523,6 +547,13 @@ pub const Router = struct {
     const FocusFate = enum { fresh, carried };
 
     fn rebuild(self: *Router, app: *App, change: Change, scroll: Scroll, sheet: SheetFate, focus_fate: FocusFate) !void {
+        // Saved and restored, not set and cleared: a builder may
+        // legitimately *navigate* (a guard screen redirecting), and the
+        // nested rebuild must hand the window back to the outer one
+        // still open when it returns.
+        const outer = self.building;
+        self.building = true;
+        defer self.building = outer;
         const entry = self.stack.items[self.stack.items.len - 1];
         const def = self.routes[entry.idx];
         // Copied out before the teardown: the node goes with the

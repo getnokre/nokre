@@ -590,6 +590,52 @@ test "vet answers what a verb would refuse, without recording it" {
     try testing.expect(app.router.refused == null);
 }
 
+// The one refusal that is not resolve's: a reload landing while the
+// builder it would re-run is still running (docs/routing.md). The
+// fixture is the real shape — a load a builder issues, answered
+// synchronously, whose callback reaches for the screen.
+const SelfReloading = struct { built: u32 = 0 };
+
+fn buildSelfReloading(ctx: ?*anyopaque, app: *App) anyerror!void {
+    const data: *SelfReloading = @ptrCast(@alignCast(ctx.?));
+    data.built += 1;
+    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Loading" } });
+    // Without the refusal this tears the heading down and runs this
+    // builder again over its own output — the duplicated-screen bug
+    // every consumer controller carried an `issuing` guard against.
+    app.reload() catch {};
+}
+
+test "reload from inside a route builder is a refused no-op" {
+    var data: SelfReloading = .{};
+    var app = try App.init(testing.allocator, .{
+        .viewport = .{ .w = 400, .h = 400 },
+        .routes = &.{.{ .name = "loader", .title = .{ .fixed = "Loader" }, .build = buildSelfReloading }},
+        .ctx = &data,
+        .services = .mocks(),
+    });
+    defer app.deinit();
+    try app.navigate("loader");
+
+    // The builder ran once, its screen stands once, and the re-entrant
+    // reload is on the record with the reference of the screen it was
+    // refused over — which is what the audit fails the test on
+    // (audit_test.zig proves that half).
+    try testing.expectEqual(@as(u32, 1), data.built);
+    try testing.expectEqual(@as(usize, 1), app.tree.childCount(app.tree.rootId()));
+    try testing.expectEqual(.reload_in_build, app.router.refused.?.reason);
+    try testing.expectEqualStrings("loader", app.router.refused.?.ref());
+
+    // The window closes with the rebuild: the same verb between events
+    // is honored — one more build, still one screen — so the refusal is
+    // about *when*, never *who*. (The fixture's inner reload records
+    // again; the point is the outer one ran.)
+    app.router.refused = null;
+    try app.reload();
+    try testing.expectEqual(@as(u32, 2), data.built);
+    try testing.expectEqual(@as(usize, 1), app.tree.childCount(app.tree.rootId()));
+}
+
 test "an argument is an identifier, not a payload" {
     var data: CtxData = .{};
     var app = try argApp(&data);

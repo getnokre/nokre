@@ -343,8 +343,67 @@ pub const App = struct {
     /// Rebuild the current screen from state — the router verb at the
     /// same hop as `navigate`, so a controller never threads the app
     /// through itself (`app.router.reload(app)`) to say it.
+    ///
+    /// This is the *deliberate-gesture* verb — retry, pull-to-refresh,
+    /// a locale change — and it never asks `reloadSafe`: a gesture must
+    /// be honored even mid-edit. A rebuild nobody asked for — a reply
+    /// landing between events — says `refresh` instead, which composes
+    /// the polite checks once. Called from inside a route builder it is
+    /// a recorded refusal, not a rebuild (router.zig, `reload_in_build`):
+    /// tearing down the half-built screen to run its builder again
+    /// would duplicate it.
     pub fn reload(self: *App) !void {
         try self.router.reload(self);
+    }
+
+    /// What `refresh` may filter on.
+    pub const Refresh = struct {
+        /// Only refresh if this route is on top — the route's *name*,
+        /// so `"note"` covers `note~42`, the same comparison nav chrome
+        /// makes (`router.current`). "" means any. For a reply that
+        /// lands after the user has walked away: the state is written
+        /// either way, and a screen the reply no longer owns is left
+        /// alone.
+        route: []const u8 = "",
+    };
+
+    /// "This state changed; update whatever is showing, politely" —
+    /// the composed verb for the rebuilds nobody asked for, which every
+    /// consumer of the old primitives re-derived by hand (the survey
+    /// found 22 copies of the same five lines). Re-runs the open
+    /// sheet's builder if one owns the screen — a sheet is a tree node
+    /// a reload would take with it, so the state change re-presents it
+    /// instead — else reloads unless `reloadSafe` says the user holds
+    /// something a rebuild would take (an edit in flight, an open
+    /// picker, the notices pane). The deliberate-gesture path stays
+    /// `reload()`, which never asks.
+    ///
+    /// Declining is the point, so nothing here reports: a reply writes
+    /// its state, calls this, and the state is on screen now or the
+    /// moment the user lets go of what they hold (the next navigation
+    /// or gesture rebuilds from that same state).
+    pub fn refresh(self: *App, opts: Refresh) void {
+        // Inside `rebuild` there is nothing to update politely: the
+        // screen is being built from the very state the caller just
+        // wrote — a builder-issued load can be answered synchronously
+        // (a cached corpus, a transport refusing a double send), and
+        // the running builder reads that answer the line after. A quiet
+        // decline, where the deliberate verb records a refusal: from a
+        // callback this is a normal flow, not a programmer error.
+        if (self.router.building) return;
+        if (opts.route.len != 0) {
+            const current = self.router.current() orelse return;
+            if (!std.mem.eql(u8, current, opts.route)) return;
+        }
+        if (self.sheet_builder != null) {
+            // The sheet owns the screen and answers the state itself;
+            // the content behind it stays as it was, like every hand
+            // policy kept it — whatever closes the sheet rebuilds.
+            overlays.representSheet(self) catch {};
+            return;
+        }
+        if (!self.reloadSafe()) return;
+        self.reload() catch {};
     }
 
     /// Enter `ref` with the stack reset to just it (router.zig says

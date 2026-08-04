@@ -402,20 +402,16 @@ framework-enforced:
   mirrored both ways with nothing to wire: navigating writes it, and a
   typed or shared one puts the app there. See [routing.md](routing.md).
 
-`reload` is how a whole screen reacts to changed state, and the app
-uses it enough to deserve a helper — the rebuild counterpart of Part 1's
-`setContent`:
-
-```zig
-/// Rebuild the current screen from state. Focus is carried by name
-/// across it, but an edit in flight is not — so reach for this on
-/// committed changes, and have a rebuild nobody asked for (a reply
-/// landing between events) check `app.reloadSafe()` first
-/// (routing.md).
-fn refresh(state: *State) void {
-    state.app.router.reload(state.app) catch {};
-}
-```
+`reload` is how a whole screen reacts to changed state — but it is the
+*deliberate* verb (retry, pull-to-refresh), and it takes an edit in
+flight with the screen. The rebuilds nobody asked for — a reply landing
+between events — say `app.refresh(.{})` instead: the composed polite
+verb, which re-runs an open sheet's builder if one owns the screen,
+declines while the user holds something a rebuild would take, and can
+be scoped to a screen (`.{ .route = "note" }`) so a reply that lands
+after the user walked away leaves the screen it no longer owns alone
+([routing.md](routing.md)). Write the state, call `refresh`, done —
+there is no policy left to compose by hand.
 
 **Checkpoint:** `zig build run` — the nav sits at the bottom, taps and
 arrow keys switch sections, and the current section reads as a filled
@@ -548,13 +544,13 @@ pub fn setRemember(state: *State, checked: bool) void {
 pub fn signIn(state: *State) void {
     if (!std.mem.eql(u8, state.passphrase[0..state.passphrase_len], "letmein")) {
         state.signin_status = "Wrong passphrase. (Hint: it's the one on screen.)";
-        refresh(state);
+        state.app.refresh(.{});
         return;
     }
     state.signed_in = true;
     state.signin_status = "";
     state.passphrase_len = 0;
-    refresh(state);
+    state.app.refresh(.{});
 }
 ```
 
@@ -860,7 +856,7 @@ pub fn commitDraft(state: *State) void {
         addNote(state, state.draft[0..state.draft_len]);
         state.status = "Note added.";
     }
-    refresh(state);
+    state.app.refresh(.{});
 }
 ```
 
@@ -932,7 +928,7 @@ pub fn sync(state: *State) void {
         .on_result = onSyncResult,
     }) catch return;
     state.status = "Syncing…";
-    refresh(state);
+    state.app.refresh(.{});
 }
 
 fn onSyncResult(ctx: ?*anyopaque, result: h.services.http.Result) void {
@@ -941,7 +937,7 @@ fn onSyncResult(ctx: ?*anyopaque, result: h.services.http.Result) void {
         .response => |r| {
             if (r.status != 200) {
                 state.status = "The server had a problem — showing local notes.";
-                refreshNotesIfIdle(state);
+                state.app.refresh(.{ .route = "notes" });
                 return;
             }
             // The body is the notes, one per line. Status codes are
@@ -953,7 +949,7 @@ fn onSyncResult(ctx: ?*anyopaque, result: h.services.http.Result) void {
             }
             state.offline = false;
             state.status = "Synced.";
-            refreshNotesIfIdle(state);
+            state.app.refresh(.{ .route = "notes" });
         },
         .failure => |f| {
             // Transport failure is a value with a stable name
@@ -967,26 +963,20 @@ fn onSyncResult(ctx: ?*anyopaque, result: h.services.http.Result) void {
                 .route = "notes",
                 .important = true,
             }) catch {};
-            refreshNotesIfIdle(state);
+            state.app.refresh(.{ .route = "notes" });
         },
     }
 }
 
-/// Rebuild only if nothing modal is up and the notes screen is current —
-/// a background reply must not knock down a sheet the user is typing in.
-fn refreshNotesIfIdle(state: *State) void {
-    if (state.app.focusScope() != state.app.tree.rootId()) return;
-    const current = state.app.router.current() orelse return;
-    if (!std.mem.eql(u8, current, "notes")) return;
-    state.app.router.replace(state.app, current) catch {};
-}
 ```
 
-Two things here outlive this app. `refreshNotesIfIdle` is the guard
-every asynchronous reply needs: results arrive on the UI thread between
-events, but the user may have navigated or opened a sheet since the
-request left — state is updated unconditionally, the *rebuild* is
-polite. And the failure leg raises a **notice** — `app.notify(.{ ... })`
+Two things here outlive this app. `app.refresh(.{ .route = "notes" })`
+is the shape every asynchronous reply takes: results arrive on the UI
+thread between events, but the user may have navigated, opened a sheet,
+or started typing since the request left — state is updated
+unconditionally, the *rebuild* is polite, and the `route` scopes it to
+the screen the reply is owed to ([routing.md](routing.md)). And the
+failure leg raises a **notice** — `app.notify(.{ ... })`
 — nokre's persistent, never-timing-out surface that survives navigation
 and deep-links back. It is `important` because a failed sync is worth
 interrupting for; a quiet notice (the default) would wait behind the
@@ -1126,7 +1116,7 @@ pub fn countWords(state: *State) void {
     }
     worker.send(.{ .analyze = corpus }) catch return;
     setStatsLine(state, "Counting…", .{});
-    refreshNotesIfIdle(state);
+    state.app.refresh(.{ .route = "notes" });
 }
 
 fn onStatsReply(ctx: ?*anyopaque, reply: Stats.Reply) void {
@@ -1134,7 +1124,7 @@ fn onStatsReply(ctx: ?*anyopaque, reply: Stats.Reply) void {
     switch (reply) {
         .analyzed => |a| setStatsLine(state, "{d} words across {d} notes; the longest word runs {d} letters.", .{ a.words, state.note_count, a.longest }),
     }
-    refreshNotesIfIdle(state);
+    state.app.refresh(.{ .route = "notes" });
 }
 
 fn ensureStats(state: *State) ?h.workers.Handle(Stats) {

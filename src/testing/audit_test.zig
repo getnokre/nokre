@@ -734,6 +734,29 @@ test "audit fails the test a refused navigation left behind" {
     try testing.expectError(error.NavigationRefused, audit(&app));
 }
 
+fn buildAndReload(_: ?*anyopaque, app: *App) anyerror!void {
+    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Loader" } });
+    // A callback landing mid-build reaching for the screen — the
+    // re-entrant reload router.zig refuses (`reload_in_build`).
+    app.reload() catch {};
+}
+
+test "audit fails the test a reload-during-build left behind" {
+    var app = try App.init(testing.allocator, .{
+        .viewport = .{ .w = 400, .h = 400 },
+        .routes = &.{.{ .name = "loader", .title = .{ .fixed = "Loader" }, .build = buildAndReload }},
+        .services = .mocks(),
+    });
+    defer app.deinit();
+    // Same footing as a refused reference: the verb returned clean and
+    // the screen stands whole (router_test.zig proves the no-op); the
+    // record is how the mistake still surfaces, here.
+    try app.navigate("loader");
+    diag.quiet = true;
+    defer diag.quiet = false;
+    try testing.expectError(error.NavigationRefused, audit(&app));
+}
+
 test "a notice routing nowhere is caught before its pane ever opens" {
     var app = try navApp(400, 600);
     defer app.deinit();
