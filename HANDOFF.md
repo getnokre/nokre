@@ -38,13 +38,8 @@ free to move labels at runtime — and did, the same day (below).
 ## Structural, nokre-internal
 
 What remains, now that the execution-order list is done. One session
-each, any order. No consumer API changes except where noted.
+each. No consumer API changes except where noted.
 
-- **One `services.Failure`.** http, oauth and iap each declare the
-  identical `struct { name: []const u8 }`; a consumer's shared
-  failure-surface helper cannot take one type. Unifying changes
-  published type identity — still an owner call to confirm at that
-  session's start, not yet decided.
 - **`render.dom` has one word for two things.** `dom.Options` is the
   serializer's options, `dom.stylesheet.Options` the CSS options, and
   the live driver bypasses `dom.zig` to import the serializer
@@ -52,6 +47,21 @@ each, any order. No consumer API changes except where noted.
 
 ## Shipped from this list (2026-08-04, for the record)
 
+- One `services.Failure`, owner-confirmed at the session's start: the
+  three structurally identical `struct { name }` declarations http,
+  oauth, and iap carried are one type, declared in `services.zig`
+  beside `Stateless` and `Journal` and re-exported by each service as
+  its own `Failure` with its own name roster — so per-service code
+  reads unchanged, `nokre.services.Failure` is the consumer's one
+  name, and a shared failure surface takes one type. A comptime
+  identity proof pins it in `services_test.zig`. The survey found both
+  apps consume the payloads structurally (`|failure|`, `failure.name`)
+  and the site generator never touches them, so the consumer migration
+  is the pin alone. Published type identity moved: `nokre.revision`
+  bumped to 4, all three pins with it. Tests, goldens (byte-identical),
+  and check-targets green on all three builds. docs/services.md "One
+  failure shape" is the home (nokre `80f5598`, rokovski `b366b539`,
+  site `9e70e05`).
 - One URL launcher per desktop, owned by the shell: the second
   ShellExecuteW / double-fork xdg-open each desktop carried under
   `src/services/oauth` is deleted (windows.c, linux.c, and oauth.h's
