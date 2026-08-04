@@ -32,23 +32,12 @@ owner review before the next item — never chain.
 The one hard sequencing constraint this file carried — test identity
 before the chosen locale — was discharged when the test-identity
 migration shipped (2026-08-04, below): the consumer's lookups are
-role+name and its fixtures pin `en`, so the chosen-locale work is free
-to move labels at runtime.
+role+name and its fixtures pin `en`, so the chosen-locale work was
+free to move labels at runtime — and did, the same day (below).
 
 ## Execution order
 
-### 1. The chosen locale, and route titles
-
-nokre owns the *device* locale but not the app's *chosen* one, so the
-apps fan the choice out by hand (17 controller assignments in one app,
-12 in the other — forget one line and that screen stays in the old
-language forever) and maintain a positional parallel array of title
-functions re-stamped onto `RouteDef.title` on every locale change. The
-app already holds `Chrome` and direction; holding the chosen locale,
-and letting `RouteDef.title` be a function of it, deletes both
-fan-outs. No design fork here — the sketch is the plan.
-
-### 2. `App.Chrome` without silent English
+### 1. `App.Chrome` without silent English
 
 **Decided: comptime-checked catalogue, opt-in.** The English defaults
 stay for the zero-config hello-world case. An app that opts into
@@ -59,7 +48,7 @@ drift — the failure mode the survey caught (the two apps already
 disagreed on one key) becomes unrepresentable for any app that has
 opted in.
 
-### 3. Worker queueing
+### 2. Worker queueing
 
 **Decided: the handle grows a small bounded FIFO.** A second ask
 queues instead of answering `error.Interrupted`; a mutation can no
@@ -70,7 +59,7 @@ refusal that every consumer papers over with the same code was not
 buying determinism, it was exporting complexity. Document the queue's
 bound and overflow behavior as the contract.
 
-### 4. `expectGolden` on the harness
+### 3. `expectGolden` on the harness
 
 Taking a golden from consumer code is a five-step incantation (set the
 module-global `testing.golden.update`, build a Skia surface at the
@@ -78,7 +67,7 @@ viewport, swap the measurer, render, unpack four accessors into
 `expectMatches`) — both apps carry the same 19-line wrapper. One
 harness verb, and the module-global update flag becomes an argument.
 
-### 5. A recording headless shell
+### 4. A recording headless shell
 
 A consumer building a headless native binary (system tests, e2e
 drivers) hand-declares nokre ABI symbols — 21 extern declarations
@@ -86,7 +75,7 @@ across 4 files in the consumer, with exact `callconv(.c)` signatures.
 A rename here is at best a link error there. nokre ships the
 null/recording shell it is currently forcing every consumer to write.
 
-### 6. Vendoring
+### 5. Vendoring
 
 **Decided: revision constant plus published manifest.** A `revision`
 constant in nokre source that consumers assert (replacing the prose
@@ -131,6 +120,19 @@ they don't collide. No consumer API changes except where noted.
 
 ## Shipped from this list (2026-08-04, for the record)
 
+- The chosen locale, and route titles: the App owns the chosen locale
+  (`Options.locale` / `setLocale` / `locale()`, a bounded tag copy,
+  validated whole before commit) and `RouteDef.title` is a union —
+  `.fixed`, or `.of_locale`, a function of the chosen tag —
+  so `setRouteTitles`/`retitle` retired with the second table they
+  handed over. Both consumer fan-outs deleted: the parallel title
+  arrays and every controller's locale copy (17 + 11, plus the user
+  app's duplicate wire-time set) became live reads through the App;
+  write/read/library keep change hooks for their locale-keyed caches;
+  the harness's `initial_route` may now be empty so a fixture wires
+  state before the first build, main's order. docs/routing.md owns the
+  title contract, docs/localization.md the wiring (nokre `4876c99`,
+  rokovski `e1983629`, site `.fixed` one-liner).
 - Test identity: the stable-key refusal affirmed; nokre unchanged. The
   consumer's ~1,650 label lookups (both apps' fixtures, tests, and e2e
   drivers) migrated to role+name, `getByLabel` removed from the
