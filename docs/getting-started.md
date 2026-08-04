@@ -237,7 +237,9 @@ Things worth noticing, because they generalize:
 - **Actions are context + function pointer.** `.{ .ctx = state, .call =
   onIncrement }` — nokre never allocates a closure. Every interactive
   element takes its action the same way (`on_press`, `on_toggle`,
-  `on_change`, `on_select`).
+  `on_change`, `on_select`), and a list row's action can carry the
+  row: `.call_indexed` plus `.index` delivers the position back at
+  press time ([elements.md](elements.md), "Actions").
 - **You mutate, then `invalidate()`.** Nothing renders until state
   changes and you say so; an app at rest costs zero CPU. Mutate the tree
   in place (as here, `setContent`) or rebuild a whole screen — Part 3

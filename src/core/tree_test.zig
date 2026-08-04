@@ -12,6 +12,8 @@ const Element = tree_mod.Element;
 const Role = element_mod.Role;
 
 fn noopPress(_: ?*anyopaque) void {}
+fn noopPressIndexed(_: ?*anyopaque, _: usize) void {}
+fn noopToggleIndexed(_: ?*anyopaque, _: usize, _: bool) void {}
 
 test "append builds sibling chains in order" {
     var tree = try Tree.init(std.testing.allocator);
@@ -455,6 +457,45 @@ test "append holds a tile to exactly one destination, as it holds a link" {
     try tree.append(group, .{ .tile = .{ .label = "Members", .route = "members" } });
     try tree.append(group, .{ .tile = .{ .label = "Leave circle", .on_press = .{ .call = noopPress } } });
     try std.testing.expectEqual(@as(usize, 2), tree.childCount(group));
+
+    // An indexed press is a destination like any other.
+    try tree.append(group, .{ .tile = .{
+        .label = "Row",
+        .on_press = .{ .call_indexed = noopPressIndexed, .index = 2 },
+    } });
+}
+
+test "append holds an action to one function between call and call_indexed" {
+    var tree = try Tree.init(std.testing.allocator);
+    defer tree.deinit();
+    const root = tree.rootId();
+
+    // Both set is ambiguity — `invoke` would have to pick which
+    // function the press meant — refused at the door like a link's two
+    // destinations.
+    try std.testing.expectError(error.ActionHasOneCall, tree.append(root, .{ .button = .{
+        .label = "Accept",
+        .on_press = .{ .call = noopPress, .call_indexed = noopPressIndexed },
+    } }));
+    try std.testing.expectError(error.ActionHasOneCall, tree.append(root, .{ .toggle = .{
+        .label = "Weekly digest",
+        .on_toggle = .{
+            .call = struct {
+                fn f(_: ?*anyopaque, _: bool) void {}
+            }.f,
+            .call_indexed = noopToggleIndexed,
+        },
+    } }));
+
+    // One function — either form — builds.
+    try tree.append(root, .{ .button = .{
+        .label = "Accept",
+        .on_press = .{ .call_indexed = noopPressIndexed, .index = 4 },
+    } });
+    try tree.append(root, .{ .toggle = .{
+        .label = "Weekly digest",
+        .on_toggle = .{ .call_indexed = noopToggleIndexed, .index = 1 },
+    } });
 }
 
 test "append holds a tile group to all marks or none" {

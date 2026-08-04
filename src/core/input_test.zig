@@ -44,6 +44,62 @@ test "tap activates a button through hit testing" {
     try testing.expect(app.focused.?.on(btn));
 }
 
+const RowRecorder = struct {
+    presses: u32 = 0,
+    index: usize = std.math.maxInt(usize),
+    checked: bool = false,
+    fn onPress(ctx: ?*anyopaque, index: usize) void {
+        const self: *RowRecorder = @ptrCast(@alignCast(ctx.?));
+        self.presses += 1;
+        self.index = index;
+    }
+    fn onToggle(ctx: ?*anyopaque, index: usize, checked: bool) void {
+        const self: *RowRecorder = @ptrCast(@alignCast(ctx.?));
+        self.presses += 1;
+        self.index = index;
+        self.checked = checked;
+    }
+};
+
+test "an indexed press delivers the row it was appended with" {
+    var rec: RowRecorder = .{};
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    // Two rows share the function and the context — only `index` tells
+    // them apart, which is the point of carrying it as data instead of
+    // baking it into a generated function per row.
+    _ = try app.tree.appendId(app.tree.rootId(), .{ .button = .{
+        .label = "Accept Ada",
+        .on_press = .{ .ctx = &rec, .call_indexed = RowRecorder.onPress, .index = 0 },
+    } });
+    const second = try app.tree.appendId(app.tree.rootId(), .{ .button = .{
+        .label = "Accept Grace",
+        .on_press = .{ .ctx = &rec, .call_indexed = RowRecorder.onPress, .index = 1 },
+    } });
+
+    app.performLayout();
+    try app.tap(app.tree.rectOf(second).center());
+
+    try testing.expectEqual(@as(u32, 1), rec.presses);
+    try testing.expectEqual(@as(usize, 1), rec.index);
+}
+
+test "an indexed toggle delivers its row alongside the new state" {
+    var rec: RowRecorder = .{};
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    const tg = try app.tree.appendId(app.tree.rootId(), .{ .toggle = .{
+        .label = "Mentions",
+        .on_toggle = .{ .ctx = &rec, .call_indexed = RowRecorder.onToggle, .index = 3 },
+    } });
+
+    app.focused = .of(tg);
+    try app.dispatch(.{ .key_down = .{ .key = .enter } });
+
+    try testing.expectEqual(@as(usize, 3), rec.index);
+    try testing.expect(rec.checked);
+}
+
 // ---- press and release (WCAG 2.5.2; docs/introduction.md) ----
 
 fn pressCounterApp(app: *App, counter: *PressCounter) !NodeId {

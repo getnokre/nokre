@@ -484,6 +484,18 @@ pub const Tree = struct {
             .scroll_region => |r| if (r.content_height != 0) return error.LayoutOwnedField,
             else => {},
         }
+        // An action names one function between `call` and
+        // `call_indexed`. Both set is ambiguity refused rather than
+        // resolved — `invoke` would have to pick — the same rule a
+        // link's two destinations get.
+        switch (element) {
+            .button => |b| if (bothCalls(b.on_press)) return error.ActionHasOneCall,
+            .tile => |t| if (bothCalls(t.on_press)) return error.ActionHasOneCall,
+            .text_input => |t| if (bothCalls(t.on_submit)) return error.ActionHasOneCall,
+            .toggle => |t| if (bothCalls(t.on_toggle)) return error.ActionHasOneCall,
+            .checkbox => |c| if (bothCalls(c.on_toggle)) return error.ActionHasOneCall,
+            else => {},
+        }
         switch (element) {
             // Spanned text: content is derived (append writes the
             // concatenation), so providing both is ambiguous and
@@ -565,9 +577,9 @@ pub const Tree = struct {
             // (`a11y/semantics.zig`) that answers no press.
             .tile => |t| {
                 if (parent_role != .tile_group) return error.TileOutsideTileGroup;
-                // `call`, not `ctx`: an action without a function is what
+                // `wired`, not `ctx`: an action without a function is what
                 // `Action.invoke` already treats as nothing to do.
-                const pressable = t.on_press.call != null;
+                const pressable = t.on_press.wired();
                 if (t.route.len != 0 and pressable) return error.TileHasOneDestination;
                 if (t.route.len == 0 and !pressable) return error.TileNeedsDestination;
                 // A row's mark is a fixed-width leading band, so the
@@ -795,6 +807,12 @@ pub const Tree = struct {
             .text, .list, .code_block, .blockquote => true,
             else => false,
         };
+    }
+
+    /// `anytype` because `Action` and `ToggleAction` share the rule
+    /// but not a type: one function between `call` and `call_indexed`.
+    fn bothCalls(action: anytype) bool {
+        return action.call != null and action.call_indexed != null;
     }
 
     /// The fill a child of `id` is drawn on: the nearest ancestor box

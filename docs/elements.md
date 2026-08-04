@@ -1374,6 +1374,30 @@ Actions are context + function-pointer pairs (`Action`, `ToggleAction`,
 .on_press = .{ .ctx = state, .call = onSave }
 ```
 
+A list row's action carries the row. Set `index` when the row is
+appended and the function receives it at dispatch:
+
+```zig
+.on_press = .{ .ctx = state, .call_indexed = onAccept, .index = i }
+
+fn onAccept(ctx: ?*anyopaque, index: usize) void { ... }
+```
+
+(`ToggleAction`'s indexed form adds the index *before* the checked
+state: `fn (ctx, index, checked)`.) An action names one function:
+setting both `call` and `call_indexed` is refused at `append`.
+
+The index is data on the element, so it is exactly as fresh as the tree
+it rides in — rebuilt with the screen, never baked into code. What it
+is **not** is a claim about the present: a press is delivered against
+the tree the user saw, and the list that tree was built from may have
+moved by the time the handler runs. So the contract is one sentence:
+**the receiver bounds-checks.** The handler (or the controller it
+calls) owns the list, so it alone can tell a live index from a stale
+one — check it against the list's current length once, where the list
+lives, and treat a miss as a no-op. nokre cannot do this for you; it
+knows the tree, not your data.
+
 ## Proposing an element
 
 The set is closed, but not frozen: a new element is argued in on

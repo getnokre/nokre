@@ -31,17 +31,21 @@ down whole. The `= undefined` pointer, all 13 of it, and both apps'
 wiring lines are deleted; docs/elements.md "sheet" is the contract's
 home.)
 
-1. **A payload-carrying `Action`.** `Action` carries no data, so a
-   list row's identity must be baked into a generated function: the
-   apps hold 21 comptime handler tables (`[max]*const fn` filled by an
-   inline loop), two of them byte-identical copies of a `handlerTable`
-   helper. Worse than the ceremony: the baked index outlives the row
-   list, and the apps disagree about who bounds-checks a stale press —
-   some screens guard, some hand the raw index to the controller. An
-   index-carrying call (`fn (ctx, index)`) deletes the tables and makes
-   the staleness question answerable once.
+(The payload-carrying `Action` shipped 2026-08-04. Additive, so no
+existing literal moved: `Action` and `ToggleAction` each grew an
+`index` plus a `call_indexed` that receives it at dispatch — the row is
+data on the element, exactly as fresh as the tree, the same shape
+`PickerItem.index` already had. Both calls set is refused at append
+(`ActionHasOneCall`), the index is part of an action's fold identity,
+and the staleness question got its one answer — the receiver
+bounds-checks, docs/elements.md "Actions" is the home. The re-count
+before acting was right to demand: the survey's 21 tables were 30 plus
+a one-off by ship time — all three `handlerTable` copies byte-identical,
+not two — some 950 generated functions, all deleted from both apps;
+the one genuinely unguarded stale press, read's `toggleEntry`, now
+guards like its siblings.)
 
-2. **Reload safety, and focus across reload.** `router.reload` starts
+1. **Reload safety, and focus across reload.** `router.reload` starts
    focus over by design — and both apps carry byte-identical modules
    to cope: `reloads.zig` (25 lines re-deriving "is a reload safe
    right now" from `focusScope`, the focused node's role, and a
@@ -51,7 +55,7 @@ home.)
    labels). Both are questions nokre should answer: a
    reload-safety predicate, and a reload that can carry focus.
 
-3. **`App.Chrome` without silent English.** All 17 chrome strings
+2. **`App.Chrome` without silent English.** All 17 chrome strings
    default to English literals, so a mapping a consumer forgets
    compiles and ships English — the audit cannot object to a valid
    label in the wrong language, and the survey caught the two apps
@@ -59,7 +63,7 @@ home.)
    hello-world needs no catalogue); the options are a no-default
    `Chrome` for l10n'd apps or a comptime-checked catalogue hand-off.
 
-4. **The chosen locale, and route titles.** nokre owns the *device*
+3. **The chosen locale, and route titles.** nokre owns the *device*
    locale but not the app's *chosen* one, so the apps fan the choice
    out by hand (17 controller assignments in one app, 12 in the other
    — forget one line and that screen stays in the old language
@@ -69,7 +73,7 @@ home.)
    locale, and letting `RouteDef.title` be a function of it, deletes
    both fan-outs.
 
-5. **Worker queueing.** A worker handle answers a second ask with
+4. **Worker queueing.** A worker handle answers a second ask with
    `error.Interrupted`, so a mutation can fail because an unrelated
    solve happened to be in flight. Both apps carry a byte-identical
    220-line `QueuedPowSolver` (and a sibling for corpus reads) that
@@ -77,14 +81,14 @@ home.)
    grows a small FIFO or the refusal is documented as a guarantee with
    the queue as the blessed consumer pattern — today it is neither.
 
-6. **A recording headless shell.** A consumer building a headless
+5. **A recording headless shell.** A consumer building a headless
    native binary (system tests, e2e drivers) hand-declares nokre ABI
    symbols — 21 extern declarations across 4 files in the consumer,
    with exact `callconv(.c)` signatures. A rename here is at best a
    link error there. nokre should ship the null/recording shell it is
    forcing every consumer to write.
 
-7. **`expectGolden` on the harness.** Taking a golden from consumer
+6. **`expectGolden` on the harness.** Taking a golden from consumer
     code is a five-step incantation (set the module-global
     `testing.golden.update`, build a Skia surface at the viewport,
     swap the measurer, render, unpack four accessors into

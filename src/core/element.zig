@@ -32,20 +32,46 @@ pub const HeadingLevel = enum(u8) {
 };
 
 /// A context+function pair. nokre never allocates closures.
+///
+/// A list row's action carries the row: set `index` at append and
+/// receive it in `call_indexed`. The alternative is a comptime table of
+/// generated functions, one per possible row, baking a position into
+/// code — the index here is data on the element, exactly as fresh as
+/// the tree it rides in (the same reason `PickerItem` carries its
+/// `index` on the node rather than in a callback). A press can still
+/// land after the list it named has moved, and that check belongs to
+/// the receiver, who alone knows the list — the contract's home is
+/// docs/elements.md, "Actions". `call` and `call_indexed` name one
+/// function between them; both set is refused at append.
 pub const Action = struct {
     ctx: ?*anyopaque = null,
     call: ?*const fn (ctx: ?*anyopaque) void = null,
+    /// Handed to `call_indexed` at dispatch. Meaningless to `call`.
+    index: usize = 0,
+    call_indexed: ?*const fn (ctx: ?*anyopaque, index: usize) void = null,
 
     pub fn invoke(self: Action) void {
+        if (self.call_indexed) |f| return f(self.ctx, self.index);
         if (self.call) |f| f(self.ctx);
+    }
+
+    /// Whether any function is named — the thing `invoke` treats as
+    /// something to do.
+    pub fn wired(self: Action) bool {
+        return self.call != null or self.call_indexed != null;
     }
 };
 
 pub const ToggleAction = struct {
     ctx: ?*anyopaque = null,
     call: ?*const fn (ctx: ?*anyopaque, checked: bool) void = null,
+    /// Handed to `call_indexed` at dispatch. Meaningless to `call`.
+    /// Same contract as `Action.index`.
+    index: usize = 0,
+    call_indexed: ?*const fn (ctx: ?*anyopaque, index: usize, checked: bool) void = null,
 
     pub fn invoke(self: ToggleAction, checked: bool) void {
+        if (self.call_indexed) |f| return f(self.ctx, self.index, checked);
         if (self.call) |f| f(self.ctx, checked);
     }
 };
