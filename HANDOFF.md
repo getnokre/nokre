@@ -12,93 +12,105 @@ alongside. Nothing here is in flight.
 The evidence throughout is a survey of nokre's one real consumer — the
 two rokovski apps (`packages/feedback_fe_user_nokre`,
 `packages/feedback_fe_org_nokre`). The counts are that survey's, as of
-this writing; re-count before acting, the apps move.
+this writing; re-count before acting, the apps move. (The append-flip
+pass already caught the survey's blind spot once: the site generator,
+`getnokre.github.io/src/content.zig`, is a third consumer — check it
+too.)
 
-## Contract redesigns, ranked by measured consumer cost
+## How to execute this file
 
-(The list's original #1, the navigation error surface, shipped
-2026-08-04: a bad reference is now a recorded refusal the audit fails
-tests over — `Router.refused`, `vet`, the `unresolvable_route` rule —
-and docs/routing.md "Errors, and refusals" is the contract's home.)
+Every open question below was decided by the owner on 2026-08-04; what
+remains is execution. The cadence, unchanged from the earlier passes:
+**one item per session**, and each item lands whole — the nokre change,
+both rokovski apps (and the site generator where it is touched)
+migrated in the same pass, `zig fmt src/`, `zig build test` green on
+both sides (`-Dskia -Dgolden` when anything visual moved, goldens
+byte-identical unless the change is intentionally visual), e2e where
+the apps have it, site rebuilt last per the publish order. Stop for
+owner review before the next item — never chain.
 
-(The original #2, sheets as declared builders, shipped 2026-08-04 as
-well — anchored on the App rather than `RouteDef`, because the survey
-showed sheets are not route-shaped in either direction. `App.openSheet`
-takes a `SheetBuilder` (ctx, build fn, optional `on_dismiss`); the
-framework keeps it as data, re-runs it after `reload`, drops it — with
-notice — on navigation and every dismissal, and takes a failed build
-down whole. The `= undefined` pointer, all 13 of it, and both apps'
-wiring lines are deleted; docs/elements.md "sheet" is the contract's
-home.)
+One hard sequencing constraint: the test-identity migration (item 1)
+lands **before or alongside** the chosen-locale work (item 2), because
+hardcoded-label lookups get strictly more fragile once labels can
+change language at runtime.
 
-(The payload-carrying `Action` shipped 2026-08-04. Additive, so no
-existing literal moved: `Action` and `ToggleAction` each grew an
-`index` plus a `call_indexed` that receives it at dispatch — the row is
-data on the element, exactly as fresh as the tree, the same shape
-`PickerItem.index` already had. Both calls set is refused at append
-(`ActionHasOneCall`), the index is part of an action's fold identity,
-and the staleness question got its one answer — the receiver
-bounds-checks, docs/elements.md "Actions" is the home. The re-count
-before acting was right to demand: the survey's 21 tables were 30 plus
-a one-off by ship time — all three `handlerTable` copies byte-identical,
-not two — some 950 generated functions, all deleted from both apps;
-the one genuinely unguarded stale press, read's `toggleEntry`, now
-guards like its siblings.)
+## Execution order
 
-(The previous #1, reload safety and focus across reload, shipped
-2026-08-04. `App.reloadSafe` is the predicate — false while an overlay
-owns the screen or an editable holds focus — and `reload` alone now
-carries focus: by node identity when the node survived (chrome), else
-by accessible name within the active layer, leaning on the same
-duplicate-label refusal the consumers' walk did; link-span stops and
-over-long labels start over rather than guess. `reload` itself never
-asks the predicate — deliberate gestures must land mid-edit — so the
-check stays at the consumer's unprompted-reply sites. Both apps'
-`reloads.zig` and `sheets.zig` are deleted; docs/routing.md owns the
-contract.)
+### 1. Test identity — refusal affirmed, migrate the consumer
 
-1. **`App.Chrome` without silent English.** All 17 chrome strings
-   default to English literals, so a mapping a consumer forgets
-   compiles and ships English — the audit cannot object to a valid
-   label in the wrong language, and the survey caught the two apps
-   already drifted on one key. The trade is real (defaults are why a
-   hello-world needs no catalogue); the options are a no-default
-   `Chrome` for l10n'd apps or a comptime-checked catalogue hand-off.
+**Decided: the refusal stands.** nokre's query surface stays label and
+role+name only; no stable key will be added. The work is entirely on
+the consumer side: its ~1,634 control lookups by hardcoded English
+label (re-count) migrate to role+name per the consumer's own written
+rule, and its tests pin a locale explicitly so name-based lookups stay
+deterministic when item 2 makes the chosen locale switchable. This was
+the survey's largest single coupling; it is now a migration, not a
+question.
 
-2. **The chosen locale, and route titles.** nokre owns the *device*
-   locale but not the app's *chosen* one, so the apps fan the choice
-   out by hand (17 controller assignments in one app, 12 in the other
-   — forget one line and that screen stays in the old language
-   forever) and maintain a positional parallel array of title
-   functions re-stamped onto `RouteDef.title` on every locale change.
-   The app already holds `Chrome` and direction; holding the chosen
-   locale, and letting `RouteDef.title` be a function of it, deletes
-   both fan-outs.
+### 2. The chosen locale, and route titles
 
-3. **Worker queueing.** A worker handle answers a second ask with
-   `error.Interrupted`, so a mutation can fail because an unrelated
-   solve happened to be in flight. Both apps carry a byte-identical
-   220-line `QueuedPowSolver` (and a sibling for corpus reads) that
-   exists only to turn "refuses" into "queues". Either the handle
-   grows a small FIFO or the refusal is documented as a guarantee with
-   the queue as the blessed consumer pattern — today it is neither.
+nokre owns the *device* locale but not the app's *chosen* one, so the
+apps fan the choice out by hand (17 controller assignments in one app,
+12 in the other — forget one line and that screen stays in the old
+language forever) and maintain a positional parallel array of title
+functions re-stamped onto `RouteDef.title` on every locale change. The
+app already holds `Chrome` and direction; holding the chosen locale,
+and letting `RouteDef.title` be a function of it, deletes both
+fan-outs. No design fork here — the sketch is the plan.
 
-4. **A recording headless shell.** A consumer building a headless
-   native binary (system tests, e2e drivers) hand-declares nokre ABI
-   symbols — 21 extern declarations across 4 files in the consumer,
-   with exact `callconv(.c)` signatures. A rename here is at best a
-   link error there. nokre should ship the null/recording shell it is
-   forcing every consumer to write.
+### 3. `App.Chrome` without silent English
 
-5. **`expectGolden` on the harness.** Taking a golden from consumer
-    code is a five-step incantation (set the module-global
-    `testing.golden.update`, build a Skia surface at the viewport,
-    swap the measurer, render, unpack four accessors into
-    `expectMatches`) — both apps carry the same 19-line wrapper. One
-    harness verb, and the module-global update flag can become an
-    argument.
+**Decided: comptime-checked catalogue, opt-in.** The English defaults
+stay for the zero-config hello-world case. An app that opts into
+localization hands over a catalogue, and the hand-off is
+comptime-checked: all 17 chrome strings (re-count) covered or it does
+not compile. Missing coverage becomes a compile error, not a runtime
+drift — the failure mode the survey caught (the two apps already
+disagreed on one key) becomes unrepresentable for any app that has
+opted in.
+
+### 4. Worker queueing
+
+**Decided: the handle grows a small bounded FIFO.** A second ask
+queues instead of answering `error.Interrupted`; a mutation can no
+longer fail because an unrelated solve happened to be in flight. Both
+apps' byte-identical 220-line `QueuedPowSolver` (and the corpus-read
+sibling) are deleted in the same pass. The deciding evidence: a
+refusal that every consumer papers over with the same code was not
+buying determinism, it was exporting complexity. Document the queue's
+bound and overflow behavior as the contract.
+
+### 5. `expectGolden` on the harness
+
+Taking a golden from consumer code is a five-step incantation (set the
+module-global `testing.golden.update`, build a Skia surface at the
+viewport, swap the measurer, render, unpack four accessors into
+`expectMatches`) — both apps carry the same 19-line wrapper. One
+harness verb, and the module-global update flag becomes an argument.
+
+### 6. A recording headless shell
+
+A consumer building a headless native binary (system tests, e2e
+drivers) hand-declares nokre ABI symbols — 21 extern declarations
+across 4 files in the consumer, with exact `callconv(.c)` signatures.
+A rename here is at best a link error there. nokre ships the
+null/recording shell it is currently forcing every consumer to write.
+
+### 7. Vendoring
+
+**Decided: revision constant plus published manifest.** A `revision`
+constant in nokre source that consumers assert (replacing the prose
+pin in two markdown files that already disagreed when surveyed), and
+the web site's file list published as data — emitted by the build the
+way `zig build pkg` already emits manifests — so the consumer's CLI
+reads it instead of re-typing it with a comment admitting it is
+nokre's contract. Hand-bumped constant, no CI; the no-CI stance is not
+in question.
 
 ## Structural, nokre-internal
+
+One session each, any order, interleaved with the list above wherever
+they don't collide. No consumer API changes except where noted.
 
 - **`Button`'s form as a tagged union.** `secondary`, `icon`,
   `icon_only`, `provider` interact under five `validateAppend` rules —
@@ -112,33 +124,33 @@ contract.)
   which of them call `workersViewReady` — invisible asymmetries unless
   all four are diffed. A `Runner(comptime Adapter)` in `c_shell.zig`
   drops each to ~12 lines.
-- **Two C copies of "open a URL" per desktop.** The desktop shells
-  transcribe oauth's `windows.c`/`linux.c` launchers (their comments
-  say so). Deduping means oauth's loopback leg names the shell symbol
-  — a deliberate coupling that needs an owner's yes, which is why it
-  was not taken mechanically.
+- **Two C copies of "open a URL" per desktop.** **Decided: dedupe.**
+  One launcher per platform, owned by the shell; oauth's loopback leg
+  names the shell symbol. The coupling is deliberate and
+  owner-approved — document it as such where the symbol lives, so the
+  next reader doesn't "fix" it back into two copies.
 - **One `services.Failure`.** http, oauth and iap each declare the
   identical `struct { name: []const u8 }`; a consumer's shared
   failure-surface helper cannot take one type. Unifying changes
-  published type identity, so it is a call, not a patch.
+  published type identity — still an owner call to confirm at that
+  session's start, not yet decided.
 - **`render.dom` has one word for two things.** `dom.Options` is the
   serializer's options, `dom.stylesheet.Options` the CSS options, and
   the live driver bypasses `dom.zig` to import the serializer
   directly. Rename one, or make the re-export the only path.
 
-## Decisions, not patches
+## Shipped from this list (2026-08-04, for the record)
 
-- **Stable test identity.** The consumer holds 1,634 control lookups
-  by hardcoded English label, against its own written rule to locate
-  by semantic identity — because nokre's query surface deliberately
-  offers label and role+name only. Either the refusal is affirmed and
-  the consumer's rule changes, or nokre grows a stable key. The
-  survey's largest single coupling; it should be decided, not
-  inherited.
-- **Vendoring.** The consumer reaches nokre by bare relative path; the
-  only revision pin is prose in two markdown files (already
-  disagreeing when surveyed), and the consumer's CLI re-types the web
-  site's file list with a comment admitting it is nokre's contract. A
-  revision constant consumers can assert, and the site manifest
-  published as data, close both — at the cost of build-time machinery
-  nokre has so far refused. The no-CI stance is not in question.
+- Navigation error surface: bad references are recorded refusals
+  (`Router.refused`, `vet`, the `unresolvable_route` audit rule);
+  docs/routing.md "Errors, and refusals" is the home.
+- Sheets as declared builders, anchored on the App (`App.openSheet` +
+  `SheetBuilder`), re-run after `reload`, dropped with notice on
+  navigation and dismissal; docs/elements.md "sheet" is the home.
+- Payload-carrying `Action`: `index` + `call_indexed`, both-set
+  refused at append, index in fold identity, receiver bounds-checks;
+  docs/elements.md "Actions" is the home. (~950 generated consumer
+  functions deleted.)
+- Reload safety and focus across reload: `App.reloadSafe` at the
+  consumer's unprompted-reply sites, `reload` carries focus by
+  identity then accessible name; docs/routing.md owns the contract.
