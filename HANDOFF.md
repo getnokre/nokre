@@ -37,15 +37,7 @@ free to move labels at runtime — and did, the same day (below).
 
 ## Execution order
 
-### 1. A recording headless shell
-
-A consumer building a headless native binary (system tests, e2e
-drivers) hand-declares nokre ABI symbols — 21 extern declarations
-across 4 files in the consumer, with exact `callconv(.c)` signatures.
-A rename here is at best a link error there. nokre ships the
-null/recording shell it is currently forcing every consumer to write.
-
-### 2. Vendoring
+### 1. Vendoring
 
 **Decided: revision constant plus published manifest.** A `revision`
 constant in nokre source that consumers assert (replacing the prose
@@ -90,6 +82,23 @@ they don't collide. No consumer API changes except where noted.
 
 ## Shipped from this list (2026-08-04, for the record)
 
+- The recording headless shell, as the library's own:
+  `testing.shell` is every free C hook a driver owes, defined once —
+  the deep-link and locale pairs answering as a shell with nothing to
+  report (locale fires its callback synchronously with the empty tag,
+  its contract's way), and the three hooks where a screen's outcome
+  would otherwise vanish — clipboard, share sheet, outbound URL —
+  recording last-write-wins into slots read back with
+  `lastCopied`/`lastShared`/`lastOpened`. Naming the module
+  (`comptime { _ = nokre.testing.shell; }`) is the whole install, and
+  a windowed build that names it collides with the real shell at link
+  time — the intended guard. The consumer's 21 hand-written exports
+  across 4 files deleted (both `e2e/shell.zig` files whole), nokre's
+  own three drivers ride the same module, and the site generator keeps
+  its own shell deliberately: it truthfully reports `en`, not nothing.
+  The pump stays the driver's job by design. docs/testing.md owns the
+  driver contract, docs/internals/platform-shells.md the shell-side
+  facts (nokre `92ef0ba`, rokovski `d91a3eef`).
 - The golden take, as a harness verb: `Harness.expectGolden` is the
   whole five-step incantation — a Skia surface at the app's viewport,
   the real measurer swapped in, one render through the production
