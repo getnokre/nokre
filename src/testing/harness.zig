@@ -69,7 +69,7 @@ pub const InitOptions = struct {
     build: ?BuildFn = null, // plain screen…
     routes: []const router_mod.RouteDef = &.{}, // …or routed (exactly one of build/routes)
     nav: []const nav_mod.Destination = &.{},
-    initial_route: []const u8 = "", // required when routes given
+    initial_route: []const u8 = "", // with routes: the first screen, or "" to defer — a fixture that must wire consumer state before the first build navigates itself
     store: secure_store.Mock.Config = .{},
     http: http.Mock.Config = .{}, // the app's fake server, live from the first request
     locale: locale.Mock.Config = .{}, // the device tag at boot; "" is "the platform said nothing"
@@ -122,7 +122,11 @@ pub const Harness = struct {
             try build(opts.ctx, &self.app);
         } else {
             if (opts.nav.len != 0) try self.app.setNav(opts.nav);
-            try self.app.navigate(opts.initial_route);
+            // "" defers the first navigation to the caller: a consumer
+            // fixture wires its state against the constructed app first,
+            // so the first build never reads a state that has no app yet
+            // — main's own order.
+            if (opts.initial_route.len != 0) try self.app.navigate(opts.initial_route);
         }
         try self.audit();
         return self;

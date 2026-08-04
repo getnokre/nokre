@@ -11,14 +11,13 @@ const L = h.l10n.Bundle(&.{
     @embedFile("l10n/app_fa.arb"),
 });
 
-// Somewhere in app state:
-locale: L.Locale = L.default_locale,
-
-// In a build function or action:
-try tree.append(root, .{ .heading = .{ .content = L.tr(state.locale, .inboxTitle), .level = .h1 } });
+// In a build function or action: the app's chosen locale (App.setLocale)
+// picks the catalog.
+const loc = L.resolve(app.locale());
+try tree.append(root, .{ .heading = .{ .content = L.tr(loc, .inboxTitle), .level = .h1 } });
 
 var buf: [128]u8 = undefined;
-const line = try L.fmt(&buf, state.locale, .nUnread, .{ .count = unread });
+const line = try L.fmt(&buf, loc, .nUnread, .{ .count = unread });
 try tree.append(root, .{ .text = .{ .content = line } });
 ```
 
@@ -31,26 +30,30 @@ message id), and five functions:
 | `tr(locale, .key)` | A message with no placeholders, as a slice of constant data. No buffer, no error. Calling it on a message *with* placeholders is a compile error pointing at `fmt`. |
 | `fmt(buf, locale, .key, args)` | Formats into the caller's buffer, returns the written slice. `args` is an anonymous struct with exactly the message's placeholders — a missing, extra, or mistyped field is a compile error naming the message. The only runtime error is `NoSpace`: text is never silently truncated. |
 | `resolve(tag)` | Runtime tag → bundled locale: exact match first (case and `-`/`_` ignored), then bare-language match in source order, then the template. `"fa-IR"` finds `.fa`; `"de"` against an en/fa bundle yields `.en`. |
-| `tag(locale)` | The `@@locale` string back, for display or storage. |
+| `tag(locale)` | The `@@locale` string back — what `App.setLocale` takes, and what storage keeps. |
 | `dir(locale)` | The locale's writing direction (`l10n.Direction`), read from its tag at comptime. Feed it to `App.setDirection` to mirror the chrome — see [Right-to-left](#right-to-left). |
 
-There is no allocation anywhere, and no state: which locale is current
-is one field in *your* app state, changed like any other state — set it,
-rebuild, done. Which locale the *device* wants is the `locale` service
+There is no allocation anywhere, and no state in the bundle: which
+locale the app is *in* is the **App's own state** — chosen with
+`App.setLocale` (or `Options.locale` at boot), read back as a tag with
+`App.locale()`, "" until chosen — so every screen, controller, and
+route title reads one live fact instead of keeping a copy a change
+could miss. Which locale the *device* wants is the `locale` service
 ([services.md](services.md)), and `resolve` is the bridge:
 
 ```zig
-// In build: the device picks the catalog, the catalog decides the rest.
+// The device picks the catalog, the catalog decides the rest.
 const dev = h.services.locale.tag(app);  // "fa-IR", or "" if it won't say
-state.locale = L.resolve(dev);           // "" and unbundled → the template
-app.setDirection(L.dir(state.locale));   // see Right-to-left, below
+const loc = L.resolve(dev);              // "" and unbundled → the template
+try app.setLocale(L.tag(loc));           // the app is now *in* that locale
+app.setDirection(L.dir(loc));            // see Right-to-left, below
 ```
 
 A device tag nokre's bundle doesn't carry is not an error state, it is
 the template — the fallback `resolve` was written for. A language
-switched mid-session runs the same three lines from the service's
-change handler; the tag is cached app state, so reading it per frame
-costs nothing.
+switched mid-session runs the same lines from the service's change
+handler; the chosen tag is App state, so reading it per frame costs
+nothing.
 
 ## The format
 
@@ -131,8 +134,8 @@ screen can carry both scripts; it is a property of the locale, which the
 locale knows. The bridge is in the bundle:
 
 ```zig
-// On locale change (and once at startup):
-app.setDirection(L.dir(state.locale));   // L.dir(.fa) is .rtl, L.dir(.en) .ltr
+// On locale change (and once at startup), beside setLocale:
+app.setDirection(L.dir(loc));   // L.dir(.fa) is .rtl, L.dir(.en) .ltr
 ```
 
 `L.dir(locale)` reads the direction from the `@@locale` tag at comptime,
@@ -165,12 +168,10 @@ are called. Both are localizable, from their own home, and a locale
 change says all of it in three lines beside `setDirection`:
 
 ```zig
-fn applyLocale(state: *State, loc: L.Locale) !void {
-    state.locale = loc;
-    state.app.setChrome(chromeFor(loc));   // nokre's own words
-    state.routes = routesFor(loc);          // borrowed: it outlives the call
-    try state.app.setRouteTitles(&state.routes); // what each screen is called
-    state.app.setDirection(L.dir(loc));     // which way the chrome runs
+fn applyLocale(state: *State, loc: L.Locale) void {
+    state.app.setLocale(L.tag(loc)) catch {}; // what each screen is called
+    state.app.setChrome(chromeFor(loc));      // nokre's own words
+    state.app.setDirection(L.dir(loc));       // which way the chrome runs
 }
 ```
 
@@ -178,33 +179,35 @@ fn applyLocale(state: *State, loc: L.Locale) !void {
 line of the nav is labelled from ([routing.md](routing.md)): the
 destinations, the collapsed chip's section, the rows of the picker it
 opens, and the marker for a screen that is none of them. That is one
-home on purpose, so a nav and a screen's own chrome cannot disagree. But
-the table is comptime and a locale is not, so a translated app hands the
-**same table** over again with translated titles:
+home on purpose, so a nav and a screen's own chrome cannot disagree. A
+translated app declares each title as a **function of the chosen
+locale** and the one table serves every language:
 
 ```zig
-fn routesFor(loc: L.Locale) [3]nok.RouteDef {
-    return .{
-        .{ .name = "notes", .title = L.tr(loc, .notesTitle), .build = buildNotes },
-        .{ .name = "note", .title = L.tr(loc, .noteTitle), .args = 1, .build = buildNote },
-        .{ .name = "settings", .title = L.tr(loc, .settingsTitle), .build = buildSettings },
-    };
+const routes = [_]nok.RouteDef{
+    .{ .name = "notes", .title = .{ .of_locale = notesTitle }, .build = buildNotes },
+    .{ .name = "note", .title = .{ .of_locale = noteTitle }, .args = 1, .build = buildNote },
+    .{ .name = "settings", .title = .{ .of_locale = settingsTitle }, .build = buildSettings },
+};
+
+fn notesTitle(tag: []const u8) []const u8 {
+    return L.tr(L.resolve(tag), .notesTitle);
 }
 ```
 
-The table is **borrowed**, as it is at `App.init` — the router keeps the
-slice — so hold it in your own state (or make it a comptime array per
-locale). The titles inside it need no such care: `tr` hands back
-constant data.
-
-`setRouteTitles` accepts a retitling and nothing else — same length,
-same names, same arities, same builders, position for position, or
-`error.RouteTablesDiffer`. A stack entry holds an *index* into the
-table, so a table that reordered or replaced a route would silently
-rename every screen already on the stack, in one language only. Nothing
-is committed until the whole table passes, and the nav's roster
-re-borrows from the new one on the spot: a row of destinations, a
-collapsed chip and the marker beside them all change together.
+The **chosen locale is the App's own state**: `Options.locale` for an
+app that knows it at boot, `App.setLocale(L.tag(loc))` whenever it
+changes, `App.locale()` to read it back, and `""` — the tag of an app
+that never chose — until then, which `resolve` already reads as the
+template. Pass the tag of the locale actually on screen (the *resolved*
+one), so the titles and the catalog agree. A title function must answer
+**every** tag with constant data — `tr` hands back exactly that — and
+`setLocale` verifies it before committing: a tag some title answers
+with nothing is `error.EmptyRouteTitle` and the app is left exactly as
+it was, the same footing as the empty `.fixed` title `App.init`
+refuses. The nav re-says itself on the spot: a row of destinations, a
+collapsed chip and the marker beside them all change together, with no
+second table to hold and no positional re-stamp to forget.
 
 ### The framework's own words
 

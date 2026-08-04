@@ -37,9 +37,9 @@ const NodeId = tree_mod.NodeId;
 /// with the nav and the screen's own chrome free to disagree.
 ///
 /// Which is also why a translated nav bar is not a label here: the
-/// titles are the table's, so the table is what a locale change hands
-/// over again (`App.setRouteTitles`). One screen, one name, in every
-/// language.
+/// titles are the table's, functions of the chosen locale where the app
+/// has more than one language (`App.setLocale`). One screen, one name,
+/// in every language.
 pub const Destination = struct {
     /// A route *name*, never a reference: a destination is a place the
     /// app always has, and an argument would make it one particular
@@ -61,13 +61,15 @@ pub const max_nav_items = 5;
 /// viewport, so the list itself has to live somewhere that survives
 /// reshaping.
 ///
-/// Borrowed, never owned — every field points into the route table,
-/// which outlives the App (`Router.init` holds the slice it was given),
-/// and the tree copies what it keeps.
+/// Borrowed, never owned — the route points into the table, which
+/// outlives the App (`Router.init` holds the slice it was given), the
+/// label into a title's constant data (`router.Title`'s rule), and the
+/// tree copies what it keeps.
 pub const RosterItem = struct {
-    /// What the line is called: the route's `RouteDef.title`, resolved
-    /// once — by `setNav` for a destination, by the router for the
-    /// screen standing in for itself.
+    /// What the line is called: the route's `RouteDef.title` in the
+    /// chosen locale, evaluated by `setNav` for a destination (and
+    /// again by `App.setLocale` when the locale moves), by the router
+    /// for the screen standing in for itself.
     label: []const u8,
     /// What activating it navigates to. A destination carries its route
     /// *name*; the off-roster entry carries the current **reference**,
@@ -112,7 +114,7 @@ pub fn effectiveRoster(app: *const App, buf: *RosterBuf) []const RosterItem {
         // Off the roster: the route names itself. `currentRef` is
         // non-null whenever `current` is — both read the same top entry.
         buf[n] = .{
-            .label = app.router.currentTitle().?,
+            .label = app.router.currentTitle(app.locale()).?,
             .route = app.router.currentRef().?,
             .icon = element_mod.nav_here_icon,
             .here = true,
@@ -169,9 +171,11 @@ pub fn setNav(app: *App, items: []const Destination) !void {
     app.nav_items.clearRetainingCapacity();
     for (items) |item| {
         // The labels settle here: they are the titles the routes
-        // declare, borrowed from the table.
+        // declare, said in the chosen locale — and re-said by
+        // `App.setLocale` when it changes, which is why the roster
+        // never caches across one.
         const def = app.router.lookup(item.route).?;
-        try app.nav_items.append(app.gpa, .{ .label = def.title, .route = def.name, .icon = item.icon });
+        try app.nav_items.append(app.gpa, .{ .label = def.title.text(app.locale()), .route = def.name, .icon = item.icon });
     }
     // Reused when a bar is already up, so re-declaring a roster does
     // not replace the node that focus — or an open picker — is naming.
@@ -231,7 +235,7 @@ pub fn clearNav(app: *App) void {
 /// optimization: a rebuild replaces the nodes, and replacing the node
 /// that focus (or an open picker) names would drop both. Chrome that
 /// redraws itself for no reason is chrome that loses your place — and
-/// when the redraw is for a reason (a retitle, the collapse flipping),
+/// when the redraw is for a reason (a locale change, the collapse flipping),
 /// the place is carried across it instead (`holdNavFocus`,
 /// `reseatNavFocus`).
 pub fn syncNavChrome(app: *App) !void {
@@ -276,8 +280,8 @@ pub fn syncNavChrome(app: *App) !void {
         // The destinations draw their own current state from the router,
         // so the row survives a move between two of them untouched. What
         // it cannot survive is the roster changing under it — crossing on
-        // or off it adds or drops the trailing marker, and a retitled
-        // table renames every one of them (`App.setRouteTitles`) — so the
+        // or off it adds or drops the trailing marker, and a locale
+        // change renames every one of them (`App.setLocale`) — so the
         // guard compares the words and the tail as well as the count.
         if (rowMatches(app, nav, roster)) return;
         const held = holdNavFocus(app, nav);
@@ -297,7 +301,7 @@ pub fn syncNavChrome(app: *App) !void {
 /// it is a no-op precisely to protect these, so the path that must
 /// replace the nodes has to hand them across itself.
 ///
-/// Focus is held in the one term of a destination a retitle cannot
+/// Focus is held in the one term of a destination a relabel cannot
 /// change: its route. The chip and the here-marker have no route, but
 /// each shape holds at most one of them, so the kind alone names it.
 const NavHold = union(enum) {

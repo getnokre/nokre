@@ -162,7 +162,7 @@ fn buildHome(ctx: ?*anyopaque, app: *h.App) !void {
     } });
 }
 
-const routes = [_]h.RouteDef{.{ .name = "home", .title = "Home", .build = buildHome }};
+const routes = [_]h.RouteDef{.{ .name = "home", .title = .{ .fixed = "Home" }, .build = buildHome }};
 
 comptime {
     // `main` never runs on the web; without this nothing pulls the

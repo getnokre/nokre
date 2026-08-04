@@ -31,6 +31,7 @@ const tree_mod = @import("tree.zig");
 const workers = @import("../workers/workers.zig");
 const services_mod = @import("../services/services.zig");
 const clipboard = @import("../services/clipboard/clipboard.zig");
+const locale_svc = @import("../services/locale/locale.zig");
 
 const Size = geometry.Size;
 const Tree = tree_mod.Tree;
@@ -170,6 +171,15 @@ pub const App = struct {
     /// English until an app says otherwise. Borrowed, never owned — a
     /// catalog's `tr` hands back constant data, `RouteDef.title`'s rule.
     chrome: Chrome = .{},
+    /// The app's *chosen* locale, as a BCP 47 tag — read it with
+    /// `locale()`, choose it with `setLocale` (or at boot,
+    /// `Options.locale`). Empty until chosen, which every `.of_locale`
+    /// title must answer as the template (`router.Title`). A copy, not
+    /// a borrow — the tag often arrives from the locale *service*'s
+    /// mutable buffer, and language state must not change under the
+    /// app because the device's did.
+    locale_buf: [locale_svc.max_tag_bytes]u8 = undefined,
+    locale_len: u8 = 0,
 
     /// Every string nokre itself puts on a screen. Declared with the
     /// elements it names (element.zig), because each chrome element
@@ -204,6 +214,11 @@ pub const App = struct {
         safe_bottom: i32 = 0,
         measurer: text.Measurer = text.Measurer.fixed,
         routes: []const router_mod.RouteDef = &.{},
+        /// The chosen locale's tag at boot, for an app that knows it
+        /// before `init` (a restored preference). "" is "not chosen
+        /// yet" — the common boot, refined by `setLocale` once the
+        /// device has said or the session has restored.
+        locale: []const u8 = "",
         ctx: ?*anyopaque = null,
         scheme: color.Scheme = .auto,
         /// The platform set. (Keep Options decl-free: the test-build
@@ -271,6 +286,11 @@ pub const App = struct {
             .scheme = options.scheme,
         };
         errdefer self.runtime.destroy();
+        // Through the one door, so a boot locale is vetted exactly as a
+        // chosen one: every title must answer it, or `init` fails here
+        // instead of a screen booting half-said. Before the services
+        // stand, so a refusal has nothing of theirs to unwind.
+        if (options.locale.len != 0) try self.setLocale(options.locale);
         try self.services.init(gpa, self.runtime);
         return self;
     }
@@ -394,11 +414,11 @@ pub const App = struct {
     ///
     /// The other half of a translated nav bar is the *destinations*,
     /// whose words are the route table's (`RouteDef.title`) and never
-    /// nokre's: `setRouteTitles` is that half. Pair the two with
-    /// `setDirection` at boot and again wherever the locale changes:
+    /// nokre's: `setLocale` says those. Pair the two with
+    /// `setDirection` wherever the locale changes:
     ///
+    ///     try app.setLocale(L.tag(loc));
     ///     app.setChrome(.{ .back = L.tr(loc, .back), … });
-    ///     try app.setRouteTitles(routeTable(loc));
     ///     app.setDirection(L.dir(loc));
     ///
     /// Chrome standing in the tree right now is re-said on the spot —
@@ -435,46 +455,62 @@ pub const App = struct {
         self.invalidate();
     }
 
-    /// Re-declares the route table in another language: the same table,
-    /// said differently.
+    /// Chooses the app's locale — the language the app is *in*, as a
+    /// BCP 47 tag — and re-says every route title declared as a
+    /// function of it (`RouteDef.Title.of_locale`) on the spot.
     ///
     /// What a *screen* is called is `RouteDef.title`'s and nothing
     /// else's — the nav's destinations, the collapsed chip's section,
     /// the picker's rows and the marker for an off-roster screen are all
     /// labelled from there (`nav.effectiveRoster`), which is what keeps
-    /// one screen to one name. But that table is comptime and a locale
-    /// is not, so a translated app has to be able to hand over the same
-    /// table with translated titles. Build it from your catalog and pass
-    /// it here.
+    /// one screen to one name. The table used to be re-handed whole to
+    /// say it in another language; now the locale is the app's own
+    /// state, and the titles are functions of it. There is no second
+    /// table, so there is nothing to hold, stamp, or get positionally
+    /// wrong.
     ///
-    /// Only the titles may differ, and that is enforced: same length,
-    /// same names, same arities, same builders, position for position.
-    /// A stack entry holds an *index* into the table, so a different
-    /// table would silently rename every screen on the stack after the
-    /// first mismatch — `error.RouteTablesDiffer` instead. Nothing is
-    /// committed until the whole table has passed, so a refused call
-    /// leaves the app exactly as it was.
+    /// Pass the tag of the locale actually on screen — the *resolved*
+    /// one (`L.tag(L.resolve(…))`), not the raw device ask — so the
+    /// titles and the catalog agree. Chrome words and direction stay
+    /// their own calls (`setChrome`, `setDirection`): nokre cannot
+    /// read a consumer's catalog, and the chrome's mirror is a choice.
     ///
-    /// The nav's roster re-borrows from the new table on the spot and
-    /// its chrome resyncs, so a row of destinations, a collapsed chip
-    /// and the marker beside them all change together.
-    pub fn setRouteTitles(self: *App, routes: []const router_mod.RouteDef) !void {
-        try self.router.retitle(routes);
-        // The roster borrowed every string it holds from the old table
-        // (`nav.RosterItem`), so it is re-pointed rather than merely
-        // re-labelled: the table it was reading may be about to go.
+    /// Validated whole before anything is assigned, `Router.init`'s
+    /// rule: every title must answer this tag with words, and an
+    /// over-long tag is a programmer error, not a truncation — a
+    /// refused call leaves the app exactly as it was.
+    ///
+    /// The nav's roster re-evaluates on the spot and its chrome
+    /// resyncs, so a row of destinations, a collapsed chip and the
+    /// marker beside them all change together.
+    pub fn setLocale(self: *App, tag: []const u8) error{ LocaleTagTooLong, EmptyRouteTitle }!void {
+        if (tag.len > locale_svc.max_tag_bytes) return error.LocaleTagTooLong;
+        for (self.router.routes) |r| {
+            if (r.title.text(tag).len == 0) return error.EmptyRouteTitle;
+        }
+        @memcpy(self.locale_buf[0..tag.len], tag);
+        self.locale_len = @intCast(tag.len);
+        // The roster holds evaluated titles (`nav.RosterItem` borrows
+        // constant data), so it is re-evaluated here rather than left
+        // reading the old language until the next `setNav`.
         for (self.nav_items.items) |*item| {
             const def = self.router.lookup(item.route).?;
-            item.route = def.name;
-            item.label = def.title;
+            item.label = def.title.text(self.locale());
         }
         nav_mod.syncNavChrome(self) catch {};
         self.invalidate();
     }
 
+    /// The chosen locale's tag (`setLocale`) — "" until the app has
+    /// chosen. The *device's* ask is the locale service's
+    /// (`services.locale.tag`); this is the app's answer to it.
+    pub fn locale(self: *const App) []const u8 {
+        return self.locale_buf[0..self.locale_len];
+    }
+
     /// Sets the chrome direction, mirroring the layout when it changes.
-    /// Pair it with the locale — `app.setDirection(L.dir(state.locale))`
-    /// — or with the device tag via `l10n.directionOfTag`. This mirrors
+    /// Pair it with the locale — `app.setDirection(L.dir(loc))` beside
+    /// `setLocale` — or with a raw tag via `l10n.directionOfTag`. This mirrors
     /// chrome only; text keeps aligning by its own content, so calling
     /// it is never needed for RTL *text* to render correctly.
     pub fn setDirection(self: *App, dir: bidi.Direction) void {

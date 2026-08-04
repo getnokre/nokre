@@ -7,9 +7,9 @@ patterns, no wildcards, and no transitions.
 
 ```zig
 const routes = [_]h.RouteDef{
-    .{ .name = "notes", .title = "Notes", .build = buildNotes },
-    .{ .name = "note", .title = "Note", .args = 1, .build = buildNote },
-    .{ .name = "settings", .title = "Settings", .build = buildSettings },
+    .{ .name = "notes", .title = .{ .fixed = "Notes" }, .build = buildNotes },
+    .{ .name = "note", .title = .{ .fixed = "Note" }, .args = 1, .build = buildNote },
+    .{ .name = "settings", .title = .{ .fixed = "Settings" }, .build = buildSettings },
 };
 
 var app = try h.App.init(gpa, .{ .viewport = ..., .routes = &routes, .ctx = &state });
@@ -34,16 +34,19 @@ source, and a screen is free to show both — the way a nav item's title
 already sits beside that section's own heading.
 
 It names the *route*, not the screen: `note~42` and `note~43` are both
-"Note". A per-instance title would be a callback the router had to
-invoke on every sync, and the router does not call into consumer code to
-find out what to draw.
+"Note". A `.of_locale` title is a function of the app's chosen locale
+and of nothing else — never of the reference — so a per-instance title
+stays refused: that would be a callback asking the router to find out
+per screen what to draw.
 
-The table is comptime and a locale is not, so a translated app hands the
-**same table** over again with translated titles —
-`App.setRouteTitles`, which accepts a retitling and nothing else (same
-names, same arities, same builders, or `error.RouteTablesDiffer`: a
-stack entry holds an index into the table). One screen keeps one name in
-every language, and the nav's row, chip and marker change together.
+A title is the words themselves or the words as a function of the
+app's **chosen locale**: `.{ .fixed = "Notes" }` for an app in one
+language, `.{ .of_locale = notesTitle }` for one in several. The
+chosen locale is app state — `Options.locale` at boot, `App.setLocale`
+after, "" until chosen, `App.locale()` to read — and choosing it
+re-says every `.of_locale` title where it stands: one screen keeps one
+name in every language, and the nav's row, chip and marker change
+together. There is no second table to hand over.
 [localization.md](localization.md#the-chrome-nokre-writes) has the
 wiring, along with `App.Chrome` — the framework's own words, which are
 nokre's rather than any route's.

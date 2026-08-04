@@ -168,7 +168,7 @@ pub fn main() !void {
     var state = State{};
     var app = try h.App.init(gpa, .{
         .viewport = .{ .w = 480, .h = 520 },
-        .routes = &.{.{ .name = "home", .title = "Home", .build = buildHome }},
+        .routes = &.{.{ .name = "home", .title = .{ .fixed = "Home" }, .build = buildHome }},
         .ctx = &state,
     });
     defer app.deinit();

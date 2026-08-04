@@ -388,9 +388,9 @@ fn buildUnvisited(_: ?*anyopaque, app: *h.App) !void {
 }
 
 const inline_link_routes = [_]h.RouteDef{
-    .{ .name = "home", .title = "Home", .build = buildInlineLinks },
-    .{ .name = "terms", .title = "Terms", .build = buildUnvisited },
-    .{ .name = "privacy", .title = "Privacy", .build = buildUnvisited },
+    .{ .name = "home", .title = .{ .fixed = "Home" }, .build = buildInlineLinks },
+    .{ .name = "terms", .title = .{ .fixed = "Terms" }, .build = buildUnvisited },
+    .{ .name = "privacy", .title = .{ .fixed = "Privacy" }, .build = buildUnvisited },
 };
 
 fn buildInlineLinks(_: ?*anyopaque, app: *h.App) !void {
@@ -631,9 +631,9 @@ fn buildTiles(_: ?*anyopaque, app: *h.App) !void {
 }
 
 const tile_routes = [_]h.RouteDef{
-    .{ .name = "home", .title = "Home", .build = buildTiles },
-    .{ .name = "members", .title = "Members", .build = buildUnvisited },
-    .{ .name = "invites", .title = "Invites", .build = buildUnvisited },
+    .{ .name = "home", .title = .{ .fixed = "Home" }, .build = buildTiles },
+    .{ .name = "members", .title = .{ .fixed = "Members" }, .build = buildUnvisited },
+    .{ .name = "invites", .title = .{ .fixed = "Invites" }, .build = buildUnvisited },
 };
 
 test "golden: tile group with focused row, details, chevrons, and description" {
@@ -663,9 +663,9 @@ fn buildMarkedTiles(_: ?*anyopaque, app: *h.App) !void {
 }
 
 const marked_tile_routes = [_]h.RouteDef{
-    .{ .name = "home", .title = "Home", .build = buildMarkedTiles },
-    .{ .name = "members", .title = "Members", .build = buildUnvisited },
-    .{ .name = "invites", .title = "Invites", .build = buildUnvisited },
+    .{ .name = "home", .title = .{ .fixed = "Home" }, .build = buildMarkedTiles },
+    .{ .name = "members", .title = .{ .fixed = "Members" }, .build = buildUnvisited },
+    .{ .name = "invites", .title = .{ .fixed = "Invites" }, .build = buildUnvisited },
 };
 
 test "golden: a tile group's marks share one leading band" {
@@ -870,8 +870,8 @@ fn buildNavScreen(_: ?*anyopaque, app: *h.App) anyerror!void {
 }
 
 const nav_routes = [_]h.RouteDef{
-    .{ .name = "library", .title = "Library", .build = buildNavScreen },
-    .{ .name = "settings", .title = "Settings", .build = buildNavScreen },
+    .{ .name = "library", .title = .{ .fixed = "Library" }, .build = buildNavScreen },
+    .{ .name = "settings", .title = .{ .fixed = "Settings" }, .build = buildNavScreen },
 };
 
 const nav_items = [_]h.Destination{
@@ -905,8 +905,8 @@ fn buildLongNavScreen(_: ?*anyopaque, app: *h.App) anyerror!void {
 }
 
 const long_nav_routes = [_]h.RouteDef{
-    .{ .name = "library", .title = "Library", .build = buildLongNavScreen },
-    .{ .name = "settings", .title = "Settings", .build = buildLongNavScreen },
+    .{ .name = "library", .title = .{ .fixed = "Library" }, .build = buildLongNavScreen },
+    .{ .name = "settings", .title = .{ .fixed = "Settings" }, .build = buildLongNavScreen },
 };
 
 test "golden: mid-scroll, the page runs on behind and between the items" {
@@ -938,11 +938,11 @@ test "golden: safe_bottom keeps nav items above the band, fill runs through it" 
 // Five destinations whose titles cannot make a row on a phone: the nav
 // collapses to the chip that stands in for all of them.
 const crowded_nav_routes = [_]h.RouteDef{
-    .{ .name = "library", .title = "Library", .build = buildNavScreen },
-    .{ .name = "settings", .title = "Settings", .build = buildNavScreen },
-    .{ .name = "explore", .title = "Explore", .build = buildNavScreen },
-    .{ .name = "downloads", .title = "Downloads", .build = buildNavScreen },
-    .{ .name = "subs", .title = "Subscriptions", .build = buildNavScreen },
+    .{ .name = "library", .title = .{ .fixed = "Library" }, .build = buildNavScreen },
+    .{ .name = "settings", .title = .{ .fixed = "Settings" }, .build = buildNavScreen },
+    .{ .name = "explore", .title = .{ .fixed = "Explore" }, .build = buildNavScreen },
+    .{ .name = "downloads", .title = .{ .fixed = "Downloads" }, .build = buildNavScreen },
+    .{ .name = "subs", .title = .{ .fixed = "Subscriptions" }, .build = buildNavScreen },
 };
 
 const crowded_nav_items = [_]h.Destination{
@@ -1022,9 +1022,9 @@ test "golden: the collapsed nav mirrors under RTL chrome" {
 // own entry rather than leaving the nav marking nothing — or marking a
 // section the visitor never opened (`nav.effectiveRoster`).
 const offroster_nav_routes = [_]h.RouteDef{
-    .{ .name = "library", .title = "Library", .build = buildNavScreen },
-    .{ .name = "settings", .title = "Settings", .build = buildNavScreen },
-    .{ .name = "terms", .title = "Terms", .build = buildNavScreen },
+    .{ .name = "library", .title = .{ .fixed = "Library" }, .build = buildNavScreen },
+    .{ .name = "settings", .title = .{ .fixed = "Settings" }, .build = buildNavScreen },
+    .{ .name = "terms", .title = .{ .fixed = "Terms" }, .build = buildNavScreen },
 };
 
 test "golden: the row names a screen that is none of its destinations" {
@@ -1102,8 +1102,8 @@ fn buildNoticeScreen(_: ?*anyopaque, app: *h.App) !void {
 }
 
 const notice_routes = [_]h.RouteDef{
-    .{ .name = "home", .title = "Home", .build = buildNoticeScreen },
-    .{ .name = "library", .title = "Library", .build = buildUnvisited },
+    .{ .name = "home", .title = .{ .fixed = "Home" }, .build = buildNoticeScreen },
+    .{ .name = "library", .title = .{ .fixed = "Library" }, .build = buildUnvisited },
 };
 
 test "golden: notice banner in the bottom pane" {
@@ -1123,8 +1123,8 @@ fn buildNoticesPaneScreen(_: ?*anyopaque, app: *h.App) !void {
 }
 
 const notices_pane_routes = [_]h.RouteDef{
-    .{ .name = "home", .title = "Home", .build = buildNoticesPaneScreen },
-    .{ .name = "library", .title = "Library", .build = buildUnvisited },
+    .{ .name = "home", .title = .{ .fixed = "Home" }, .build = buildNoticesPaneScreen },
+    .{ .name = "library", .title = .{ .fixed = "Library" }, .build = buildUnvisited },
 };
 
 test "golden: notices pane lists every pending notice" {
@@ -1148,8 +1148,8 @@ fn buildCrowdedNoticesPaneScreen(_: ?*anyopaque, app: *h.App) !void {
 }
 
 const crowded_pane_routes = [_]h.RouteDef{
-    .{ .name = "home", .title = "Home", .build = buildCrowdedNoticesPaneScreen },
-    .{ .name = "library", .title = "Library", .build = buildUnvisited },
+    .{ .name = "home", .title = .{ .fixed = "Home" }, .build = buildCrowdedNoticesPaneScreen },
+    .{ .name = "library", .title = .{ .fixed = "Library" }, .build = buildUnvisited },
 };
 
 test "golden: a notices pane past its cap scrolls instead of clipping its rows" {
@@ -1173,8 +1173,8 @@ fn buildIndicatorScreen(_: ?*anyopaque, app: *h.App) !void {
 }
 
 const indicator_routes = [_]h.RouteDef{
-    .{ .name = "home", .title = "Home", .build = buildIndicatorScreen },
-    .{ .name = "library", .title = "Library", .build = buildUnvisited },
+    .{ .name = "home", .title = .{ .fixed = "Home" }, .build = buildIndicatorScreen },
+    .{ .name = "library", .title = .{ .fixed = "Library" }, .build = buildUnvisited },
 };
 
 test "golden: minimized notices leave only the indicator" {
@@ -1206,8 +1206,8 @@ fn buildBackDetail(_: ?*anyopaque, app: *h.App) !void {
 
 test "golden: pushed screen gets back chrome on the title line" {
     const routes = [_]h.RouteDef{
-        .{ .name = "home", .title = "Home", .build = buildBackHome },
-        .{ .name = "detail", .title = "Detail", .build = buildBackDetail },
+        .{ .name = "home", .title = .{ .fixed = "Home" }, .build = buildBackHome },
+        .{ .name = "detail", .title = .{ .fixed = "Detail" }, .build = buildBackDetail },
     };
     var harness = try h.testing.Harness.initWithRoutes(std.testing.allocator, .{ .w = 360, .h = 200 }, &routes, null, "home");
     defer harness.deinit();
@@ -1217,8 +1217,8 @@ test "golden: pushed screen gets back chrome on the title line" {
 
 test "golden: the back gesture past its threshold draws the control engaged" {
     const routes = [_]h.RouteDef{
-        .{ .name = "home", .title = "Home", .build = buildBackHome },
-        .{ .name = "detail", .title = "Detail", .build = buildBackDetail },
+        .{ .name = "home", .title = .{ .fixed = "Home" }, .build = buildBackHome },
+        .{ .name = "detail", .title = .{ .fixed = "Detail" }, .build = buildBackDetail },
     };
     var harness = try h.testing.Harness.initWithRoutes(std.testing.allocator, .{ .w = 360, .h = 200 }, &routes, null, "home");
     defer harness.deinit();
@@ -1286,8 +1286,8 @@ fn buildPersianRtl(_: ?*anyopaque, app: *h.App) !void {
 }
 
 const rtl_routes = [_]h.RouteDef{
-    .{ .name = "home", .title = "Home", .build = buildPersianRtl },
-    .{ .name = "account", .title = "Account", .build = buildUnvisited },
+    .{ .name = "home", .title = .{ .fixed = "Home" }, .build = buildPersianRtl },
+    .{ .name = "account", .title = .{ .fixed = "Account" }, .build = buildUnvisited },
 };
 
 test "golden: RTL locale mirrors the chrome; text still aligns by content" {

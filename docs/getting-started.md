@@ -211,14 +211,14 @@ pub fn main() !void {
     var state = State{};
     var app = try h.App.init(gpa, .{
         .viewport = .{ .w = 480, .h = 640 },
-        .routes = &.{.{ .name = "home", .title = "Home", .build = buildHome }},
+        .routes = &.{.{ .name = "home", .title = .{ .fixed = "Home" }, .build = buildHome }},
         .ctx = &state,
     });
     defer app.deinit();
     state.app = &app;
     try app.navigate("home");
 
-    try h.platform.run(&app, .{ .title = "Notes" });
+    try h.platform.run(&app, .{ .title = .{ .fixed = "Notes" } });
 }
 ```
 
@@ -317,9 +317,9 @@ each a builder; navigation is a stack. Replace the single-route setup:
 
 ```zig
 pub const routes = [_]h.RouteDef{
-    .{ .name = "notes", .title = "Notes", .build = buildNotes },
-    .{ .name = "note", .title = "Note", .args = 1, .build = buildNote }, // pushed detail — Part 9
-    .{ .name = "settings", .title = "Settings", .build = buildSettings }, // Part 10
+    .{ .name = "notes", .title = .{ .fixed = "Notes" }, .build = buildNotes },
+    .{ .name = "note", .title = .{ .fixed = "Note" }, .args = 1, .build = buildNote }, // pushed detail — Part 9
+    .{ .name = "settings", .title = .{ .fixed = "Settings" }, .build = buildSettings }, // Part 10
 };
 
 pub const nav_items = [_]h.Destination{
@@ -1434,11 +1434,16 @@ const L = h.l10n.Bundle(&.{
 });
 ```
 
-The current language is one more field in `State`, changed like any
-other state:
+The current language is not a `State` field: the *chosen* locale is the
+App's own state (`App.setLocale`, a BCP 47 tag), so every screen reads
+one live fact and none can be forgotten when it changes. One small
+bridge turns it back into the bundle's enum wherever a catalog call
+needs one:
 
 ```zig
-    locale: L.Locale = L.default_locale,
+fn loc(a: *const h.App) L.Locale {
+    return L.resolve(a.locale()); // "" (never chosen) → the template
+}
 ```
 
 In `buildNotes`' signed-in half, the literals become lookups. The
@@ -1446,15 +1451,15 @@ heading and the empty state are `tr` — messages with no placeholders,
 returned as constant slices, no buffer:
 
 ```zig
-    try app.tree.append(title_row, .{ .heading = .{ .content = L.tr(state.locale, .notesTitle), .level = .h1 } });
+    try app.tree.append(title_row, .{ .heading = .{ .content = L.tr(loc(app), .notesTitle), .level = .h1 } });
 ```
 
 ```zig
     if (state.note_count == 0) {
-        try app.tree.append(root, .{ .text = .{ .content = L.tr(state.locale, .emptyState) } });
+        try app.tree.append(root, .{ .text = .{ .content = L.tr(loc(app), .emptyState) } });
     } else {
         var desc_buf: [160]u8 = undefined;
-        const desc = try L.fmt(&desc_buf, state.locale, .noteCount, .{ .count = state.note_count });
+        const desc = try L.fmt(&desc_buf, loc(app), .noteCount, .{ .count = state.note_count });
         const group = try app.tree.appendId(root, .{ .tile_group = .{ .description = desc } });
         // …the tiles loop, unchanged.
     }
@@ -1465,7 +1470,7 @@ same stack buffer habit, because the tree copies at `append`:
 
 ```zig
     var cap_buf: [64]u8 = undefined;
-    const cap = try L.fmt(&cap_buf, state.locale, .noteCapacity, .{ .count = state.note_count, .max = max_notes });
+    const cap = try L.fmt(&cap_buf, loc(app), .noteCapacity, .{ .count = state.note_count, .max = max_notes });
     try app.tree.append(root, .{ .meter = .{ .label = cap, .value = @intCast(state.note_count), .max = max_notes } });
 ```
 
@@ -1477,7 +1482,7 @@ arrow keys like the rest of Part 10:
     try app.tree.append(root, .{ .segmented = .{
         .label = "Language",
         .options = &.{ "English", "فارسی" },
-        .selected = if (state.locale == .en) 0 else 1,
+        .selected = if (loc(app) == .en) 0 else 1,
         .on_select = .{ .ctx = state, .call = onLanguageSelect },
     } });
 ```
@@ -1485,26 +1490,35 @@ arrow keys like the rest of Part 10:
 ```zig
 fn onLanguageSelect(ctx: ?*anyopaque, selected: usize) void {
     const state: *State = @ptrCast(@alignCast(ctx.?));
-    state.locale = if (selected == 0) .en else .fa;
-    // The three surfaces the app does not write inline: nokre's own
-    // chrome, the names of the screens, and which way the chrome runs.
-    state.app.setChrome(.{ .back = L.tr(state.locale, .back) });
-    state.routes = routesFor(state.locale); // borrowed — it has to outlive the call
-    state.app.setRouteTitles(&state.routes) catch {};
-    state.app.setDirection(L.dir(state.locale));
+    const chosen: L.Locale = if (selected == 0) .en else .fa;
+    // The three surfaces the app does not write inline: the names of
+    // the screens, nokre's own chrome, and which way the chrome runs.
+    state.app.setLocale(L.tag(chosen)) catch {};
+    state.app.setChrome(.{ .back = L.tr(chosen, .back) });
+    state.app.setDirection(L.dir(chosen));
 }
+```
 
-/// Part 3's table, with the titles coming out of the catalog instead of
-/// out of literals — the only thing `setRouteTitles` accepts about it
-/// changing. Returned by value; the tree copies at `append`, but a route
-/// table is *borrowed*, so hold it in your state (or make it a comptime
-/// array per locale) rather than on the stack.
-fn routesFor(loc: L.Locale) [3]h.RouteDef {
-    return .{
-        .{ .name = "notes", .title = L.tr(loc, .notesTitle), .build = buildNotes },
-        .{ .name = "note", .title = L.tr(loc, .noteTitle), .args = 1, .build = buildNote },
-        .{ .name = "settings", .title = L.tr(loc, .settingsTitle), .build = buildSettings },
-    };
+And Part 3's table grows title *functions* — one table, every
+language, nothing to re-hand on a change. A `.fixed` title says one
+language forever; `.of_locale` is read wherever the title is shown, in
+whatever locale is chosen by then:
+
+```zig
+const routes = [_]h.RouteDef{
+    .{ .name = "notes", .title = .{ .of_locale = notesTitle }, .build = buildNotes },
+    .{ .name = "note", .title = .{ .of_locale = noteTitle }, .args = 1, .build = buildNote },
+    .{ .name = "settings", .title = .{ .of_locale = settingsTitle }, .build = buildSettings },
+};
+
+fn notesTitle(tag: []const u8) []const u8 {
+    return L.tr(L.resolve(tag), .notesTitle);
+}
+fn noteTitle(tag: []const u8) []const u8 {
+    return L.tr(L.resolve(tag), .noteTitle);
+}
+fn settingsTitle(tag: []const u8) []const u8 {
+    return L.tr(L.resolve(tag), .settingsTitle);
 }
 ```
 
@@ -1532,21 +1546,21 @@ Things worth noticing, because they generalize:
   (no dates, no floats, no runtime loading):
   [localization.md](localization.md).
 - **The nav bar and the back control travel too.** A destination's
-  words are its route's `title`, so retitling the table retitles the
-  row, the collapsed chip, and the marker for a screen that is no
-  destination — all from one place, in every language. nokre's own
-  words (Back, Close, the notices chrome) are `setChrome`'s, one struct
-  and one call. Neither is a label on a `Destination`: that would be a
-  second home for a fact the route table already holds.
+  words are its route's `title`, so `setLocale` re-says the row, the
+  collapsed chip, and the marker for a screen that is no destination —
+  all from one place, in every language. nokre's own words (Back,
+  Close, the notices chrome) are `setChrome`'s, one struct and one
+  call. Neither is a label on a `Destination`: that would be a second
+  home for a fact the route table already holds.
   [localization.md](localization.md#the-chrome-nokre-writes) has the
   whole table.
 - **What's still English is a choice you can see.** The sign-in screen,
   statuses, button labels — the same pattern extends to each; the
   course stops at one screen because the lesson doesn't repeat. Booting
   in the device's language is the `locale` service
-  ([services.md](services.md)) and the same three calls in `build`,
-  starting from `state.locale = L.resolve(h.services.locale.tag(app))`
-  — [localization.md](localization.md) walks the wiring.
+  ([services.md](services.md)) and the same three calls, starting from
+  `app.setLocale(L.tag(L.resolve(h.services.locale.tag(app))))` —
+  [localization.md](localization.md) walks the wiring.
 
 The test drives the switch like a user and asserts the translated
 screen through the same a11y snapshot as always:

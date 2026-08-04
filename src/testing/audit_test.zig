@@ -19,10 +19,10 @@ fn buildAuditScreen(_: ?*anyopaque, app: *App) anyerror!void {
 }
 
 const nav_routes = [_]router_mod.RouteDef{
-    .{ .name = "home", .title = "Home", .build = buildAuditScreen },
-    .{ .name = "settings", .title = "Settings", .build = buildAuditScreen },
-    .{ .name = "docs", .title = "Docs", .build = buildAuditScreen },
-    .{ .name = "roadmap", .title = "Roadmap", .build = buildAuditScreen },
+    .{ .name = "home", .title = .{ .fixed = "Home" }, .build = buildAuditScreen },
+    .{ .name = "settings", .title = .{ .fixed = "Settings" }, .build = buildAuditScreen },
+    .{ .name = "docs", .title = .{ .fixed = "Docs" }, .build = buildAuditScreen },
+    .{ .name = "roadmap", .title = .{ .fixed = "Roadmap" }, .build = buildAuditScreen },
 };
 
 /// A `w` x `h` app over `nav_routes` — a nav's destinations are routes
@@ -291,9 +291,9 @@ test "the off-roster marker is not a destination the nav count sees" {
     var app = try App.init(testing.allocator, .{
         .viewport = .{ .w = 900, .h = 400 },
         .routes = &.{
-            .{ .name = "home", .title = "Home", .build = buildAuditScreen },
-            .{ .name = "settings", .title = "Settings", .build = buildAuditScreen },
-            .{ .name = "terms", .title = "Terms", .build = buildAuditScreen },
+            .{ .name = "home", .title = .{ .fixed = "Home" }, .build = buildAuditScreen },
+            .{ .name = "settings", .title = .{ .fixed = "Settings" }, .build = buildAuditScreen },
+            .{ .name = "terms", .title = .{ .fixed = "Terms" }, .build = buildAuditScreen },
         },
         .services = .mocks(),
     });

@@ -37,9 +37,9 @@
 //! otherwise — a fixed table, no knob; see `digitsOfTag`).
 //!
 //! This is a core-adjacent pure module, not a service: it binds no
-//! externs and holds no state, per-app or otherwise. The planned
-//! `locale` service (docs/services.md) will report the *device* locale;
-//! feeding its tag to `resolve` and rebuilding is the app's three lines.
+//! externs and holds no state, per-app or otherwise. The `locale`
+//! service (docs/services.md) reports the *device* locale; feeding its
+//! tag through `resolve` into `App.setLocale` is the app's three lines.
 
 const std = @import("std");
 const bidi = @import("../core/bidi.zig");

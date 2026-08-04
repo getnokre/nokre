@@ -223,8 +223,8 @@ test "nav maps to a navigation landmark with the current item selected" {
     var app = try App.init(testing.allocator, .{
         .viewport = .{ .w = 400, .h = 400 },
         .routes = &.{
-            .{ .name = "home", .title = "Home", .build = buildNavHome },
-            .{ .name = "settings", .title = "Settings", .build = buildNavHome },
+            .{ .name = "home", .title = .{ .fixed = "Home" }, .build = buildNavHome },
+            .{ .name = "settings", .title = .{ .fixed = "Settings" }, .build = buildNavHome },
         },
         .services = .mocks(),
     });
@@ -253,10 +253,10 @@ test "the collapsed nav is a combo box named Section, valued by the current one"
         // Narrow enough that these titles cannot make a row.
         .viewport = .{ .w = 375, .h = 600 },
         .routes = &.{
-            .{ .name = "library", .title = "Library", .build = buildNavHome },
-            .{ .name = "settings", .title = "Settings", .build = buildNavHome },
-            .{ .name = "explore", .title = "Explore", .build = buildNavHome },
-            .{ .name = "subs", .title = "Subscriptions", .build = buildNavHome },
+            .{ .name = "library", .title = .{ .fixed = "Library" }, .build = buildNavHome },
+            .{ .name = "settings", .title = .{ .fixed = "Settings" }, .build = buildNavHome },
+            .{ .name = "explore", .title = .{ .fixed = "Explore" }, .build = buildNavHome },
+            .{ .name = "subs", .title = .{ .fixed = "Subscriptions" }, .build = buildNavHome },
         },
         .services = .mocks(),
     });
@@ -288,9 +288,9 @@ test "the row's off-roster marker is static text, not a link" {
     var app = try App.init(testing.allocator, .{
         .viewport = .{ .w = 900, .h = 400 },
         .routes = &.{
-            .{ .name = "home", .title = "Home", .build = buildNavHome },
-            .{ .name = "settings", .title = "Settings", .build = buildNavHome },
-            .{ .name = "terms", .title = "Terms of Service", .build = buildNavHome },
+            .{ .name = "home", .title = .{ .fixed = "Home" }, .build = buildNavHome },
+            .{ .name = "settings", .title = .{ .fixed = "Settings" }, .build = buildNavHome },
+            .{ .name = "terms", .title = .{ .fixed = "Terms of Service" }, .build = buildNavHome },
         },
         .services = .mocks(),
     });

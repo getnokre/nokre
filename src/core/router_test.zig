@@ -43,9 +43,9 @@ fn buildLeaf(_: ?*anyopaque, app: *App) anyerror!void {
 }
 
 const observed_routes = [_]router_mod.RouteDef{
-    .{ .name = "home", .title = "Home", .build = buildHome },
-    .{ .name = "details", .title = "Details", .build = buildDetails },
-    .{ .name = "leaf", .title = "Leaf", .build = buildLeaf },
+    .{ .name = "home", .title = .{ .fixed = "Home" }, .build = buildHome },
+    .{ .name = "details", .title = .{ .fixed = "Details" }, .build = buildDetails },
+    .{ .name = "leaf", .title = .{ .fixed = "Leaf" }, .build = buildLeaf },
 };
 
 const RouteRecorder = struct {
@@ -118,9 +118,9 @@ fn buildTicket(_: ?*anyopaque, app: *App) anyerror!void {
 }
 
 const arg_routes = [_]router_mod.RouteDef{
-    .{ .name = "home", .title = "Home", .build = buildHome },
-    .{ .name = "ticket", .title = "Ticket", .args = 1, .build = buildTicket },
-    .{ .name = "sum", .title = "Sum", .args = 2, .build = buildLeaf },
+    .{ .name = "home", .title = .{ .fixed = "Home" }, .build = buildHome },
+    .{ .name = "ticket", .title = .{ .fixed = "Ticket" }, .args = 1, .build = buildTicket },
+    .{ .name = "sum", .title = .{ .fixed = "Sum" }, .args = 2, .build = buildLeaf },
 };
 
 fn argApp(data: *CtxData) !App {
@@ -209,8 +209,8 @@ fn buildScrolled(ctx: ?*anyopaque, app: *App) anyerror!void {
 }
 
 const scroll_routes = [_]router_mod.RouteDef{
-    .{ .name = "list", .title = "List", .build = buildScrolled },
-    .{ .name = "detail", .title = "Detail", .build = buildDetails },
+    .{ .name = "list", .title = .{ .fixed = "List" }, .build = buildScrolled },
+    .{ .name = "detail", .title = .{ .fixed = "Detail" }, .build = buildDetails },
 };
 
 fn scrollApp(c: *ScrollCtx) !App {
@@ -357,8 +357,8 @@ test "the saved positions are bounded, like the reference is" {
 // ---- the one gesture: an edge pan goes back (docs/routing.md) ----
 
 const pan_routes = [_]router_mod.RouteDef{
-    .{ .name = "home", .title = "Home", .build = buildHome },
-    .{ .name = "details", .title = "Details", .build = buildDetails },
+    .{ .name = "home", .title = .{ .fixed = "Home" }, .build = buildHome },
+    .{ .name = "details", .title = .{ .fixed = "Details" }, .build = buildDetails },
 };
 
 fn panApp(data: *CtxData) !App {
@@ -662,15 +662,15 @@ test "routeRef is resolve's writing mirror" {
 test "the route table is validated at init, not at first navigation" {
     try testing.expectError(error.EmptyRouteName, App.init(testing.allocator, .{
         .viewport = .{ .w = 400, .h = 400 },
-        .routes = &.{.{ .name = "", .title = "Untitled", .build = buildLeaf }},
+        .routes = &.{.{ .name = "", .title = .{ .fixed = "Untitled" }, .build = buildLeaf }},
         .services = .mocks(),
     }));
     // Without this, `find` resolves every reference to the first of them.
     try testing.expectError(error.DuplicateRouteName, App.init(testing.allocator, .{
         .viewport = .{ .w = 400, .h = 400 },
         .routes = &.{
-            .{ .name = "home", .title = "Home", .build = buildLeaf },
-            .{ .name = "home", .title = "Home", .build = buildLeaf },
+            .{ .name = "home", .title = .{ .fixed = "Home" }, .build = buildLeaf },
+            .{ .name = "home", .title = .{ .fixed = "Home" }, .build = buildLeaf },
         },
         .services = .mocks(),
     }));
@@ -679,12 +679,12 @@ test "the route table is validated at init, not at first navigation" {
     // arguments obey.
     try testing.expectError(error.RouteNameCharset, App.init(testing.allocator, .{
         .viewport = .{ .w = 400, .h = 400 },
-        .routes = &.{.{ .name = "note~42", .title = "Note~42", .build = buildLeaf }},
+        .routes = &.{.{ .name = "note~42", .title = .{ .fixed = "Note~42" }, .build = buildLeaf }},
         .services = .mocks(),
     }));
     try testing.expectError(error.RouteNameCharset, App.init(testing.allocator, .{
         .viewport = .{ .w = 400, .h = 400 },
-        .routes = &.{.{ .name = "two words", .title = "Two Words", .build = buildLeaf }},
+        .routes = &.{.{ .name = "two words", .title = .{ .fixed = "Two Words" }, .build = buildLeaf }},
         .services = .mocks(),
     }));
 }
@@ -726,8 +726,8 @@ const SheetCtx = struct {
 };
 
 const sheet_routes = [_]router_mod.RouteDef{
-    .{ .name = "home", .title = "Home", .build = SheetCtx.buildScreen },
-    .{ .name = "details", .title = "Details", .build = buildDetails },
+    .{ .name = "home", .title = .{ .fixed = "Home" }, .build = SheetCtx.buildScreen },
+    .{ .name = "details", .title = .{ .fixed = "Details" }, .build = buildDetails },
 };
 
 test "reload carries the open sheet: its builder runs again over the rebuilt screen" {
@@ -796,8 +796,8 @@ const FocusCtx = struct {
 };
 
 const focus_routes = [_]router_mod.RouteDef{
-    .{ .name = "form", .title = "Form", .build = FocusCtx.buildForm },
-    .{ .name = "prose", .title = "Prose", .build = FocusCtx.buildProse },
+    .{ .name = "form", .title = .{ .fixed = "Form" }, .build = FocusCtx.buildForm },
+    .{ .name = "prose", .title = .{ .fixed = "Prose" }, .build = FocusCtx.buildProse },
 };
 
 fn focusApp(data: *FocusCtx) !App {
@@ -886,7 +886,7 @@ test "reload under a sheet re-finds focus inside the re-presented sheet" {
     var data: SheetFocusCtx = .{};
     var app = try App.init(testing.allocator, .{
         .viewport = .{ .w = 400, .h = 400 },
-        .routes = &.{.{ .name = "home", .title = "Home", .build = SheetFocusCtx.buildScreen }},
+        .routes = &.{.{ .name = "home", .title = .{ .fixed = "Home" }, .build = SheetFocusCtx.buildScreen }},
         .ctx = &data,
         .services = .mocks(),
     });

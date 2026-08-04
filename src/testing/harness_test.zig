@@ -442,8 +442,8 @@ test "e2e: expectCopied asserts the last clipboard write" {
 }
 
 const consent_routes = [_]@import("../core/router.zig").RouteDef{
-    .{ .name = "consent", .title = "Consent", .build = buildTermsDoc },
-    .{ .name = "terms", .title = "Terms", .build = buildTermsTarget },
+    .{ .name = "consent", .title = .{ .fixed = "Consent" }, .build = buildTermsDoc },
+    .{ .name = "terms", .title = .{ .fixed = "Terms" }, .build = buildTermsTarget },
 };
 
 fn buildTermsDoc(_: ?*anyopaque, app: *App) anyerror!void {
@@ -476,8 +476,8 @@ test "e2e: an inline link is tapped and tabbed to by its words" {
 }
 
 const ticket_routes = [_]@import("../core/router.zig").RouteDef{
-    .{ .name = "inbox", .title = "Inbox", .build = buildInbox },
-    .{ .name = "ticket", .title = "Ticket", .args = 1, .build = buildTicketScreen },
+    .{ .name = "inbox", .title = .{ .fixed = "Inbox" }, .build = buildInbox },
+    .{ .name = "ticket", .title = .{ .fixed = "Ticket" }, .args = 1, .build = buildTicketScreen },
 };
 
 fn buildInbox(_: ?*anyopaque, app: *App) anyerror!void {
@@ -509,23 +509,25 @@ test "e2e: a Markdown link carries route arguments" {
     try testing.expect(harness.queryByLabel("2938") != null);
 }
 
-// The same three routes twice over — English, then what an app would
-// build from its Farsi catalog. Only the titles move; `setRouteTitles`
-// accepts nothing else about a table changing.
+// One table, two languages: each title answers "fa" from what an app's
+// Farsi catalog would say, and everything else as English — the shape
+// `RouteDef.Title.of_locale` exists for.
 fn buildBlank(_: ?*anyopaque, app: *App) anyerror!void {
     try app.tree.append(app.tree.rootId(), .{ .text = .{ .content = "…" } });
 }
 
-const shop_routes = [_]@import("../core/router.zig").RouteDef{
-    .{ .name = "inbox", .title = "Inbox", .build = buildInbox },
-    .{ .name = "archive", .title = "Archive", .build = buildBlank },
-    .{ .name = "ticket", .title = "Ticket", .args = 1, .build = buildTicketScreen },
-};
+fn faTitle(comptime en: []const u8, comptime fa: []const u8) @import("../core/router.zig").Title {
+    return .{ .of_locale = struct {
+        fn call(tag: []const u8) []const u8 {
+            return if (std.mem.eql(u8, tag, "fa")) fa else en;
+        }
+    }.call };
+}
 
-const shop_routes_fa = [_]@import("../core/router.zig").RouteDef{
-    .{ .name = "inbox", .title = "صندوق", .build = buildInbox },
-    .{ .name = "archive", .title = "بایگانی", .build = buildBlank },
-    .{ .name = "ticket", .title = "بلیت", .args = 1, .build = buildTicketScreen },
+const shop_routes = [_]@import("../core/router.zig").RouteDef{
+    .{ .name = "inbox", .title = faTitle("Inbox", "صندوق"), .build = buildInbox },
+    .{ .name = "archive", .title = faTitle("Archive", "بایگانی"), .build = buildBlank },
+    .{ .name = "ticket", .title = faTitle("Ticket", "بلیت"), .args = 1, .build = buildTicketScreen },
 };
 
 test "e2e: a Farsi app ships a Farsi nav bar and a Farsi back control" {
@@ -543,13 +545,14 @@ test "e2e: a Farsi app ships a Farsi nav bar and a Farsi back control" {
     defer h.deinit();
     _ = try h.getByRole(.nav_item, "Archive");
 
+    try h.app.setLocale("fa");
     h.app.setChrome(.{ .back = "بازگشت", .current_screen = "این صفحه" });
-    try h.app.setRouteTitles(&shop_routes_fa);
     h.app.setDirection(.rtl);
 
-    // The destinations are labelled from the route table, so retitling
-    // it is the whole of a translated nav bar — nothing on the roster
-    // had to be told, and no `Destination` grew a label of its own.
+    // The destinations are labelled from the route table, so choosing
+    // the locale is the whole of a translated nav bar — nothing on the
+    // roster had to be told, and no `Destination` grew a label of its
+    // own.
     _ = try h.getByRole(.nav_item, "بایگانی");
     try h.expectAbsent("Archive");
 

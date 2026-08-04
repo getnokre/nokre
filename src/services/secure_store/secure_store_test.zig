@@ -442,7 +442,7 @@ test "harness: initWith boots a routed app reading the seeded store inside its r
         }
     };
     var h = try Harness.initWith(std.testing.allocator, .{ .w = 320, .h = 240 }, .{
-        .routes = &.{.{ .name = "home", .title = "Home", .build = Routed.home }},
+        .routes = &.{.{ .name = "home", .title = .{ .fixed = "Home" }, .build = Routed.home }},
         .initial_route = "home",
         .store = .{ .seeds = &.{.{ .key = "auth.token", .value = "tk" }} },
     });

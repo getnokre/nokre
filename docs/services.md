@@ -702,8 +702,9 @@ handoff, inside `build`:
 
 ```zig
 const dev = nokre.services.locale.tag(app);  // "" when the platform has none
-state.locale = L.resolve(dev);                // the template if none match
-app.setDirection(L.dir(state.locale));        // mirror the chrome to it
+const loc = L.resolve(dev);                   // the template if none match
+app.setLocale(L.tag(loc)) catch {};           // the app is now *in* that locale
+app.setDirection(L.dir(loc));                 // mirror the chrome to it
 
 // Optional, and also inside build: the user switching languages
 // mid-session. Registering again replaces, so a rebuild that
@@ -712,8 +713,9 @@ nokre.services.locale.setHandler(app, state, onLocale);
 
 fn onLocale(ctx: ?*anyopaque, tag: []const u8) void {
     const state: *State = @ptrCast(@alignCast(ctx.?));
-    state.locale = L.resolve(tag);
-    state.app.setDirection(L.dir(state.locale));
+    const loc = L.resolve(tag);
+    state.app.setLocale(L.tag(loc)) catch {};
+    state.app.setDirection(L.dir(loc));
     state.app.invalidate();   // what a new locale changes is the app's call
 }
 ```

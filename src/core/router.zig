@@ -67,20 +67,48 @@ pub const RouteDef = struct {
     /// declared; a heading is written. Neither derives from the other.
     ///
     /// It names the route, not the screen: `note~42` and `note~43` are
-    /// both "Note", because the alternative is a callback the router
-    /// would have to invoke on every sync.
-    ///
-    /// Comptime, and a locale is not — so a translated app hands the
-    /// whole table over again with translated titles
-    /// (`App.setRouteTitles`, which accepts nothing else about it
-    /// changing). That keeps this the one home for what a screen is
-    /// called in *every* language, rather than buying a second one.
-    title: []const u8,
+    /// both "Note". A `.of_locale` function is a function of the app's
+    /// chosen locale and of nothing else — never of the reference — so
+    /// this stays the one home for what a screen is called in *every*
+    /// language, without becoming a per-screen callback.
+    title: Title,
     /// How many positional arguments this screen takes. Declared, so a
     /// reference carrying the wrong number fails loudly instead of
     /// building a screen with nothing to show.
     args: u8 = 0,
     build: *const fn (ctx: ?*anyopaque, app: *App) anyerror!void,
+};
+
+/// What a `RouteDef.title` is: the words themselves, or the words as a
+/// function of the app's chosen locale (`App.setLocale`).
+///
+/// An app in one language writes `.{ .fixed = "Notes" }` and is done. A
+/// translated app writes `.{ .of_locale = notesTitle }` and the title
+/// follows the locale wherever it is read — the nav's roster, the
+/// collapsed chip, the marker for an off-roster screen — with no second
+/// table to hand over and no positional re-stamp to forget.
+///
+/// Either way the bytes are **borrowed, never owned**: a `.fixed` title
+/// is a literal, and a `.of_locale` function must answer from constant
+/// data (a catalog's `tr` does), because everything downstream — the
+/// roster, the tree — borrows what it is given.
+pub const Title = union(enum) {
+    /// One language: the title as written, whatever the locale.
+    fixed: []const u8,
+    /// The title in the chosen locale, asked by tag. The function must
+    /// answer *every* tag, the empty one included — "" is "the app
+    /// never chose", and a catalog's `resolve` already reads it as the
+    /// template.
+    of_locale: *const fn (locale_tag: []const u8) []const u8,
+
+    /// The words, under `locale_tag` — the one reader, so no call site
+    /// holds the switch.
+    pub fn text(self: Title, locale_tag: []const u8) []const u8 {
+        return switch (self) {
+            .fixed => |s| s,
+            .of_locale => |f| f(locale_tag),
+        };
+    }
 };
 
 /// Separates a route name from its arguments: `note~42`, `sum~10~5`.
@@ -216,37 +244,17 @@ pub const Router = struct {
             // The field has no default, so *forgetting* a title is a
             // compile error; this catches the one thing comptime cannot
             // see, an empty one written on purpose. Same footing as the
-            // empty name above, and as `UnlabeledInteractive`.
-            if (r.title.len == 0) return error.EmptyRouteTitle;
+            // empty name above, and as `UnlabeledInteractive`. A
+            // `.of_locale` title is probed with the empty tag — the
+            // never-chosen locale every table boots under — and each
+            // *chosen* tag is vetted the same way when it is chosen
+            // (`App.setLocale`).
+            if (r.title.text("").len == 0) return error.EmptyRouteTitle;
             for (routes[0..i]) |prev| {
                 if (std.mem.eql(u8, prev.name, r.name)) return error.DuplicateRouteName;
             }
         }
         return .{ .routes = routes, .stack = .empty };
-    }
-
-    /// Swaps the table for one that differs only in its titles — the
-    /// same app, said in another language (`App.setRouteTitles`, which
-    /// is the consumer's door to this and re-points the nav's roster
-    /// afterwards).
-    ///
-    /// Everything but `title` must match position for position, because
-    /// a stack entry holds an *index*: a table that reordered or
-    /// replaced a route would rename every screen already on the stack,
-    /// silently and only in one language. Validated whole before
-    /// anything is assigned, `init`'s rule — a refused call leaves the
-    /// router reading exactly the table it was.
-    pub fn retitle(self: *Router, routes: []const RouteDef) !void {
-        if (routes.len != self.routes.len) return error.RouteTablesDiffer;
-        for (routes, self.routes) |new, old| {
-            if (!std.mem.eql(u8, new.name, old.name)) return error.RouteTablesDiffer;
-            if (new.args != old.args) return error.RouteTablesDiffer;
-            if (new.build != old.build) return error.RouteTablesDiffer;
-            // The one check `init` makes that comptime cannot: an empty
-            // title written on purpose, here in a translation.
-            if (new.title.len == 0) return error.EmptyRouteTitle;
-        }
-        self.routes = routes;
     }
 
     pub fn deinit(self: *Router, gpa: std.mem.Allocator) void {
@@ -280,12 +288,13 @@ pub const Router = struct {
         return null;
     }
 
-    /// What the current screen is called (`RouteDef.title`) — what nav
-    /// chrome shows for a screen that is none of the destinations
-    /// (`nav.effectiveRoster`). Borrowed from the route table, so it
-    /// outlives every tree built from it.
-    pub fn currentTitle(self: *const Router) ?[]const u8 {
-        if (self.top()) |e| return self.routes[e.idx].title;
+    /// What the current screen is called (`RouteDef.title`, said under
+    /// `locale_tag` — pass `App.locale()`) — what nav chrome shows for a
+    /// screen that is none of the destinations (`nav.effectiveRoster`).
+    /// Borrowed from the route table's constant data (`Title`'s rule),
+    /// so it outlives every tree built from it.
+    pub fn currentTitle(self: *const Router, locale_tag: []const u8) ?[]const u8 {
+        if (self.top()) |e| return self.routes[e.idx].title.text(locale_tag);
         return null;
     }
 

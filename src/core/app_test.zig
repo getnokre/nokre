@@ -53,8 +53,8 @@ fn buildDetails(_: ?*anyopaque, app: *App) anyerror!void {
 }
 
 const home_and_details = [_]router_mod.RouteDef{
-    .{ .name = "home", .title = "Home", .build = buildHome },
-    .{ .name = "details", .title = "Details", .build = buildDetails },
+    .{ .name = "home", .title = .{ .fixed = "Home" }, .build = buildHome },
+    .{ .name = "details", .title = .{ .fixed = "Details" }, .build = buildDetails },
 };
 
 /// The router fixture's app: two screens and the counter `buildHome`
@@ -150,8 +150,8 @@ fn buildTileHome(ctx: ?*anyopaque, app: *App) anyerror!void {
 test "tile with a route navigates like a link" {
     var data: CtxData = .{};
     const routes = [_]router_mod.RouteDef{
-        .{ .name = "home", .title = "Home", .build = buildTileHome },
-        .{ .name = "details", .title = "Details", .build = buildDetails },
+        .{ .name = "home", .title = .{ .fixed = "Home" }, .build = buildTileHome },
+        .{ .name = "details", .title = .{ .fixed = "Details" }, .build = buildDetails },
     };
     var app = try App.init(testing.allocator, .{
         .viewport = .{ .w = 400, .h = 400 },
@@ -243,12 +243,23 @@ fn buildNavSection(_: ?*anyopaque, app: *App) anyerror!void {
     try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Section" } });
 }
 
+/// The smallest `.of_locale` title a test needs: one word until the app
+/// chooses `tag`, another after. A real app answers from its catalog
+/// (`L.tr(L.resolve(tag), …)`); the shape is what matters here.
+fn bilingual(comptime tag: []const u8, comptime before: []const u8, comptime after: []const u8) router_mod.Title {
+    return .{ .of_locale = struct {
+        fn call(t: []const u8) []const u8 {
+            return if (std.mem.eql(u8, t, tag)) after else before;
+        }
+    }.call };
+}
+
 const crowded_routes = [_]router_mod.RouteDef{
-    .{ .name = "library", .title = "Library", .build = buildNavSection },
-    .{ .name = "settings", .title = "Settings", .build = buildNavSection },
-    .{ .name = "explore", .title = "Explore", .build = buildNavSection },
-    .{ .name = "subs", .title = "Subscriptions", .build = buildNavSection },
-    .{ .name = "account", .title = "Account", .build = buildNavSection },
+    .{ .name = "library", .title = bilingual("de", "Library", "Bibliothek"), .build = buildNavSection },
+    .{ .name = "settings", .title = bilingual("de", "Settings", "Einstellungen"), .build = buildNavSection },
+    .{ .name = "explore", .title = bilingual("de", "Explore", "Entdecken"), .build = buildNavSection },
+    .{ .name = "subs", .title = bilingual("de", "Subscriptions", "Abonnements"), .build = buildNavSection },
+    .{ .name = "account", .title = bilingual("de", "Account", "Konto"), .build = buildNavSection },
 };
 
 /// The nav-collapse fixture's app: a phone-width viewport and the
@@ -304,16 +315,7 @@ test "the collapsed chip follows the router without being rebuilt for nothing" {
     try testing.expectEqualStrings("Explore", app.tree.getConst(navChip(&app).?).?.nav_current.section);
 }
 
-/// The same table, said differently — what `setRouteTitles` is for.
-const crowded_routes_de = [_]router_mod.RouteDef{
-    .{ .name = "library", .title = "Bibliothek", .build = buildNavSection },
-    .{ .name = "settings", .title = "Einstellungen", .build = buildNavSection },
-    .{ .name = "explore", .title = "Entdecken", .build = buildNavSection },
-    .{ .name = "subs", .title = "Abonnements", .build = buildNavSection },
-    .{ .name = "account", .title = "Konto", .build = buildNavSection },
-};
-
-test "a retitled table rebuilds the chip without stranding focus" {
+test "a locale change rebuilds the chip without stranding focus" {
     var app = try crowdedApp();
     defer app.deinit();
     try app.setNav(&crowded_nav);
@@ -321,7 +323,7 @@ test "a retitled table rebuilds the chip without stranding focus" {
 
     // The visitor is holding the collapsed chip when the locale changes.
     app.focused = .of(navChip(&app).?);
-    try app.setRouteTitles(&crowded_routes_de);
+    try app.setLocale("de");
 
     // The chip was rebuilt to say the new language, and focus moved
     // with it instead of dangling into the removed node.
@@ -330,7 +332,7 @@ test "a retitled table rebuilds the chip without stranding focus" {
     try testing.expectEqualStrings("Bibliothek", app.tree.getConst(chip).?.nav_current.section);
 }
 
-test "a retitled row re-seats focus on the same destination, by route" {
+test "a relabelled row re-seats focus on the same destination, by route" {
     var app = try App.init(testing.allocator, .{
         // Wide enough that two short titles stay a row through both
         // languages.
@@ -353,11 +355,11 @@ test "a retitled row re-seats focus on the same destination, by route" {
     }
     app.focused = .of(settings.?);
 
-    try app.setRouteTitles(&crowded_routes_de);
+    try app.setLocale("de");
     const held = app.focused.?.node;
     const el = app.tree.getConst(held).?;
-    // Not the old node — the retitle rebuilt the row — but the same
-    // destination, found by the one term the retitle cannot change.
+    // Not the old node — the locale change rebuilt the row — but the
+    // same destination, found by the one term a relabel cannot change.
     try testing.expect(!held.eql(settings.?));
     try testing.expectEqualStrings("settings", el.nav_item.route);
     try testing.expectEqualStrings("Einstellungen", el.nav_item.label);
@@ -752,10 +754,10 @@ test "Esc leaves the section picker without navigating" {
 // carrying an argument, because the marker has to name a route whose
 // reference is not its name.
 const offroster_routes = [_]router_mod.RouteDef{
-    .{ .name = "home", .title = "Home", .build = buildNavSection },
-    .{ .name = "settings", .title = "Settings", .build = buildNavSection },
-    .{ .name = "terms", .title = "Terms", .build = buildNavSection },
-    .{ .name = "ticket", .title = "Ticket", .args = 1, .build = buildNavSection },
+    .{ .name = "home", .title = bilingual("tr", "Home", "Ana sayfa"), .build = buildNavSection },
+    .{ .name = "settings", .title = bilingual("tr", "Settings", "Ayarlar"), .build = buildNavSection },
+    .{ .name = "terms", .title = bilingual("tr", "Terms", "Koşullar"), .build = buildNavSection },
+    .{ .name = "ticket", .title = bilingual("tr", "Ticket", "Bilet"), .args = 1, .build = buildNavSection },
 };
 
 const offroster_nav = [_]nav_mod.Destination{
@@ -938,17 +940,11 @@ test "the picker still crosses to a destination from an off-roster screen" {
 
 // ---- a nav bar in another language ----
 //
-// The same four routes, said in Turkish. A real app builds this from its
-// catalog (`L.tr`) per locale; the shape is what matters here — the same
-// table, only the titles moved.
-const offroster_routes_tr = [_]router_mod.RouteDef{
-    .{ .name = "home", .title = "Ana sayfa", .build = buildNavSection },
-    .{ .name = "settings", .title = "Ayarlar", .build = buildNavSection },
-    .{ .name = "terms", .title = "Koşullar", .build = buildNavSection },
-    .{ .name = "ticket", .title = "Bilet", .args = 1, .build = buildNavSection },
-};
+// The same four routes answer "tr" in Turkish (`bilingual`, above). A
+// real app answers from its catalog; the shape is what matters here —
+// the same table, only the locale moved.
 
-test "setRouteTitles renames the destinations, the chip, and the marker" {
+test "setLocale renames the destinations, the chip, and the marker" {
     var app = try offRosterApp(900);
     defer app.deinit();
     try app.setNav(&offroster_nav);
@@ -958,8 +954,8 @@ test "setRouteTitles renames the destinations, the chip, and the marker" {
     var it = app.tree.children(nav);
     try testing.expectEqualStrings("Home", app.tree.getConst(it.next().?).?.nav_item.label);
 
-    try app.setRouteTitles(&offroster_routes_tr);
-    // The row re-borrowed from the new table: a guard that only counted
+    try app.setLocale("tr");
+    // The roster re-evaluated its titles: a guard that only counted
     // destinations would have left the English words standing.
     it = app.tree.children(nav);
     try testing.expectEqualStrings("Ana sayfa", app.tree.getConst(it.next().?).?.nav_item.label);
@@ -975,45 +971,68 @@ test "setRouteTitles renames the destinations, the chip, and the marker" {
     defer narrow.deinit();
     try narrow.setNav(&offroster_nav);
     try narrow.navigate("settings");
-    try narrow.setRouteTitles(&offroster_routes_tr);
+    try narrow.setLocale("tr");
     try testing.expectEqualStrings("Ayarlar", narrow.tree.getConst(navChip(&narrow).?).?.nav_current.section);
 }
 
-test "setRouteTitles accepts a retitling and nothing else" {
+test "setLocale accepts a tag every title answers, and nothing else" {
     var app = try offRosterApp(900);
     defer app.deinit();
     try app.setNav(&offroster_nav);
     try app.navigate("home");
 
-    // A stack entry holds an index into the table, so anything but a
-    // retitling would rename screens already on the stack.
-    const shorter = offroster_routes_tr[0..3];
-    try testing.expectError(error.RouteTablesDiffer, app.setRouteTitles(shorter));
-    const reordered = [_]router_mod.RouteDef{
-        offroster_routes_tr[1], offroster_routes_tr[0],
-        offroster_routes_tr[2], offroster_routes_tr[3],
-    };
-    try testing.expectError(error.RouteTablesDiffer, app.setRouteTitles(&reordered));
-    const rearity = [_]router_mod.RouteDef{
-        .{ .name = "home", .title = "Ana sayfa", .args = 1, .build = buildNavSection },
-        offroster_routes_tr[1],
-        offroster_routes_tr[2],
-        offroster_routes_tr[3],
-    };
-    try testing.expectError(error.RouteTablesDiffer, app.setRouteTitles(&rearity));
-    // An empty title written on purpose is `init`'s one runtime check,
-    // reached again here.
-    const blank = [_]router_mod.RouteDef{
-        .{ .name = "home", .title = "", .build = buildNavSection },
-        offroster_routes_tr[1],
-        offroster_routes_tr[2],
-        offroster_routes_tr[3],
-    };
-    try testing.expectError(error.EmptyRouteTitle, app.setRouteTitles(&blank));
+    // A tag past the service's cap is a programmer error, not a
+    // truncation — the same bound the device's own tag lives under.
+    const oversize = "x" ** 65;
+    try testing.expectError(error.LocaleTagTooLong, app.setLocale(oversize));
 
-    // Every refusal left the table exactly as it was.
+    // A title function answering a tag with nothing is `init`'s empty
+    // check, reached again at the moment that tag is chosen.
+    var blank = try App.init(testing.allocator, .{
+        .viewport = .{ .w = 900, .h = 600 },
+        .routes = &.{
+            .{ .name = "home", .title = bilingual("xx", "Home", ""), .build = buildNavSection },
+        },
+        .services = .mocks(),
+    });
+    defer blank.deinit();
+    try testing.expectError(error.EmptyRouteTitle, blank.setLocale("xx"));
+    // …and the refusal committed nothing: the app still answers as
+    // never-chosen.
+    try testing.expectEqualStrings("", blank.locale());
+
+    // Every refusal left the roster exactly as it was.
     var it = app.tree.children(layout.findNav(&app.tree).?);
     try testing.expectEqualStrings("Home", app.tree.getConst(it.next().?).?.nav_item.label);
+    try testing.expectEqualStrings("", app.locale());
+}
+
+test "a boot locale rides Options through the same gate" {
+    // Chosen before init — a restored preference — so the first tree
+    // ever built is already in the language, roster included.
+    var app = try App.init(testing.allocator, .{
+        .viewport = .{ .w = 900, .h = 600 },
+        .routes = &offroster_routes,
+        .services = .mocks(),
+        .locale = "tr",
+    });
+    defer app.deinit();
+    try testing.expectEqualStrings("tr", app.locale());
+    try app.setNav(&offroster_nav);
+    try app.navigate("home");
+    var it = app.tree.children(layout.findNav(&app.tree).?);
+    try testing.expectEqualStrings("Ana sayfa", app.tree.getConst(it.next().?).?.nav_item.label);
+
+    // And the gate is the same one: a boot tag no title answers is an
+    // `init` failure, not a screen booting half-said.
+    try testing.expectError(error.EmptyRouteTitle, App.init(testing.allocator, .{
+        .viewport = .{ .w = 900, .h = 600 },
+        .routes = &.{
+            .{ .name = "home", .title = bilingual("xx", "Home", ""), .build = buildNavSection },
+        },
+        .services = .mocks(),
+        .locale = "xx",
+    }));
 }
 
 test "setChrome re-says the framework's own words, in place" {
@@ -1214,8 +1233,8 @@ test "tap on content scrolled under the bottom bar hits the nav item" {
     var app = try App.init(testing.allocator, .{
         .viewport = .{ .w = 400, .h = 200 },
         .routes = &.{
-            .{ .name = "home", .title = "Home", .build = buildDetails },
-            .{ .name = "away", .title = "Away", .build = buildDetails },
+            .{ .name = "home", .title = .{ .fixed = "Home" }, .build = buildDetails },
+            .{ .name = "away", .title = .{ .fixed = "Away" }, .build = buildDetails },
         },
         .services = .mocks(),
     });
@@ -1328,8 +1347,8 @@ fn buildLinkTerms(_: ?*anyopaque, app: *App) anyerror!void {
 }
 
 const link_routes = [_]router_mod.RouteDef{
-    .{ .name = "home", .title = "Home", .build = buildLinkHome },
-    .{ .name = "terms", .title = "Terms", .build = buildLinkTerms },
+    .{ .name = "home", .title = .{ .fixed = "Home" }, .build = buildLinkHome },
+    .{ .name = "terms", .title = .{ .fixed = "Terms" }, .build = buildLinkTerms },
 };
 
 test "an inline link is hit on every line it wraps across, and nowhere else" {
@@ -2527,8 +2546,8 @@ test "the banner hides the nav from pointer and keyboard alike" {
     var app = try App.init(testing.allocator, .{
         .viewport = .{ .w = 400, .h = 600 },
         .routes = &.{
-            .{ .name = "home", .title = "Home", .build = buildDetails },
-            .{ .name = "away", .title = "Away", .build = buildDetails },
+            .{ .name = "home", .title = .{ .fixed = "Home" }, .build = buildDetails },
+            .{ .name = "away", .title = .{ .fixed = "Away" }, .build = buildDetails },
         },
         .services = .mocks(),
     });
@@ -2664,8 +2683,8 @@ test "navigating away leaves no acknowledgement behind" {
         .viewport = .{ .w = 400, .h = 400 },
         .services = .mocks(),
         .routes = &.{
-            .{ .name = "home", .title = "Home", .build = buildCopyScreen },
-            .{ .name = "next", .title = "Next", .build = buildDetails },
+            .{ .name = "home", .title = .{ .fixed = "Home" }, .build = buildCopyScreen },
+            .{ .name = "next", .title = .{ .fixed = "Next" }, .build = buildDetails },
         },
     });
     defer app.deinit();
@@ -3043,7 +3062,7 @@ test "a settled row reports no further chrome changes" {
 test "a row of buttons and a link folds, and the link is still a link in the sheet" {
     var app = try App.init(testing.allocator, .{
         .viewport = .{ .w = 480, .h = 640 },
-        .routes = &.{ .{ .name = "home", .title = "Home", .build = buildHomeWithActionRow }, .{ .name = "details", .title = "Details", .build = buildEmpty } },
+        .routes = &.{ .{ .name = "home", .title = .{ .fixed = "Home" }, .build = buildHomeWithActionRow }, .{ .name = "details", .title = .{ .fixed = "Details" }, .build = buildEmpty } },
         .services = .mocks(),
     });
     defer app.deinit();
@@ -3208,7 +3227,7 @@ fn reclaimCycle(app: *App) !void {
 test "a router rebuild reclaims the tree arena" {
     var app = try App.init(testing.allocator, .{
         .viewport = .{ .w = 400, .h = 600 },
-        .routes = &.{.{ .name = "notes", .title = "Notes", .build = buildReclaimScreen }},
+        .routes = &.{.{ .name = "notes", .title = .{ .fixed = "Notes" }, .build = buildReclaimScreen }},
         .services = .mocks(),
     });
     defer app.deinit();

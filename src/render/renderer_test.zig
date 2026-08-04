@@ -1347,8 +1347,8 @@ test "nav chrome paints after content, on plates, with no track under it" {
     var app = try App.init(testing.allocator, .{
         .viewport = .{ .w = 400, .h = 200 },
         .routes = &.{
-            .{ .name = "home", .title = "Home", .build = buildNavHome },
-            .{ .name = "away", .title = "Away", .build = buildNavHome },
+            .{ .name = "home", .title = .{ .fixed = "Home" }, .build = buildNavHome },
+            .{ .name = "away", .title = .{ .fixed = "Away" }, .build = buildNavHome },
         },
         .services = .mocks(),
     });
@@ -1409,10 +1409,10 @@ test "the section menu is a card, not a pane bleeding through the safe band" {
     var app = try App.init(testing.allocator, .{
         .viewport = .{ .w = 375, .h = 420 },
         .routes = &.{
-            .{ .name = "home", .title = "Home", .build = buildNavHome },
-            .{ .name = "away", .title = "Away", .build = buildNavHome },
-            .{ .name = "far", .title = "Far", .build = buildNavHome },
-            .{ .name = "further", .title = "Furthest of them all", .build = buildNavHome },
+            .{ .name = "home", .title = .{ .fixed = "Home" }, .build = buildNavHome },
+            .{ .name = "away", .title = .{ .fixed = "Away" }, .build = buildNavHome },
+            .{ .name = "far", .title = .{ .fixed = "Far" }, .build = buildNavHome },
+            .{ .name = "further", .title = .{ .fixed = "Furthest of them all" }, .build = buildNavHome },
         },
         .services = .mocks(),
     });
@@ -1540,8 +1540,8 @@ test "focused nav item draws a hugging stroke, not the outset ring" {
     var app = try App.init(testing.allocator, .{
         .viewport = .{ .w = 400, .h = 200 },
         .routes = &.{
-            .{ .name = "home", .title = "Home", .build = buildNavHome },
-            .{ .name = "away", .title = "Away", .build = buildNavHome },
+            .{ .name = "home", .title = .{ .fixed = "Home" }, .build = buildNavHome },
+            .{ .name = "away", .title = .{ .fixed = "Away" }, .build = buildNavHome },
         },
         .services = .mocks(),
     });

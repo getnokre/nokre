@@ -160,8 +160,8 @@ fn buildHome(ctx: ?*anyopaque, app: *App) anyerror!void {
 test "harness: an inbound link routes the app" {
     var ctx: RouteCtx = .{};
     const routes = [_]router_mod.RouteDef{
-        .{ .name = "home", .title = "Home", .build = buildHome },
-        .{ .name = "note", .title = "Note", .build = buildNote },
+        .{ .name = "home", .title = .{ .fixed = "Home" }, .build = buildHome },
+        .{ .name = "note", .title = .{ .fixed = "Note" }, .build = buildNote },
     };
     var t = try Harness.initWithRoutes(std.testing.allocator, .{ .w = 320, .h = 480 }, &routes, &ctx, "home");
     defer t.deinit();

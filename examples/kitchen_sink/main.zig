@@ -39,7 +39,6 @@ const State = struct {
     // until the reply lands rather than on the control itself.
     notify_toggle_id: h.NodeId = .invalid,
     notify_wanted: bool = false,
-    l10n_locale: L.Locale = .en,
     l10n_count: i64 = 1,
     l10n_text_id: h.NodeId = .invalid,
     l10n_items_id: h.NodeId = .invalid,
@@ -469,8 +468,14 @@ fn ensureHasher(state: *State) ?h.workers.Handle(Hasher) {
 // locale must be able to find their own.
 const l10n_locale_options = [_][]const u8{ "English", "فارسی", "Русский" };
 
+/// The chosen locale is App state (`App.setLocale`), not a State field:
+/// one live fact, read wherever a catalog call needs the enum back.
+fn chosenLocale(state: *const State) L.Locale {
+    return L.resolve(state.app.locale());
+}
+
 fn refreshL10n(state: *State) void {
-    const loc = state.l10n_locale;
+    const loc = chosenLocale(state);
     state.app.tree.setContent(state.l10n_text_id, L.tr(loc, .l10nGreeting)) catch return;
     var buf: [128]u8 = undefined;
     const items = L.fmt(&buf, loc, .l10nItems, .{ .count = state.l10n_count }) catch return;
@@ -480,14 +485,15 @@ fn refreshL10n(state: *State) void {
 
 fn onL10nLocale(ctx: ?*anyopaque, selected: usize) void {
     const state: *State = @ptrCast(@alignCast(ctx.?));
-    state.l10n_locale = switch (selected) {
+    const loc: L.Locale = switch (selected) {
         0 => .en,
         1 => .fa,
         else => .ru,
     };
+    state.app.setLocale(L.tag(loc)) catch {};
     // Mirror the chrome to match the locale — Persian flips it, the
     // others keep it left-to-right (see docs/localization.md).
-    state.app.setDirection(L.dir(state.l10n_locale));
+    state.app.setDirection(L.dir(loc));
     refreshL10n(state);
 }
 
@@ -789,16 +795,16 @@ fn buildHome(ctx: ?*anyopaque, app: *h.App) !void {
     try tree.append(root, .{ .segmented = .{
         .label = "Catalog locale",
         .options = &l10n_locale_options,
-        .selected = switch (state.l10n_locale) {
+        .selected = switch (chosenLocale(state)) {
             .en => 0,
             .fa => 1,
             .ru => 2,
         },
         .on_select = .{ .ctx = state, .call = onL10nLocale },
     } });
-    state.l10n_text_id = try tree.appendId(root, .{ .text = .{ .content = L.tr(state.l10n_locale, .l10nGreeting) } });
+    state.l10n_text_id = try tree.appendId(root, .{ .text = .{ .content = L.tr(chosenLocale(state), .l10nGreeting) } });
     var l10n_buf: [128]u8 = undefined;
-    const l10n_items = try L.fmt(&l10n_buf, state.l10n_locale, .l10nItems, .{ .count = state.l10n_count });
+    const l10n_items = try L.fmt(&l10n_buf, chosenLocale(state), .l10nItems, .{ .count = state.l10n_count });
     state.l10n_items_id = try tree.appendId(root, .{ .text = .{ .content = l10n_items } });
     const l10n_row = try tree.appendId(root, .{ .stack = .{ .axis = .horizontal } });
     try tree.append(l10n_row, .{ .button = .{ .label = "Add item", .on_press = .{ .ctx = state, .call = onL10nAdd } } });
@@ -963,10 +969,10 @@ fn buildTerms(_: ?*anyopaque, app: *h.App) !void {
 }
 
 const routes = [_]h.RouteDef{
-    .{ .name = "home", .title = "Home", .build = buildHome },
-    .{ .name = "details", .title = "Details", .build = buildDetails },
-    .{ .name = "ticket", .title = "Ticket", .args = 1, .build = buildTicket },
-    .{ .name = "terms", .title = "Terms of Service", .build = buildTerms },
+    .{ .name = "home", .title = .{ .fixed = "Home" }, .build = buildHome },
+    .{ .name = "details", .title = .{ .fixed = "Details" }, .build = buildDetails },
+    .{ .name = "ticket", .title = .{ .fixed = "Ticket" }, .args = 1, .build = buildTicket },
+    .{ .name = "terms", .title = .{ .fixed = "Terms of Service" }, .build = buildTerms },
 };
 
 // A destination is a route and a glyph: what it is called comes from

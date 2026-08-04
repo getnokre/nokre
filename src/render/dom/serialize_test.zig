@@ -645,8 +645,8 @@ test "chrome is separable from content, and the nav names where you are" {
         .viewport = .{ .w = 900, .h = 600 },
         .services = .mocks(),
         .routes = &.{
-            .{ .name = "library", .title = "Library", .build = Screens.build },
-            .{ .name = "settings", .title = "Settings", .build = Screens.build },
+            .{ .name = "library", .title = .{ .fixed = "Library" }, .build = Screens.build },
+            .{ .name = "settings", .title = .{ .fixed = "Settings" }, .build = Screens.build },
         },
     });
     defer app.deinit();
@@ -702,8 +702,8 @@ test "the notices indicator stands in the nav's row, not beside it" {
         .viewport = .{ .w = 900, .h = 600 },
         .services = .mocks(),
         .routes = &.{
-            .{ .name = "library", .title = "Library", .build = Screens.build },
-            .{ .name = "settings", .title = "Settings", .build = Screens.build },
+            .{ .name = "library", .title = .{ .fixed = "Library" }, .build = Screens.build },
+            .{ .name = "settings", .title = .{ .fixed = "Settings" }, .build = Screens.build },
         },
     });
     defer app.deinit();
@@ -779,9 +779,9 @@ test "an off-roster screen names itself, and the marker is not a link" {
         .viewport = .{ .w = 900, .h = 600 },
         .services = .mocks(),
         .routes = &.{
-            .{ .name = "library", .title = "Library", .build = Screens.build },
-            .{ .name = "settings", .title = "Settings", .build = Screens.build },
-            .{ .name = "note", .title = "Note", .build = Screens.build },
+            .{ .name = "library", .title = .{ .fixed = "Library" }, .build = Screens.build },
+            .{ .name = "settings", .title = .{ .fixed = "Settings" }, .build = Screens.build },
+            .{ .name = "note", .title = .{ .fixed = "Note" }, .build = Screens.build },
         },
     });
     defer app.deinit();
