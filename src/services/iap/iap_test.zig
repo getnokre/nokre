@@ -491,10 +491,10 @@ const Screen = struct {
     fn build(ctx: ?*anyopaque, app: *App) anyerror!void {
         const self: *Screen = @ptrCast(@alignCast(ctx.?));
         iap.setHandler(app, self, Screen.onUpdate);
-        self.price_node = try app.tree.append(app.tree.rootId(), .{ .text = .{
+        self.price_node = try app.tree.appendId(app.tree.rootId(), .{ .text = .{
             .content = "Loading…",
         } });
-        _ = try app.tree.append(app.tree.rootId(), .{ .button = .{
+        try app.tree.append(app.tree.rootId(), .{ .button = .{
             .label = "Buy coins",
             .on_press = .{ .ctx = self, .call = Screen.buy },
         } });

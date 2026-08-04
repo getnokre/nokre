@@ -371,9 +371,9 @@ const Screen = struct {
         self.app = app;
         const root = app.tree.rootId();
         if (self.signed_in) {
-            _ = try app.tree.append(root, .{ .text = .{ .content = self.code_buf[0..self.code_len] } });
+            try app.tree.append(root, .{ .text = .{ .content = self.code_buf[0..self.code_len] } });
         } else {
-            _ = try app.tree.append(root, .{ .button = .{
+            try app.tree.append(root, .{ .button = .{
                 .label = "Sign in",
                 .on_press = .{ .ctx = self, .call = press },
             } });

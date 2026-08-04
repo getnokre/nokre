@@ -17,8 +17,8 @@ test "append builds sibling chains in order" {
     var tree = try Tree.init(std.testing.allocator);
     defer tree.deinit();
 
-    const a = try tree.append(tree.rootId(), .{ .text = .{ .content = "a" } });
-    const b = try tree.append(tree.rootId(), .{ .text = .{ .content = "b" } });
+    const a = try tree.appendId(tree.rootId(), .{ .text = .{ .content = "a" } });
+    const b = try tree.appendId(tree.rootId(), .{ .text = .{ .content = "b" } });
     _ = a;
     _ = b;
 
@@ -33,7 +33,7 @@ test "strings are copied, not borrowed" {
     defer tree.deinit();
 
     var buf = [_]u8{ 'h', 'i' };
-    const id = try tree.append(tree.rootId(), .{ .text = .{ .content = &buf } });
+    const id = try tree.appendId(tree.rootId(), .{ .text = .{ .content = &buf } });
     buf[0] = 'X';
     try std.testing.expectEqualStrings("hi", tree.getConst(id).?.label());
 }
@@ -50,13 +50,13 @@ test "labels formatted into stack buffers survive the buffer" {
 
     var buf: [24]u8 = undefined;
     var label = std.fmt.bufPrint(&buf, "{d} of {d} notes", .{ 3, 16 }) catch unreachable;
-    const meter = try tree.append(tree.rootId(), .{ .meter = .{ .label = label, .value = 3, .max = 16 } });
+    const meter = try tree.appendId(tree.rootId(), .{ .meter = .{ .label = label, .value = 3, .max = 16 } });
     label = std.fmt.bufPrint(&buf, "{d} pending", .{7}) catch unreachable;
-    const badge = try tree.append(tree.rootId(), .{ .badge = .{ .label = label } });
+    const badge = try tree.appendId(tree.rootId(), .{ .badge = .{ .label = label } });
     label = std.fmt.bufPrint(&buf, "code {s}", .{"XK-1"}) catch unreachable;
-    const copyable = try tree.append(tree.rootId(), .{ .copyable = .{ .label = "Code", .value = label } });
+    const copyable = try tree.appendId(tree.rootId(), .{ .copyable = .{ .label = "Code", .value = label } });
     label = std.fmt.bufPrint(&buf, "{d} rows", .{2}) catch unreachable;
-    const group = try tree.append(tree.rootId(), .{ .tile_group = .{ .description = label } });
+    const group = try tree.appendId(tree.rootId(), .{ .tile_group = .{ .description = label } });
     @memset(&buf, 'X');
 
     try std.testing.expectEqualStrings("3 of 16 notes", tree.getConst(meter).?.meter.label);
@@ -69,12 +69,12 @@ test "stale ids are rejected after removal" {
     var tree = try Tree.init(std.testing.allocator);
     defer tree.deinit();
 
-    const id = try tree.append(tree.rootId(), .{ .divider = .{} });
+    const id = try tree.appendId(tree.rootId(), .{ .divider = .{} });
     try tree.remove(id);
     try std.testing.expectEqual(@as(?*Element, null), tree.get(id));
 
     // Slot reuse must not resurrect the old id.
-    const id2 = try tree.append(tree.rootId(), .{ .divider = .{} });
+    const id2 = try tree.appendId(tree.rootId(), .{ .divider = .{} });
     try std.testing.expect(!id.eql(id2));
     try std.testing.expectEqual(@as(?*Element, null), tree.get(id));
     try std.testing.expect(tree.get(id2) != null);
@@ -90,11 +90,11 @@ test "a stale id stays rejected past 256 reuses of its slot" {
     // aliased the live node at cycle 255 — an ordinary session. The
     // generation is a u12 now, so the first cycle where an alias is
     // possible is 4095.
-    const stale = try tree.append(tree.rootId(), .{ .divider = .{} });
+    const stale = try tree.appendId(tree.rootId(), .{ .divider = .{} });
     try tree.remove(stale);
     var i: usize = 0;
     while (i < 300) : (i += 1) {
-        const id = try tree.append(tree.rootId(), .{ .divider = .{} });
+        const id = try tree.appendId(tree.rootId(), .{ .divider = .{} });
         // The free list hands the same slot back each cycle, so this
         // loop really is spinning one slot's generation counter.
         try std.testing.expectEqual(stale.index, id.index);
@@ -116,10 +116,10 @@ test "release keeps every slot reachable through the free list" {
     var high_water: usize = 0;
     var round: usize = 0;
     while (round < 32) : (round += 1) {
-        const box = try tree.append(tree.rootId(), .{ .box = .{} });
+        const box = try tree.appendId(tree.rootId(), .{ .box = .{} });
         var i: usize = 0;
         while (i < 8) : (i += 1) {
-            _ = try tree.append(box, .{ .text = .{ .content = "row" } });
+            try tree.append(box, .{ .text = .{ .content = "row" } });
         }
         try tree.remove(box);
         if (round == 0) high_water = tree.nodes.items.len;
@@ -139,9 +139,9 @@ test "remove unlinks middle sibling" {
     var tree = try Tree.init(std.testing.allocator);
     defer tree.deinit();
 
-    _ = try tree.append(tree.rootId(), .{ .text = .{ .content = "a" } });
-    const b = try tree.append(tree.rootId(), .{ .text = .{ .content = "b" } });
-    _ = try tree.append(tree.rootId(), .{ .text = .{ .content = "c" } });
+    try tree.append(tree.rootId(), .{ .text = .{ .content = "a" } });
+    const b = try tree.appendId(tree.rootId(), .{ .text = .{ .content = "b" } });
+    try tree.append(tree.rootId(), .{ .text = .{ .content = "c" } });
     try tree.remove(b);
 
     var it = tree.children(tree.rootId());
@@ -154,9 +154,9 @@ test "dfs visits pre-order" {
     var tree = try Tree.init(std.testing.allocator);
     defer tree.deinit();
 
-    const box = try tree.append(tree.rootId(), .{ .box = .{} });
-    _ = try tree.append(box, .{ .text = .{ .content = "inner" } });
-    _ = try tree.append(tree.rootId(), .{ .text = .{ .content = "after" } });
+    const box = try tree.appendId(tree.rootId(), .{ .box = .{} });
+    try tree.append(box, .{ .text = .{ .content = "inner" } });
+    try tree.append(tree.rootId(), .{ .text = .{ .content = "after" } });
 
     var it = tree.dfs();
     try std.testing.expectEqual(Role.stack, tree.getConst(it.next().?).?.role());
@@ -170,9 +170,9 @@ test "clearChildren empties a subtree" {
     var tree = try Tree.init(std.testing.allocator);
     defer tree.deinit();
 
-    const box = try tree.append(tree.rootId(), .{ .box = .{} });
-    _ = try tree.append(box, .{ .text = .{ .content = "x" } });
-    _ = try tree.append(box, .{ .text = .{ .content = "y" } });
+    const box = try tree.appendId(tree.rootId(), .{ .box = .{} });
+    try tree.append(box, .{ .text = .{ .content = "x" } });
+    try tree.append(box, .{ .text = .{ .content = "y" } });
     try tree.clearChildren(box);
     try std.testing.expectEqual(@as(usize, 0), tree.childCount(box));
 }
@@ -189,7 +189,7 @@ test "append rejects unlabeled interactive elements" {
     // The `…` an in-progress button renders is a state, not a name:
     // it buys no exemption from the label rule.
     try std.testing.expectError(error.UnlabeledInteractive, tree.append(root, .{ .button = .{ .label = "", .in_progress = true } }));
-    _ = try tree.append(root, .{ .button = .{ .label = "Go", .disabled = true } });
+    try tree.append(root, .{ .button = .{ .label = "Go", .disabled = true } });
 }
 
 test "append rejects layout-owned fields set by the consumer" {
@@ -202,7 +202,7 @@ test "append rejects layout-owned fields set by the consumer" {
     try std.testing.expectError(error.LayoutOwnedField, tree.append(root, .{ .button = .{ .label = "Go", .folded = true } }));
     try std.testing.expectError(error.LayoutOwnedField, tree.append(root, .{ .link = .{ .label = "Go", .route = "r", .folded = true } }));
     try std.testing.expectError(error.LayoutOwnedField, tree.append(root, .{ .scroll_region = .{ .height = 100, .content_height = 5 } }));
-    _ = try tree.append(root, .{ .scroll_region = .{ .height = 100 } });
+    try tree.append(root, .{ .scroll_region = .{ .height = 100 } });
 }
 
 test "append rejects a percentage with nothing to measure" {
@@ -230,8 +230,8 @@ test "append rejects a percentage with nothing to measure" {
         .progress_percent = 40,
     } }));
 
-    _ = try tree.append(root, .{ .button = .{ .label = "Save", .in_progress = true, .progress_percent = 0 } });
-    _ = try tree.append(root, .{ .button = .{ .label = "Send", .in_progress = true, .progress_percent = 100 } });
+    try tree.append(root, .{ .button = .{ .label = "Save", .in_progress = true, .progress_percent = 0 } });
+    try tree.append(root, .{ .button = .{ .label = "Send", .in_progress = true, .progress_percent = 100 } });
 }
 
 test "append rejects negative spacing" {
@@ -244,7 +244,7 @@ test "append rejects negative spacing" {
     try std.testing.expectError(error.NegativeSpacing, tree.append(root, .{ .stack = .{ .padding = -4 } }));
     try std.testing.expectError(error.NegativeSpacing, tree.append(root, .{ .stack = .{ .gap = -1 } }));
     try std.testing.expectError(error.NegativeSpacing, tree.append(root, .{ .box = .{ .padding = -1 } }));
-    _ = try tree.append(root, .{ .stack = .{ .padding = 0, .gap = 0 } });
+    try tree.append(root, .{ .stack = .{ .padding = 0, .gap = 0 } });
 }
 
 test "append rejects icon-only buttons without an icon" {
@@ -253,8 +253,8 @@ test "append rejects icon-only buttons without an icon" {
     const root = tree.rootId();
 
     try std.testing.expectError(error.IconOnlyButtonNeedsIcon, tree.append(root, .{ .button = .{ .label = "Next", .icon_only = true } }));
-    _ = try tree.append(root, .{ .button = .{ .label = "Next", .icon = .chevron_right, .icon_only = true } });
-    _ = try tree.append(root, .{ .button = .{ .label = "Add", .icon = .alarm_clock_plus } });
+    try tree.append(root, .{ .button = .{ .label = "Next", .icon = .chevron_right, .icon_only = true } });
+    try tree.append(root, .{ .button = .{ .label = "Add", .icon = .alarm_clock_plus } });
 }
 
 test "append rejects secondary emphasis on icon-only buttons" {
@@ -268,7 +268,7 @@ test "append rejects secondary emphasis on icon-only buttons" {
         .icon_only = true,
         .secondary = true,
     } }));
-    _ = try tree.append(root, .{ .button = .{ .label = "Cancel", .secondary = true } });
+    try tree.append(root, .{ .button = .{ .label = "Cancel", .secondary = true } });
 }
 
 test "append demands the vendor's words on a sign-in button, and refuses an icon beside the mark" {
@@ -285,7 +285,7 @@ test "append demands the vendor's words on a sign-in button, and refuses an icon
         .label = "",
         .provider = .apple,
     } }));
-    const id = try tree.append(root, .{ .button = .{ .label = "Mit Apple anmelden", .provider = .apple } });
+    const id = try tree.appendId(root, .{ .button = .{ .label = "Mit Apple anmelden", .provider = .apple } });
     try std.testing.expectEqualStrings("Mit Apple anmelden", tree.getConst(id).?.button.label);
 
     // The mark occupies the icon slot, and no vendor sanctions a
@@ -301,7 +301,7 @@ test "append demands the vendor's words on a sign-in button, and refuses an icon
         .icon_only = true,
     } }));
     // Outlined is Apple's third sanctioned style, not a new one.
-    _ = try tree.append(root, .{ .button = .{
+    try tree.append(root, .{ .button = .{
         .label = "Sign in with Apple",
         .provider = .apple,
         .secondary = true,
@@ -314,7 +314,7 @@ test "append demands the vendor's words on a sign-in button, and refuses an icon
         .provider = .google,
         .secondary = true,
     } }));
-    _ = try tree.append(root, .{ .button = .{
+    try tree.append(root, .{ .button = .{
         .label = "Sign in with Google",
         .provider = .google,
     } });
@@ -325,11 +325,11 @@ test "append rejects malformed table structure" {
     defer tree.deinit();
     const root = tree.rootId();
 
-    const tbl = try tree.append(root, .{ .table = .{} });
+    const tbl = try tree.appendId(root, .{ .table = .{} });
     try std.testing.expectError(error.TableChildMustBeRow, tree.append(tbl, .{ .text = .{ .content = "stray" } }));
-    const row = try tree.append(tbl, .{ .row = .{} });
+    const row = try tree.appendId(tbl, .{ .row = .{} });
     try std.testing.expectError(error.RowChildMustBeCell, tree.append(row, .{ .text = .{ .content = "stray" } }));
-    _ = try tree.append(row, .{ .cell = .{} });
+    try tree.append(row, .{ .cell = .{} });
     try std.testing.expectError(error.RowOutsideTable, tree.append(root, .{ .row = .{} }));
     try std.testing.expectError(error.CellOutsideRow, tree.append(root, .{ .cell = .{} }));
 }
@@ -341,18 +341,18 @@ test "append refuses the cell past the table's column capacity" {
     // Layout's per-column bookkeeping is `max_table_columns` wide; the
     // cell that would open one more column would keep only a stale rect
     // nothing draws, so it cannot be built.
-    const tbl = try tree.append(tree.rootId(), .{ .table = .{} });
-    const row = try tree.append(tbl, .{ .row = .{} });
+    const tbl = try tree.appendId(tree.rootId(), .{ .table = .{} });
+    const row = try tree.appendId(tbl, .{ .row = .{} });
     var i: usize = 0;
     while (i < element_mod.max_table_columns) : (i += 1) {
-        _ = try tree.append(row, .{ .cell = .{} });
+        try tree.append(row, .{ .cell = .{} });
     }
     try std.testing.expectError(error.TooManyColumns, tree.append(row, .{ .cell = .{} }));
     try std.testing.expectEqual(element_mod.max_table_columns, tree.childCount(row));
 
     // The cap is per row: a second row starts its own count.
-    const row2 = try tree.append(tbl, .{ .row = .{} });
-    _ = try tree.append(row2, .{ .cell = .{} });
+    const row2 = try tree.appendId(tbl, .{ .row = .{} });
+    try tree.append(row2, .{ .cell = .{} });
 }
 
 test "append rejects malformed nav structure" {
@@ -360,13 +360,13 @@ test "append rejects malformed nav structure" {
     defer tree.deinit();
     const root = tree.rootId();
 
-    const box = try tree.append(root, .{ .box = .{} });
+    const box = try tree.appendId(root, .{ .box = .{} });
     try std.testing.expectError(error.NavMustBeAtRoot, tree.append(box, .{ .nav = .{} }));
 
-    const nav = try tree.append(root, .{ .nav = .{} });
+    const nav = try tree.appendId(root, .{ .nav = .{} });
     try std.testing.expectError(error.MultipleNavs, tree.append(root, .{ .nav = .{} }));
     try std.testing.expectError(error.NavChildMustBeNavItem, tree.append(nav, .{ .text = .{ .content = "stray" } }));
-    _ = try tree.append(nav, .{ .nav_item = .{ .label = "Home", .route = "home", .icon = .house } });
+    try tree.append(nav, .{ .nav_item = .{ .label = "Home", .route = "home", .icon = .house } });
     try std.testing.expectError(error.NavItemOutsideNav, tree.append(root, .{ .nav_item = .{ .label = "Lost", .route = "lost", .icon = .circle } }));
 }
 
@@ -374,13 +374,13 @@ test "append rejects a malformed off-roster marker" {
     var tree = try Tree.init(std.testing.allocator);
     defer tree.deinit();
     const root = tree.rootId();
-    const nav = try tree.append(root, .{ .nav = .{} });
+    const nav = try tree.appendId(root, .{ .nav = .{} });
 
     try std.testing.expectError(error.NavItemOutsideNav, tree.append(root, .{ .nav_here = .{ .label = "Terms" } }));
     try std.testing.expectError(error.EmptyNavHere, tree.append(nav, .{ .nav_here = .{ .label = "" } }));
 
-    _ = try tree.append(nav, .{ .nav_item = .{ .label = "Home", .route = "home", .icon = .house } });
-    _ = try tree.append(nav, .{ .nav_here = .{ .label = "Terms" } });
+    try tree.append(nav, .{ .nav_item = .{ .label = "Home", .route = "home", .icon = .house } });
+    try tree.append(nav, .{ .nav_here = .{ .label = "Terms" } });
     // It is the tail of the row and there is one of it: a destination
     // behind it would be read after the screen it stands on, and a
     // second marker would say you are in two places.
@@ -391,9 +391,9 @@ test "append rejects a malformed off-roster marker" {
 test "append keeps the two nav shapes exclusive of the marker too" {
     var tree = try Tree.init(std.testing.allocator);
     defer tree.deinit();
-    const nav = try tree.append(tree.rootId(), .{ .nav = .{} });
+    const nav = try tree.appendId(tree.rootId(), .{ .nav = .{} });
 
-    _ = try tree.append(nav, .{ .nav_current = .{ .section = "Library", .icon = .library } });
+    try tree.append(nav, .{ .nav_current = .{ .section = "Library", .icon = .library } });
     // The chip already carries what the marker would have said, so the
     // collapsed shape has no room for one (`element.NavHere`).
     try std.testing.expectError(error.NavShapeIsExclusive, tree.append(nav, .{ .nav_here = .{ .label = "Terms" } }));
@@ -406,11 +406,11 @@ test "append rejects a folded-tail control anywhere but on a row" {
 
     // The root is a vertical stack; a row is the only thing that folds.
     try std.testing.expectError(error.MoreOutsideButtonRow, tree.append(root, .{ .more = .{} }));
-    const box = try tree.append(root, .{ .box = .{} });
+    const box = try tree.appendId(root, .{ .box = .{} });
     try std.testing.expectError(error.MoreOutsideButtonRow, tree.append(box, .{ .more = .{} }));
 
-    const row = try tree.append(root, .{ .stack = .{ .axis = .horizontal } });
-    _ = try tree.append(row, .{ .more = .{} });
+    const row = try tree.appendId(root, .{ .stack = .{ .axis = .horizontal } });
+    try tree.append(row, .{ .more = .{} });
     // One tail per row: a second control would stand for the same
     // buttons twice.
     try std.testing.expectError(error.MultipleMoreControls, tree.append(row, .{ .more = .{} }));
@@ -421,10 +421,10 @@ test "append rejects malformed tile structure" {
     defer tree.deinit();
     const root = tree.rootId();
 
-    const group = try tree.append(root, .{ .tile_group = .{} });
+    const group = try tree.appendId(root, .{ .tile_group = .{} });
     try std.testing.expectError(error.TileGroupChildMustBeTile, tree.append(group, .{ .text = .{ .content = "stray" } }));
     try std.testing.expectError(error.UnlabeledInteractive, tree.append(group, .{ .tile = .{ .label = "", .route = "members" } }));
-    _ = try tree.append(group, .{ .tile = .{ .label = "Members", .route = "members" } });
+    try tree.append(group, .{ .tile = .{ .label = "Members", .route = "members" } });
     try std.testing.expectError(error.TileOutsideTileGroup, tree.append(root, .{ .tile = .{ .label = "Lost", .route = "lost" } }));
 }
 
@@ -432,7 +432,7 @@ test "append holds a tile to exactly one destination, as it holds a link" {
     var tree = try Tree.init(std.testing.allocator);
     defer tree.deinit();
 
-    const group = try tree.append(tree.rootId(), .{ .tile_group = .{} });
+    const group = try tree.appendId(tree.rootId(), .{ .tile_group = .{} });
 
     // Both: the route would win and the press would never be called, on a
     // row drawn and announced as a link.
@@ -452,8 +452,8 @@ test "append holds a tile to exactly one destination, as it holds a link" {
     } }));
 
     // Either one alone builds.
-    _ = try tree.append(group, .{ .tile = .{ .label = "Members", .route = "members" } });
-    _ = try tree.append(group, .{ .tile = .{ .label = "Leave circle", .on_press = .{ .call = noopPress } } });
+    try tree.append(group, .{ .tile = .{ .label = "Members", .route = "members" } });
+    try tree.append(group, .{ .tile = .{ .label = "Leave circle", .on_press = .{ .call = noopPress } } });
     try std.testing.expectEqual(@as(usize, 2), tree.childCount(group));
 }
 
@@ -464,15 +464,15 @@ test "append holds a tile group to all marks or none" {
 
     // The first row decides; the ragged column is what the rest are held
     // to, in both directions.
-    const marked = try tree.append(root, .{ .tile_group = .{} });
-    _ = try tree.append(marked, .{ .tile = .{ .label = "Members", .route = "members", .icon = .users } });
+    const marked = try tree.appendId(root, .{ .tile_group = .{} });
+    try tree.append(marked, .{ .tile = .{ .label = "Members", .route = "members", .icon = .users } });
     try std.testing.expectError(error.TileGroupMixedIcons, tree.append(marked, .{
         .tile = .{ .label = "Invites", .route = "invites" },
     }));
-    _ = try tree.append(marked, .{ .tile = .{ .label = "Invites", .route = "invites", .icon = .mail } });
+    try tree.append(marked, .{ .tile = .{ .label = "Invites", .route = "invites", .icon = .mail } });
 
-    const bare = try tree.append(root, .{ .tile_group = .{} });
-    _ = try tree.append(bare, .{ .tile = .{ .label = "Members", .route = "members" } });
+    const bare = try tree.appendId(root, .{ .tile_group = .{} });
+    try tree.append(bare, .{ .tile = .{ .label = "Members", .route = "members" } });
     try std.testing.expectError(error.TileGroupMixedIcons, tree.append(bare, .{
         .tile = .{ .label = "Invites", .route = "invites", .icon = .mail },
     }));
@@ -486,12 +486,12 @@ test "append rejects malformed list structure" {
     defer tree.deinit();
     const root = tree.rootId();
 
-    const list = try tree.append(root, .{ .list = .{} });
+    const list = try tree.appendId(root, .{ .list = .{} });
     try std.testing.expectError(error.ListChildMustBeListItem, tree.append(list, .{ .text = .{ .content = "stray" } }));
     try std.testing.expectError(error.ListItemOutsideList, tree.append(root, .{ .list_item = .{} }));
 
-    const item = try tree.append(list, .{ .list_item = .{} });
-    _ = try tree.append(item, .{ .text = .{ .content = "Wash the dishes" } });
+    const item = try tree.appendId(list, .{ .list_item = .{} });
+    try tree.append(item, .{ .text = .{ .content = "Wash the dishes" } });
     // The document block set: no heading (it would claim an outline
     // position the list cannot own) and no table (a grid at list depth
     // reads as a mistake — the parser degrades one to literal text).
@@ -517,7 +517,7 @@ test "append holds link spans to the rules every other control obeys" {
     // The route is its own string, not a slice of the concatenation, so
     // it needs its own copy — the tree never borrows consumer memory.
     var route = [_]u8{ 't', 'e', 'r', 'm', 's' };
-    const para = try tree.append(root, .{ .text = .{ .spans = &.{
+    const para = try tree.appendId(root, .{ .text = .{ .spans = &.{
         .{ .text = "Read the " },
         .{ .text = "terms", .route = &route },
     } } });
@@ -561,10 +561,10 @@ test "append holds external destinations to open_url's closed scheme set, spans 
     // Well-formed external destinations construct, copied like routes —
     // the tree never borrows consumer memory.
     var url = [_]u8{ 'h', 't', 't', 'p', 's', ':', '/', '/', 'x', '.', 'c', 'o' };
-    const para = try tree.append(root, .{ .text = .{ .spans = &.{
+    const para = try tree.appendId(root, .{ .text = .{ .spans = &.{
         .{ .text = "the site", .external = &url },
     } } });
-    _ = try tree.append(root, .{ .link = .{ .label = "Mail us", .external = "mailto:x@example.com" } });
+    try tree.append(root, .{ .link = .{ .label = "Mail us", .external = "mailto:x@example.com" } });
     @memset(&url, 0);
     const spans = tree.getConst(para).?.text.spans;
     try std.testing.expectEqualStrings("https://x.co", spans[0].external.?);
@@ -573,10 +573,10 @@ test "append holds external destinations to open_url's closed scheme set, spans 
 test "append holds a blockquote to the document block set" {
     var tree = try Tree.init(std.testing.allocator);
     defer tree.deinit();
-    const quote = try tree.append(tree.rootId(), .{ .blockquote = .{} });
-    _ = try tree.append(quote, .{ .text = .{ .content = "Not everything that counts can be counted." } });
-    _ = try tree.append(quote, .{ .blockquote = .{} }); // quotes nest
-    _ = try tree.append(quote, .{ .code_block = .{ .content = "cite();" } });
+    const quote = try tree.appendId(tree.rootId(), .{ .blockquote = .{} });
+    try tree.append(quote, .{ .text = .{ .content = "Not everything that counts can be counted." } });
+    try tree.append(quote, .{ .blockquote = .{} }); // quotes nest
+    try tree.append(quote, .{ .code_block = .{ .content = "cite();" } });
     try std.testing.expectError(error.InvalidBlockquoteChild, tree.append(quote, .{ .heading = .{ .content = "Nope" } }));
     try std.testing.expectError(error.InvalidBlockquoteChild, tree.append(quote, .{ .button = .{ .label = "Nope" } }));
 }
@@ -588,7 +588,7 @@ test "append rejects a verbatim block with nothing verbatim in it" {
     // Content is copied like every other string, so the caller may free
     // its buffer the moment append returns.
     var buf = [_]u8{ 'f', 'n', ' ', 'x' };
-    const cb = try tree.append(tree.rootId(), .{ .code_block = .{ .content = &buf } });
+    const cb = try tree.appendId(tree.rootId(), .{ .code_block = .{ .content = &buf } });
     @memset(&buf, 0);
     try std.testing.expectEqualStrings("fn x", tree.getConst(cb).?.code_block.content);
 }
@@ -600,9 +600,9 @@ test "append caps list nesting at three levels" {
     var parent = tree.rootId();
     var depth: usize = 0;
     while (depth < element_mod.max_list_depth) : (depth += 1) {
-        const list = try tree.append(parent, .{ .list = .{} });
+        const list = try tree.appendId(parent, .{ .list = .{} });
         try std.testing.expectEqual(depth + 1, tree.listDepth(list));
-        parent = try tree.append(list, .{ .list_item = .{} });
+        parent = try tree.appendId(list, .{ .list_item = .{} });
     }
     // A fourth level is refused at construction; content nokre does not
     // control flattens onto the third rather than failing.
@@ -617,7 +617,7 @@ test "append rejects degenerate segmented controls" {
     try std.testing.expectError(error.SegmentedNeedsTwoOptions, tree.append(root, .{ .segmented = .{ .label = "Lonely", .options = &.{"One"} } }));
     try std.testing.expectError(error.SegmentedEmptyOption, tree.append(root, .{ .segmented = .{ .label = "Blank", .options = &.{ "A", "" } } }));
     try std.testing.expectError(error.SegmentedSelectionOutOfRange, tree.append(root, .{ .segmented = .{ .label = "Off", .options = &.{ "A", "B" }, .selected = 7 } }));
-    _ = try tree.append(root, .{ .segmented = .{ .label = "View", .options = &.{ "List", "Grid" } } });
+    try tree.append(root, .{ .segmented = .{ .label = "View", .options = &.{ "List", "Grid" } } });
 }
 
 test "append rejects degenerate radio groups" {
@@ -629,7 +629,7 @@ test "append rejects degenerate radio groups" {
     try std.testing.expectError(error.RadioGroupEmptyOption, tree.append(root, .{ .radio_group = .{ .label = "Blank", .options = &.{ "A", "" } } }));
     try std.testing.expectError(error.RadioGroupSelectionOutOfRange, tree.append(root, .{ .radio_group = .{ .label = "Off", .options = &.{ "A", "B" }, .selected = 7 } }));
     try std.testing.expectError(error.UnlabeledInteractive, tree.append(root, .{ .radio_group = .{ .label = "", .options = &.{ "A", "B" } } }));
-    _ = try tree.append(root, .{ .radio_group = .{ .label = "Delivery", .options = &.{ "Email", "SMS" } } });
+    try tree.append(root, .{ .radio_group = .{ .label = "Delivery", .options = &.{ "Email", "SMS" } } });
 }
 
 test "append rejects degenerate selects" {
@@ -641,7 +641,7 @@ test "append rejects degenerate selects" {
     try std.testing.expectError(error.SelectEmptyOption, tree.append(root, .{ .select = .{ .label = "Blank", .options = &.{ "A", "" } } }));
     try std.testing.expectError(error.SelectSelectionOutOfRange, tree.append(root, .{ .select = .{ .label = "Off", .options = &.{ "A", "B" }, .selected = 7 } }));
     try std.testing.expectError(error.UnlabeledInteractive, tree.append(root, .{ .select = .{ .label = "", .options = &.{ "A", "B" } } }));
-    _ = try tree.append(root, .{ .select = .{ .label = "Language", .options = &.{ "English", "Deutsch" } } });
+    try tree.append(root, .{ .select = .{ .label = "Language", .options = &.{ "English", "Deutsch" } } });
 }
 
 test "append rejects malformed picker structure" {
@@ -650,14 +650,14 @@ test "append rejects malformed picker structure" {
     const root = tree.rootId();
 
     try std.testing.expectError(error.UntitledPicker, tree.append(root, .{ .picker = .{ .title = "" } }));
-    const box = try tree.append(root, .{ .box = .{} });
+    const box = try tree.appendId(root, .{ .box = .{} });
     try std.testing.expectError(error.PickerMustBeAtRoot, tree.append(box, .{ .picker = .{ .title = "Language" } }));
     try std.testing.expectError(error.PickerItemOutsidePicker, tree.append(root, .{ .picker_item = .{ .label = "English" } }));
 
-    const picker = try tree.append(root, .{ .picker = .{ .title = "Language" } });
+    const picker = try tree.appendId(root, .{ .picker = .{ .title = "Language" } });
     try std.testing.expectError(error.InvalidPickerChild, tree.append(picker, .{ .text = .{ .content = "stray" } }));
-    const region = try tree.append(picker, .{ .scroll_region = .{ .height = 0 } });
-    _ = try tree.append(region, .{ .picker_item = .{ .label = "English" } });
+    const region = try tree.appendId(picker, .{ .scroll_region = .{ .height = 0 } });
+    try tree.append(region, .{ .picker_item = .{ .label = "English" } });
     try std.testing.expectError(error.MultiplePickers, tree.append(root, .{ .picker = .{ .title = "Another" } }));
 }
 
@@ -668,7 +668,7 @@ test "append rejects wordless and out-of-range meters" {
     try std.testing.expectError(error.EmptyMeter, tree.append(root, .{ .meter = .{ .label = "", .value = 1, .max = 2 } }));
     try std.testing.expectError(error.MeterValueOutOfRange, tree.append(root, .{ .meter = .{ .label = "1 of 0", .value = 1, .max = 0 } }));
     try std.testing.expectError(error.MeterValueOutOfRange, tree.append(root, .{ .meter = .{ .label = "31 of 30", .value = 31, .max = 30 } }));
-    _ = try tree.append(root, .{ .meter = .{ .label = "12 of 30 days", .value = 12, .max = 30 } });
+    try tree.append(root, .{ .meter = .{ .label = "12 of 30 days", .value = 12, .max = 30 } });
 }
 
 test "append rejects unlabeled, valueless, and non-text qr codes" {
@@ -688,7 +688,7 @@ test "append encodes a qr value into module bits" {
     var tree = try Tree.init(std.testing.allocator);
     defer tree.deinit();
 
-    const id = try tree.append(tree.rootId(), .{ .qr = .{
+    const id = try tree.appendId(tree.rootId(), .{ .qr = .{
         .label = "Invite link",
         .value = "https://example.com/invite/XKCD-1234",
     } });
@@ -703,7 +703,7 @@ test "append encodes a qr value into module bits" {
     try std.testing.expect(q.module(0, q.size - 1));
 
     // Same value → same bits: encoding is deterministic.
-    const id2 = try tree.append(tree.rootId(), .{ .qr = .{
+    const id2 = try tree.appendId(tree.rootId(), .{ .qr = .{
         .label = "Invite link again",
         .value = "https://example.com/invite/XKCD-1234",
     } });
@@ -718,7 +718,7 @@ test "append rejects empty badges" {
     const root = tree.rootId();
 
     try std.testing.expectError(error.EmptyBadge, tree.append(root, .{ .badge = .{ .label = "" } }));
-    _ = try tree.append(root, .{ .badge = .{ .label = "Active" } });
+    try tree.append(root, .{ .badge = .{ .label = "Active" } });
 }
 
 test "append rejects unlabeled and valueless copyables" {
@@ -728,7 +728,7 @@ test "append rejects unlabeled and valueless copyables" {
 
     try std.testing.expectError(error.UnlabeledInteractive, tree.append(root, .{ .copyable = .{ .label = "", .value = "XKCD-1234" } }));
     try std.testing.expectError(error.EmptyCopyable, tree.append(root, .{ .copyable = .{ .label = "Recovery code", .value = "" } }));
-    _ = try tree.append(root, .{ .copyable = .{ .label = "Recovery code", .value = "XKCD-1234" } });
+    try tree.append(root, .{ .copyable = .{ .label = "Recovery code", .value = "XKCD-1234" } });
 }
 
 test "append rejects illegible text on its background" {
@@ -740,19 +740,19 @@ test "append rejects illegible text on its background" {
     try std.testing.expectError(error.InsufficientTextContrast, tree.append(root, .{ .text = .{ .content = "faint", .style = .{ .ink = .g6 } } }));
 
     // Default (ink) text inside an ink-filled box is invisible.
-    const dark_box = try tree.append(root, .{ .box = .{ .fill = .ink } });
+    const dark_box = try tree.appendId(root, .{ .box = .{ .fill = .ink } });
     try std.testing.expectError(error.InsufficientTextContrast, tree.append(dark_box, .{ .text = .{ .content = "void" } }));
     try std.testing.expectError(error.InsufficientTextContrast, tree.append(dark_box, .{ .link = .{ .label = "hidden", .route = "x" } }));
 
     // Paper ink on the same fill, and whitespace-only swatch text, pass.
-    _ = try tree.append(dark_box, .{ .text = .{ .content = "legible", .style = .{ .ink = .paper } } });
-    _ = try tree.append(dark_box, .{ .text = .{ .content = " " } });
-    _ = try tree.append(root, .{ .text = .{ .content = "secondary", .style = .{ .ink = .mid } } });
+    try tree.append(dark_box, .{ .text = .{ .content = "legible", .style = .{ .ink = .paper } } });
+    try tree.append(dark_box, .{ .text = .{ .content = " " } });
+    try tree.append(root, .{ .text = .{ .content = "secondary", .style = .{ .ink = .mid } } });
 
     // Decorative icons may fade; meaningful ones must not.
-    _ = try tree.append(root, .{ .icon = .{ .name = .activity, .ink = .light } });
+    try tree.append(root, .{ .icon = .{ .name = .activity, .ink = .light } });
     try std.testing.expectError(error.InsufficientTextContrast, tree.append(root, .{ .icon = .{ .name = .activity, .ink = .light, .label = "Live" } }));
-    _ = try tree.append(root, .{ .icon = .{ .name = .activity, .label = "Live" } });
+    try tree.append(root, .{ .icon = .{ .name = .activity, .label = "Live" } });
 }
 
 test "append gates text contrast in both appearances, not just light" {
@@ -766,7 +766,7 @@ test "append gates text contrast in both appearances, not just light" {
     // Twenty such pairs exist; checking one appearance checked half the
     // app. The rejection must cite the appearance-blind failure, so it
     // is the same error either way.
-    const mid_box = try tree.append(root, .{ .box = .{ .fill = .g7 } });
+    const mid_box = try tree.appendId(root, .{ .box = .{ .fill = .g7 } });
     try std.testing.expect(color.Gray.ink.contrastWith(.g7, .light) >= color.min_text_contrast);
     try std.testing.expect(color.Gray.ink.contrastWith(.g7, .dark) < color.min_text_contrast);
     try std.testing.expectError(error.InsufficientTextContrast, tree.append(mid_box, .{ .text = .{ .content = "half-legible" } }));
@@ -793,13 +793,13 @@ test "append rejects text that is too contrasty, not only too faint" {
     } }));
 
     // The alias the framework steers you to sits comfortably inside.
-    _ = try tree.append(root, .{ .text = .{ .content = "comfortable" } });
+    try tree.append(root, .{ .text = .{ .content = "comfortable" } });
 }
 
 test "spans: append concatenates into content and rebases the spans" {
     var tree = try Tree.init(std.testing.allocator);
     defer tree.deinit();
-    const id = try tree.append(tree.rootId(), .{ .text = .{ .spans = &.{
+    const id = try tree.appendId(tree.rootId(), .{ .text = .{ .spans = &.{
         .{ .text = "Rokovski " },
         .{ .text = "Feedback", .strong = true },
     } } });
@@ -814,7 +814,7 @@ test "spans: append concatenates into content and rebases the spans" {
 test "spans: heading spans concatenate the same way" {
     var tree = try Tree.init(std.testing.allocator);
     defer tree.deinit();
-    const id = try tree.append(tree.rootId(), .{ .heading = .{ .level = .h2, .spans = &.{
+    const id = try tree.appendId(tree.rootId(), .{ .heading = .{ .level = .h2, .spans = &.{
         .{ .text = "The " },
         .{ .text = "wrap", .code = true },
         .{ .text = " function" },
@@ -852,7 +852,7 @@ test "spans: an illegible span ink is rejected like plain text ink" {
         .spans = &.{.{ .text = "dim" }},
     } }));
     // Whitespace-only runs render no ink and pass, as whitespace text does.
-    _ = try tree.append(tree.rootId(), .{ .text = .{ .spans = &.{
+    try tree.append(tree.rootId(), .{ .text = .{ .spans = &.{
         .{ .text = "legible" },
         .{ .text = "   ", .ink = .g9 },
     } } });
@@ -861,7 +861,7 @@ test "spans: an illegible span ink is rejected like plain text ink" {
 test "spans: setContent replaces spanned text with plain content" {
     var tree = try Tree.init(std.testing.allocator);
     defer tree.deinit();
-    const id = try tree.append(tree.rootId(), .{ .text = .{ .spans = &.{
+    const id = try tree.appendId(tree.rootId(), .{ .text = .{ .spans = &.{
         .{ .text = "a" },
         .{ .text = "b", .strong = true },
     } } });
@@ -874,8 +874,8 @@ test "spans: setContent replaces spanned text with plain content" {
 test "setContent clamps a caret the new value no longer reaches" {
     var tree = try Tree.init(std.testing.allocator);
     defer tree.deinit();
-    const input = try tree.append(tree.rootId(), .{ .text_input = .{ .label = "Name", .value = "hello world" } });
-    const area = try tree.append(tree.rootId(), .{ .text_area = .{ .label = "Notes", .value = "hello world" } });
+    const input = try tree.appendId(tree.rootId(), .{ .text_input = .{ .label = "Name", .value = "hello world" } });
+    const area = try tree.appendId(tree.rootId(), .{ .text_area = .{ .label = "Notes", .value = "hello world" } });
     tree.get(input).?.text_input.cursor = "hello world".len;
     tree.get(area).?.text_area.cursor = "hello world".len;
 
@@ -896,8 +896,8 @@ test "setContent clamps a caret the new value no longer reaches" {
 test "setContent clamps the caret to a codepoint boundary, not only to length" {
     var tree = try Tree.init(std.testing.allocator);
     defer tree.deinit();
-    const input = try tree.append(tree.rootId(), .{ .text_input = .{ .label = "Name", .value = "abcd" } });
-    const area = try tree.append(tree.rootId(), .{ .text_area = .{ .label = "Notes", .value = "abcd" } });
+    const input = try tree.appendId(tree.rootId(), .{ .text_input = .{ .label = "Name", .value = "abcd" } });
+    const area = try tree.appendId(tree.rootId(), .{ .text_area = .{ .label = "Notes", .value = "abcd" } });
     tree.get(input).?.text_input.cursor = 2;
     tree.get(area).?.text_area.cursor = 2;
 
@@ -923,7 +923,7 @@ test "setContent faces the append-time contrast gate" {
     // rendered — so setContent is the first moment that ink could meet
     // visible words. It runs the same gate, returns the same error, and
     // a refused pair leaves the element untouched.
-    const dim = try tree.append(tree.rootId(), .{ .text = .{ .content = " ", .style = .{ .ink = .g6 } } });
+    const dim = try tree.appendId(tree.rootId(), .{ .text = .{ .content = " ", .style = .{ .ink = .g6 } } });
     try std.testing.expectError(error.InsufficientTextContrast, tree.setContent(dim, "now visible"));
     try std.testing.expectEqualStrings(" ", tree.getConst(dim).?.text.content);
 
@@ -932,10 +932,10 @@ test "setContent faces the append-time contrast gate" {
     try std.testing.expectEqualStrings("\t \n", tree.getConst(dim).?.text.content);
 
     // The background judged is the one behind the element, as at append.
-    const dark_box = try tree.append(tree.rootId(), .{ .box = .{ .fill = .ink } });
-    const pale = try tree.append(dark_box, .{ .text = .{ .content = " ", .style = .{ .ink = .paper } } });
+    const dark_box = try tree.appendId(tree.rootId(), .{ .box = .{ .fill = .ink } });
+    const pale = try tree.appendId(dark_box, .{ .text = .{ .content = " ", .style = .{ .ink = .paper } } });
     try tree.setContent(pale, "legible on ink");
-    const plain = try tree.append(dark_box, .{ .text = .{ .content = " " } });
+    const plain = try tree.appendId(dark_box, .{ .text = .{ .content = " " } });
     try std.testing.expectError(error.InsufficientTextContrast, tree.setContent(plain, "ink on ink"));
 }
 
@@ -946,25 +946,25 @@ test "the boundary copy validates: invalid UTF-8 is stored as U+FFFD" {
 
     // An invalid lead byte, a truncated multibyte tail, and a lone
     // continuation byte — the three shapes fetched bytes actually take.
-    const lead = try tree.append(root, .{ .text = .{ .content = "a\xffb" } });
+    const lead = try tree.appendId(root, .{ .text = .{ .content = "a\xffb" } });
     try std.testing.expectEqualStrings("a\u{FFFD}b", tree.getConst(lead).?.text.content);
-    const tail = try tree.append(root, .{ .text = .{ .content = "caf\xc3" } });
+    const tail = try tree.appendId(root, .{ .text = .{ .content = "caf\xc3" } });
     try std.testing.expectEqualStrings("caf\u{FFFD}", tree.getConst(tail).?.text.content);
-    const cont = try tree.append(root, .{ .text = .{ .content = "\x80x" } });
+    const cont = try tree.appendId(root, .{ .text = .{ .content = "\x80x" } });
     try std.testing.expectEqualStrings("\u{FFFD}x", tree.getConst(cont).?.text.content);
 
     // A truncated sequence is one replacement, not one per byte —
     // maximal subparts, so the substitution is deterministic and small.
-    const four = try tree.append(root, .{ .text = .{ .content = "ok \xf0\x9f\x92" } });
+    const four = try tree.appendId(root, .{ .text = .{ .content = "ok \xf0\x9f\x92" } });
     try std.testing.expectEqualStrings("ok \u{FFFD}", tree.getConst(four).?.text.content);
 
     // Labels pass the same boundary…
-    const btn = try tree.append(root, .{ .button = .{ .label = "Go\xff" } });
+    const btn = try tree.appendId(root, .{ .button = .{ .label = "Go\xff" } });
     try std.testing.expectEqualStrings("Go\u{FFFD}", tree.getConst(btn).?.button.label);
 
     // …as do spans, whose concatenation is built from sanitized runs so
     // the stored ranges stay exact…
-    const spanned = try tree.append(root, .{ .text = .{ .spans = &.{
+    const spanned = try tree.appendId(root, .{ .text = .{ .spans = &.{
         .{ .text = "ok " },
         .{ .text = "\xf0\x9f\x92", .strong = true },
     } } });
@@ -981,7 +981,7 @@ test "a document expands wherever it enters the tree, not only via append" {
     var tree = try Tree.init(std.testing.allocator);
     defer tree.deinit();
     const root = tree.rootId();
-    const anchor = try tree.append(root, .{ .text = .{ .content = "before" } });
+    const anchor = try tree.appendId(root, .{ .text = .{ .content = "before" } });
 
     const doc = try tree.insertFirst(root, .{ .document = .{ .label = "Doc", .source = "# Title\n\nBody." } });
     try std.testing.expectEqual(@as(usize, 2), tree.childCount(doc));

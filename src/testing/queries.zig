@@ -132,9 +132,9 @@ const testing = std.testing;
 test "queries find nodes by label and by role+name" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
-    _ = try tree.append(tree.rootId(), .{ .button = .{ .label = "Save" } });
-    const cancel = try tree.append(tree.rootId(), .{ .button = .{ .label = "Cancel all" } });
-    _ = try tree.append(tree.rootId(), .{ .text = .{ .content = "Cancel all" } });
+    try tree.append(tree.rootId(), .{ .button = .{ .label = "Save" } });
+    const cancel = try tree.appendId(tree.rootId(), .{ .button = .{ .label = "Cancel all" } });
+    try tree.append(tree.rootId(), .{ .text = .{ .content = "Cancel all" } });
 
     try testing.expect(queryByLabel(&tree, "Cancel all").?.eql(cancel));
     try testing.expectEqual(@as(?NodeId, null), queryByLabel(&tree, "Cancel"));

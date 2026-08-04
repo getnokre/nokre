@@ -130,7 +130,7 @@ const RouteCtx = struct {
     app: ?*App = null,
 
     fn build(ctx: ?*anyopaque, app: *App) anyerror!void {
-        _ = try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Home" } });
+        try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Home" } });
         // Register once at boot, inside build (docs/services.md). The app
         // pointer routing needs is filled after init, when its address is
         // stable — the launch URL is delivered no earlier than that.
@@ -146,7 +146,7 @@ const RouteCtx = struct {
 };
 
 fn buildNote(_: ?*anyopaque, app: *App) anyerror!void {
-    _ = try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Note" } });
+    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Note" } });
 }
 
 fn buildHome(ctx: ?*anyopaque, app: *App) anyerror!void {

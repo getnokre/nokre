@@ -288,8 +288,8 @@ const test_app = @import("../core/test_app.zig");
 test "flatten mirrors the snapshot into the C bridge representation" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    _ = try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Settings", .level = .h2 } });
-    const cb = try app.tree.append(app.tree.rootId(), .{ .toggle = .{ .label = "Dark ink", .on = true } });
+    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Settings", .level = .h2 } });
+    const cb = try app.tree.appendId(app.tree.rootId(), .{ .toggle = .{ .label = "Dark ink", .on = true } });
     app.focused = .of(cb);
 
     var snap = try semantics.snapshot(testing.allocator, &app);
@@ -323,7 +323,7 @@ test "flatten mirrors the snapshot into the C bridge representation" {
 test "busy crosses the bridge beside disabled, and takes the click away" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    _ = try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Save changes", .in_progress = true } });
+    try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Save changes", .in_progress = true } });
 
     var snap = try semantics.snapshot(testing.allocator, &app);
     defer snap.deinit();
@@ -359,7 +359,7 @@ test "node ids round-trip through the u64 bridge encoding" {
 test "a derived node's id stays clear of the element it belongs to" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const c = try app.tree.append(app.tree.rootId(), .{ .copyable = .{ .label = "Recovery code", .value = "XKCD-1234" } });
+    const c = try app.tree.appendId(app.tree.rootId(), .{ .copyable = .{ .label = "Recovery code", .value = "XKCD-1234" } });
     app.performLayout();
     try app.tap(app.tree.rectOf(c).center());
 

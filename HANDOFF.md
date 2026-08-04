@@ -107,11 +107,6 @@ this writing; re-count before acting, the apps move.
     harness verb, and the module-global update flag can become an
     argument.
 
-11. **`Tree.append` returns a `NodeId` 986 of 1123 consumer calls
-    discard.** A `void`-returning sibling (or flipping which form
-    gets the short name) deletes a thousand `_ = try` prefixes and
-    the reflex of discarding a value.
-
 ## Structural, nokre-internal
 
 - **`Button`'s form as a tagged union.** `secondary`, `icon`,

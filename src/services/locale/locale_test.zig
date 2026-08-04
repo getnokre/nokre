@@ -36,7 +36,7 @@ const BootReader = struct {
         @memcpy(self.tag[0..t.len], t);
         self.len = t.len;
         self.builds += 1;
-        _ = try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Home" } });
+        try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Home" } });
     }
 
     fn seen(self: *const BootReader) []const u8 {
@@ -245,7 +245,7 @@ const Screen = struct {
         const self: *Screen = @ptrCast(@alignCast(ctx.?));
         self.locale = Strings.resolve(locale.tag(app));
         app.setDirection(Strings.dir(self.locale));
-        _ = try app.tree.append(app.tree.rootId(), .{
+        try app.tree.append(app.tree.rootId(), .{
             .heading = .{ .content = Strings.tr(self.locale, .appTitle) },
         });
         locale.setHandler(app, ctx, onLocale);

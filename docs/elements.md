@@ -435,7 +435,7 @@ radius: a knob here would be an invitation to violate the guidelines
 the button exists to satisfy.
 
 ```zig
-_ = try tree.append(root, .{ .button = .{
+try tree.append(root, .{ .button = .{
     .label = "Sign in with Apple", // the vendor's published wording, your locale
     .provider = .apple,
     .on_press = .{ .ctx = state, .call = startSignIn },
@@ -494,11 +494,11 @@ no width to declare. Any row of actions you have already written folds
 the moment it runs out of room.
 
 ```zig
-const row = try tree.append(root, .{ .stack = .{ .axis = .horizontal, .gap = 8 } });
-_ = try tree.append(row, .{ .button = .{ .label = "Publish", .on_press = ... } });
-_ = try tree.append(row, .{ .button = .{ .label = "Save draft", .on_press = ... } });
-_ = try tree.append(row, .{ .button = .{ .label = "Archive", .on_press = ... } });
-_ = try tree.append(row, .{ .link = .{ .label = "More details", .route = "details" } });
+const row = try tree.appendId(root, .{ .stack = .{ .axis = .horizontal, .gap = 8 } });
+try tree.append(row, .{ .button = .{ .label = "Publish", .on_press = ... } });
+try tree.append(row, .{ .button = .{ .label = "Save draft", .on_press = ... } });
+try tree.append(row, .{ .button = .{ .label = "Archive", .on_press = ... } });
+try tree.append(row, .{ .link = .{ .label = "More details", .route = "details" } });
 // Narrow enough, this renders: Publish · More
 ```
 
@@ -1249,7 +1249,7 @@ directly to build content:
 
 ```zig
 const sheet = try app.presentSheet("Filter results");
-_ = try app.tree.append(sheet, .{ .toggle = .{ .label = "Only unread" } });
+try app.tree.append(sheet, .{ .toggle = .{ .label = "Only unread" } });
 ```
 
 A bottom-anchored panel (top corners rounded, `.g6` outline), at most

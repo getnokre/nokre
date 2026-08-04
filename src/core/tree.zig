@@ -108,7 +108,15 @@ pub const Tree = struct {
     /// Appends a child under `parent`. String fields are copied.
     /// Malformed structure is rejected here, not detected later: an
     /// invalid tree cannot be built (see docs/accessibility.md).
-    pub fn append(self: *Tree, parent: NodeId, element: Element) !NodeId {
+    /// Most children are leaves nobody addresses again, so the short
+    /// name returns nothing; `appendId` is the form for callers that
+    /// nest under the new node or target it later.
+    pub fn append(self: *Tree, parent: NodeId, element: Element) !void {
+        _ = try self.appendId(parent, element);
+    }
+
+    /// `append`, returning the new node's id.
+    pub fn appendId(self: *Tree, parent: NodeId, element: Element) !NodeId {
         const id = try self.createDetached(parent, element);
         const p = self.nodePtrUnchecked(parent);
         const prev_last = p.last_child;

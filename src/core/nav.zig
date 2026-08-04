@@ -265,7 +265,7 @@ pub fn syncNavChrome(app: *App) !void {
                 el.nav_current.icon == cur.icon) return;
         }
         try clearChildren(app, nav);
-        _ = try app.tree.append(nav, .{ .nav_current = .{ .section = cur.label, .icon = cur.icon, .name = app.chrome.section } });
+        try app.tree.append(nav, .{ .nav_current = .{ .section = cur.label, .icon = cur.icon, .name = app.chrome.section } });
     } else {
         // The destinations draw their own current state from the router,
         // so the row survives a move between two of them untouched. What

@@ -148,7 +148,7 @@ test "spans: spanTextWidth sums per-face widths" {
 test "layout: spanned text takes full width at the wrapped height" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
-    const t = try tree.append(tree.rootId(), .{ .text = .{ .spans = &.{
+    const t = try tree.appendId(tree.rootId(), .{ .text = .{ .spans = &.{
         .{ .text = "hello " },
         .{ .text = "world", .strong = true },
     } } });
@@ -162,8 +162,8 @@ test "layout: vertical flow stacks children with gap" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
     // Root stack has padding 16, gap 8.
-    const a = try tree.append(tree.rootId(), .{ .text = .{ .content = "a" } });
-    const b = try tree.append(tree.rootId(), .{ .text = .{ .content = "b" } });
+    const a = try tree.appendId(tree.rootId(), .{ .text = .{ .content = "a" } });
+    const b = try tree.appendId(tree.rootId(), .{ .text = .{ .content = "b" } });
 
     compute(&tree, text.Measurer.fixed, .{ .w = 400, .h = 800 });
 
@@ -179,7 +179,7 @@ test "layout: vertical flow stacks children with gap" {
 test "layout: text wraps and grows in height" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
-    const t = try tree.append(tree.rootId(), .{ .text = .{ .content = "aaaa bbbb cccc dddd" } });
+    const t = try tree.appendId(tree.rootId(), .{ .text = .{ .content = "aaaa bbbb cccc dddd" } });
 
     // Inner width 100px; fixed measurer at body(16px) → 9px/char.
     // "aaaa bbbb" = 9 chars = 81px fits; three lines? "aaaa bbbb"(81) fits,
@@ -193,9 +193,9 @@ test "layout: identical inputs produce identical rects" {
     for (&results) |*slot| {
         var tree = try Tree.init(testing.allocator);
         defer tree.deinit();
-        const box = try tree.append(tree.rootId(), .{ .box = .{} });
-        _ = try tree.append(box, .{ .button = .{ .label = "Press" } });
-        _ = try tree.append(tree.rootId(), .{ .divider = .{} });
+        const box = try tree.appendId(tree.rootId(), .{ .box = .{} });
+        try tree.append(box, .{ .button = .{ .label = "Press" } });
+        try tree.append(tree.rootId(), .{ .divider = .{} });
         compute(&tree, text.Measurer.fixed, .{ .w = 640, .h = 480 });
         slot.* = tree.rectOf(box);
     }
@@ -205,14 +205,14 @@ test "layout: identical inputs produce identical rects" {
 test "layout: a box in a row hugs its content; in flow it still stretches" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
-    const row = try tree.append(tree.rootId(), .{ .stack = .{ .axis = .horizontal, .gap = 0 } });
+    const row = try tree.appendId(tree.rootId(), .{ .stack = .{ .axis = .horizontal, .gap = 0 } });
     var boxes: [3]NodeId = undefined;
     for (&boxes) |*slot| {
-        slot.* = try tree.append(row, .{ .box = .{ .border = false, .padding = 6 } });
-        _ = try tree.append(slot.*, .{ .text = .{ .content = "ab", .style = .{ .scale = .small } } });
+        slot.* = try tree.appendId(row, .{ .box = .{ .border = false, .padding = 6 } });
+        try tree.append(slot.*, .{ .text = .{ .content = "ab", .style = .{ .scale = .small } } });
     }
-    const stretched = try tree.append(tree.rootId(), .{ .box = .{ .border = false, .padding = 6 } });
-    _ = try tree.append(stretched, .{ .text = .{ .content = "ab", .style = .{ .scale = .small } } });
+    const stretched = try tree.appendId(tree.rootId(), .{ .box = .{ .border = false, .padding = 6 } });
+    try tree.append(stretched, .{ .text = .{ .content = "ab", .style = .{ .scale = .small } } });
 
     compute(&tree, text.Measurer.fixed, .{ .w = 400, .h = 800 });
 
@@ -234,7 +234,7 @@ test "layout: a box in a row hugs its content; in flow it still stretches" {
 test "layout: button takes intrinsic width, not full width" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
-    const btn = try tree.append(tree.rootId(), .{ .button = .{ .label = "OK" } });
+    const btn = try tree.appendId(tree.rootId(), .{ .button = .{ .label = "OK" } });
     compute(&tree, text.Measurer.fixed, .{ .w = 640, .h = 480 });
     const r = tree.rectOf(btn);
     // 2 chars * 9px + 2*(16+1) = 18 + 34 = 52
@@ -245,7 +245,7 @@ test "layout: button takes intrinsic width, not full width" {
 test "layout: glyph-form button is the bare touch-target square" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
-    const btn = try tree.append(tree.rootId(), .{ .button = .{ .label = "Next cycle", .icon = .chevron_right, .icon_only = true } });
+    const btn = try tree.appendId(tree.rootId(), .{ .button = .{ .label = "Next cycle", .icon = .chevron_right, .icon_only = true } });
     compute(&tree, text.Measurer.fixed, .{ .w = 640, .h = 480 });
     const r = tree.rectOf(btn);
     try testing.expectEqual(@as(i32, metrics.touch_target), r.w);
@@ -255,8 +255,8 @@ test "layout: glyph-form button is the bare touch-target square" {
 test "layout: a pill with an icon grows by the glyph and its gap" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
-    const plain = try tree.append(tree.rootId(), .{ .button = .{ .label = "OK" } });
-    const iconed = try tree.append(tree.rootId(), .{ .button = .{ .label = "OK", .icon = .alarm_clock_plus } });
+    const plain = try tree.appendId(tree.rootId(), .{ .button = .{ .label = "OK" } });
+    const iconed = try tree.appendId(tree.rootId(), .{ .button = .{ .label = "OK", .icon = .alarm_clock_plus } });
     compute(&tree, text.Measurer.fixed, .{ .w = 640, .h = 480 });
     // Fixed measurer: one glyph codepoint at body(16px) is 9px wide.
     try testing.expectEqual(tree.rectOf(plain).w + 9 + metrics.icon_gap, tree.rectOf(iconed).w);
@@ -266,10 +266,10 @@ test "layout: a pill with an icon grows by the glyph and its gap" {
 test "layout: scroll region clamps to fixed height and records content" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
-    const sr = try tree.append(tree.rootId(), .{ .scroll_region = .{ .height = 50 } });
-    _ = try tree.append(sr, .{ .text = .{ .content = "one" } });
-    _ = try tree.append(sr, .{ .text = .{ .content = "two" } });
-    _ = try tree.append(sr, .{ .text = .{ .content = "three" } });
+    const sr = try tree.appendId(tree.rootId(), .{ .scroll_region = .{ .height = 50 } });
+    try tree.append(sr, .{ .text = .{ .content = "one" } });
+    try tree.append(sr, .{ .text = .{ .content = "two" } });
+    try tree.append(sr, .{ .text = .{ .content = "three" } });
     compute(&tree, text.Measurer.fixed, .{ .w = 400, .h = 800 });
 
     try testing.expectEqual(@as(i32, 50), tree.rectOf(sr).h);
@@ -280,9 +280,9 @@ test "layout: scroll region clamps to fixed height and records content" {
 test "layout: fill scroll region extends to the viewport bottom" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
-    _ = try tree.append(tree.rootId(), .{ .heading = .{ .content = "Title" } });
-    const sr = try tree.append(tree.rootId(), .{ .scroll_region = .{} });
-    _ = try tree.append(sr, .{ .text = .{ .content = "row" } });
+    try tree.append(tree.rootId(), .{ .heading = .{ .content = "Title" } });
+    const sr = try tree.appendId(tree.rootId(), .{ .scroll_region = .{} });
+    try tree.append(sr, .{ .text = .{ .content = "row" } });
     compute(&tree, text.Measurer.fixed, .{ .w = 400, .h = 600 });
 
     // Fills to the viewport bottom minus the root stack's padding.
@@ -292,10 +292,10 @@ test "layout: fill scroll region extends to the viewport bottom" {
 test "layout: stale scroll offset is clamped during layout" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
-    const sr = try tree.append(tree.rootId(), .{ .scroll_region = .{ .height = 50, .offset = 10000 } });
-    _ = try tree.append(sr, .{ .text = .{ .content = "one" } });
-    _ = try tree.append(sr, .{ .text = .{ .content = "two" } });
-    _ = try tree.append(sr, .{ .text = .{ .content = "three" } });
+    const sr = try tree.appendId(tree.rootId(), .{ .scroll_region = .{ .height = 50, .offset = 10000 } });
+    try tree.append(sr, .{ .text = .{ .content = "one" } });
+    try tree.append(sr, .{ .text = .{ .content = "two" } });
+    try tree.append(sr, .{ .text = .{ .content = "three" } });
     compute(&tree, text.Measurer.fixed, .{ .w = 400, .h = 800 });
 
     const el = tree.getConst(sr).?;
@@ -305,17 +305,17 @@ test "layout: stale scroll offset is clamped during layout" {
 test "layout: table columns align across rows" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
-    const tbl = try tree.append(tree.rootId(), .{ .table = .{} });
-    const r1 = try tree.append(tbl, .{ .row = .{ .header = true } });
-    const c11 = try tree.append(r1, .{ .cell = .{} });
-    _ = try tree.append(c11, .{ .text = .{ .content = "Name" } });
-    const c12 = try tree.append(r1, .{ .cell = .{} });
-    _ = try tree.append(c12, .{ .text = .{ .content = "Qty" } });
-    const r2 = try tree.append(tbl, .{ .row = .{} });
-    const c21 = try tree.append(r2, .{ .cell = .{} });
-    _ = try tree.append(c21, .{ .text = .{ .content = "Blueberries" } });
-    const c22 = try tree.append(r2, .{ .cell = .{} });
-    _ = try tree.append(c22, .{ .text = .{ .content = "2" } });
+    const tbl = try tree.appendId(tree.rootId(), .{ .table = .{} });
+    const r1 = try tree.appendId(tbl, .{ .row = .{ .header = true } });
+    const c11 = try tree.appendId(r1, .{ .cell = .{} });
+    try tree.append(c11, .{ .text = .{ .content = "Name" } });
+    const c12 = try tree.appendId(r1, .{ .cell = .{} });
+    try tree.append(c12, .{ .text = .{ .content = "Qty" } });
+    const r2 = try tree.appendId(tbl, .{ .row = .{} });
+    const c21 = try tree.appendId(r2, .{ .cell = .{} });
+    try tree.append(c21, .{ .text = .{ .content = "Blueberries" } });
+    const c22 = try tree.appendId(r2, .{ .cell = .{} });
+    try tree.append(c22, .{ .text = .{ .content = "2" } });
 
     compute(&tree, text.Measurer.fixed, .{ .w = 640, .h = 480 });
 
@@ -327,12 +327,12 @@ test "layout: table columns align across rows" {
 test "layout: a table wider than the viewport reports its real width" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
-    const tbl = try tree.append(tree.rootId(), .{ .table = .{} });
-    const row = try tree.append(tbl, .{ .row = .{} });
-    const a = try tree.append(row, .{ .cell = .{} });
-    _ = try tree.append(a, .{ .text = .{ .content = "aaaaaaaaaaaaaaaaaaaaaaaa" } });
-    const b = try tree.append(row, .{ .cell = .{} });
-    _ = try tree.append(b, .{ .text = .{ .content = "bbbbbbbbbbbbbbbbbbbbbbbb" } });
+    const tbl = try tree.appendId(tree.rootId(), .{ .table = .{} });
+    const row = try tree.appendId(tbl, .{ .row = .{} });
+    const a = try tree.appendId(row, .{ .cell = .{} });
+    try tree.append(a, .{ .text = .{ .content = "aaaaaaaaaaaaaaaaaaaaaaaa" } });
+    const b = try tree.appendId(row, .{ .cell = .{} });
+    try tree.append(b, .{ .text = .{ .content = "bbbbbbbbbbbbbbbbbbbbbbbb" } });
 
     compute(&tree, text.Measurer.fixed, .{ .w = 200, .h = 480 });
 
@@ -352,16 +352,16 @@ test "layout: a table wider than the viewport reports its real width" {
 }
 
 fn appendNav(tree: *Tree) !NodeId {
-    const nav = try tree.append(tree.rootId(), .{ .nav = .{} });
-    _ = try tree.append(nav, .{ .nav_item = .{ .label = "Home", .route = "home", .icon = .house } });
-    _ = try tree.append(nav, .{ .nav_item = .{ .label = "Settings", .route = "settings", .icon = .settings } });
+    const nav = try tree.appendId(tree.rootId(), .{ .nav = .{} });
+    try tree.append(nav, .{ .nav_item = .{ .label = "Home", .route = "home", .icon = .house } });
+    try tree.append(nav, .{ .nav_item = .{ .label = "Settings", .route = "settings", .icon = .settings } });
     return nav;
 }
 
 test "layout: segmented takes intrinsic width" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
-    const seg = try tree.append(tree.rootId(), .{ .segmented = .{ .label = "View", .options = &.{ "List", "Grid" } } });
+    const seg = try tree.appendId(tree.rootId(), .{ .segmented = .{ .label = "View", .options = &.{ "List", "Grid" } } });
     compute(&tree, text.Measurer.fixed, .{ .w = 640, .h = 480 });
     const r = tree.rectOf(seg);
     // 2*2 track pad + 2 options * (4 chars * 9px + 2*12 pad) = 4 + 2*60
@@ -378,7 +378,7 @@ test "layout: overflowing segmented reveals the selection once, then only clamps
     // 5 chips * (4 chars * 9px + 2*12 pad) = 300 content in a 168px slot
     // (164 inside the track pads).
     const opts: []const []const u8 = &.{ "AAAA", "AAAA", "AAAA", "AAAA", "AAAA" };
-    const seg = try tree.append(tree.rootId(), .{ .segmented = .{ .label = "K", .options = opts, .selected = 4 } });
+    const seg = try tree.appendId(tree.rootId(), .{ .segmented = .{ .label = "K", .options = opts, .selected = 4 } });
     compute(&tree, text.Measurer.fixed, .{ .w = 200, .h = 480 });
 
     // Overflowing, the track declines the root stack's 16px margin and
@@ -407,9 +407,9 @@ test "layout: an overflowing segmented bleeds only to the nearest drawn edge" {
     defer tree.deinit();
     // A box's border is law: the same 300px track inside one keeps the
     // box's content span instead of reaching the screen.
-    const box = try tree.append(tree.rootId(), .{ .box = .{} });
+    const box = try tree.appendId(tree.rootId(), .{ .box = .{} });
     const opts: []const []const u8 = &.{ "AAAA", "AAAA", "AAAA", "AAAA", "AAAA" };
-    const seg = try tree.append(box, .{ .segmented = .{ .label = "K", .options = opts } });
+    const seg = try tree.appendId(box, .{ .segmented = .{ .label = "K", .options = opts } });
     compute(&tree, text.Measurer.fixed, .{ .w = 200, .h = 480 });
 
     // Root pad 16 + box pad 12 + border 1: content span 29..171.
@@ -425,9 +425,9 @@ test "layout: an overflowing segmented bleeds only to the nearest drawn edge" {
 /// only the deliberate extra fold (see `foldButtonRow`) puts more than
 /// one name in the sheet.
 fn buildButtonRow(tree: *Tree, gap: i32) !NodeId {
-    const row = try tree.append(tree.rootId(), .{ .stack = .{ .axis = .horizontal, .gap = gap } });
+    const row = try tree.appendId(tree.rootId(), .{ .stack = .{ .axis = .horizontal, .gap = gap } });
     for ([_][]const u8{ "One", "Two", "Three", "Four", "Five" }) |label| {
-        _ = try tree.append(row, .{ .button = .{ .label = label } });
+        try tree.append(row, .{ .button = .{ .label = label } });
     }
     return row;
 }
@@ -484,7 +484,7 @@ test "layout: the folded tail's control stands where the first folded button did
     const row = try buildButtonRow(&tree, 8);
     // What `overflow.syncOverflowChrome` appends after the first pass;
     // layout reserved its width before it existed either way.
-    const more = try tree.append(row, .{ .more = .{} });
+    const more = try tree.appendId(row, .{ .more = .{} });
     compute(&tree, text.Measurer.fixed, .{ .w = 400, .h = 480 });
 
     const size = layout.moreSize(text.Measurer.fixed, element.default_chrome.more);
@@ -500,7 +500,7 @@ test "layout rtl: the folded tail keeps the row's leading three and its trailing
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
     const row = try buildButtonRow(&tree, 8);
-    const more = try tree.append(row, .{ .more = .{} });
+    const more = try tree.appendId(row, .{ .more = .{} });
     _ = layout.computeScrolled(&tree, text.Measurer.fixed, .{ .w = 400, .h = 480 }, 0, 0, .rtl, element.default_chrome.more);
 
     // Mirrored, document order runs right-to-left: "One" holds the
@@ -519,15 +519,15 @@ test "layout: a mixed row and a lone button never fold" {
     // Words beside the buttons: two arrows with a month between them is
     // a pager, not a menu, and there is no sheet the framework can fold
     // a paragraph into. The row stays as it was.
-    const mixed = try tree.append(tree.rootId(), .{ .stack = .{ .axis = .horizontal, .gap = 8 } });
-    _ = try tree.append(mixed, .{ .text = .{ .content = "Ready to publish?" } });
+    const mixed = try tree.appendId(tree.rootId(), .{ .stack = .{ .axis = .horizontal, .gap = 8 } });
+    try tree.append(mixed, .{ .text = .{ .content = "Ready to publish?" } });
     for ([_][]const u8{ "Publish", "Save draft", "Discard" }) |label| {
-        _ = try tree.append(mixed, .{ .button = .{ .label = label } });
+        try tree.append(mixed, .{ .button = .{ .label = label } });
     }
     // One button too wide for the row is not a row: folding it would
     // hide the only action behind a control named for having more.
-    const lone = try tree.append(tree.rootId(), .{ .stack = .{ .axis = .horizontal } });
-    _ = try tree.append(lone, .{ .button = .{ .label = "A very long single action indeed" } });
+    const lone = try tree.appendId(tree.rootId(), .{ .stack = .{ .axis = .horizontal } });
+    try tree.append(lone, .{ .button = .{ .label = "A very long single action indeed" } });
     compute(&tree, text.Measurer.fixed, .{ .w = 300, .h = 480 });
 
     var folded: [5][]const u8 = undefined;
@@ -552,8 +552,8 @@ const badge_h = text.Scale.small.lineHeight() + 2 * (metrics.badge_pad_v + metri
 /// 200px viewport leaves after the root's margin: three fit (154), a
 /// fourth would want 208.
 fn buildChipRow(tree: *Tree, count: usize) !NodeId {
-    const row = try tree.append(tree.rootId(), .{ .stack = .{ .axis = .horizontal, .gap = 8 } });
-    for (0..count) |_| _ = try tree.append(row, .{ .badge = .{ .label = "abcd" } });
+    const row = try tree.appendId(tree.rootId(), .{ .stack = .{ .axis = .horizontal, .gap = 8 } });
+    for (0..count) |_| try tree.append(row, .{ .badge = .{ .label = "abcd" } });
     return row;
 }
 
@@ -616,10 +616,10 @@ test "layout: a wrapped row mirrors, and breaks in the same places" {
 test "layout: a chip wider than the line gets the line to itself" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
-    const row = try tree.append(tree.rootId(), .{ .stack = .{ .axis = .horizontal, .gap = 8 } });
-    _ = try tree.append(row, .{ .badge = .{ .label = "abcd" } });
-    const huge = try tree.append(row, .{ .badge = .{ .label = "a" ** 40 } });
-    _ = try tree.append(row, .{ .badge = .{ .label = "abcd" } });
+    const row = try tree.appendId(tree.rootId(), .{ .stack = .{ .axis = .horizontal, .gap = 8 } });
+    try tree.append(row, .{ .badge = .{ .label = "abcd" } });
+    const huge = try tree.appendId(row, .{ .badge = .{ .label = "a" ** 40 } });
+    try tree.append(row, .{ .badge = .{ .label = "abcd" } });
     compute(&tree, text.Measurer.fixed, .{ .w = 200, .h = 480 });
 
     const first = tree.rectOf(nthChild(&tree, row, 0));
@@ -641,12 +641,12 @@ test "layout: a chip wider than the line gets the line to itself" {
 test "layout: each wrapped line centers on its own tallest" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
-    const row = try tree.append(tree.rootId(), .{ .stack = .{ .axis = .horizontal, .gap = 8 } });
+    const row = try tree.appendId(tree.rootId(), .{ .stack = .{ .axis = .horizontal, .gap = 8 } });
     // Line one: a chip beside a button, which is taller. Line two: two
     // chips, whose line has no button to center against.
-    const chip = try tree.append(row, .{ .badge = .{ .label = "abcd" } });
-    const button = try tree.append(row, .{ .button = .{ .label = "Press" } });
-    const wrapped = try tree.append(row, .{ .badge = .{ .label = "abcd" } });
+    const chip = try tree.appendId(row, .{ .badge = .{ .label = "abcd" } });
+    const button = try tree.appendId(row, .{ .button = .{ .label = "Press" } });
+    const wrapped = try tree.appendId(row, .{ .badge = .{ .label = "abcd" } });
     compute(&tree, text.Measurer.fixed, .{ .w = 200, .h = 480 });
 
     const button_h = text.Scale.body.lineHeight() + 2 * (metrics.button_pad_v + metrics.border);
@@ -663,11 +663,11 @@ test "layout: a link among the buttons is one of the actions, not a disqualifier
     defer tree.deinit();
     // The shape a real screen has: actions, one of which goes somewhere
     // instead of doing something. It folds like the rest.
-    const row = try tree.append(tree.rootId(), .{ .stack = .{ .axis = .horizontal, .gap = 8 } });
+    const row = try tree.appendId(tree.rootId(), .{ .stack = .{ .axis = .horizontal, .gap = 8 } });
     for ([_][]const u8{ "Save", "Cancel", "Add reminder", "Disabled" }) |label| {
-        _ = try tree.append(row, .{ .button = .{ .label = label } });
+        try tree.append(row, .{ .button = .{ .label = label } });
     }
-    const link = try tree.append(row, .{ .link = .{ .label = "More details", .route = "details" } });
+    const link = try tree.appendId(row, .{ .link = .{ .label = "More details", .route = "details" } });
     compute(&tree, text.Measurer.fixed, .{ .w = 480, .h = 480 });
 
     var folded: [5][]const u8 = undefined;
@@ -694,9 +694,9 @@ test "layout: a row narrower than the control itself keeps nothing standing" {
 test "layout: borderless stacks pass the margin advice through, accumulated" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
-    const stack = try tree.append(tree.rootId(), .{ .stack = .{ .padding = 8 } });
+    const stack = try tree.appendId(tree.rootId(), .{ .stack = .{ .padding = 8 } });
     const opts: []const []const u8 = &.{ "AAAA", "AAAA", "AAAA", "AAAA", "AAAA" };
-    const seg = try tree.append(stack, .{ .segmented = .{ .label = "K", .options = opts } });
+    const seg = try tree.appendId(stack, .{ .segmented = .{ .label = "K", .options = opts } });
     compute(&tree, text.Measurer.fixed, .{ .w = 200, .h = 480 });
 
     // No edge between the track and the screen: root 16 + stack 8
@@ -711,9 +711,9 @@ test "layout: a back control's row consumes the margin advice" {
     defer tree.deinit();
     // The back control occupies the leading band, so the shared row's
     // track has no clear path to the edge and must not bleed over it.
-    _ = try tree.append(tree.rootId(), .{ .back = .{} });
+    try tree.append(tree.rootId(), .{ .back = .{} });
     const opts: []const []const u8 = &.{ "AAAA", "AAAA", "AAAA", "AAAA", "AAAA" };
-    const seg = try tree.append(tree.rootId(), .{ .segmented = .{ .label = "K", .options = opts } });
+    const seg = try tree.appendId(tree.rootId(), .{ .segmented = .{ .label = "K", .options = opts } });
     compute(&tree, text.Measurer.fixed, .{ .w = 200, .h = 480 });
 
     // Indented past the 44px control and its 8px gap, less the 10px it
@@ -730,8 +730,8 @@ test "layout: a back control's row is handed down into a document" {
     // so the control marks the heading the document parsed rather than
     // the document itself: the prose under it keeps the page margin
     // every other screen starts at.
-    const back = try tree.append(tree.rootId(), .{ .back = .{} });
-    const doc = try tree.append(tree.rootId(), .{ .document = .{
+    const back = try tree.appendId(tree.rootId(), .{ .back = .{} });
+    const doc = try tree.appendId(tree.rootId(), .{ .document = .{
         .label = "Terms",
         .source = "## Terms\n\nBody text.\n",
     } });
@@ -753,7 +753,7 @@ test "layout: a back control's row is handed down into a document" {
 test "layout: badge takes intrinsic width at the small scale" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
-    const badge = try tree.append(tree.rootId(), .{ .badge = .{ .label = "Active" } });
+    const badge = try tree.appendId(tree.rootId(), .{ .badge = .{ .label = "Active" } });
     compute(&tree, text.Measurer.fixed, .{ .w = 640, .h = 480 });
     const r = tree.rectOf(badge);
     // 6 chars * 7px (fixed measurer at small 12px) + 2*(8 pad + 1 border)
@@ -764,7 +764,7 @@ test "layout: badge takes intrinsic width at the small scale" {
 test "layout: meter is a full-width block of label plus bar" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
-    const meter = try tree.append(tree.rootId(), .{ .meter = .{ .label = "12 of 30 days", .value = 12, .max = 30 } });
+    const meter = try tree.appendId(tree.rootId(), .{ .meter = .{ .label = "12 of 30 days", .value = 12, .max = 30 } });
     compute(&tree, text.Measurer.fixed, .{ .w = 640, .h = 480 });
     const r = tree.rectOf(meter);
     try testing.expectEqual(@as(i32, 640 - 32), r.w);
@@ -774,7 +774,7 @@ test "layout: meter is a full-width block of label plus bar" {
 test "layout: qr is a full-width block of label plus whole-module square" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
-    const qr = try tree.append(tree.rootId(), .{ .qr = .{ .label = "Invite link", .value = "https://example.com" } });
+    const qr = try tree.appendId(tree.rootId(), .{ .qr = .{ .label = "Invite link", .value = "https://example.com" } });
     compute(&tree, text.Measurer.fixed, .{ .w = 640, .h = 800 });
     const q = tree.getConst(qr).?.qr;
     const r = tree.rectOf(qr);
@@ -792,9 +792,9 @@ test "layout: qr is a full-width block of label plus whole-module square" {
 test "layout: tile group is hairline-gapped rows inside a 1px border" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
-    const group = try tree.append(tree.rootId(), .{ .tile_group = .{} });
-    const plain = try tree.append(group, .{ .tile = .{ .label = "Members", .on_press = .{ .call = noopPress } } });
-    const detailed = try tree.append(group, .{ .tile = .{ .label = "Billing", .detail = "Visa 4242", .on_press = .{ .call = noopPress } } });
+    const group = try tree.appendId(tree.rootId(), .{ .tile_group = .{} });
+    const plain = try tree.appendId(group, .{ .tile = .{ .label = "Members", .on_press = .{ .call = noopPress } } });
+    const detailed = try tree.appendId(group, .{ .tile = .{ .label = "Billing", .detail = "Visa 4242", .on_press = .{ .call = noopPress } } });
     compute(&tree, text.Measurer.fixed, .{ .w = 640, .h = 480 });
     try testing.expectEqual(@as(i32, 640 - 32), tree.rectOf(group).w);
     try testing.expectEqual(@as(i32, 44), tree.rectOf(plain).h);
@@ -807,8 +807,8 @@ test "layout: tile group is hairline-gapped rows inside a 1px border" {
 test "layout: tile group description hangs below the border" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
-    const group = try tree.append(tree.rootId(), .{ .tile_group = .{ .description = "Personalize your experience" } });
-    const row = try tree.append(group, .{ .tile = .{ .label = "Members", .on_press = .{ .call = noopPress } } });
+    const group = try tree.appendId(tree.rootId(), .{ .tile_group = .{ .description = "Personalize your experience" } });
+    const row = try tree.appendId(group, .{ .tile = .{ .label = "Members", .on_press = .{ .call = noopPress } } });
     compute(&tree, text.Measurer.fixed, .{ .w = 640, .h = 480 });
     // border box (1 + 44 + 1) + label gap + one small line
     try testing.expectEqual(@as(i32, 46 + 6 + 16), tree.rectOf(group).h);
@@ -820,7 +820,7 @@ test "layout: tile group description hangs below the border" {
 test "layout: radio group is a full-width tile group under its label" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
-    const rg = try tree.append(tree.rootId(), .{ .radio_group = .{
+    const rg = try tree.appendId(tree.rootId(), .{ .radio_group = .{
         .label = "Delivery",
         .options = &.{ "Email", "SMS" },
     } });
@@ -843,7 +843,7 @@ test "layout: the row is its own width, centered, whatever the viewport" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
     const nav = try appendNav(&tree); // Home, Settings
-    const body = try tree.append(tree.rootId(), .{ .text = .{ .content = "content" } });
+    const body = try tree.appendId(tree.rootId(), .{ .text = .{ .content = "content" } });
     compute(&tree, text.Measurer.fixed, .{ .w = 800, .h = 600 });
 
     const bar_h = navBarHeight(0);
@@ -872,7 +872,7 @@ test "layout: a narrow viewport centers the same row, not a stretched one" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
     const nav = try appendNav(&tree);
-    const body = try tree.append(tree.rootId(), .{ .text = .{ .content = "content" } });
+    const body = try tree.appendId(tree.rootId(), .{ .text = .{ .content = "content" } });
     compute(&tree, text.Measurer.fixed, .{ .w = 400, .h = 600 });
 
     const bar_h = navBarHeight(0);
@@ -951,9 +951,9 @@ test "layout: a wider viewport reopens the row at the width it asked for" {
 test "layout: a row past the shared cap takes the width it needs, centered" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
-    const nav = try tree.append(tree.rootId(), .{ .nav = .{} });
+    const nav = try tree.appendId(tree.rootId(), .{ .nav = .{} });
     for ([_][]const u8{ "Subscriptions", "Subscriptions", "Subscriptions", "Subscriptions" }) |label| {
-        _ = try tree.append(nav, .{ .nav_item = .{ .label = label, .route = "r", .icon = .circle } });
+        try tree.append(nav, .{ .nav_item = .{ .label = label, .route = "r", .icon = .circle } });
     }
     compute(&tree, text.Measurer.fixed, .{ .w = 1200, .h = 800 });
 
@@ -981,9 +981,9 @@ test "layout: the threshold reserves the indicator whether or not one is there" 
 
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
-    const nav = try tree.append(tree.rootId(), .{ .nav = .{} });
-    for (items) |i| _ = try tree.append(nav, .{ .nav_item = .{ .label = i.label, .route = "r", .icon = .circle } });
-    _ = try tree.append(tree.rootId(), .{ .icon_button = .{ .label = "Notices", .glyph = .expand } });
+    const nav = try tree.appendId(tree.rootId(), .{ .nav = .{} });
+    for (items) |i| try tree.append(nav, .{ .nav_item = .{ .label = i.label, .route = "r", .icon = .circle } });
+    try tree.append(tree.rootId(), .{ .icon_button = .{ .label = "Notices", .glyph = .expand } });
     compute(&tree, text.Measurer.fixed, viewport);
 
     try testing.expectEqual(decided, layout.navCollapses(text.Measurer.fixed, &items, viewport));
@@ -992,8 +992,8 @@ test "layout: the threshold reserves the indicator whether or not one is there" 
 test "layout: the collapsed chip is as wide as what it holds" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
-    const nav = try tree.append(tree.rootId(), .{ .nav = .{} });
-    const chip = try tree.append(nav, .{ .nav_current = .{ .section = "Subscriptions", .icon = .circle } });
+    const nav = try tree.appendId(tree.rootId(), .{ .nav = .{} });
+    const chip = try tree.appendId(nav, .{ .nav_current = .{ .section = "Subscriptions", .icon = .circle } });
     compute(&tree, text.Measurer.fixed, .{ .w = 375, .h = 600 });
 
     // Its pill, the gap, and the chevron — centered at that width, with
@@ -1011,10 +1011,10 @@ test "layout: the collapsed chip is as wide as what it holds" {
 test "layout: the collapsed chip never reaches under the notices indicator" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
-    const nav = try tree.append(tree.rootId(), .{ .nav = .{} });
+    const nav = try tree.appendId(tree.rootId(), .{ .nav = .{} });
     // Long enough that its natural width would cover the whole bar.
-    const chip = try tree.append(nav, .{ .nav_current = .{ .section = "Subscriptions and downloads", .icon = .circle } });
-    const ind = try tree.append(tree.rootId(), .{ .icon_button = .{ .label = "Notices", .glyph = .expand } });
+    const chip = try tree.appendId(nav, .{ .nav_current = .{ .section = "Subscriptions and downloads", .icon = .circle } });
+    const ind = try tree.appendId(tree.rootId(), .{ .icon_button = .{ .label = "Notices", .glyph = .expand } });
     compute(&tree, text.Measurer.fixed, .{ .w = 375, .h = 600 });
 
     // Capped at what the indicator leaves, so a long section name runs
@@ -1033,7 +1033,7 @@ test "layout: safe_bottom anchors chrome above the band and shrinks content" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
     const nav = try appendNav(&tree);
-    const body = try tree.append(tree.rootId(), .{ .text = .{ .content = "content" } });
+    const body = try tree.appendId(tree.rootId(), .{ .text = .{ .content = "content" } });
     const inset = 34;
     _ = layout.computeScrolled(&tree, text.Measurer.fixed, .{ .w = 400, .h = 600 }, 0, inset, .ltr, element.default_chrome.more);
 
@@ -1060,8 +1060,8 @@ test "layout: fill scroll region stops above the bottom bar" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
     _ = try appendNav(&tree);
-    const sr = try tree.append(tree.rootId(), .{ .scroll_region = .{} });
-    _ = try tree.append(sr, .{ .text = .{ .content = "row" } });
+    const sr = try tree.appendId(tree.rootId(), .{ .scroll_region = .{} });
+    try tree.append(sr, .{ .text = .{ .content = "row" } });
     compute(&tree, text.Measurer.fixed, .{ .w = 400, .h = 600 });
 
     // The clearance is `nav_content_gap`, not the stack's 16px margin:
@@ -1073,7 +1073,7 @@ test "layout: fill scroll region stops above the bottom bar" {
 test "layout: text area holds three rows empty and grows with content" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
-    const ta = try tree.append(tree.rootId(), .{ .text_area = .{ .label = "Notes" } });
+    const ta = try tree.appendId(tree.rootId(), .{ .text_area = .{ .label = "Notes" } });
     compute(&tree, text.Measurer.fixed, .{ .w = 400, .h = 600 });
 
     const chrome = text.Scale.small.lineHeight() + metrics.input_label_gap +
@@ -1089,17 +1089,17 @@ test "layout: text area holds three rows empty and grows with content" {
 test "design proof: every interactive target is at least 24x24 (WCAG 2.5.8)" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
-    const nav = try tree.append(tree.rootId(), .{ .nav = .{} });
-    _ = try tree.append(nav, .{ .nav_item = .{ .label = "A", .route = "a", .icon = .circle } });
-    _ = try tree.append(nav, .{ .nav_item = .{ .label = "B", .route = "b", .icon = .circle } });
-    _ = try tree.append(tree.rootId(), .{ .button = .{ .label = "K" } });
-    _ = try tree.append(tree.rootId(), .{ .link = .{ .label = "K", .route = "a" } });
-    _ = try tree.append(tree.rootId(), .{ .toggle = .{ .label = "K" } });
-    _ = try tree.append(tree.rootId(), .{ .text_input = .{ .label = "K" } });
-    _ = try tree.append(tree.rootId(), .{ .text_area = .{ .label = "K" } });
-    _ = try tree.append(tree.rootId(), .{ .segmented = .{ .label = "K", .options = &.{ "A", "B" } } });
-    const sheet = try tree.append(tree.rootId(), .{ .sheet = .{ .title = "S" } });
-    _ = try tree.append(sheet, .{ .sheet_close = .{} });
+    const nav = try tree.appendId(tree.rootId(), .{ .nav = .{} });
+    try tree.append(nav, .{ .nav_item = .{ .label = "A", .route = "a", .icon = .circle } });
+    try tree.append(nav, .{ .nav_item = .{ .label = "B", .route = "b", .icon = .circle } });
+    try tree.append(tree.rootId(), .{ .button = .{ .label = "K" } });
+    try tree.append(tree.rootId(), .{ .link = .{ .label = "K", .route = "a" } });
+    try tree.append(tree.rootId(), .{ .toggle = .{ .label = "K" } });
+    try tree.append(tree.rootId(), .{ .text_input = .{ .label = "K" } });
+    try tree.append(tree.rootId(), .{ .text_area = .{ .label = "K" } });
+    try tree.append(tree.rootId(), .{ .segmented = .{ .label = "K", .options = &.{ "A", "B" } } });
+    const sheet = try tree.appendId(tree.rootId(), .{ .sheet = .{ .title = "S" } });
+    try tree.append(sheet, .{ .sheet_close = .{} });
 
     // Worst case for every element: single-character labels.
     compute(&tree, text.Measurer.fixed, .{ .w = 640, .h = 480 });
@@ -1117,9 +1117,9 @@ test "design proof: every interactive target is at least 24x24 (WCAG 2.5.8)" {
 test "design proof: a nav slot clears the comfort target, not just the floor" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
-    const nav = try tree.append(tree.rootId(), .{ .nav = .{} });
-    _ = try tree.append(nav, .{ .nav_item = .{ .label = "A", .route = "a", .icon = .circle } });
-    _ = try tree.append(nav, .{ .nav_item = .{ .label = "B", .route = "b", .icon = .circle } });
+    const nav = try tree.appendId(tree.rootId(), .{ .nav = .{} });
+    try tree.append(nav, .{ .nav_item = .{ .label = "A", .route = "a", .icon = .circle } });
+    try tree.append(nav, .{ .nav_item = .{ .label = "B", .route = "b", .icon = .circle } });
     compute(&tree, text.Measurer.fixed, .{ .w = 375, .h = 600 });
 
     // 2.5.8's 24 is the floor every control clears; the nav is asked for
@@ -1137,7 +1137,7 @@ test "layout: a page with bottom chrome ends a clear band above it" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
     _ = try appendNav(&tree);
-    const body = try tree.append(tree.rootId(), .{ .text = .{ .content = "line" } });
+    const body = try tree.appendId(tree.rootId(), .{ .text = .{ .content = "line" } });
     const viewport: geometry.Size = .{ .w = 400, .h = 600 };
     const content_h = layout.computeScrolled(&tree, text.Measurer.fixed, viewport, 0, 34, .ltr, element.default_chrome.more);
 
@@ -1151,7 +1151,7 @@ test "layout: a page with bottom chrome ends a clear band above it" {
     // line lands `nav_content_gap` above the destinations, with nothing
     // of the page behind them.
     var i: usize = 0;
-    while (i < 40) : (i += 1) _ = try tree.append(tree.rootId(), .{ .text = .{ .content = "line" } });
+    while (i < 40) : (i += 1) try tree.append(tree.rootId(), .{ .text = .{ .content = "line" } });
     const long_h = layout.computeScrolled(&tree, text.Measurer.fixed, viewport, 0, 34, .ltr, element.default_chrome.more);
     const area = layout.contentArea(&tree, viewport, 34);
     _ = layout.computeScrolled(&tree, text.Measurer.fixed, viewport, long_h - area.h, 34, .ltr, element.default_chrome.more);
@@ -1171,19 +1171,19 @@ test "design proof: a control that is nothing but a target gets the full 44 (WCA
     // No pill, no words, no row to widen them: for each of these the
     // rect *is* the whole affordance, so 2.5.8's 24 is the floor it has
     // to clear and not the size it may lay out at.
-    const back = try tree.append(tree.rootId(), .{ .back = .{} });
-    _ = try tree.append(tree.rootId(), .{ .heading = .{ .content = "T" } }); // the back control's row
-    const glyph_btn = try tree.append(tree.rootId(), .{ .button = .{
+    const back = try tree.appendId(tree.rootId(), .{ .back = .{} });
+    try tree.append(tree.rootId(), .{ .heading = .{ .content = "T" } }); // the back control's row
+    const glyph_btn = try tree.appendId(tree.rootId(), .{ .button = .{
         .label = "K",
         .icon = .chevron_right,
         .icon_only = true,
     } });
-    const check = try tree.append(tree.rootId(), .{ .checkbox = .{ .label = "K" } });
-    const toggle = try tree.append(tree.rootId(), .{ .toggle = .{ .label = "K" } });
-    const sheet = try tree.append(tree.rootId(), .{ .sheet = .{ .title = "S" } });
-    const close = try tree.append(sheet, .{ .sheet_close = .{} });
-    const notice = try tree.append(tree.rootId(), .{ .notice = .{ .title = "N", .route = "a" } });
-    const dismiss = try tree.append(notice, .{ .icon_button = .{ .glyph = .dismiss, .label = "D" } });
+    const check = try tree.appendId(tree.rootId(), .{ .checkbox = .{ .label = "K" } });
+    const toggle = try tree.appendId(tree.rootId(), .{ .toggle = .{ .label = "K" } });
+    const sheet = try tree.appendId(tree.rootId(), .{ .sheet = .{ .title = "S" } });
+    const close = try tree.appendId(sheet, .{ .sheet_close = .{} });
+    const notice = try tree.appendId(tree.rootId(), .{ .notice = .{ .title = "N", .route = "a" } });
+    const dismiss = try tree.appendId(notice, .{ .icon_button = .{ .glyph = .dismiss, .label = "D" } });
 
     compute(&tree, text.Measurer.fixed, .{ .w = 640, .h = 480 });
 
@@ -1201,9 +1201,9 @@ test "design proof: a control that is nothing but a target gets the full 44 (WCA
 test "layout: stacked checkbox and toggle rows collapse the flow gap" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
-    const check = try tree.append(tree.rootId(), .{ .checkbox = .{ .label = "A" } });
-    const toggle = try tree.append(tree.rootId(), .{ .toggle = .{ .label = "B" } });
-    const btn = try tree.append(tree.rootId(), .{ .button = .{ .label = "C" } });
+    const check = try tree.appendId(tree.rootId(), .{ .checkbox = .{ .label = "A" } });
+    const toggle = try tree.appendId(tree.rootId(), .{ .toggle = .{ .label = "B" } });
+    const btn = try tree.appendId(tree.rootId(), .{ .button = .{ .label = "C" } });
     compute(&tree, text.Measurer.fixed, .{ .w = 640, .h = 480 });
 
     const rc = tree.rectOf(check);
@@ -1219,14 +1219,14 @@ test "layout: stacked checkbox and toggle rows collapse the flow gap" {
 test "design proof: a notice's flanking targets never overlap its text" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
-    const notice = try tree.append(tree.rootId(), .{ .notice = .{
+    const notice = try tree.appendId(tree.rootId(), .{ .notice = .{
         .title = "Sync failed",
         .description = "Changes are kept locally.",
         .route = "a",
     } });
-    const open = try tree.append(notice, .{ .icon_button = .{ .glyph = .open, .label = "O" } });
-    const minimize = try tree.append(notice, .{ .icon_button = .{ .glyph = .minimize, .label = "M" } });
-    const dismiss = try tree.append(notice, .{ .icon_button = .{ .glyph = .dismiss, .label = "D" } });
+    const open = try tree.appendId(notice, .{ .icon_button = .{ .glyph = .open, .label = "O" } });
+    const minimize = try tree.appendId(notice, .{ .icon_button = .{ .glyph = .minimize, .label = "M" } });
+    const dismiss = try tree.appendId(notice, .{ .icon_button = .{ .glyph = .dismiss, .label = "D" } });
     // The narrowest viewport the banner has to survive: three targets
     // and a text column, all in one pane.
     compute(&tree, text.Measurer.fixed, .{ .w = 320, .h = 480 });
@@ -1292,11 +1292,11 @@ test "elideMiddle never reassembles the whole value around the marker" {
 test "a list indents every item past one shared marker gutter" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
-    const list = try tree.append(tree.rootId(), .{ .list = .{} });
-    const one = try tree.append(list, .{ .list_item = .{} });
-    const one_text = try tree.append(one, .{ .text = .{ .content = "Wash" } });
-    const two = try tree.append(list, .{ .list_item = .{} });
-    _ = try tree.append(two, .{ .text = .{ .content = "Dry" } });
+    const list = try tree.appendId(tree.rootId(), .{ .list = .{} });
+    const one = try tree.appendId(list, .{ .list_item = .{} });
+    const one_text = try tree.appendId(one, .{ .text = .{ .content = "Wash" } });
+    const two = try tree.appendId(list, .{ .list_item = .{} });
+    try tree.append(two, .{ .text = .{ .content = "Dry" } });
     compute(&tree, text.Measurer.fixed, .{ .w = 400, .h = 800 });
 
     // Bullet: one codepoint (9px) plus the 8px gap.
@@ -1320,11 +1320,11 @@ test "an ordered list sizes its gutter to the widest ordinal, not the first" {
     defer tree.deinit();
     // 9. through 11.: the column must be wide enough for three
     // characters, or the two-digit rows would push their words out.
-    const list = try tree.append(tree.rootId(), .{ .list = .{ .ordered = true, .start = 9 } });
+    const list = try tree.appendId(tree.rootId(), .{ .list = .{ .ordered = true, .start = 9 } });
     var i: usize = 0;
     while (i < 3) : (i += 1) {
-        const item = try tree.append(list, .{ .list_item = .{} });
-        _ = try tree.append(item, .{ .text = .{ .content = "Step" } });
+        const item = try tree.appendId(list, .{ .list_item = .{} });
+        try tree.append(item, .{ .text = .{ .content = "Step" } });
     }
     var buf: [layout.list_marker_max]u8 = undefined;
     try testing.expectEqualStrings("9.", layout.listMarker(&buf, .{ .ordered = true, .start = 9 }, 0));
@@ -1338,11 +1338,11 @@ test "an ordered list sizes its gutter to the widest ordinal, not the first" {
 test "nesting adds one gutter per level" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
-    const outer = try tree.append(tree.rootId(), .{ .list = .{} });
-    const outer_item = try tree.append(outer, .{ .list_item = .{} });
-    const inner = try tree.append(outer_item, .{ .list = .{} });
-    const inner_item = try tree.append(inner, .{ .list_item = .{} });
-    const leaf = try tree.append(inner_item, .{ .text = .{ .content = "Deep" } });
+    const outer = try tree.appendId(tree.rootId(), .{ .list = .{} });
+    const outer_item = try tree.appendId(outer, .{ .list_item = .{} });
+    const inner = try tree.appendId(outer_item, .{ .list = .{} });
+    const inner_item = try tree.appendId(inner, .{ .list_item = .{} });
+    const leaf = try tree.appendId(inner_item, .{ .text = .{ .content = "Deep" } });
     compute(&tree, text.Measurer.fixed, .{ .w = 400, .h = 800 });
 
     const gutter = 9 + metrics.list_marker_gap;
@@ -1355,7 +1355,7 @@ test "nesting adds one gutter per level" {
 test "a code block that fits keeps the flow span and never bleeds" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
-    const cb = try tree.append(tree.rootId(), .{ .code_block = .{ .content = "fn a() {}\nfn b() {}" } });
+    const cb = try tree.appendId(tree.rootId(), .{ .code_block = .{ .content = "fn a() {}\nfn b() {}" } });
     compute(&tree, text.Measurer.fixed, .{ .w = 400, .h = 800 });
 
     const el = tree.getConst(cb).?.code_block;
@@ -1373,7 +1373,7 @@ test "an overflowing code block declines the margin and bleeds to the screen" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
     // 60 codepoints at 9px = 540, well past the 368px content span.
-    const cb = try tree.append(tree.rootId(), .{ .code_block = .{
+    const cb = try tree.appendId(tree.rootId(), .{ .code_block = .{
         .content = "x" ** 60,
     } });
     compute(&tree, text.Measurer.fixed, .{ .w = 400, .h = 800 });
@@ -1393,8 +1393,8 @@ test "an overflowing code block declines the margin and bleeds to the screen" {
 test "a box's border stops the bleed and clamps the offset" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
-    const box = try tree.append(tree.rootId(), .{ .box = .{} });
-    const cb = try tree.append(box, .{ .code_block = .{ .content = "y" ** 60, .offset = 9999 } });
+    const box = try tree.appendId(tree.rootId(), .{ .box = .{} });
+    const cb = try tree.appendId(box, .{ .code_block = .{ .content = "y" ** 60, .offset = 9999 } });
     compute(&tree, text.Measurer.fixed, .{ .w = 400, .h = 800 });
 
     const el = tree.getConst(cb).?.code_block;
@@ -1411,11 +1411,11 @@ test "a box's border stops the bleed and clamps the offset" {
 test "a blockquote indents past its rule and consumes the advised margin" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
-    const quote = try tree.append(tree.rootId(), .{ .blockquote = .{} });
-    const words = try tree.append(quote, .{ .text = .{ .content = "Quoted." } });
+    const quote = try tree.appendId(tree.rootId(), .{ .blockquote = .{} });
+    const words = try tree.appendId(quote, .{ .text = .{ .content = "Quoted." } });
     // An overflowing code block inside would bleed to the nearest drawn
     // edge — which is the quote's rule, so it must not bleed at all.
-    const cb = try tree.append(quote, .{ .code_block = .{ .content = "k" ** 60 } });
+    const cb = try tree.appendId(quote, .{ .code_block = .{ .content = "k" ** 60 } });
     compute(&tree, text.Measurer.fixed, .{ .w = 400, .h = 800 });
 
     try testing.expectEqual(@as(i32, 16), tree.rectOf(quote).x);
@@ -1434,7 +1434,7 @@ fn computeRtl(tree: *Tree, viewport: geometry.Size) void {
 test "layout rtl: an intrinsic block snaps to the right edge" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
-    const btn = try tree.append(tree.rootId(), .{ .button = .{ .label = "OK" } });
+    const btn = try tree.appendId(tree.rootId(), .{ .button = .{ .label = "OK" } });
     computeRtl(&tree, .{ .w = 400, .h = 800 });
     const r = tree.rectOf(btn);
     // Same 52px width as LTR, flush with the content's right edge (16px
@@ -1447,9 +1447,9 @@ test "layout rtl: an intrinsic block snaps to the right edge" {
 test "layout rtl: a horizontal stack runs right-to-left in document order" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
-    const row = try tree.append(tree.rootId(), .{ .stack = .{ .axis = .horizontal } });
-    const a = try tree.append(row, .{ .button = .{ .label = "A" } }); // 43px
-    const b = try tree.append(row, .{ .button = .{ .label = "BB" } }); // 52px
+    const row = try tree.appendId(tree.rootId(), .{ .stack = .{ .axis = .horizontal } });
+    const a = try tree.appendId(row, .{ .button = .{ .label = "A" } }); // 43px
+    const b = try tree.appendId(row, .{ .button = .{ .label = "BB" } }); // 52px
     computeRtl(&tree, .{ .w = 400, .h = 800 });
     const ra = tree.rectOf(a);
     const rb = tree.rectOf(b);
@@ -1463,8 +1463,8 @@ test "layout rtl: a horizontal stack runs right-to-left in document order" {
 test "layout rtl: the back control pins to the right, the title indents left" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
-    const back_id = try tree.append(tree.rootId(), .{ .back = .{} });
-    const title = try tree.append(tree.rootId(), .{ .heading = .{ .content = "Screen" } });
+    const back_id = try tree.appendId(tree.rootId(), .{ .back = .{} });
+    const title = try tree.appendId(tree.rootId(), .{ .heading = .{ .content = "Screen" } });
     computeRtl(&tree, .{ .w = 400, .h = 800 });
     const back = tree.rectOf(back_id);
     const bleed = @divTrunc(metrics.touch_target - metrics.icon_glyph, 2);
@@ -1506,7 +1506,7 @@ test "layout rtl: nav slots mirror to right-to-left" {
 test "layout rtl: a lone minimized-notices indicator stays centered" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
-    const ind = try tree.append(tree.rootId(), .{ .icon_button = .{ .glyph = .expand, .label = "Notices" } });
+    const ind = try tree.appendId(tree.rootId(), .{ .icon_button = .{ .glyph = .expand, .label = "Notices" } });
     computeRtl(&tree, .{ .w = 400, .h = 800 });
     // With no destinations beside it the square is the bar's whole
     // group, and a centered group has no leading edge for a mirror to
@@ -1515,7 +1515,7 @@ test "layout rtl: a lone minimized-notices indicator stays centered" {
 
     var ltr = try Tree.init(testing.allocator);
     defer ltr.deinit();
-    const ltr_ind = try ltr.append(ltr.rootId(), .{ .icon_button = .{ .glyph = .expand, .label = "Notices" } });
+    const ltr_ind = try ltr.appendId(ltr.rootId(), .{ .icon_button = .{ .glyph = .expand, .label = "Notices" } });
     compute(&ltr, text.Measurer.fixed, .{ .w = 400, .h = 800 });
     try testing.expectEqual(ltr.rectOf(ltr_ind), tree.rectOf(ind));
 }
@@ -1523,9 +1523,9 @@ test "layout rtl: a lone minimized-notices indicator stays centered" {
 test "layout rtl: the list marker band moves to the right of the words" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
-    const list = try tree.append(tree.rootId(), .{ .list = .{} });
-    const item = try tree.append(list, .{ .list_item = .{} });
-    const words = try tree.append(item, .{ .text = .{ .content = "سلام" } });
+    const list = try tree.appendId(tree.rootId(), .{ .list = .{} });
+    const item = try tree.appendId(list, .{ .list_item = .{} });
+    const words = try tree.appendId(item, .{ .text = .{ .content = "سلام" } });
     computeRtl(&tree, .{ .w = 400, .h = 800 });
 
     const gutter = 9 + metrics.list_marker_gap;
@@ -1540,8 +1540,8 @@ test "layout rtl: the list marker band moves to the right of the words" {
 test "layout rtl: the blockquote's rule and indent move to the right" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
-    const quote = try tree.append(tree.rootId(), .{ .blockquote = .{} });
-    const words = try tree.append(quote, .{ .text = .{ .content = "نقل قول" } });
+    const quote = try tree.appendId(tree.rootId(), .{ .blockquote = .{} });
+    const words = try tree.appendId(quote, .{ .text = .{ .content = "نقل قول" } });
     computeRtl(&tree, .{ .w = 400, .h = 800 });
 
     // The words keep the left end; the band the rule occupies is now on
@@ -1553,17 +1553,17 @@ test "layout rtl: the blockquote's rule and indent move to the right" {
 test "layout rtl: table columns mirror but still align across rows" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
-    const tbl = try tree.append(tree.rootId(), .{ .table = .{} });
-    const r1 = try tree.append(tbl, .{ .row = .{ .header = true } });
-    const c11 = try tree.append(r1, .{ .cell = .{} });
-    _ = try tree.append(c11, .{ .text = .{ .content = "Name" } });
-    const c12 = try tree.append(r1, .{ .cell = .{} });
-    _ = try tree.append(c12, .{ .text = .{ .content = "Qty" } });
-    const r2 = try tree.append(tbl, .{ .row = .{} });
-    const c21 = try tree.append(r2, .{ .cell = .{} });
-    _ = try tree.append(c21, .{ .text = .{ .content = "Blueberries" } });
-    const c22 = try tree.append(r2, .{ .cell = .{} });
-    _ = try tree.append(c22, .{ .text = .{ .content = "2" } });
+    const tbl = try tree.appendId(tree.rootId(), .{ .table = .{} });
+    const r1 = try tree.appendId(tbl, .{ .row = .{ .header = true } });
+    const c11 = try tree.appendId(r1, .{ .cell = .{} });
+    try tree.append(c11, .{ .text = .{ .content = "Name" } });
+    const c12 = try tree.appendId(r1, .{ .cell = .{} });
+    try tree.append(c12, .{ .text = .{ .content = "Qty" } });
+    const r2 = try tree.appendId(tbl, .{ .row = .{} });
+    const c21 = try tree.appendId(r2, .{ .cell = .{} });
+    try tree.append(c21, .{ .text = .{ .content = "Blueberries" } });
+    const c22 = try tree.appendId(r2, .{ .cell = .{} });
+    try tree.append(c22, .{ .text = .{ .content = "2" } });
 
     computeRtl(&tree, .{ .w = 400, .h = 800 });
 
@@ -1579,10 +1579,10 @@ test "layout rtl: noticeTextRegion swaps the icon flanks" {
     // A banner with one leading control (open) and two trailing ones
     // (minimize, dismiss): asymmetric flanks, so mirroring moves the
     // text column's start.
-    const notice = try tree.append(tree.rootId(), .{ .notice = .{ .title = "Saved", .route = "home" } });
-    _ = try tree.append(notice, .{ .icon_button = .{ .glyph = .open, .label = "Open" } });
-    _ = try tree.append(notice, .{ .icon_button = .{ .glyph = .minimize, .label = "Minimize" } });
-    _ = try tree.append(notice, .{ .icon_button = .{ .glyph = .dismiss, .label = "Dismiss" } });
+    const notice = try tree.appendId(tree.rootId(), .{ .notice = .{ .title = "Saved", .route = "home" } });
+    try tree.append(notice, .{ .icon_button = .{ .glyph = .open, .label = "Open" } });
+    try tree.append(notice, .{ .icon_button = .{ .glyph = .minimize, .label = "Minimize" } });
+    try tree.append(notice, .{ .icon_button = .{ .glyph = .dismiss, .label = "Dismiss" } });
     computeRtl(&tree, .{ .w = 400, .h = 800 });
 
     const ltr_region = layout.noticeTextRegion(&tree, notice, false);
@@ -1597,14 +1597,14 @@ test "layout rtl: noticeTextRegion swaps the icon flanks" {
 test "layout: a picker on a viewport shorter than the sheet's top keeps a non-negative region" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
-    _ = try tree.append(tree.rootId(), .{ .select = .{
+    try tree.append(tree.rootId(), .{ .select = .{
         .label = "Language",
         .options = &.{ "English", "Deutsch" },
     } });
-    const picker = try tree.append(tree.rootId(), .{ .picker = .{ .title = "Language", .option_count = 2 } });
-    const region = try tree.append(picker, .{ .scroll_region = .{ .height = 0 } });
-    _ = try tree.append(region, .{ .picker_item = .{ .label = "English", .index = 0 } });
-    _ = try tree.append(region, .{ .picker_item = .{ .label = "Deutsch", .index = 1, .selected = true } });
+    const picker = try tree.appendId(tree.rootId(), .{ .picker = .{ .title = "Language", .option_count = 2 } });
+    const region = try tree.appendId(picker, .{ .scroll_region = .{ .height = 0 } });
+    try tree.append(region, .{ .picker_item = .{ .label = "English", .index = 0 } });
+    try tree.append(region, .{ .picker_item = .{ .label = "Deutsch", .index = 1, .selected = true } });
 
     // 60px is under sheet_min_top plus the header: there is no room at
     // all, and the region collapses to empty rather than going negative.

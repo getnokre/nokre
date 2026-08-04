@@ -30,11 +30,11 @@ pub fn presentSheet(app: *App, title: []const u8) !NodeId {
     // Whatever this sheet is, it is not the one a folded row opened —
     // `overflow.presentMoreSheet` says so itself, afterwards.
     app.more_sheet = null;
-    const sheet = try app.tree.append(app.tree.rootId(), .{ .sheet = .{ .title = title } });
+    const sheet = try app.tree.appendId(app.tree.rootId(), .{ .sheet = .{ .title = title } });
     // A sheet without its close control is inescapable chrome; if the
     // control cannot be built, neither is the sheet.
     errdefer app.tree.remove(sheet) catch {};
-    _ = try app.tree.append(sheet, .{ .sheet_close = .{ .label = app.chrome.close } });
+    try app.tree.append(sheet, .{ .sheet_close = .{ .label = app.chrome.close } });
     app.sheet_return_focus = app.focused;
     app.focused = focus.firstFocusable(&app.tree, sheet);
     // The sheet wins the bottom pane; the banner or notices pane
@@ -73,18 +73,18 @@ const picker_filter_min = 8;
 pub fn openPicker(app: *App, select_id: NodeId) !void {
     if (layout.findPicker(&app.tree) != null) return;
     const sel = app.tree.getConst(select_id).?.select;
-    const picker = try app.tree.append(app.tree.rootId(), .{ .picker = .{
+    const picker = try app.tree.appendId(app.tree.rootId(), .{ .picker = .{
         .title = sel.label,
         .option_count = sel.options.len,
     } });
     const filtered = sel.options.len >= picker_filter_min;
     if (filtered) {
-        _ = try app.tree.append(picker, .{ .text_input = .{
+        try app.tree.append(picker, .{ .text_input = .{
             .label = "Filter",
             .on_change = .{ .ctx = app, .call = onPickerFilter },
         } });
     }
-    const region = try app.tree.append(picker, .{ .scroll_region = .{ .height = 0 } });
+    const region = try app.tree.appendId(picker, .{ .scroll_region = .{ .height = 0 } });
     try fillPickerRows(app, region, sel, "");
     app.focused = if (filtered)
         focus.firstFocusable(&app.tree, picker)
@@ -108,14 +108,14 @@ fn fillPickerRows(app: *App, region: NodeId, sel: element_mod.Select, filter: []
     // Full case folding needs tables nokre doesn't carry.
     for (sel.options, 0..) |opt, i| {
         if (filter.len > 0 and std.ascii.indexOfIgnoreCase(opt, filter) == null) continue;
-        _ = try app.tree.append(region, .{ .picker_item = .{
+        try app.tree.append(region, .{ .picker_item = .{
             .label = opt,
             .selected = i == sel.selected,
             .index = i,
         } });
     }
     if (app.tree.childCount(region) == 0) {
-        _ = try app.tree.append(region, .{ .text = .{ .content = "No matches" } });
+        try app.tree.append(region, .{ .text = .{ .content = "No matches" } });
     }
 }
 
@@ -171,18 +171,18 @@ pub fn openNavPicker(app: *App, nav_current: NodeId) !void {
     var buf: nav_mod.RosterBuf = undefined;
     const roster = nav_mod.effectiveRoster(app, &buf);
     const current = nav_mod.currentIndex(app);
-    const picker = try app.tree.append(app.tree.rootId(), .{ .picker = .{
+    const picker = try app.tree.appendId(app.tree.rootId(), .{ .picker = .{
         .title = app.chrome.sections,
         .option_count = roster.len,
         .above_nav = true,
     } });
-    const region = try app.tree.append(picker, .{ .scroll_region = .{ .height = 0 } });
+    const region = try app.tree.appendId(picker, .{ .scroll_region = .{ .height = 0 } });
     // A 2–5 roster (plus at most the screen's own entry) is always under
     // `picker_filter_min`, so there is no filter field to build and no
     // filtered/unfiltered split to keep: row position and roster index
     // stay the same number.
     for (roster, 0..) |item, i| {
-        _ = try app.tree.append(region, .{ .picker_item = .{
+        try app.tree.append(region, .{ .picker_item = .{
             .label = item.label,
             .selected = if (current) |c| c == i else false,
             .index = i,

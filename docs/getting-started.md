@@ -195,9 +195,9 @@ fn onIncrement(ctx: ?*anyopaque) void {
 pub fn buildHome(ctx: ?*anyopaque, app: *h.App) !void {
     const state: *State = @ptrCast(@alignCast(ctx.?));
     const root = app.tree.rootId();
-    _ = try app.tree.append(root, .{ .heading = .{ .content = "Notes", .level = .h1 } });
-    state.label_id = try app.tree.append(root, .{ .text = .{ .content = "Pressed 0 times" } });
-    _ = try app.tree.append(root, .{ .button = .{
+    try app.tree.append(root, .{ .heading = .{ .content = "Notes", .level = .h1 } });
+    state.label_id = try app.tree.appendId(root, .{ .text = .{ .content = "Pressed 0 times" } });
+    try app.tree.append(root, .{ .button = .{
         .label = "Increment",
         .on_press = .{ .ctx = state, .call = onIncrement },
     } });
@@ -477,30 +477,30 @@ pub const State = struct {
 
 fn buildSignIn(state: *State, app: *h.App) !void {
     const root = app.tree.rootId();
-    _ = try app.tree.append(root, .{ .heading = .{ .content = "Notes", .level = .h1 } });
-    _ = try app.tree.append(root, .{ .text = .{ .spans = &.{
+    try app.tree.append(root, .{ .heading = .{ .content = "Notes", .level = .h1 } });
+    try app.tree.append(root, .{ .text = .{ .spans = &.{
         .{ .text = "Welcome. The passphrase is " },
         .{ .text = "letmein", .code = true },
         .{ .text = " — this is a course app, not a bank." },
     } } });
-    const form = try app.tree.append(root, .{ .box = .{} });
-    _ = try app.tree.append(form, .{ .text_input = .{
+    const form = try app.tree.appendId(root, .{ .box = .{} });
+    try app.tree.append(form, .{ .text_input = .{
         .label = "Passphrase",
         .obscured = true,
         .on_change = .{ .ctx = state, .call = onPassphraseChange },
         .on_submit = .{ .ctx = state, .call = onSignIn },
     } });
-    _ = try app.tree.append(form, .{ .checkbox = .{
+    try app.tree.append(form, .{ .checkbox = .{
         .label = "Stay signed in on this device",
         .checked = state.remember,
         .on_toggle = .{ .ctx = state, .call = onRememberToggle },
     } });
-    _ = try app.tree.append(form, .{ .button = .{
+    try app.tree.append(form, .{ .button = .{
         .label = "Sign in",
         .on_press = .{ .ctx = state, .call = onSignIn },
     } });
     if (state.signin_status.len != 0) {
-        _ = try app.tree.append(root, .{ .text = .{ .content = state.signin_status, .style = .{ .scale = .small, .ink = .dark } } });
+        try app.tree.append(root, .{ .text = .{ .content = state.signin_status, .style = .{ .scale = .small, .ink = .dark } } });
     }
 }
 
@@ -760,44 +760,44 @@ The signed-in half of `buildNotes`:
 
 ```zig
     const root = app.tree.rootId();
-    const title_row = try app.tree.append(root, .{ .stack = .{ .axis = .horizontal } });
-    _ = try app.tree.append(title_row, .{ .heading = .{ .content = "Notes", .level = .h1 } });
+    const title_row = try app.tree.appendId(root, .{ .stack = .{ .axis = .horizontal } });
+    try app.tree.append(title_row, .{ .heading = .{ .content = "Notes", .level = .h1 } });
     if (state.offline) {
-        _ = try app.tree.append(title_row, .{ .badge = .{ .label = "Offline" } });
+        try app.tree.append(title_row, .{ .badge = .{ .label = "Offline" } });
     }
 
-    const actions = try app.tree.append(root, .{ .stack = .{ .axis = .horizontal } });
-    _ = try app.tree.append(actions, .{ .button = .{
+    const actions = try app.tree.appendId(root, .{ .stack = .{ .axis = .horizontal } });
+    try app.tree.append(actions, .{ .button = .{
         .label = "New note",
         .on_press = .{ .ctx = state, .call = onOpenNewNote },
     } });
-    _ = try app.tree.append(actions, .{ .button = .{
+    try app.tree.append(actions, .{ .button = .{
         .label = "Sync", // Part 7
         .secondary = true,
         .on_press = .{ .ctx = state, .call = onSyncPressed },
     } });
-    _ = try app.tree.append(root, .{ .text = .{ .content = state.status, .style = .{ .scale = .small, .ink = .dark } } });
+    try app.tree.append(root, .{ .text = .{ .content = state.status, .style = .{ .scale = .small, .ink = .dark } } });
 
     if (state.note_count == 0) {
-        _ = try app.tree.append(root, .{ .text = .{ .content = "Nothing here yet. Press “New note” to write the first one." } });
+        try app.tree.append(root, .{ .text = .{ .content = "Nothing here yet. Press “New note” to write the first one." } });
     } else {
-        const group = try app.tree.append(root, .{ .tile_group = .{
+        const group = try app.tree.appendId(root, .{ .tile_group = .{
             .description = "Tap a note to read, share, or delete it.",
         } });
         for (0..state.note_count) |i| {
             const index = if (state.newest_first) state.note_count - 1 - i else i;
             state.refs[index] = .{ .state = state, .index = index };
-            _ = try app.tree.append(group, .{ .tile = .{
+            try app.tree.append(group, .{ .tile = .{
                 .label = state.notes[index].slice(),
                 .on_press = .{ .ctx = &state.refs[index], .call = onOpenNote },
             } });
         }
     }
 
-    _ = try app.tree.append(root, .{ .divider = .{} });
+    try app.tree.append(root, .{ .divider = .{} });
     var cap_buf: [32]u8 = undefined;
     const cap = try std.fmt.bufPrint(&cap_buf, "{d} of {d} notes", .{ state.note_count, max_notes });
-    _ = try app.tree.append(root, .{ .meter = .{ .label = cap, .value = @intCast(state.note_count), .max = max_notes } });
+    try app.tree.append(root, .{ .meter = .{ .label = cap, .value = @intCast(state.note_count), .max = max_notes } });
 ```
 
 Notice the meter label was formatted into a stack buffer — safe, because
@@ -819,12 +819,12 @@ fn onOpenNewNote(ctx: ?*anyopaque) void {
     const app = state.app;
     state.draft_len = 0;
     const sheet = app.presentSheet("New note") catch return;
-    _ = app.tree.append(sheet, .{ .text_area = .{
+    app.tree.append(sheet, .{ .text_area = .{
         .label = "Note",
         .placeholder = "Write it down…",
         .on_change = .{ .ctx = state, .call = onDraftChange },
     } }) catch return;
-    _ = app.tree.append(sheet, .{ .button = .{
+    app.tree.append(sheet, .{ .button = .{
         .label = "Add",
         .on_press = .{ .ctx = state, .call = onAddNote },
     } }) catch return;
@@ -1181,12 +1181,12 @@ pub fn buildNote(ctx: ?*anyopaque, app: *h.App) !void {
     const root = app.tree.rootId();
     // The framework's Back control shares this heading's line — a pushed
     // screen without a way back cannot exist.
-    _ = try app.tree.append(root, .{ .heading = .{ .content = "Note", .level = .h1 } });
-    _ = try app.tree.append(root, .{ .text = .{ .content = note.slice() } });
-    _ = try app.tree.append(root, .{ .divider = .{} });
-    _ = try app.tree.append(root, .{ .copyable = .{ .label = "Copy this note", .value = note.slice() } });
-    _ = try app.tree.append(root, .{ .qr = .{ .label = "Scan to take it with you", .value = note.slice() } });
-    _ = try app.tree.append(root, .{ .button = .{
+    try app.tree.append(root, .{ .heading = .{ .content = "Note", .level = .h1 } });
+    try app.tree.append(root, .{ .text = .{ .content = note.slice() } });
+    try app.tree.append(root, .{ .divider = .{} });
+    try app.tree.append(root, .{ .copyable = .{ .label = "Copy this note", .value = note.slice() } });
+    try app.tree.append(root, .{ .qr = .{ .label = "Scan to take it with you", .value = note.slice() } });
+    try app.tree.append(root, .{ .button = .{
         .label = "Delete",
         .secondary = true,
         .on_press = .{ .ctx = state, .call = onDeleteNote },
@@ -1262,9 +1262,9 @@ arrow keys, immediately — and a `toggle`, the switch that applies now
 pub fn buildSettings(ctx: ?*anyopaque, app: *h.App) !void {
     const state: *State = @ptrCast(@alignCast(ctx.?));
     const root = app.tree.rootId();
-    _ = try app.tree.append(root, .{ .heading = .{ .content = "Settings", .level = .h1 } });
+    try app.tree.append(root, .{ .heading = .{ .content = "Settings", .level = .h1 } });
 
-    _ = try app.tree.append(root, .{ .segmented = .{
+    try app.tree.append(root, .{ .segmented = .{
         .label = "Appearance",
         .options = &.{ "Light", "Dark", "Automatic" },
         .selected = switch (app.scheme) {
@@ -1274,27 +1274,27 @@ pub fn buildSettings(ctx: ?*anyopaque, app: *h.App) !void {
         },
         .on_select = .{ .ctx = state, .call = onSchemeSelect },
     } });
-    _ = try app.tree.append(root, .{ .radio_group = .{
+    try app.tree.append(root, .{ .radio_group = .{
         .label = "Order",
         .options = &.{ "Newest first", "Oldest first" },
         .selected = if (state.newest_first) 0 else 1,
         .on_select = .{ .ctx = state, .call = onOrderSelect },
     } });
-    _ = try app.tree.append(root, .{ .toggle = .{
+    try app.tree.append(root, .{ .toggle = .{
         .label = "Show word-count stats",
         .on = state.show_stats,
         .on_toggle = .{ .ctx = state, .call = onStatsToggle },
     } });
 
-    _ = try app.tree.append(root, .{ .divider = .{} });
+    try app.tree.append(root, .{ .divider = .{} });
     if (state.signed_in) {
-        _ = try app.tree.append(root, .{ .button = .{
+        try app.tree.append(root, .{ .button = .{
             .label = "Sign out",
             .secondary = true,
             .on_press = .{ .ctx = state, .call = onSignOut },
         } });
     } else {
-        _ = try app.tree.append(root, .{ .text = .{ .content = "Not signed in." } });
+        try app.tree.append(root, .{ .text = .{ .content = "Not signed in." } });
     }
 
     // Identity is declared once in build.zig and baked in everywhere;
@@ -1304,8 +1304,8 @@ pub fn buildSettings(ctx: ?*anyopaque, app: *h.App) !void {
     const pkg_line = try std.fmt.bufPrint(&pkg_buf, "{s} {s} ({d}) — {s}", .{
         pkg.id, pkg.version, pkg.build, @tagName(pkg.installer),
     });
-    _ = try app.tree.append(root, .{ .divider = .{} });
-    _ = try app.tree.append(root, .{ .text = .{ .content = pkg_line, .style = .{ .family = .mono, .scale = .small, .ink = .dark } } });
+    try app.tree.append(root, .{ .divider = .{} });
+    try app.tree.append(root, .{ .text = .{ .content = pkg_line, .style = .{ .family = .mono, .scale = .small, .ink = .dark } } });
 }
 ```
 
@@ -1428,16 +1428,16 @@ heading and the empty state are `tr` — messages with no placeholders,
 returned as constant slices, no buffer:
 
 ```zig
-    _ = try app.tree.append(title_row, .{ .heading = .{ .content = L.tr(state.locale, .notesTitle), .level = .h1 } });
+    try app.tree.append(title_row, .{ .heading = .{ .content = L.tr(state.locale, .notesTitle), .level = .h1 } });
 ```
 
 ```zig
     if (state.note_count == 0) {
-        _ = try app.tree.append(root, .{ .text = .{ .content = L.tr(state.locale, .emptyState) } });
+        try app.tree.append(root, .{ .text = .{ .content = L.tr(state.locale, .emptyState) } });
     } else {
         var desc_buf: [160]u8 = undefined;
         const desc = try L.fmt(&desc_buf, state.locale, .noteCount, .{ .count = state.note_count });
-        const group = try app.tree.append(root, .{ .tile_group = .{ .description = desc } });
+        const group = try app.tree.appendId(root, .{ .tile_group = .{ .description = desc } });
         // …the tiles loop, unchanged.
     }
 ```
@@ -1448,7 +1448,7 @@ same stack buffer habit, because the tree copies at `append`:
 ```zig
     var cap_buf: [64]u8 = undefined;
     const cap = try L.fmt(&cap_buf, state.locale, .noteCapacity, .{ .count = state.note_count, .max = max_notes });
-    _ = try app.tree.append(root, .{ .meter = .{ .label = cap, .value = @intCast(state.note_count), .max = max_notes } });
+    try app.tree.append(root, .{ .meter = .{ .label = cap, .value = @intCast(state.note_count), .max = max_notes } });
 ```
 
 Settings grows the picker — options are native language names, so a
@@ -1456,7 +1456,7 @@ reader lost in the wrong locale can find their own; it commits on
 arrow keys like the rest of Part 10:
 
 ```zig
-    _ = try app.tree.append(root, .{ .segmented = .{
+    try app.tree.append(root, .{ .segmented = .{
         .label = "Language",
         .options = &.{ "English", "فارسی" },
         .selected = if (state.locale == .en) 0 else 1,

@@ -20,8 +20,8 @@ fn noopPress(_: ?*anyopaque) void {}
 test "snapshot mirrors the semantic tree with correct roles and states" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    _ = try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Settings", .level = .h2 } });
-    const tg = try app.tree.append(app.tree.rootId(), .{ .toggle = .{ .label = "Dark ink", .on = true } });
+    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Settings", .level = .h2 } });
+    const tg = try app.tree.appendId(app.tree.rootId(), .{ .toggle = .{ .label = "Dark ink", .on = true } });
     app.focused = .of(tg);
 
     var snap = try snapshot(testing.allocator, &app);
@@ -44,7 +44,7 @@ test "snapshot mirrors the semantic tree with correct roles and states" {
 test "checkbox maps to a checkbox carrying its checked state" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const cb = try app.tree.append(app.tree.rootId(), .{ .checkbox = .{ .label = "I agree", .checked = true } });
+    const cb = try app.tree.appendId(app.tree.rootId(), .{ .checkbox = .{ .label = "I agree", .checked = true } });
 
     var snap = try snapshot(testing.allocator, &app);
     defer snap.deinit();
@@ -59,8 +59,8 @@ test "checkbox maps to a checkbox carrying its checked state" {
 test "a button with work in progress is announced busy, disabled, and still reachable" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const running = try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Save changes", .in_progress = true } });
-    const off = try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Delete", .disabled = true } });
+    const running = try app.tree.appendId(app.tree.rootId(), .{ .button = .{ .label = "Save changes", .in_progress = true } });
+    const off = try app.tree.appendId(app.tree.rootId(), .{ .button = .{ .label = "Delete", .disabled = true } });
 
     var snap = try snapshot(testing.allocator, &app);
     defer snap.deinit();
@@ -86,8 +86,8 @@ test "a button with work in progress is announced busy, disabled, and still reac
 test "a switch with work in progress keeps its value and gains the busy pair" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const sw = try app.tree.append(app.tree.rootId(), .{ .toggle = .{ .label = "Push to phone", .on = true, .in_progress = true } });
-    const box = try app.tree.append(app.tree.rootId(), .{ .checkbox = .{ .label = "Weekly digest", .in_progress = true } });
+    const sw = try app.tree.appendId(app.tree.rootId(), .{ .toggle = .{ .label = "Push to phone", .on = true, .in_progress = true } });
+    const box = try app.tree.appendId(app.tree.rootId(), .{ .checkbox = .{ .label = "Weekly digest", .in_progress = true } });
 
     var snap = try snapshot(testing.allocator, &app);
     defer snap.deinit();
@@ -111,7 +111,7 @@ test "a switch with work in progress keeps its value and gains the busy pair" {
 test "a known percentage reaches assistive tech as the button's value" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const id = try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Save changes", .in_progress = true, .progress_percent = 60 } });
+    const id = try app.tree.appendId(app.tree.rootId(), .{ .button = .{ .label = "Save changes", .in_progress = true, .progress_percent = 60 } });
 
     var snap = try snapshot(testing.allocator, &app);
     defer snap.deinit();
@@ -144,7 +144,7 @@ test "a known percentage reaches assistive tech as the button's value" {
 test "badges are static text to assistive tech" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const badge = try app.tree.append(app.tree.rootId(), .{ .badge = .{ .label = "Active" } });
+    const badge = try app.tree.appendId(app.tree.rootId(), .{ .badge = .{ .label = "Active" } });
 
     var snap = try snapshot(testing.allocator, &app);
     defer snap.deinit();
@@ -158,7 +158,7 @@ test "badges are static text to assistive tech" {
 test "meters are static text to assistive tech" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const meter = try app.tree.append(app.tree.rootId(), .{ .meter = .{ .label = "12 of 30 days", .value = 12, .max = 30 } });
+    const meter = try app.tree.appendId(app.tree.rootId(), .{ .meter = .{ .label = "12 of 30 days", .value = 12, .max = 30 } });
 
     var snap = try snapshot(testing.allocator, &app);
     defer snap.deinit();
@@ -172,7 +172,7 @@ test "meters are static text to assistive tech" {
 test "qr maps to an image named by its label, carrying its value" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const qr = try app.tree.append(app.tree.rootId(), .{ .qr = .{
+    const qr = try app.tree.appendId(app.tree.rootId(), .{ .qr = .{
         .label = "Invite link",
         .value = "https://example.com/invite/XKCD-1234",
     } });
@@ -190,8 +190,8 @@ test "qr maps to an image named by its label, carrying its value" {
 test "labeled icons are images; decorative icons vanish" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const deco = try app.tree.append(app.tree.rootId(), .{ .icon = .{ .name = .airplay } });
-    const named = try app.tree.append(app.tree.rootId(), .{ .icon = .{ .name = .accessibility, .label = "Accessible venue" } });
+    const deco = try app.tree.appendId(app.tree.rootId(), .{ .icon = .{ .name = .airplay } });
+    const named = try app.tree.appendId(app.tree.rootId(), .{ .icon = .{ .name = .accessibility, .label = "Accessible venue" } });
 
     var snap = try snapshot(testing.allocator, &app);
     defer snap.deinit();
@@ -206,7 +206,7 @@ test "labeled icons are images; decorative icons vanish" {
 test "snapshot rects come from layout" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const btn = try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Go" } });
+    const btn = try app.tree.appendId(app.tree.rootId(), .{ .button = .{ .label = "Go" } });
 
     var snap = try snapshot(testing.allocator, &app);
     defer snap.deinit();
@@ -216,7 +216,7 @@ test "snapshot rects come from layout" {
 }
 
 fn buildNavHome(_: ?*anyopaque, app: *App) anyerror!void {
-    _ = try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Home" } });
+    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Home" } });
 }
 
 test "nav maps to a navigation landmark with the current item selected" {
@@ -324,7 +324,7 @@ test "the row's off-roster marker is static text, not a link" {
 test "segmented maps to a radio group carrying the selected option" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const seg = try app.tree.append(app.tree.rootId(), .{ .segmented = .{
+    const seg = try app.tree.appendId(app.tree.rootId(), .{ .segmented = .{
         .label = "View",
         .options = &.{ "List", "Grid" },
         .selected = 1,
@@ -343,7 +343,7 @@ test "segmented maps to a radio group carrying the selected option" {
 test "radio_group maps to a radio group carrying the selected option" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const rg = try app.tree.append(app.tree.rootId(), .{ .radio_group = .{
+    const rg = try app.tree.appendId(app.tree.rootId(), .{ .radio_group = .{
         .label = "Delivery",
         .options = &.{ "Email", "SMS" },
         .selected = 1,
@@ -362,7 +362,7 @@ test "radio_group maps to a radio group carrying the selected option" {
 test "text area maps to a multiline text field carrying its value" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const ta = try app.tree.append(app.tree.rootId(), .{ .text_area = .{
+    const ta = try app.tree.appendId(app.tree.rootId(), .{ .text_area = .{
         .label = "Notes",
         .value = "a\nb",
     } });
@@ -380,7 +380,7 @@ test "text area maps to a multiline text field carrying its value" {
 test "obscured input is a password field and never exposes its value" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const pw = try app.tree.append(app.tree.rootId(), .{ .text_input = .{
+    const pw = try app.tree.appendId(app.tree.rootId(), .{ .text_input = .{
         .label = "Passphrase",
         .value = "hunter2",
         .obscured = true,
@@ -399,7 +399,7 @@ test "obscured input is a password field and never exposes its value" {
 test "copyable maps to a button carrying the value it copies" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const c = try app.tree.append(app.tree.rootId(), .{ .copyable = .{
+    const c = try app.tree.appendId(app.tree.rootId(), .{ .copyable = .{
         .label = "Recovery code",
         .value = "XKCD-1234",
     } });
@@ -417,7 +417,7 @@ test "copyable maps to a button carrying the value it copies" {
 test "an acknowledged copyable gains a status child announcing the copy" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const c = try app.tree.append(app.tree.rootId(), .{ .copyable = .{
+    const c = try app.tree.appendId(app.tree.rootId(), .{ .copyable = .{
         .label = "Recovery code",
         .value = "XKCD-1234",
     } });
@@ -458,9 +458,9 @@ test "an acknowledged copyable gains a status child announcing the copy" {
 test "tiles map to links or buttons; the group is a group" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const group = try app.tree.append(app.tree.rootId(), .{ .tile_group = .{ .description = "Account actions" } });
-    const nav_tile = try app.tree.append(group, .{ .tile = .{ .label = "Members", .route = "members" } });
-    const act_tile = try app.tree.append(group, .{ .tile = .{ .label = "Sign out", .detail = "Ends the session", .on_press = .{ .call = noopPress } } });
+    const group = try app.tree.appendId(app.tree.rootId(), .{ .tile_group = .{ .description = "Account actions" } });
+    const nav_tile = try app.tree.appendId(group, .{ .tile = .{ .label = "Members", .route = "members" } });
+    const act_tile = try app.tree.appendId(group, .{ .tile = .{ .label = "Sign out", .detail = "Ends the session", .on_press = .{ .call = noopPress } } });
 
     var snap = try snapshot(testing.allocator, &app);
     defer snap.deinit();
@@ -479,8 +479,8 @@ test "tiles map to links or buttons; the group is a group" {
 test "a tile's leading mark stands down for the label" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const group = try app.tree.append(app.tree.rootId(), .{ .tile_group = .{} });
-    const row = try app.tree.append(group, .{ .tile = .{ .label = "Members", .route = "members", .icon = .users } });
+    const group = try app.tree.appendId(app.tree.rootId(), .{ .tile_group = .{} });
+    const row = try app.tree.appendId(group, .{ .tile = .{ .label = "Members", .route = "members", .icon = .users } });
 
     var snap = try snapshot(testing.allocator, &app);
     defer snap.deinit();
@@ -498,8 +498,8 @@ test "a tile's leading mark stands down for the label" {
     // adapter could read out beside the label it already read.
     var bare = try test_app.init(400, 400);
     defer bare.deinit();
-    const bare_group = try bare.tree.append(bare.tree.rootId(), .{ .tile_group = .{} });
-    _ = try bare.tree.append(bare_group, .{ .tile = .{ .label = "Members", .route = "members" } });
+    const bare_group = try bare.tree.appendId(bare.tree.rootId(), .{ .tile_group = .{} });
+    try bare.tree.append(bare_group, .{ .tile = .{ .label = "Members", .route = "members" } });
     var bare_snap = try snapshot(testing.allocator, &bare);
     defer bare_snap.deinit();
     try testing.expectEqual(bare_snap.nodes.items.len, snap.nodes.items.len);
@@ -508,9 +508,9 @@ test "a tile's leading mark stands down for the label" {
 test "a list maps to list/listitem and never announces its own marker" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const list = try app.tree.append(app.tree.rootId(), .{ .list = .{ .ordered = true } });
-    const item = try app.tree.append(list, .{ .list_item = .{} });
-    const words = try app.tree.append(item, .{ .text = .{ .content = "Rinse" } });
+    const list = try app.tree.appendId(app.tree.rootId(), .{ .list = .{ .ordered = true } });
+    const item = try app.tree.appendId(list, .{ .list_item = .{} });
+    const words = try app.tree.appendId(item, .{ .text = .{ .content = "Rinse" } });
 
     var snap = try snapshot(testing.allocator, &app);
     defer snap.deinit();
@@ -531,9 +531,9 @@ test "a list maps to list/listitem and never announces its own marker" {
 test "a code block is announced whole; a blockquote wraps what it quotes" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const cb = try app.tree.append(app.tree.rootId(), .{ .code_block = .{ .content = "fn a() {}\nfn b() {}" } });
-    const quote = try app.tree.append(app.tree.rootId(), .{ .blockquote = .{} });
-    const cited = try app.tree.append(quote, .{ .text = .{ .content = "— Ada" } });
+    const cb = try app.tree.appendId(app.tree.rootId(), .{ .code_block = .{ .content = "fn a() {}\nfn b() {}" } });
+    const quote = try app.tree.appendId(app.tree.rootId(), .{ .blockquote = .{} });
+    const cited = try app.tree.appendId(quote, .{ .text = .{ .content = "— Ada" } });
 
     var snap = try snapshot(testing.allocator, &app);
     defer snap.deinit();
@@ -554,7 +554,7 @@ test "a code block is announced whole; a blockquote wraps what it quotes" {
 test "styling spans stay invisible; a link span becomes a link node" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const para = try app.tree.append(app.tree.rootId(), .{ .text = .{ .spans = &.{
+    const para = try app.tree.appendId(app.tree.rootId(), .{ .text = .{ .spans = &.{
         .{ .text = "Read the " },
         .{ .text = "terms", .route = "terms" },
         .{ .text = " and the " },
@@ -602,7 +602,7 @@ test "styling spans stay invisible; a link span becomes a link node" {
 test "an external link span is announced exactly as a routed one: a link, activatable" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const para = try app.tree.append(app.tree.rootId(), .{ .text = .{ .spans = &.{
+    const para = try app.tree.appendId(app.tree.rootId(), .{ .text = .{ .spans = &.{
         .{ .text = "Mail " },
         .{ .text = "us", .external = "mailto:help@example.com" },
         .{ .text = "." },
@@ -624,7 +624,7 @@ test "an external link span is announced exactly as a routed one: a link, activa
 test "a document is a named landmark over ordinary parsed elements" {
     var app = try test_app.init(400, 600);
     defer app.deinit();
-    const doc = try app.tree.append(app.tree.rootId(), .{ .document = .{
+    const doc = try app.tree.appendId(app.tree.rootId(), .{ .document = .{
         .label = "Terms of Service",
         .source =
         \\## Your data
@@ -655,7 +655,7 @@ test "a document is a named landmark over ordinary parsed elements" {
 test "select maps to a combo box; its picker to a modal dialog of options" {
     var app = try test_app.init(400, 600);
     defer app.deinit();
-    const sel = try app.tree.append(app.tree.rootId(), .{ .select = .{
+    const sel = try app.tree.appendId(app.tree.rootId(), .{ .select = .{
         .label = "Language",
         .options = &.{ "English", "Deutsch" },
         .selected = 1,
@@ -700,7 +700,7 @@ test "a select and its options carry the click action when enabled" {
     // assistive tech.
     var app = try test_app.init(400, 600);
     defer app.deinit();
-    const sel = try app.tree.append(app.tree.rootId(), .{ .select = .{
+    const sel = try app.tree.appendId(app.tree.rootId(), .{ .select = .{
         .label = "Language",
         .options = &.{ "English", "Deutsch" },
     } });
@@ -776,58 +776,58 @@ test "the click action is Element.isInteractive, for every element kind" {
         var app = try test_app.init(600, 4000);
         defer app.deinit();
         const root = app.tree.rootId();
-        _ = try app.tree.append(root, .{ .text = .{ .content = "Prose" } });
-        _ = try app.tree.append(root, .{ .text = .{ .spans = &.{
+        try app.tree.append(root, .{ .text = .{ .content = "Prose" } });
+        try app.tree.append(root, .{ .text = .{ .spans = &.{
             .{ .text = "See " },
             .{ .text = "the terms", .route = "home" },
         } } });
-        _ = try app.tree.append(root, .{ .heading = .{ .content = "Title" } });
-        _ = try app.tree.append(root, .{ .icon = .{ .name = .activity, .label = "Live" } });
-        const box = try app.tree.append(root, .{ .box = .{} });
-        _ = try app.tree.append(box, .{ .divider = .{} });
-        _ = try app.tree.append(root, .{ .badge = .{ .label = "Beta" } });
-        _ = try app.tree.append(root, .{ .meter = .{ .label = "12 of 30 days", .value = 12, .max = 30 } });
-        _ = try app.tree.append(root, .{ .qr = .{ .label = "Invite", .value = "https://example.test/i" } });
-        const stack = try app.tree.append(root, .{ .stack = .{} });
-        _ = try app.tree.append(stack, .{ .button = .{ .label = "Go" } });
-        _ = try app.tree.append(root, .{ .button = .{ .label = "Gone", .disabled = true } });
-        _ = try app.tree.append(root, .{ .button = .{ .label = "Working", .in_progress = true } });
-        _ = try app.tree.append(root, .{ .link = .{ .label = "Terms", .route = "home" } });
-        _ = try app.tree.append(root, .{ .toggle = .{ .label = "Dark ink" } });
-        _ = try app.tree.append(root, .{ .checkbox = .{ .label = "I agree" } });
-        _ = try app.tree.append(root, .{ .text_input = .{ .label = "Name" } });
-        _ = try app.tree.append(root, .{ .text_input = .{ .label = "Passphrase", .obscured = true } });
-        _ = try app.tree.append(root, .{ .text_area = .{ .label = "Notes" } });
-        const list = try app.tree.append(root, .{ .list = .{} });
-        const item = try app.tree.append(list, .{ .list_item = .{} });
-        _ = try app.tree.append(item, .{ .text = .{ .content = "One" } });
-        _ = try app.tree.append(root, .{ .code_block = .{ .content = "zig build" } });
-        const quote = try app.tree.append(root, .{ .blockquote = .{} });
-        _ = try app.tree.append(quote, .{ .text = .{ .content = "Quoted" } });
-        _ = try app.tree.append(root, .{ .document = .{ .label = "Terms", .source = "Some *prose*." } });
-        const table = try app.tree.append(root, .{ .table = .{} });
-        const row = try app.tree.append(table, .{ .row = .{} });
-        _ = try app.tree.append(row, .{ .cell = .{} });
-        _ = try app.tree.append(root, .{ .scroll_region = .{ .height = 80 } });
-        _ = try app.tree.append(root, .{ .segmented = .{ .label = "View", .options = &.{ "Day", "Week" } } });
-        const tiles = try app.tree.append(root, .{ .tile_group = .{ .description = "Places" } });
-        _ = try app.tree.append(tiles, .{ .tile = .{ .label = "Berlin", .route = "home" } });
-        _ = try app.tree.append(tiles, .{ .tile = .{ .label = "Rename", .on_press = .{ .call = noopPress } } });
-        _ = try app.tree.append(root, .{ .radio_group = .{ .label = "Plan", .options = &.{ "Free", "Pro" } } });
-        _ = try app.tree.append(root, .{ .select = .{ .label = "Language", .options = &.{ "English", "Deutsch" } } });
-        _ = try app.tree.append(root, .{ .copyable = .{ .label = "Recovery code", .value = "XKCD-1234" } });
-        const nav = try app.tree.append(root, .{ .nav = .{} });
-        _ = try app.tree.append(nav, .{ .nav_item = .{ .label = "Home", .route = "home", .icon = .house } });
-        _ = try app.tree.append(nav, .{ .nav_here = .{ .label = "Detail" } });
-        _ = try app.tree.append(root, .{ .back = .{} });
+        try app.tree.append(root, .{ .heading = .{ .content = "Title" } });
+        try app.tree.append(root, .{ .icon = .{ .name = .activity, .label = "Live" } });
+        const box = try app.tree.appendId(root, .{ .box = .{} });
+        try app.tree.append(box, .{ .divider = .{} });
+        try app.tree.append(root, .{ .badge = .{ .label = "Beta" } });
+        try app.tree.append(root, .{ .meter = .{ .label = "12 of 30 days", .value = 12, .max = 30 } });
+        try app.tree.append(root, .{ .qr = .{ .label = "Invite", .value = "https://example.test/i" } });
+        const stack = try app.tree.appendId(root, .{ .stack = .{} });
+        try app.tree.append(stack, .{ .button = .{ .label = "Go" } });
+        try app.tree.append(root, .{ .button = .{ .label = "Gone", .disabled = true } });
+        try app.tree.append(root, .{ .button = .{ .label = "Working", .in_progress = true } });
+        try app.tree.append(root, .{ .link = .{ .label = "Terms", .route = "home" } });
+        try app.tree.append(root, .{ .toggle = .{ .label = "Dark ink" } });
+        try app.tree.append(root, .{ .checkbox = .{ .label = "I agree" } });
+        try app.tree.append(root, .{ .text_input = .{ .label = "Name" } });
+        try app.tree.append(root, .{ .text_input = .{ .label = "Passphrase", .obscured = true } });
+        try app.tree.append(root, .{ .text_area = .{ .label = "Notes" } });
+        const list = try app.tree.appendId(root, .{ .list = .{} });
+        const item = try app.tree.appendId(list, .{ .list_item = .{} });
+        try app.tree.append(item, .{ .text = .{ .content = "One" } });
+        try app.tree.append(root, .{ .code_block = .{ .content = "zig build" } });
+        const quote = try app.tree.appendId(root, .{ .blockquote = .{} });
+        try app.tree.append(quote, .{ .text = .{ .content = "Quoted" } });
+        try app.tree.append(root, .{ .document = .{ .label = "Terms", .source = "Some *prose*." } });
+        const table = try app.tree.appendId(root, .{ .table = .{} });
+        const row = try app.tree.appendId(table, .{ .row = .{} });
+        try app.tree.append(row, .{ .cell = .{} });
+        try app.tree.append(root, .{ .scroll_region = .{ .height = 80 } });
+        try app.tree.append(root, .{ .segmented = .{ .label = "View", .options = &.{ "Day", "Week" } } });
+        const tiles = try app.tree.appendId(root, .{ .tile_group = .{ .description = "Places" } });
+        try app.tree.append(tiles, .{ .tile = .{ .label = "Berlin", .route = "home" } });
+        try app.tree.append(tiles, .{ .tile = .{ .label = "Rename", .on_press = .{ .call = noopPress } } });
+        try app.tree.append(root, .{ .radio_group = .{ .label = "Plan", .options = &.{ "Free", "Pro" } } });
+        try app.tree.append(root, .{ .select = .{ .label = "Language", .options = &.{ "English", "Deutsch" } } });
+        try app.tree.append(root, .{ .copyable = .{ .label = "Recovery code", .value = "XKCD-1234" } });
+        const nav = try app.tree.appendId(root, .{ .nav = .{} });
+        try app.tree.append(nav, .{ .nav_item = .{ .label = "Home", .route = "home", .icon = .house } });
+        try app.tree.append(nav, .{ .nav_here = .{ .label = "Detail" } });
+        try app.tree.append(root, .{ .back = .{} });
         // A row too wide to fit: layout folds its tail and installs the
         // `more` control — the only way a real tree ever holds one.
-        const action_row = try app.tree.append(root, .{ .stack = .{ .axis = .horizontal } });
-        _ = try app.tree.append(action_row, .{ .button = .{ .label = "Download the yearly report" } });
-        _ = try app.tree.append(action_row, .{ .button = .{ .label = "Share with the whole team" } });
-        _ = try app.tree.append(action_row, .{ .button = .{ .label = "Archive every closed item" } });
-        _ = try app.tree.append(action_row, .{ .button = .{ .label = "Export as a printable file" } });
-        _ = try app.tree.append(root, .{ .icon_button = .{ .glyph = .expand, .label = "Show notices" } });
+        const action_row = try app.tree.appendId(root, .{ .stack = .{ .axis = .horizontal } });
+        try app.tree.append(action_row, .{ .button = .{ .label = "Download the yearly report" } });
+        try app.tree.append(action_row, .{ .button = .{ .label = "Share with the whole team" } });
+        try app.tree.append(action_row, .{ .button = .{ .label = "Archive every closed item" } });
+        try app.tree.append(action_row, .{ .button = .{ .label = "Export as a printable file" } });
+        try app.tree.append(root, .{ .icon_button = .{ .glyph = .expand, .label = "Show notices" } });
         try expectClickTracksInteractive(&app, &seen);
     }
 
@@ -836,14 +836,14 @@ test "the click action is Element.isInteractive, for every element kind" {
         // them: activating a select.
         var app = try test_app.init(400, 600);
         defer app.deinit();
-        const sel = try app.tree.append(app.tree.rootId(), .{ .select = .{
+        const sel = try app.tree.appendId(app.tree.rootId(), .{ .select = .{
             .label = "Language",
             .options = &.{ "English", "Deutsch" },
         } });
         // The collapsed nav chip rides along here: a tree holds one nav,
         // and the first app's already wears the row shape.
-        const collapsed = try app.tree.append(app.tree.rootId(), .{ .nav = .{} });
-        _ = try app.tree.append(collapsed, .{ .nav_current = .{ .section = "Home", .icon = .house } });
+        const collapsed = try app.tree.appendId(app.tree.rootId(), .{ .nav = .{} });
+        try app.tree.append(collapsed, .{ .nav_current = .{ .section = "Home", .icon = .house } });
         app.focused = .of(sel);
         try app.dispatch(.{ .key_down = .{ .key = .enter } });
         try expectClickTracksInteractive(&app, &seen);
@@ -907,7 +907,7 @@ test "sheet and notices pane map to modal dialogs; notices are status" {
 test "spans are invisible: one static_text node announcing the concatenation" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    _ = try app.tree.append(app.tree.rootId(), .{ .text = .{ .spans = &.{
+    try app.tree.append(app.tree.rootId(), .{ .text = .{ .spans = &.{
         .{ .text = "Rokovski " },
         .{ .text = "Feedback", .strong = true },
     } } });
@@ -924,9 +924,9 @@ test "spans are invisible: one static_text node announcing the concatenation" {
 test "a folded button is absent; the control standing in for it is a button" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const row = try app.tree.append(app.tree.rootId(), .{ .stack = .{ .axis = .horizontal, .gap = 8 } });
+    const row = try app.tree.appendId(app.tree.rootId(), .{ .stack = .{ .axis = .horizontal, .gap = 8 } });
     for ([_][]const u8{ "One", "Two", "Three", "Four", "Five" }) |label| {
-        _ = try app.tree.append(row, .{ .button = .{ .label = label } });
+        try app.tree.append(row, .{ .button = .{ .label = label } });
     }
 
     var snap = try snapshot(testing.allocator, &app);
@@ -971,9 +971,9 @@ test "wrapping a row changes no part of what is announced" {
     // thing that is *supposed* to move.
     var app = try test_app.init(600, 400);
     defer app.deinit();
-    const row = try app.tree.append(app.tree.rootId(), .{ .stack = .{ .axis = .horizontal, .gap = 8 } });
+    const row = try app.tree.appendId(app.tree.rootId(), .{ .stack = .{ .axis = .horizontal, .gap = 8 } });
     for ([_][]const u8{ "Admin", "Until cycle end", "Held for review" }) |label| {
-        _ = try app.tree.append(row, .{ .badge = .{ .label = label } });
+        try app.tree.append(row, .{ .badge = .{ .label = label } });
     }
 
     var wide = try snapshot(testing.allocator, &app);

@@ -206,9 +206,9 @@ fn buildHome(ctx: ?*anyopaque, app: *nok.App) !void {
     const state: *State = @ptrCast(@alignCast(ctx.?));
     state.app = app;
     const root = app.tree.rootId();
-    _ = try app.tree.append(root, .{ .heading = .{ .content = "Stress", .level = .h1 } });
-    state.status = try app.tree.append(root, .{ .text = .{ .content = "Idle" } });
-    _ = try app.tree.append(root, .{ .button = .{
+    try app.tree.append(root, .{ .heading = .{ .content = "Stress", .level = .h1 } });
+    state.status = try app.tree.appendId(root, .{ .text = .{ .content = "Idle" } });
+    try app.tree.append(root, .{ .button = .{
         .label = "Fetch",
         .on_press = .{ .ctx = state, .call = onFetch },
     } });

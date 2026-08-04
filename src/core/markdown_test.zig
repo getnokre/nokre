@@ -15,7 +15,7 @@ const testing = std.testing;
 fn outline(gpa: std.mem.Allocator, source: []const u8) ![]u8 {
     var tree = try Tree.init(gpa);
     defer tree.deinit();
-    const doc = try tree.append(tree.rootId(), .{ .document = .{ .label = "Doc", .source = source } });
+    const doc = try tree.appendId(tree.rootId(), .{ .document = .{ .label = "Doc", .source = source } });
     return dump(gpa, &tree, doc);
 }
 
@@ -285,7 +285,7 @@ test "a destination whose scheme is off the allowlist stays literal — the degr
     for (cases) |case| {
         var tree = try Tree.init(testing.allocator);
         defer tree.deinit();
-        const doc = try tree.append(tree.rootId(), .{ .document = .{ .label = "Doc", .source = case } });
+        const doc = try tree.appendId(tree.rootId(), .{ .document = .{ .label = "Doc", .source = case } });
         var got: std.ArrayList(u8) = .empty;
         defer got.deinit(testing.allocator);
         try allText(testing.allocator, &tree, doc, &got);
@@ -313,7 +313,7 @@ test "unsupported syntax degrades: every byte survives, exactly once, in order" 
     for (cases) |case| {
         var tree = try Tree.init(testing.allocator);
         defer tree.deinit();
-        const doc = try tree.append(tree.rootId(), .{ .document = .{ .label = "Doc", .source = case } });
+        const doc = try tree.appendId(tree.rootId(), .{ .document = .{ .label = "Doc", .source = case } });
         var got: std.ArrayList(u8) = .empty;
         defer got.deinit(testing.allocator);
         try allText(testing.allocator, &tree, doc, &got);
@@ -481,7 +481,7 @@ test "the parser never panics on arbitrary bytes" {
     for (seeds) |seed| {
         var tree = try Tree.init(testing.allocator);
         defer tree.deinit();
-        _ = tree.append(tree.rootId(), .{ .document = .{ .label = "Doc", .source = seed } }) catch |err| {
+        tree.append(tree.rootId(), .{ .document = .{ .label = "Doc", .source = seed } }) catch |err| {
             // An error is allowed; a crash is not.
             try testing.expect(err != error.OutOfMemory);
         };
@@ -498,7 +498,7 @@ test "fuzz: arbitrary bytes never crash the parser" {
             const input = buf[0..smith.slice(&buf)];
             var tree = try Tree.init(std.testing.allocator);
             defer tree.deinit();
-            _ = tree.append(tree.rootId(), .{ .document = .{ .label = "Doc", .source = input } }) catch {};
+            tree.append(tree.rootId(), .{ .document = .{ .label = "Doc", .source = input } }) catch {};
         }
     }.one, .{});
 }
@@ -509,7 +509,7 @@ test "a document copies its source, so the app may free it at once" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
     var source = "# Title\n\nSome words.".*;
-    const doc = try tree.append(tree.rootId(), .{ .document = .{ .label = "Terms", .source = &source } });
+    const doc = try tree.appendId(tree.rootId(), .{ .document = .{ .label = "Terms", .source = &source } });
     @memset(&source, 0);
 
     const got = try dump(testing.allocator, &tree, doc);
@@ -535,7 +535,7 @@ test "a document needs a label; it is never derived from the first heading" {
 test "a parse the tree refuses surfaces as an append error, leaving nothing behind" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
-    const box = try tree.append(tree.rootId(), .{ .box = .{ .fill = .ink } });
+    const box = try tree.appendId(tree.rootId(), .{ .box = .{ .fill = .ink } });
     // Ink text on an ink fill is illegible, so `append` rejects the
     // paragraph — the parser's error path is append's. The half-built
     // document must not survive it.

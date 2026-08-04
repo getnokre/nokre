@@ -166,15 +166,15 @@ fn installBanner(app: *App) !void {
         .icon = front.icon,
     } });
     if (app.notices.items.len == 1) {
-        _ = try app.tree.append(notice, .{ .icon_button = .{
+        try app.tree.append(notice, .{ .icon_button = .{
             .glyph = .open,
             .label = try chromeLabel(app, app.chrome.open_prefix, front.title),
         } });
     } else {
-        _ = try app.tree.append(notice, .{ .icon_button = .{ .glyph = .expand, .label = app.chrome.show_all_notices } });
+        try app.tree.append(notice, .{ .icon_button = .{ .glyph = .expand, .label = app.chrome.show_all_notices } });
     }
-    _ = try app.tree.append(notice, .{ .icon_button = .{ .glyph = .minimize, .label = app.chrome.minimize_notices } });
-    _ = try app.tree.append(notice, .{ .icon_button = .{
+    try app.tree.append(notice, .{ .icon_button = .{ .glyph = .minimize, .label = app.chrome.minimize_notices } });
+    try app.tree.append(notice, .{ .icon_button = .{
         .glyph = .dismiss,
         .label = try chromeLabel(app, app.chrome.dismiss_prefix, front.title),
     } });
@@ -188,8 +188,8 @@ fn installPane(app: *App) !void {
     // itself: that slot is where a modal closes (the sheet's close),
     // and the reflex press it collects must park the notices, not
     // destroy them.
-    _ = try app.tree.append(pane, .{ .icon_button = .{ .glyph = .dismiss_all, .label = app.chrome.dismiss_all_notices } });
-    _ = try app.tree.append(pane, .{ .icon_button = .{ .glyph = .minimize, .label = app.chrome.minimize_notices } });
+    try app.tree.append(pane, .{ .icon_button = .{ .glyph = .dismiss_all, .label = app.chrome.dismiss_all_notices } });
+    try app.tree.append(pane, .{ .icon_button = .{ .glyph = .minimize, .label = app.chrome.minimize_notices } });
     // The rows scroll; the header does not. A pane is capped at
     // `sheet_min_top` from the top edge, and enough notices — or few of
     // them on a landscape phone, where that cap is most of a short
@@ -201,7 +201,7 @@ fn installPane(app: *App) !void {
     // Dismiss-all lives in the header for the same reason the picker's
     // filter stays outside its region: the control that empties the
     // list must not scroll away as the list grows.
-    const region = try app.tree.append(pane, .{ .scroll_region = .{ .height = 0 } });
+    const region = try app.tree.appendId(pane, .{ .scroll_region = .{ .height = 0 } });
     // Important notices lead the list (notify keeps them in front), and
     // when both kinds are pending a caption heads each group. Framework
     // words in the framework's own language (`App.Chrome`): no consumer
@@ -216,19 +216,19 @@ fn installPane(app: *App) !void {
     };
     const grouped = split > 0 and split < app.notices.items.len;
     for (app.notices.items, 0..) |n, i| {
-        if (grouped and i == 0) _ = try app.tree.append(region, groupLabel(app.chrome.important));
-        if (grouped and i == split) _ = try app.tree.append(region, groupLabel(app.chrome.other));
-        const row = try app.tree.append(region, .{ .notice = .{
+        if (grouped and i == 0) try app.tree.append(region, groupLabel(app.chrome.important));
+        if (grouped and i == split) try app.tree.append(region, groupLabel(app.chrome.other));
+        const row = try app.tree.appendId(region, .{ .notice = .{
             .title = n.title,
             .description = n.description,
             .route = n.route,
             .icon = n.icon,
         } });
-        _ = try app.tree.append(row, .{ .icon_button = .{
+        try app.tree.append(row, .{ .icon_button = .{
             .glyph = .open,
             .label = try chromeLabel(app, app.chrome.open_prefix, n.title),
         } });
-        _ = try app.tree.append(row, .{ .icon_button = .{
+        try app.tree.append(row, .{ .icon_button = .{
             .glyph = .dismiss,
             .label = try chromeLabel(app, app.chrome.dismiss_prefix, n.title),
         } });

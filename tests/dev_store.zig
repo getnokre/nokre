@@ -63,15 +63,15 @@ fn buildHome(ctx: ?*anyopaque, app: *nok.App) !void {
     const state: *State = @ptrCast(@alignCast(ctx.?));
     state.app = app;
     const root = app.tree.rootId();
-    _ = try app.tree.append(root, .{ .heading = .{ .content = "Dev store", .level = .h1 } });
+    try app.tree.append(root, .{ .heading = .{ .content = "Dev store", .level = .h1 } });
 
     var buf: ss.ValueBuf = undefined;
     const stored = ss.get(app, key, &buf) catch null;
-    state.status = try app.tree.append(root, .{
+    state.status = try app.tree.appendId(root, .{
         .text = .{ .content = if (stored != null) "Signed in" else "Signed out" },
     });
-    _ = try app.tree.append(root, .{ .button = .{ .label = "Sign in", .on_press = .{ .ctx = state, .call = onSignIn } } });
-    _ = try app.tree.append(root, .{ .button = .{ .label = "Sign out", .on_press = .{ .ctx = state, .call = onSignOut } } });
+    try app.tree.append(root, .{ .button = .{ .label = "Sign in", .on_press = .{ .ctx = state, .call = onSignIn } } });
+    try app.tree.append(root, .{ .button = .{ .label = "Sign out", .on_press = .{ .ctx = state, .call = onSignOut } } });
 }
 
 fn onSignIn(ctx: ?*anyopaque) void {

@@ -108,7 +108,7 @@ const State = struct {
             }
             if (allow.breaks and isThematicBreak(line)) {
                 _ = lines.next();
-                _ = try self.tree.append(parent, .{ .divider = .{} });
+                try self.tree.append(parent, .{ .divider = .{} });
                 continue;
             }
             if (allow.headings) {
@@ -139,9 +139,9 @@ const State = struct {
         try inlines(self.a, h.text, &spans);
         const level = self.headingLevel(h.depth);
         if (spans.items.len == 1 and plain(spans.items[0])) {
-            _ = try self.tree.append(parent, .{ .heading = .{ .content = spans.items[0].text, .level = level } });
+            try self.tree.append(parent, .{ .heading = .{ .content = spans.items[0].text, .level = level } });
         } else {
-            _ = try self.tree.append(parent, .{ .heading = .{ .spans = spans.items, .level = level } });
+            try self.tree.append(parent, .{ .heading = .{ .spans = spans.items, .level = level } });
         }
     }
 
@@ -163,7 +163,7 @@ const State = struct {
         // An empty block cannot be appended, and there is nothing
         // verbatim in it to show anyway.
         if (body.items.len == 0) return;
-        _ = try self.tree.append(parent, .{ .code_block = .{ .content = body.items } });
+        try self.tree.append(parent, .{ .code_block = .{ .content = body.items } });
     }
 
     fn blockquote(self: *State, parent: NodeId, lines: *Lines, allow: Allow) !void {
@@ -183,7 +183,7 @@ const State = struct {
             if (body.items.len > 0) try body.append(self.a, '\n');
             try body.appendSlice(self.a, rest);
         }
-        const quote = try self.tree.append(parent, .{ .blockquote = .{} });
+        const quote = try self.tree.appendId(parent, .{ .blockquote = .{} });
         try self.blocks(quote, body.items, .{
             .headings = false,
             .tables = false,
@@ -198,7 +198,7 @@ const State = struct {
         // level: its items join the enclosing item's flow rather than
         // opening a list `Tree.append` would refuse.
         const flattened = allow.list_depth >= element_mod.max_list_depth;
-        const list_id = if (flattened) parent else try self.tree.append(parent, .{ .list = .{
+        const list_id = if (flattened) parent else try self.tree.appendId(parent, .{ .list = .{
             .ordered = first.ordered,
             .start = first.start,
         } });
@@ -233,7 +233,7 @@ const State = struct {
                 try body.appendSlice(self.a, dedent(cont, marker.indent));
                 _ = lines.next();
             }
-            const item = if (flattened) list_id else try self.tree.append(list_id, .{ .list_item = .{} });
+            const item = if (flattened) list_id else try self.tree.appendId(list_id, .{ .list_item = .{} });
             try self.blocks(item, body.items, .{
                 .headings = false,
                 .tables = false,
@@ -249,7 +249,7 @@ const State = struct {
     fn table(self: *State, parent: NodeId, lines: *Lines) !void {
         const header = lines.next().?;
         _ = lines.next(); // the delimiter row
-        const table_id = try self.tree.append(parent, .{ .table = .{} });
+        const table_id = try self.tree.appendId(parent, .{ .table = .{} });
         try self.tableRow(table_id, header, true);
         while (lines.peek()) |line| {
             if (isBlank(line) or std.mem.indexOfScalar(u8, line, '|') == null) break;
@@ -259,17 +259,17 @@ const State = struct {
     }
 
     fn tableRow(self: *State, table_id: NodeId, line: []const u8, header: bool) !void {
-        const row = try self.tree.append(table_id, .{ .row = .{ .header = header } });
+        const row = try self.tree.appendId(table_id, .{ .row = .{ .header = header } });
         var cells = tableCells(line);
         while (cells.next()) |cell_src| {
-            const cell = try self.tree.append(row, .{ .cell = .{} });
+            const cell = try self.tree.appendId(row, .{ .cell = .{} });
             var spans: std.ArrayList(Span) = .empty;
             try inlines(self.a, cell_src, &spans);
             if (spans.items.len == 0) continue;
             if (spans.items.len == 1 and plain(spans.items[0])) {
-                _ = try self.tree.append(cell, .{ .text = .{ .content = spans.items[0].text } });
+                try self.tree.append(cell, .{ .text = .{ .content = spans.items[0].text } });
             } else {
-                _ = try self.tree.append(cell, .{ .text = .{ .spans = spans.items } });
+                try self.tree.append(cell, .{ .text = .{ .spans = spans.items } });
             }
         }
     }
@@ -298,9 +298,9 @@ const State = struct {
         try inlines(self.a, body.items, &spans);
         if (spans.items.len == 0) return;
         if (spans.items.len == 1 and plain(spans.items[0])) {
-            _ = try self.tree.append(parent, .{ .text = .{ .content = spans.items[0].text } });
+            try self.tree.append(parent, .{ .text = .{ .content = spans.items[0].text } });
         } else {
-            _ = try self.tree.append(parent, .{ .text = .{ .spans = spans.items } });
+            try self.tree.append(parent, .{ .text = .{ .spans = spans.items } });
         }
     }
 };

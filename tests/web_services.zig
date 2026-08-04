@@ -154,9 +154,9 @@ fn buildHome(ctx: ?*anyopaque, app: *h.App) !void {
         }
     }
     const root = app.tree.rootId();
-    _ = try app.tree.append(root, .{ .heading = .{ .content = "web services", .level = .h1 } });
-    _ = try app.tree.append(root, .{ .text = .{ .content = "The harness drives this app through the shipped live.js." } });
-    _ = try app.tree.append(root, .{ .button = .{
+    try app.tree.append(root, .{ .heading = .{ .content = "web services", .level = .h1 } });
+    try app.tree.append(root, .{ .text = .{ .content = "The harness drives this app through the shipped live.js." } });
+    try app.tree.append(root, .{ .button = .{
         .label = "Sign in",
         .on_press = .{ .ctx = state, .call = onSignIn },
     } });

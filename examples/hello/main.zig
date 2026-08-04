@@ -94,17 +94,17 @@ fn note(state: *State, text: []const u8) void {
 fn buildHome(ctx: ?*anyopaque, app: *h.App) !void {
     const state: *State = @ptrCast(@alignCast(ctx.?));
     const root = app.tree.rootId();
-    _ = try app.tree.append(root, .{ .heading = .{ .content = "Hello, nokre", .level = .h1 } });
-    _ = try app.tree.append(root, .{ .text = .{ .content = "Two bundled text fonts. One proportional, one mono. Press Tab, then Enter." } });
-    _ = try app.tree.append(root, .{ .divider = .{} });
+    try app.tree.append(root, .{ .heading = .{ .content = "Hello, nokre", .level = .h1 } });
+    try app.tree.append(root, .{ .text = .{ .content = "Two bundled text fonts. One proportional, one mono. Press Tab, then Enter." } });
+    try app.tree.append(root, .{ .divider = .{} });
 
-    _ = try app.tree.append(root, .{ .heading = .{ .content = "prose — IBM Plex Sans", .level = .h2 } });
-    _ = try app.tree.append(root, .{ .text = .{ .content = "The quick brown fox jumps over the lazy dog. 0123456789", .style = .{ .family = .prose } } });
+    try app.tree.append(root, .{ .heading = .{ .content = "prose — IBM Plex Sans", .level = .h2 } });
+    try app.tree.append(root, .{ .text = .{ .content = "The quick brown fox jumps over the lazy dog. 0123456789", .style = .{ .family = .prose } } });
 
-    _ = try app.tree.append(root, .{ .heading = .{ .content = "mono — JetBrains Mono", .level = .h2 } });
-    _ = try app.tree.append(root, .{ .text = .{ .content = "const answer = 42; // mono", .style = .{ .family = .mono } } });
+    try app.tree.append(root, .{ .heading = .{ .content = "mono — JetBrains Mono", .level = .h2 } });
+    try app.tree.append(root, .{ .text = .{ .content = "const answer = 42; // mono", .style = .{ .family = .mono } } });
 
-    _ = try app.tree.append(root, .{ .divider = .{} });
+    try app.tree.append(root, .{ .divider = .{} });
     // secure_store service: a boot read is synchronous — one call,
     // inside build, no loading frame (docs/services.md). Absence and an
     // unavailable store both read as zero: a fresh launch and a locked
@@ -116,8 +116,8 @@ fn buildHome(ctx: ?*anyopaque, app: *h.App) !void {
     }
     var count_buf: [32]u8 = undefined;
     const count_label = try std.fmt.bufPrint(&count_buf, "Pressed {d} times", .{state.count});
-    state.label_id = try app.tree.append(root, .{ .text = .{ .content = count_label } });
-    _ = try app.tree.append(root, .{ .button = .{
+    state.label_id = try app.tree.appendId(root, .{ .text = .{ .content = count_label } });
+    try app.tree.append(root, .{ .button = .{
         .label = "Increment",
         .on_press = .{ .ctx = state, .call = onIncrement },
     } });
@@ -126,13 +126,13 @@ fn buildHome(ctx: ?*anyopaque, app: *h.App) !void {
     // is drawn (or not) before anything is asked of the user. Registering
     // the handler inside `build` is what makes a tap that launched the
     // app land at all — it is buffered until this call.
-    _ = try app.tree.append(root, .{ .divider = .{} });
+    try app.tree.append(root, .{ .divider = .{} });
     if (N.available(app)) {
         N.setHandler(app, state, onNotification);
-        state.note_id = try app.tree.append(root, .{ .text = .{
+        state.note_id = try app.tree.appendId(root, .{ .text = .{
             .content = "Post a notification the OS draws, outside this window.",
         } });
-        _ = try app.tree.append(root, .{ .button = .{
+        try app.tree.append(root, .{ .button = .{
             .label = "Notify me",
             .on_press = .{ .ctx = state, .call = onNotify },
         } });
@@ -140,7 +140,7 @@ fn buildHome(ctx: ?*anyopaque, app: *h.App) !void {
         // The honest degrade: a Linux session with no daemon on the bus,
         // or a browser without the API. Draw no affordance rather than
         // one that fails.
-        _ = try app.tree.append(root, .{ .text = .{
+        try app.tree.append(root, .{ .text = .{
             .content = "This device has no notification system.",
         } });
     }
@@ -153,8 +153,8 @@ fn buildHome(ctx: ?*anyopaque, app: *h.App) !void {
     const pkg_line = try std.fmt.bufPrint(&pkg_buf, "{s} {s} ({d}) — {s}", .{
         pkg.id, pkg.version, pkg.build, @tagName(pkg.installer),
     });
-    _ = try app.tree.append(root, .{ .divider = .{} });
-    _ = try app.tree.append(root, .{ .text = .{ .content = pkg_line, .style = .{ .family = .mono } } });
+    try app.tree.append(root, .{ .divider = .{} });
+    try app.tree.append(root, .{ .text = .{ .content = pkg_line, .style = .{ .family = .mono } } });
 }
 
 pub fn main() !void {

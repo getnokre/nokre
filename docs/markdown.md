@@ -8,7 +8,7 @@ rendered in-app:
 ```zig
 const body = try fetchTerms(gpa); // bytes you did not write
 defer gpa.free(body);             // the tree copied them; free at once
-_ = try app.tree.append(root, .{ .document = .{
+try app.tree.append(root, .{ .document = .{
     .label = "Terms of Service",
     .source = body,
 } });

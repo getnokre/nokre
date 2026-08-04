@@ -40,8 +40,8 @@ fn focusRingRect(r: Rect) Rect {
 test "renderer clears to paper and draws all visible text" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    _ = try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Title" } });
-    _ = try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Save" } });
+    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Title" } });
+    try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Save" } });
 
     var rec = frameOf(&app);
     defer rec.deinit();
@@ -57,7 +57,7 @@ test "window overflow draws a root scroll indicator, quiet until scrolled" {
     defer app.deinit();
     var i: usize = 0;
     while (i < 20) : (i += 1) {
-        _ = try app.tree.append(app.tree.rootId(), .{ .text = .{ .content = "line" } });
+        try app.tree.append(app.tree.rootId(), .{ .text = .{ .content = "line" } });
     }
 
     var rec = frameOf(&app);
@@ -92,7 +92,7 @@ test "dark scheme swaps the ramp, not the steps" {
     // difference is which ramp the canvas was told to resolve through.
     var app = try App.init(testing.allocator, .{ .viewport = .{ .w = 400, .h = 400 }, .scheme = .dark, .services = .mocks() });
     defer app.deinit();
-    _ = try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Title" } });
+    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Title" } });
 
     var rec = frameOf(&app);
     defer rec.deinit();
@@ -135,7 +135,7 @@ test "auto scheme follows the system appearance" {
 test "focused button renders inverted with a focus ring" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const btn = try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Go" } });
+    const btn = try app.tree.appendId(app.tree.rootId(), .{ .button = .{ .label = "Go" } });
     app.focused = .of(btn);
 
     var rec = frameOf(&app);
@@ -163,7 +163,7 @@ test "focused button renders inverted with a focus ring" {
 test "pointer-origin focus draws no ring; keyboard focus draws it again" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const btn = try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Go" } });
+    const btn = try app.tree.appendId(app.tree.rootId(), .{ .button = .{ .label = "Go" } });
     app.performLayout();
     const r = app.tree.rectOf(btn);
 
@@ -191,7 +191,7 @@ test "a tapped text field keeps its caret and focused edge" {
     // field that looks dead while the keyboard is up.
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const input = try app.tree.append(app.tree.rootId(), .{ .text_input = .{ .label = "Name", .value = "hi" } });
+    const input = try app.tree.appendId(app.tree.rootId(), .{ .text_input = .{ .label = "Name", .value = "hi" } });
     app.performLayout();
     try app.tap(app.tree.rectOf(input).center());
     try testing.expect(!app.focus_visible);
@@ -223,7 +223,7 @@ fn hasStroke(rec: *const Recording, r: Rect) bool {
 test "glyph-form button draws the quiet glyph, no pill and no label text" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const btn = try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Next cycle", .icon = .chevron_right, .icon_only = true } });
+    const btn = try app.tree.appendId(app.tree.rootId(), .{ .button = .{ .label = "Next cycle", .icon = .chevron_right, .icon_only = true } });
     app.focused = .of(btn);
 
     var rec = frameOf(&app);
@@ -253,7 +253,7 @@ test "glyph-form button draws the quiet glyph, no pill and no label text" {
 test "a pill with an icon draws glyph and label inside the fill" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const btn = try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Add reminder", .icon = .alarm_clock_plus } });
+    const btn = try app.tree.appendId(app.tree.rootId(), .{ .button = .{ .label = "Add reminder", .icon = .alarm_clock_plus } });
 
     var rec = frameOf(&app);
     defer rec.deinit();
@@ -288,7 +288,7 @@ test "a pill with an icon draws glyph and label inside the fill" {
 test "secondary button draws an outline on the ambient, never a fill" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const btn = try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Cancel", .secondary = true } });
+    const btn = try app.tree.appendId(app.tree.rootId(), .{ .button = .{ .label = "Cancel", .secondary = true } });
 
     var rec = frameOf(&app);
     defer rec.deinit();
@@ -316,7 +316,7 @@ test "secondary button draws an outline on the ambient, never a fill" {
 
     // Same geometry as the filled primary: the pair aligns side by side.
     // (Same codepoint count under the fixed measurer → same intrinsic width.)
-    const primary = try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Delete" } });
+    const primary = try app.tree.appendId(app.tree.rootId(), .{ .button = .{ .label = "Delete" } });
     app.invalidate();
     app.performLayout();
     try testing.expectEqual(app.tree.rectOf(primary).w, r.w);
@@ -326,7 +326,7 @@ test "secondary button draws an outline on the ambient, never a fill" {
 test "the Google button overlays four arc glyphs in the mandated colors at one origin" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const btn = try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Sign in with Google", .provider = .google } });
+    const btn = try app.tree.appendId(app.tree.rootId(), .{ .button = .{ .label = "Sign in with Google", .provider = .google } });
 
     var rec = frameOf(&app);
     defer rec.deinit();
@@ -379,7 +379,7 @@ test "the dark appearance flips the Google button to its dark theme, G unchanged
     var app = try test_app.init(400, 400);
     defer app.deinit();
     app.setScheme(.dark);
-    const btn = try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Sign in with Google", .provider = .google } });
+    const btn = try app.tree.appendId(app.tree.rootId(), .{ .button = .{ .label = "Sign in with Google", .provider = .google } });
 
     var rec = frameOf(&app);
     defer rec.deinit();
@@ -404,7 +404,7 @@ test "the dark appearance flips the Google button to its dark theme, G unchanged
 test "a dimmed Google button draws the G as a silhouette, not in color" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    _ = try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Sign in with Google", .provider = .google, .disabled = true } });
+    try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Sign in with Google", .provider = .google, .disabled = true } });
 
     var rec = frameOf(&app);
     defer rec.deinit();
@@ -428,9 +428,9 @@ test "no frame without a Google button carries a colored op" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
     const root = app.tree.rootId();
-    _ = try app.tree.append(root, .{ .heading = .{ .content = "Sign in", .level = .h1 } });
-    _ = try app.tree.append(root, .{ .button = .{ .label = "Sign in with Apple", .provider = .apple } });
-    _ = try app.tree.append(root, .{ .button = .{ .label = "Continue", .icon = .chevron_right } });
+    try app.tree.append(root, .{ .heading = .{ .content = "Sign in", .level = .h1 } });
+    try app.tree.append(root, .{ .button = .{ .label = "Sign in with Apple", .provider = .apple } });
+    try app.tree.append(root, .{ .button = .{ .label = "Continue", .icon = .chevron_right } });
 
     var rec = frameOf(&app);
     defer rec.deinit();
@@ -441,7 +441,7 @@ test "no frame without a Google button carries a colored op" {
 test "disabled glyph-form button dims its glyph" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    _ = try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Next cycle", .icon = .chevron_right, .icon_only = true, .disabled = true } });
+    try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Next cycle", .icon = .chevron_right, .icon_only = true, .disabled = true } });
 
     var rec = frameOf(&app);
     defer rec.deinit();
@@ -459,10 +459,10 @@ test "disabled glyph-form button dims its glyph" {
 test "an in-progress button swaps its words for a centered ellipsis, at the size the words asked for" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const running = try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Save changes", .icon = .alarm_clock_plus, .in_progress = true } });
+    const running = try app.tree.appendId(app.tree.rootId(), .{ .button = .{ .label = "Save changes", .icon = .alarm_clock_plus, .in_progress = true } });
     // The same button at rest: the pill must measure identically, so
     // starting the work moves nothing on the screen.
-    const resting = try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Save changes", .icon = .alarm_clock_plus } });
+    const resting = try app.tree.appendId(app.tree.rootId(), .{ .button = .{ .label = "Save changes", .icon = .alarm_clock_plus } });
 
     var rec = frameOf(&app);
     defer rec.deinit();
@@ -504,10 +504,10 @@ test "an in-progress button swaps its words for a centered ellipsis, at the size
 test "a busy switch stands its track down for the ellipsis and keeps the row" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const busy = try app.tree.append(app.tree.rootId(), .{ .toggle = .{ .label = "Push to phone", .on = true, .in_progress = true } });
+    const busy = try app.tree.appendId(app.tree.rootId(), .{ .toggle = .{ .label = "Push to phone", .on = true, .in_progress = true } });
     // The same switch at rest: the row must measure identically, so the
     // flip moves nothing on the screen.
-    const resting = try app.tree.append(app.tree.rootId(), .{ .toggle = .{ .label = "Push to phone", .on = true } });
+    const resting = try app.tree.appendId(app.tree.rootId(), .{ .toggle = .{ .label = "Push to phone", .on = true } });
 
     var rec = frameOf(&app);
     defer rec.deinit();
@@ -545,7 +545,7 @@ test "a busy switch stands its track down for the ellipsis and keeps the row" {
 test "a busy checkbox does the same in its own narrower slot" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const busy = try app.tree.append(app.tree.rootId(), .{ .checkbox = .{ .label = "Weekly digest", .checked = true, .in_progress = true } });
+    const busy = try app.tree.appendId(app.tree.rootId(), .{ .checkbox = .{ .label = "Weekly digest", .checked = true, .in_progress = true } });
 
     var rec = frameOf(&app);
     defer rec.deinit();
@@ -570,8 +570,8 @@ test "a busy checkbox does the same in its own narrower slot" {
 test "a known percentage takes the ellipsis's slot without moving the pill" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const running = try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Save changes", .in_progress = true, .progress_percent = 60 } });
-    const resting = try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Save changes" } });
+    const running = try app.tree.appendId(app.tree.rootId(), .{ .button = .{ .label = "Save changes", .in_progress = true, .progress_percent = 60 } });
+    const resting = try app.tree.appendId(app.tree.rootId(), .{ .button = .{ .label = "Save changes" } });
 
     var rec = frameOf(&app);
     defer rec.deinit();
@@ -618,7 +618,7 @@ test "a known percentage takes the ellipsis's slot without moving the pill" {
 test "an outlined button at a known percentage reuses the standalone meter's tones" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const id = try app.tree.append(app.tree.rootId(), .{ .button = .{
+    const id = try app.tree.appendId(app.tree.rootId(), .{ .button = .{
         .label = "Cancel upload",
         .secondary = true,
         .in_progress = true,
@@ -680,7 +680,7 @@ test "design proof: a button's meter clears WCAG 1.4.11 on both grounds, both ap
 test "an in-progress glyph-form button stands the ellipsis where its glyph was" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const id = try app.tree.append(app.tree.rootId(), .{ .button = .{
+    const id = try app.tree.appendId(app.tree.rootId(), .{ .button = .{
         .label = "Next cycle",
         .icon = .chevron_right,
         .icon_only = true,
@@ -713,7 +713,7 @@ test "an in-progress glyph-form button stands the ellipsis where its glyph was" 
 test "obscured input draws one bullet per codepoint, never the value" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    _ = try app.tree.append(app.tree.rootId(), .{ .text_input = .{
+    try app.tree.append(app.tree.rootId(), .{ .text_input = .{
         .label = "Passphrase",
         .value = "héllo",
         .cursor = 3,
@@ -740,7 +740,7 @@ test "obscured input draws one bullet per codepoint, never the value" {
 test "copyable draws a short value whole, in mono" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    _ = try app.tree.append(app.tree.rootId(), .{ .copyable = .{ .label = "Code", .value = "XKCD-1234" } });
+    try app.tree.append(app.tree.rootId(), .{ .copyable = .{ .label = "Code", .value = "XKCD-1234" } });
 
     var rec = frameOf(&app);
     defer rec.deinit();
@@ -766,7 +766,7 @@ test "copyable elides a long value in the middle, clear of the copy glyph" {
     // value slot 139 (pads, glyph, gap off) — 14 of 46 codepoints
     // survive around the ellipsis, 7 a side.
     const value = "0123456789abcdefghijklmnopqrstuvwxyz0123456789";
-    _ = try app.tree.append(app.tree.rootId(), .{ .copyable = .{ .label = "Invite", .value = value } });
+    try app.tree.append(app.tree.rootId(), .{ .copyable = .{ .label = "Invite", .value = value } });
 
     var rec = frameOf(&app);
     defer rec.deinit();
@@ -802,7 +802,7 @@ test "copyable elides a long value in the middle, clear of the copy glyph" {
 test "an acknowledged copyable draws a check where its copy glyph sits" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const c = try app.tree.append(app.tree.rootId(), .{ .copyable = .{ .label = "Code", .value = "XKCD-1234" } });
+    const c = try app.tree.appendId(app.tree.rootId(), .{ .copyable = .{ .label = "Code", .value = "XKCD-1234" } });
 
     var before = frameOf(&app);
     defer before.deinit();
@@ -817,7 +817,7 @@ test "an acknowledged copyable draws a check where its copy glyph sits" {
 
     // The mark is the acknowledged element's alone: a second copyable
     // keeps its affordance while the first wears the check.
-    const other = try app.tree.append(app.tree.rootId(), .{ .copyable = .{ .label = "Link", .value = "nok.re/x" } });
+    const other = try app.tree.appendId(app.tree.rootId(), .{ .copyable = .{ .label = "Link", .value = "nok.re/x" } });
     _ = other;
     var both = frameOf(&app);
     defer both.deinit();
@@ -843,7 +843,7 @@ test "the mark's slot is reserved, so acknowledging never reflows the value" {
     // Long enough to elide: the elision budget is what would move if the
     // slot tracked the drawn glyph instead of the wider of the two.
     const value = "0123456789abcdefghijklmnopqrstuvwxyz0123456789";
-    const c = try app.tree.append(app.tree.rootId(), .{ .copyable = .{ .label = "Invite", .value = value } });
+    const c = try app.tree.appendId(app.tree.rootId(), .{ .copyable = .{ .label = "Invite", .value = value } });
 
     var before = frameOf(&app);
     defer before.deinit();
@@ -879,9 +879,9 @@ test "the mark's slot is reserved, so acknowledging never reflows the value" {
 test "tile group: labels and details drawn, route tiles carry a chevron" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const group = try app.tree.append(app.tree.rootId(), .{ .tile_group = .{} });
-    _ = try app.tree.append(group, .{ .tile = .{ .label = "Members", .route = "members" } });
-    _ = try app.tree.append(group, .{ .tile = .{ .label = "Sign out", .detail = "Ends the session", .on_press = .{ .call = noopPress } } });
+    const group = try app.tree.appendId(app.tree.rootId(), .{ .tile_group = .{} });
+    try app.tree.append(group, .{ .tile = .{ .label = "Members", .route = "members" } });
+    try app.tree.append(group, .{ .tile = .{ .label = "Sign out", .detail = "Ends the session", .on_press = .{ .call = noopPress } } });
 
     var rec = frameOf(&app);
     defer rec.deinit();
@@ -905,8 +905,8 @@ test "tile group: labels and details drawn, route tiles carry a chevron" {
 test "tile group description: dim small print below a border that excludes it" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const group = try app.tree.append(app.tree.rootId(), .{ .tile_group = .{ .description = "Personalize your experience" } });
-    _ = try app.tree.append(group, .{ .tile = .{ .label = "Personalization", .route = "personalization" } });
+    const group = try app.tree.appendId(app.tree.rootId(), .{ .tile_group = .{ .description = "Personalize your experience" } });
+    try app.tree.append(group, .{ .tile = .{ .label = "Personalization", .route = "personalization" } });
 
     var rec = frameOf(&app);
     defer rec.deinit();
@@ -944,7 +944,7 @@ test "tile group description: dim small print below a border that excludes it" {
 test "badge draws its label inside a grouping border" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const badge = try app.tree.append(app.tree.rootId(), .{ .badge = .{ .label = "Active" } });
+    const badge = try app.tree.appendId(app.tree.rootId(), .{ .badge = .{ .label = "Active" } });
 
     var rec = frameOf(&app);
     defer rec.deinit();
@@ -971,7 +971,7 @@ test "badge draws its label inside a grouping border" {
 test "meter draws its words above a proportionally filled track" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const meter = try app.tree.append(app.tree.rootId(), .{ .meter = .{ .label = "12 of 30 days", .value = 15, .max = 30 } });
+    const meter = try app.tree.appendId(app.tree.rootId(), .{ .meter = .{ .label = "12 of 30 days", .value = 15, .max = 30 } });
 
     var rec = frameOf(&app);
     defer rec.deinit();
@@ -1008,7 +1008,7 @@ test "meter draws its words above a proportionally filled track" {
 test "qr holds true ink on true paper in dark mode; its label follows the ramp" {
     var app = try App.init(testing.allocator, .{ .viewport = .{ .w = 400, .h = 400 }, .scheme = .dark, .services = .mocks() });
     defer app.deinit();
-    const qr = try app.tree.append(app.tree.rootId(), .{ .qr = .{
+    const qr = try app.tree.appendId(app.tree.rootId(), .{ .qr = .{
         .label = "Invite link",
         .value = "https://example.com/invite/XKCD-1234",
     } });
@@ -1052,9 +1052,9 @@ test "qr holds true ink on true paper in dark mode; its label follows the ramp" 
 test "scroll region clips its children" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const sr = try app.tree.append(app.tree.rootId(), .{ .scroll_region = .{ .height = 40 } });
-    _ = try app.tree.append(sr, .{ .text = .{ .content = "in" } });
-    _ = try app.tree.append(sr, .{ .text = .{ .content = "below the fold" } });
+    const sr = try app.tree.appendId(app.tree.rootId(), .{ .scroll_region = .{ .height = 40 } });
+    try app.tree.append(sr, .{ .text = .{ .content = "in" } });
+    try app.tree.append(sr, .{ .text = .{ .content = "below the fold" } });
 
     var rec = frameOf(&app);
     defer rec.deinit();
@@ -1080,9 +1080,9 @@ test "identical trees produce identical op streams" {
     for (&streams) |*slot| {
         var app = try test_app.init(640, 480);
         defer app.deinit();
-        const box = try app.tree.append(app.tree.rootId(), .{ .box = .{} });
-        _ = try app.tree.append(box, .{ .text = .{ .content = "deterministic output every time" } });
-        _ = try app.tree.append(app.tree.rootId(), .{ .toggle = .{ .label = "agree", .on = true } });
+        const box = try app.tree.appendId(app.tree.rootId(), .{ .box = .{} });
+        try app.tree.append(box, .{ .text = .{ .content = "deterministic output every time" } });
+        try app.tree.append(app.tree.rootId(), .{ .toggle = .{ .label = "agree", .on = true } });
 
         var rec = frameOf(&app);
         defer rec.deinit();
@@ -1094,7 +1094,7 @@ test "identical trees produce identical op streams" {
 test "segmented: selected segment is an elevated paper chip on the dimmed track" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    _ = try app.tree.append(app.tree.rootId(), .{ .segmented = .{
+    try app.tree.append(app.tree.rootId(), .{ .segmented = .{
         .label = "View",
         .options = &.{ "List", "Grid" },
         .selected = 1,
@@ -1128,7 +1128,7 @@ test "segmented: an overflowing track clips its chips and shows an indicator" {
     defer app.deinit();
     // 5 chips * 60px = 300 content in a 168px slot.
     const opts: []const []const u8 = &.{ "AAAA", "AAAA", "AAAA", "AAAA", "AAAA" };
-    const seg = try app.tree.append(app.tree.rootId(), .{ .segmented = .{ .label = "K", .options = opts } });
+    const seg = try app.tree.appendId(app.tree.rootId(), .{ .segmented = .{ .label = "K", .options = opts } });
 
     var rec = frameOf(&app);
     defer rec.deinit();
@@ -1189,9 +1189,9 @@ test "segmented: an overflowing track clips its chips and shows an indicator" {
 test "scroll region indicator: quiet at rest, emphasized while engaged" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const sr = try app.tree.append(app.tree.rootId(), .{ .scroll_region = .{ .height = 108 } });
+    const sr = try app.tree.appendId(app.tree.rootId(), .{ .scroll_region = .{ .height = 108 } });
     for (0..6) |_| {
-        _ = try app.tree.append(sr, .{ .text = .{ .content = "line" } });
+        try app.tree.append(sr, .{ .text = .{ .content = "line" } });
     }
     app.performLayout();
     const region_r = app.tree.rectOf(sr);
@@ -1227,13 +1227,13 @@ test "scroll region indicator: quiet at rest, emphasized while engaged" {
 }
 
 fn buildNavHome(_: ?*anyopaque, app: *App) anyerror!void {
-    _ = try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Home" } });
+    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Home" } });
 }
 
 test "sheet paints last over a paper dither scrim" {
     var app = try test_app.init(400, 600);
     defer app.deinit();
-    _ = try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Behind" } });
+    try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Behind" } });
     _ = try app.presentSheet("Options");
 
     var rec = frameOf(&app);
@@ -1473,7 +1473,7 @@ test "the section menu is a card, not a pane bleeding through the safe band" {
 test "a focused field takes over its outline instead of ringing it" {
     var app = try test_app.init(400, 200);
     defer app.deinit();
-    const input = try app.tree.append(app.tree.rootId(), .{ .text_input = .{ .label = "Name" } });
+    const input = try app.tree.appendId(app.tree.rootId(), .{ .text_input = .{ .label = "Name" } });
 
     // Unfocused: the g7 outline, one hairline.
     var rest = frameOf(&app);
@@ -1497,7 +1497,7 @@ test "a focused field takes over its outline instead of ringing it" {
 test "a focused pill's ring keeps clear of the fill it rings" {
     var app = try test_app.init(400, 200);
     defer app.deinit();
-    const btn = try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Save" } });
+    const btn = try app.tree.appendId(app.tree.rootId(), .{ .button = .{ .label = "Save" } });
     app.focused = .of(btn);
     app.performLayout();
 
@@ -1579,7 +1579,7 @@ test "focused nav item draws a hugging stroke, not the outset ring" {
 test "spanned text draws one run per segment, faces and inks resolved" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    _ = try app.tree.append(app.tree.rootId(), .{ .text = .{ .spans = &.{
+    try app.tree.append(app.tree.rootId(), .{ .text = .{ .spans = &.{
         .{ .text = "plain " },
         .{ .text = "bold ", .strong = true },
         .{ .text = "code", .code = true, .ink = .dark },
@@ -1626,7 +1626,7 @@ test "a spanned heading draws every run bold at the heading scale" {
     // weight while adding the slant.
     // Short enough to stay on one line, so each span is exactly one
     // draw call and the faces can be checked run by run.
-    _ = try app.tree.append(app.tree.rootId(), .{ .heading = .{ .level = .h1, .spans = &.{
+    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .level = .h1, .spans = &.{
         .{ .text = "Sync " },
         .{ .text = "failed", .strong = true },
         .{ .text = " now", .emphasis = true },
@@ -1649,11 +1649,11 @@ test "a spanned heading draws every run bold at the heading scale" {
 test "list markers are derived, right-aligned in their band, and mirror" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const list = try app.tree.append(app.tree.rootId(), .{ .list = .{ .ordered = true, .start = 9 } });
+    const list = try app.tree.appendId(app.tree.rootId(), .{ .list = .{ .ordered = true, .start = 9 } });
     var i: usize = 0;
     while (i < 2) : (i += 1) {
-        const item = try app.tree.append(list, .{ .list_item = .{} });
-        _ = try app.tree.append(item, .{ .text = .{ .content = "Step" } });
+        const item = try app.tree.appendId(list, .{ .list_item = .{} });
+        try app.tree.append(item, .{ .text = .{ .content = "Step" } });
     }
 
     var rec = frameOf(&app);
@@ -1696,7 +1696,7 @@ test "a code block draws one mono line per newline, unwrapped and clipped" {
     defer app.deinit();
     // The second line is 60 codepoints (540px) in a 168px span, so the
     // block overflows and must clip rather than wrap.
-    const cb = try app.tree.append(app.tree.rootId(), .{ .code_block = .{
+    const cb = try app.tree.appendId(app.tree.rootId(), .{ .code_block = .{
         .content = "short\n" ++ "e" ** 60,
     } });
 
@@ -1742,9 +1742,9 @@ test "a code block draws one mono line per newline, unwrapped and clipped" {
 test "a blockquote draws a leading rule the full height of what it quotes" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const quote = try app.tree.append(app.tree.rootId(), .{ .blockquote = .{} });
-    _ = try app.tree.append(quote, .{ .text = .{ .content = "One." } });
-    _ = try app.tree.append(quote, .{ .text = .{ .content = "Two." } });
+    const quote = try app.tree.appendId(app.tree.rootId(), .{ .blockquote = .{} });
+    try app.tree.append(quote, .{ .text = .{ .content = "One." } });
+    try app.tree.append(quote, .{ .text = .{ .content = "Two." } });
 
     var rec = frameOf(&app);
     defer rec.deinit();
@@ -1787,7 +1787,7 @@ test "an inline link underlines and rings every line it crosses" {
     defer app.deinit();
     // Wraps after "and", so the link lands on two lines (see the
     // matching app_test for the arithmetic).
-    const para = try app.tree.append(app.tree.rootId(), .{ .text = .{ .spans = &.{
+    const para = try app.tree.appendId(app.tree.rootId(), .{ .text = .{ .spans = &.{
         .{ .text = "Read the " },
         .{ .text = "terms and conditions", .route = "terms" },
         .{ .text = " now." },
@@ -1838,7 +1838,7 @@ test "an inline link underlines and rings every line it crosses" {
 test "a struck span is ruled through its middle, and measures the same" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const struck = try app.tree.append(app.tree.rootId(), .{ .text = .{ .spans = &.{
+    const struck = try app.tree.appendId(app.tree.rootId(), .{ .text = .{ .spans = &.{
         .{ .text = "Fees are " },
         .{ .text = "20", .strike = true },
         .{ .text = " 0 from May." },
@@ -1846,7 +1846,7 @@ test "a struck span is ruled through its middle, and measures the same" {
     // Strike is a drawn rule, not a face, so no bundled family needs a
     // struck variant and the run occupies exactly the width it would
     // without the mark.
-    const plain = try app.tree.append(app.tree.rootId(), .{ .text = .{ .content = "Fees are 20 0 from May." } });
+    const plain = try app.tree.appendId(app.tree.rootId(), .{ .text = .{ .content = "Fees are 20 0 from May." } });
     app.performLayout();
     try testing.expectEqual(app.tree.rectOf(plain).h, app.tree.rectOf(struck).h);
 
@@ -1888,7 +1888,7 @@ test "RTL paragraph right-aligns and reorders around Latin" {
     defer app.deinit();
     // Logical order: Arabic first, then the acronym. Visually the Latin
     // run sits leftmost and the line hugs the right margin.
-    const id = try app.tree.append(app.tree.rootId(), .{ .text = .{ .content = "سلام ABC" } });
+    const id = try app.tree.appendId(app.tree.rootId(), .{ .text = .{ .content = "سلام ABC" } });
 
     var rec = frameOf(&app);
     defer rec.deinit();
@@ -1917,7 +1917,7 @@ test "RTL paragraph right-aligns and reorders around Latin" {
 test "paragraph direction is per hard paragraph within one element" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const id = try app.tree.append(app.tree.rootId(), .{ .text = .{ .content = "Hello world\nسلام دنیا" } });
+    const id = try app.tree.appendId(app.tree.rootId(), .{ .text = .{ .content = "Hello world\nسلام دنیا" } });
 
     var rec = frameOf(&app);
     defer rec.deinit();
@@ -1939,7 +1939,7 @@ test "paragraph direction is per hard paragraph within one element" {
 test "labels reorder through the painter without their draw site knowing" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    _ = try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "سلام ABC" } });
+    try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "سلام ABC" } });
 
     var rec = frameOf(&app);
     defer rec.deinit();
@@ -1957,7 +1957,7 @@ test "labels reorder through the painter without their draw site knowing" {
 test "RTL input value right-aligns; caret maps visually" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const input = try app.tree.append(app.tree.rootId(), .{ .text_input = .{ .label = "نام" } });
+    const input = try app.tree.appendId(app.tree.rootId(), .{ .text_input = .{ .label = "نام" } });
     app.focused = .of(input);
     try app.dispatch(.{ .text = .{ .bytes = "سلام" } });
 
@@ -2000,10 +2000,10 @@ fn textX(rec: *const Recording, needle: []const u8) ?i32 {
 test "rtl: the select chevron draws at the leading (left) edge" {
     var ltr = try test_app.init(400, 400);
     defer ltr.deinit();
-    _ = try ltr.tree.append(ltr.tree.rootId(), .{ .select = .{ .label = "Language", .options = &.{ "English", "Deutsch" } } });
+    try ltr.tree.append(ltr.tree.rootId(), .{ .select = .{ .label = "Language", .options = &.{ "English", "Deutsch" } } });
     var rtl = try test_app.mirrored(400, 400);
     defer rtl.deinit();
-    _ = try rtl.tree.append(rtl.tree.rootId(), .{ .select = .{ .label = "Language", .options = &.{ "English", "Deutsch" } } });
+    try rtl.tree.append(rtl.tree.rootId(), .{ .select = .{ .label = "Language", .options = &.{ "English", "Deutsch" } } });
 
     var lrec = frameOf(&ltr);
     defer lrec.deinit();
@@ -2021,7 +2021,7 @@ test "rtl: the select chevron draws at the leading (left) edge" {
 test "rtl: the toggle track sits at the trailing edge, label leads" {
     var app = try test_app.mirrored(400, 400);
     defer app.deinit();
-    const tog = try app.tree.append(app.tree.rootId(), .{ .toggle = .{ .label = "Wifi" } });
+    const tog = try app.tree.appendId(app.tree.rootId(), .{ .toggle = .{ .label = "Wifi" } });
     var rec = frameOf(&app);
     defer rec.deinit();
 
@@ -2045,7 +2045,7 @@ test "rtl: the root scroll indicator hugs the left edge" {
     defer app.deinit();
     var i: usize = 0;
     while (i < 20) : (i += 1) {
-        _ = try app.tree.append(app.tree.rootId(), .{ .text = .{ .content = "line" } });
+        try app.tree.append(app.tree.rootId(), .{ .text = .{ .content = "line" } });
     }
     var rec = frameOf(&app);
     defer rec.deinit();
@@ -2073,8 +2073,8 @@ fn textGray(rec: *const Recording, needle: []const u8) ?Gray {
 test "an armed back gesture swaps the chevron for the arrow, and nothing else" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const back = try app.tree.append(app.tree.rootId(), .{ .back = .{} });
-    _ = try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Detail" } });
+    const back = try app.tree.appendId(app.tree.rootId(), .{ .back = .{} });
+    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Detail" } });
 
     var resting = frameOf(&app);
     defer resting.deinit();
@@ -2102,8 +2102,8 @@ test "an armed back gesture swaps the chevron for the arrow, and nothing else" {
 test "rtl: both of the back control's marks mirror with the chrome" {
     var app = try test_app.mirrored(400, 400);
     defer app.deinit();
-    _ = try app.tree.append(app.tree.rootId(), .{ .back = .{} });
-    _ = try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "جزئیات" } });
+    try app.tree.append(app.tree.rootId(), .{ .back = .{} });
+    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "جزئیات" } });
 
     var resting = frameOf(&app);
     defer resting.deinit();
@@ -2119,8 +2119,8 @@ test "rtl: both of the back control's marks mirror with the chrome" {
 test "rtl: a navigating tile's chevron mirrors to the left and points back" {
     var app = try test_app.mirrored(400, 400);
     defer app.deinit();
-    const group = try app.tree.append(app.tree.rootId(), .{ .tile_group = .{} });
-    _ = try app.tree.append(group, .{ .tile = .{ .label = "Account", .route = "account" } });
+    const group = try app.tree.appendId(app.tree.rootId(), .{ .tile_group = .{} });
+    try app.tree.append(group, .{ .tile = .{ .label = "Account", .route = "account" } });
     var rec = frameOf(&app);
     defer rec.deinit();
 
@@ -2136,9 +2136,9 @@ test "rtl: a navigating tile's chevron mirrors to the left and points back" {
 test "an overflowing button row draws three buttons and the control, not the rest" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const row = try app.tree.append(app.tree.rootId(), .{ .stack = .{ .axis = .horizontal, .gap = 8 } });
+    const row = try app.tree.appendId(app.tree.rootId(), .{ .stack = .{ .axis = .horizontal, .gap = 8 } });
     for ([_][]const u8{ "One", "Two", "Three", "Four", "Five" }) |label| {
-        _ = try app.tree.append(row, .{ .button = .{ .label = label } });
+        try app.tree.append(row, .{ .button = .{ .label = label } });
     }
 
     var rec = frameOf(&app);

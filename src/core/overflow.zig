@@ -61,7 +61,7 @@ pub fn syncOverflowChrome(app: *App) bool {
     var it = app.tree.dfs();
     while (it.next()) |id| {
         if (!needsControl(app, id)) continue;
-        _ = app.tree.append(id, .{ .more = .{ .label = app.chrome.more } }) catch continue;
+        app.tree.append(id, .{ .more = .{ .label = app.chrome.more } }) catch continue;
         changed = true;
     }
     // Same courtesy in the other direction, and checked last rather than
@@ -252,7 +252,7 @@ pub fn presentMoreSheet(app: *App, control: NodeId) !void {
         // whole element, so a button arrives as a button and a link as a
         // link, carrying everything it carried on the row.
         restated.setFolded(false);
-        _ = try app.tree.append(sheet, restated);
+        try app.tree.append(sheet, restated);
     }
 }
 

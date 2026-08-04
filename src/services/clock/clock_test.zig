@@ -117,9 +117,9 @@ const Notes = struct {
     fn build(ctx: ?*anyopaque, app: *App) anyerror!void {
         const self: *Notes = @ptrCast(@alignCast(ctx.?));
         const root = app.tree.rootId();
-        _ = try app.tree.append(root, .{ .heading = .{ .content = "Notes" } });
-        self.status = try app.tree.append(root, .{ .text = .{ .content = "Never saved" } });
-        _ = try app.tree.append(root, .{ .button = .{
+        try app.tree.append(root, .{ .heading = .{ .content = "Notes" } });
+        self.status = try app.tree.appendId(root, .{ .text = .{ .content = "Never saved" } });
+        try app.tree.append(root, .{ .button = .{
             .label = "Save",
             .on_press = .{ .ctx = self, .call = Notes.onSave },
         } });

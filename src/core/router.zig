@@ -413,7 +413,7 @@ pub const Router = struct {
         // convention). At depth 1 (a section root) there is nothing
         // to go back to and no control.
         if (self.stack.items.len > 1) {
-            _ = try app.tree.append(app.tree.rootId(), .{ .back = .{ .label = app.chrome.back } });
+            try app.tree.append(app.tree.rootId(), .{ .back = .{ .label = app.chrome.back } });
         }
         try def.build(app.ctx, app);
         // After the builder and before the invalidate, so the restored

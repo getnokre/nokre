@@ -14,7 +14,7 @@ const audit = audit_mod.audit;
 const collect = audit_mod.collect;
 
 fn buildAuditScreen(_: ?*anyopaque, app: *App) anyerror!void {
-    _ = try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Screen" } });
+    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Screen" } });
 }
 
 const nav_routes = [_]router_mod.RouteDef{
@@ -35,16 +35,16 @@ fn navApp(w: i32, h: i32) !App {
 test "audit passes a well-formed screen" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    _ = try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Home", .level = .h1 } });
-    _ = try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Section", .level = .h2 } });
-    _ = try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Act" } });
+    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Home", .level = .h1 } });
+    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Section", .level = .h2 } });
+    try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Act" } });
     try audit(&app);
 }
 
 test "audit flags labels emptied after construction" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const btn = try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Act" } });
+    const btn = try app.tree.appendId(app.tree.rootId(), .{ .button = .{ .label = "Act" } });
     app.tree.get(btn).?.button.label = "";
 
     var violations: std.ArrayList(Violation) = .empty;
@@ -57,7 +57,7 @@ test "audit flags labels emptied after construction" {
 test "audit flags copyable values emptied after construction" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const c = try app.tree.append(app.tree.rootId(), .{ .copyable = .{ .label = "Recovery code", .value = "XKCD-1234" } });
+    const c = try app.tree.appendId(app.tree.rootId(), .{ .copyable = .{ .label = "Recovery code", .value = "XKCD-1234" } });
     app.tree.get(c).?.copyable.value = "";
 
     var violations: std.ArrayList(Violation) = .empty;
@@ -70,7 +70,7 @@ test "audit flags copyable values emptied after construction" {
 test "audit flags a qr label emptied after construction" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const qr = try app.tree.append(app.tree.rootId(), .{ .qr = .{ .label = "Invite link", .value = "https://example.com" } });
+    const qr = try app.tree.appendId(app.tree.rootId(), .{ .qr = .{ .label = "Invite link", .value = "https://example.com" } });
     app.tree.get(qr).?.qr.label = "";
 
     var violations: std.ArrayList(Violation) = .empty;
@@ -83,7 +83,7 @@ test "audit flags a qr label emptied after construction" {
 test "audit flags text ink faded after construction" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const txt = try app.tree.append(app.tree.rootId(), .{ .text = .{ .content = "caption" } });
+    const txt = try app.tree.appendId(app.tree.rootId(), .{ .text = .{ .content = "caption" } });
     app.tree.get(txt).?.text.style.ink = .g8;
 
     var violations: std.ArrayList(Violation) = .empty;
@@ -96,7 +96,7 @@ test "audit flags text ink faded after construction" {
 test "audit flags skipped heading levels" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    _ = try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Deep", .level = .h3 } });
+    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Deep", .level = .h3 } });
 
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(testing.allocator);
@@ -110,11 +110,11 @@ test "audit tracks the previous heading, not the deepest ever seen" {
     defer app.deinit();
     // h1,h2,h3 walks down legally; the second h1 resets the outline, so
     // its h3 skips h2 even though an h3 already appeared.
-    _ = try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "A", .level = .h1 } });
-    _ = try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "B", .level = .h2 } });
-    _ = try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "C", .level = .h3 } });
-    _ = try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "D", .level = .h1 } });
-    const skipped = try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "E", .level = .h3 } });
+    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "A", .level = .h1 } });
+    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "B", .level = .h2 } });
+    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "C", .level = .h3 } });
+    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "D", .level = .h1 } });
+    const skipped = try app.tree.appendId(app.tree.rootId(), .{ .heading = .{ .content = "E", .level = .h3 } });
 
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(testing.allocator);
@@ -127,11 +127,11 @@ test "audit tracks the previous heading, not the deepest ever seen" {
 test "audit allows ascending any distance between headings" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    _ = try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "A", .level = .h1 } });
-    _ = try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "B", .level = .h2 } });
-    _ = try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "C", .level = .h3 } });
-    _ = try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "D", .level = .h1 } });
-    _ = try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "E", .level = .h2 } });
+    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "A", .level = .h1 } });
+    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "B", .level = .h2 } });
+    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "C", .level = .h3 } });
+    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "D", .level = .h1 } });
+    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "E", .level = .h2 } });
 
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(testing.allocator);
@@ -142,9 +142,9 @@ test "audit allows ascending any distance between headings" {
 test "audit flags duplicate interactive labels" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    _ = try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Delete" } });
-    _ = try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Delete" } });
-    _ = try app.tree.append(app.tree.rootId(), .{ .text = .{ .content = "Delete" } });
+    try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Delete" } });
+    try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Delete" } });
+    try app.tree.append(app.tree.rootId(), .{ .text = .{ .content = "Delete" } });
 
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(testing.allocator);
@@ -156,9 +156,9 @@ test "audit flags duplicate interactive labels" {
 test "two tiles naming different destinations may not share a label" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const group = try app.tree.append(app.tree.rootId(), .{ .tile_group = .{} });
-    _ = try app.tree.append(group, .{ .tile = .{ .label = "Docs", .route = "docs" } });
-    _ = try app.tree.append(group, .{ .tile = .{ .label = "Docs", .route = "roadmap" } });
+    const group = try app.tree.appendId(app.tree.rootId(), .{ .tile_group = .{} });
+    try app.tree.append(group, .{ .tile = .{ .label = "Docs", .route = "docs" } });
+    try app.tree.append(group, .{ .tile = .{ .label = "Docs", .route = "roadmap" } });
 
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(testing.allocator);
@@ -173,10 +173,10 @@ test "two doors to the same route are repetition, not ambiguity" {
     // The site's own shape: a routed link and a tile both saying "Docs"
     // about the docs route. Whichever is invoked lands the same place,
     // so no ambiguity exists to flag — across element kinds included.
-    _ = try app.tree.append(app.tree.rootId(), .{ .link = .{ .label = "Docs", .route = "docs" } });
-    const group = try app.tree.append(app.tree.rootId(), .{ .tile_group = .{} });
-    _ = try app.tree.append(group, .{ .tile = .{ .label = "Docs", .route = "docs" } });
-    _ = try app.tree.append(group, .{ .tile = .{ .label = "Docs", .route = "docs" } });
+    try app.tree.append(app.tree.rootId(), .{ .link = .{ .label = "Docs", .route = "docs" } });
+    const group = try app.tree.appendId(app.tree.rootId(), .{ .tile_group = .{} });
+    try app.tree.append(group, .{ .tile = .{ .label = "Docs", .route = "docs" } });
+    try app.tree.append(group, .{ .tile = .{ .label = "Docs", .route = "docs" } });
     try audit(&app);
 }
 
@@ -185,12 +185,12 @@ fn noopPress(_: ?*anyopaque) void {}
 test "duplicate labels over actions stay flagged, same function or not" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const group = try app.tree.append(app.tree.rootId(), .{ .tile_group = .{} });
+    const group = try app.tree.appendId(app.tree.rootId(), .{ .tile_group = .{} });
     // One function pointer, but each tile closes over its own context —
     // sameness cannot be read off the tree, so the exemption never
     // applies to actions.
-    _ = try app.tree.append(group, .{ .tile = .{ .label = "Reset", .on_press = .{ .call = noopPress } } });
-    _ = try app.tree.append(group, .{ .tile = .{ .label = "Reset", .on_press = .{ .call = noopPress } } });
+    try app.tree.append(group, .{ .tile = .{ .label = "Reset", .on_press = .{ .call = noopPress } } });
+    try app.tree.append(group, .{ .tile = .{ .label = "Reset", .on_press = .{ .call = noopPress } } });
 
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(testing.allocator);
@@ -202,8 +202,8 @@ test "duplicate labels over actions stay flagged, same function or not" {
 test "audit flags a tile label emptied after construction" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const group = try app.tree.append(app.tree.rootId(), .{ .tile_group = .{} });
-    const tile = try app.tree.append(group, .{ .tile = .{ .label = "Docs", .route = "docs" } });
+    const group = try app.tree.appendId(app.tree.rootId(), .{ .tile_group = .{} });
+    const tile = try app.tree.appendId(group, .{ .tile = .{ .label = "Docs", .route = "docs" } });
     app.tree.get(tile).?.tile.label = "";
 
     var violations: std.ArrayList(Violation) = .empty;
@@ -216,12 +216,12 @@ test "audit flags a tile label emptied after construction" {
 test "a duplicate behind an open sheet is inert, not ambiguous" {
     var app = try test_app.init(400, 600);
     defer app.deinit();
-    _ = try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Save" } });
+    try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Save" } });
     // The sheet's "Save" shares a label with the base layer's, but the
     // base layer is under the scrim: nothing there can be tapped or
     // spoken to, so only the sheet's copy is live — no ambiguity.
     const sheet = try app.presentSheet("Options");
-    _ = try app.tree.append(sheet, .{ .button = .{ .label = "Save" } });
+    try app.tree.append(sheet, .{ .button = .{ .label = "Save" } });
     try audit(&app);
 }
 
@@ -229,8 +229,8 @@ test "two duplicates within the open sheet still fail" {
     var app = try test_app.init(400, 600);
     defer app.deinit();
     const sheet = try app.presentSheet("Options");
-    _ = try app.tree.append(sheet, .{ .button = .{ .label = "Save" } });
-    _ = try app.tree.append(sheet, .{ .button = .{ .label = "Save" } });
+    try app.tree.append(sheet, .{ .button = .{ .label = "Save" } });
+    try app.tree.append(sheet, .{ .button = .{ .label = "Save" } });
 
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(testing.allocator);
@@ -242,8 +242,8 @@ test "two duplicates within the open sheet still fail" {
 test "a disabled duplicate is not ambiguous" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    _ = try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Retry" } });
-    _ = try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Retry", .disabled = true } });
+    try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Retry" } });
+    try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Retry", .disabled = true } });
     try audit(&app);
 }
 
@@ -254,7 +254,7 @@ test "audit passes a well-formed nav and segmented control" {
         .{ .route = "home", .icon = .house },
         .{ .route = "settings", .icon = .settings },
     });
-    _ = try app.tree.append(app.tree.rootId(), .{ .segmented = .{
+    try app.tree.append(app.tree.rootId(), .{ .segmented = .{
         .label = "View",
         .options = &.{ "List", "Grid" },
     } });
@@ -320,7 +320,7 @@ test "the off-roster marker is not a destination the nav count sees" {
 test "audit flags a segmented selection mutated out of range" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const seg = try app.tree.append(app.tree.rootId(), .{ .segmented = .{
+    const seg = try app.tree.appendId(app.tree.rootId(), .{ .segmented = .{
         .label = "View",
         .options = &.{ "List", "Grid" },
     } });
@@ -336,7 +336,7 @@ test "audit flags a segmented selection mutated out of range" {
 test "audit flags a radio group selection mutated out of range" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const rg = try app.tree.append(app.tree.rootId(), .{ .radio_group = .{
+    const rg = try app.tree.appendId(app.tree.rootId(), .{ .radio_group = .{
         .label = "Delivery",
         .options = &.{ "Email", "SMS" },
     } });
@@ -352,7 +352,7 @@ test "audit flags a radio group selection mutated out of range" {
 test "audit flags a select selection mutated out of range" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const sel = try app.tree.append(app.tree.rootId(), .{ .select = .{
+    const sel = try app.tree.appendId(app.tree.rootId(), .{ .select = .{
         .label = "Language",
         .options = &.{ "English", "Deutsch" },
     } });
@@ -414,7 +414,7 @@ test "audit flags a sheet whose only way out has work in progress" {
     try app.tree.remove(close);
     // A button that cannot be pressed until the work lands is no exit —
     // and the work landing is exactly when the user wants one.
-    const btn = try app.tree.append(sheet, .{ .button = .{ .label = "Apply", .in_progress = true } });
+    const btn = try app.tree.appendId(sheet, .{ .button = .{ .label = "Apply", .in_progress = true } });
 
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(testing.allocator);
@@ -432,7 +432,7 @@ test "audit flags a sheet whose only way out has work in progress" {
 test "audit flags a button progress mutated into nonsense" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const btn = try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Save", .in_progress = true, .progress_percent = 40 } });
+    const btn = try app.tree.appendId(app.tree.rootId(), .{ .button = .{ .label = "Save", .in_progress = true, .progress_percent = 40 } });
 
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(testing.allocator);
@@ -458,7 +458,7 @@ test "audit flags a button progress mutated into nonsense" {
 test "audit flags a meter mutated out of range" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const meter = try app.tree.append(app.tree.rootId(), .{ .meter = .{ .label = "12 of 30 days", .value = 12, .max = 30 } });
+    const meter = try app.tree.appendId(app.tree.rootId(), .{ .meter = .{ .label = "12 of 30 days", .value = 12, .max = 30 } });
     app.tree.get(meter).?.meter.value = 45;
 
     var violations: std.ArrayList(Violation) = .empty;
@@ -471,7 +471,7 @@ test "audit flags a meter mutated out of range" {
 test "audit flags a badge label emptied after construction" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const badge = try app.tree.append(app.tree.rootId(), .{ .badge = .{ .label = "Active" } });
+    const badge = try app.tree.appendId(app.tree.rootId(), .{ .badge = .{ .label = "Active" } });
     app.tree.get(badge).?.badge.label = "";
 
     var violations: std.ArrayList(Violation) = .empty;
@@ -500,7 +500,7 @@ test "audit flags a list with nothing in it" {
     defer app.deinit();
     // `append` cannot catch this: a list is built before its items
     // exist, so the whole-tree pass is the only place the rule can live.
-    const list = try app.tree.append(app.tree.rootId(), .{ .list = .{} });
+    const list = try app.tree.appendId(app.tree.rootId(), .{ .list = .{} });
 
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(testing.allocator);
@@ -508,15 +508,15 @@ test "audit flags a list with nothing in it" {
     try testing.expectEqual(@as(usize, 1), violations.items.len);
     try testing.expectEqual(Violation.Rule.empty_list, violations.items[0].rule);
 
-    const item = try app.tree.append(list, .{ .list_item = .{} });
-    _ = try app.tree.append(item, .{ .text = .{ .content = "One thing" } });
+    const item = try app.tree.appendId(list, .{ .list_item = .{} });
+    try app.tree.append(item, .{ .text = .{ .content = "One thing" } });
     try audit(&app);
 }
 
 test "audit flags a document whose label was emptied after construction" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const doc = try app.tree.append(app.tree.rootId(), .{ .document = .{
+    const doc = try app.tree.appendId(app.tree.rootId(), .{ .document = .{
         .label = "Terms",
         .source = "# Terms\n\nSome words.",
     } });
@@ -533,7 +533,7 @@ test "audit flags a document whose label was emptied after construction" {
 test "audit flags a code block emptied after construction" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const cb = try app.tree.append(app.tree.rootId(), .{ .code_block = .{ .content = "fn main() !void {}" } });
+    const cb = try app.tree.appendId(app.tree.rootId(), .{ .code_block = .{ .content = "fn main() !void {}" } });
     try audit(&app);
     app.tree.get(cb).?.code_block.content = "";
 
@@ -548,9 +548,9 @@ test "audit flags a code block emptied after construction" {
 // rhythm (24px line + 8px gap), so child i spans content y 32i..32i+24
 // and the glyph band inside each line is (4, 20).
 fn buildScrollFixture(app: *App, height: ?i32, lines: usize) !void {
-    const sr = try app.tree.append(app.tree.rootId(), .{ .scroll_region = .{ .height = height } });
+    const sr = try app.tree.appendId(app.tree.rootId(), .{ .scroll_region = .{ .height = height } });
     for (0..lines) |_| {
-        _ = try app.tree.append(sr, .{ .text = .{ .content = "line" } });
+        try app.tree.append(sr, .{ .text = .{ .content = "line" } });
     }
 }
 
@@ -621,13 +621,13 @@ test "audit passes an edge cutting mid-glyph, and offset does not fool it" {
 test "audit passes a straddling bordered box regardless of its interior" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const sr = try app.tree.append(app.tree.rootId(), .{ .scroll_region = .{ .height = 40 } });
+    const sr = try app.tree.appendId(app.tree.rootId(), .{ .scroll_region = .{ .height = 40 } });
     // Box (border + 12px padding around a 24px line: 50 tall) straddles
     // the edge at 40: its side borders visibly run off the clip.
-    const box = try app.tree.append(sr, .{ .box = .{} });
-    _ = try app.tree.append(box, .{ .text = .{ .content = "boxed" } });
+    const box = try app.tree.appendId(sr, .{ .box = .{} });
+    try app.tree.append(box, .{ .text = .{ .content = "boxed" } });
     for (0..4) |_| {
-        _ = try app.tree.append(sr, .{ .text = .{ .content = "line" } });
+        try app.tree.append(sr, .{ .text = .{ .content = "line" } });
     }
 
     var violations: std.ArrayList(Violation) = .empty;
@@ -659,7 +659,7 @@ test "audit exempts fill-height regions and content that fits" {
 test "audit flags span inks dimmed after construction" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const id = try app.tree.append(app.tree.rootId(), .{ .text = .{ .spans = &.{
+    const id = try app.tree.appendId(app.tree.rootId(), .{ .text = .{ .spans = &.{
         .{ .text = "plain " },
         .{ .text = "loud", .strong = true },
     } } });

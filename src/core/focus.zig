@@ -134,11 +134,11 @@ pub fn lastFocusable(tree: *const Tree, scope: NodeId) ?Focus {
 test "focus order is document order and wraps" {
     var tree = try Tree.init(std.testing.allocator);
     defer tree.deinit();
-    const a = try tree.append(tree.rootId(), .{ .button = .{ .label = "a" } });
-    _ = try tree.append(tree.rootId(), .{ .text = .{ .content = "not focusable" } });
-    const box = try tree.append(tree.rootId(), .{ .box = .{} });
-    const b = try tree.append(box, .{ .toggle = .{ .label = "b" } });
-    const c = try tree.append(tree.rootId(), .{ .link = .{ .label = "c", .route = "r" } });
+    const a = try tree.appendId(tree.rootId(), .{ .button = .{ .label = "a" } });
+    try tree.append(tree.rootId(), .{ .text = .{ .content = "not focusable" } });
+    const box = try tree.appendId(tree.rootId(), .{ .box = .{} });
+    const b = try tree.appendId(box, .{ .toggle = .{ .label = "b" } });
+    const c = try tree.appendId(tree.rootId(), .{ .link = .{ .label = "c", .route = "r" } });
 
     const root = tree.rootId();
     try std.testing.expect(firstFocusable(&tree, root).?.eql(.of(a)));
@@ -152,34 +152,34 @@ test "focus order is document order and wraps" {
 test "disabled buttons are skipped" {
     var tree = try Tree.init(std.testing.allocator);
     defer tree.deinit();
-    _ = try tree.append(tree.rootId(), .{ .button = .{ .label = "off", .disabled = true } });
-    const on = try tree.append(tree.rootId(), .{ .button = .{ .label = "on" } });
+    try tree.append(tree.rootId(), .{ .button = .{ .label = "off", .disabled = true } });
+    const on = try tree.appendId(tree.rootId(), .{ .button = .{ .label = "on" } });
     try std.testing.expect(firstFocusable(&tree, tree.rootId()).?.eql(.of(on)));
 }
 
 test "an in-progress button keeps its stop; a disabled one still loses it" {
     var tree = try Tree.init(std.testing.allocator);
     defer tree.deinit();
-    const running = try tree.append(tree.rootId(), .{ .button = .{ .label = "Save", .in_progress = true } });
-    const next = try tree.append(tree.rootId(), .{ .button = .{ .label = "Cancel" } });
+    const running = try tree.appendId(tree.rootId(), .{ .button = .{ .label = "Save", .in_progress = true } });
+    const next = try tree.appendId(tree.rootId(), .{ .button = .{ .label = "Cancel" } });
     // The user pressed it a moment ago — Tab must go on from here, not
     // from wherever a vanished stop would have thrown them.
     try std.testing.expect(firstFocusable(&tree, tree.rootId()).?.eql(.of(running)));
     try std.testing.expect(nextFocusable(&tree, tree.rootId(), .of(running)).?.eql(.of(next)));
 
     // Disabled is the stronger statement, and it wins when both are set.
-    _ = try tree.append(tree.rootId(), .{ .button = .{ .label = "Retry", .disabled = true, .in_progress = true } });
+    try tree.append(tree.rootId(), .{ .button = .{ .label = "Retry", .disabled = true, .in_progress = true } });
     try std.testing.expect(nextFocusable(&tree, tree.rootId(), .of(next)).?.eql(.of(running))); // wraps past it
 }
 
 test "a scope confines traversal to its subtree, wrapping inside it" {
     var tree = try Tree.init(std.testing.allocator);
     defer tree.deinit();
-    _ = try tree.append(tree.rootId(), .{ .button = .{ .label = "outside" } });
-    const sheet = try tree.append(tree.rootId(), .{ .sheet = .{ .title = "Filters" } });
-    const x = try tree.append(sheet, .{ .button = .{ .label = "x" } });
-    const y = try tree.append(sheet, .{ .toggle = .{ .label = "y" } });
-    _ = try tree.append(tree.rootId(), .{ .button = .{ .label = "after" } });
+    try tree.append(tree.rootId(), .{ .button = .{ .label = "outside" } });
+    const sheet = try tree.appendId(tree.rootId(), .{ .sheet = .{ .title = "Filters" } });
+    const x = try tree.appendId(sheet, .{ .button = .{ .label = "x" } });
+    const y = try tree.appendId(sheet, .{ .toggle = .{ .label = "y" } });
+    try tree.append(tree.rootId(), .{ .button = .{ .label = "after" } });
 
     try std.testing.expect(firstFocusable(&tree, sheet).?.eql(.of(x)));
     try std.testing.expect(nextFocusable(&tree, sheet, .of(x)).?.eql(.of(y)));
@@ -198,15 +198,15 @@ test "empty tree has no focus" {
 test "each link span is its own stop, in span order; styling spans are not" {
     var tree = try Tree.init(std.testing.allocator);
     defer tree.deinit();
-    const before = try tree.append(tree.rootId(), .{ .button = .{ .label = "before" } });
-    const para = try tree.append(tree.rootId(), .{ .text = .{ .spans = &.{
+    const before = try tree.appendId(tree.rootId(), .{ .button = .{ .label = "before" } });
+    const para = try tree.appendId(tree.rootId(), .{ .text = .{ .spans = &.{
         .{ .text = "See the " },
         .{ .text = "terms", .route = "terms" },
         .{ .text = " and the " },
         .{ .text = "policy", .route = "policy" },
         .{ .text = ", or read on.", .strong = true },
     } } });
-    const after = try tree.append(tree.rootId(), .{ .button = .{ .label = "after" } });
+    const after = try tree.appendId(tree.rootId(), .{ .button = .{ .label = "after" } });
 
     const root = tree.rootId();
     // The paragraph itself is never a stop — only its links are, and

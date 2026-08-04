@@ -35,7 +35,7 @@ test "tap activates a button through hit testing" {
     var counter: PressCounter = .{};
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const btn = try app.tree.append(app.tree.rootId(), .{ .button = .{
+    const btn = try app.tree.appendId(app.tree.rootId(), .{ .button = .{
         .label = "Go",
         .on_press = .{ .ctx = &counter, .call = PressCounter.onPress },
     } });
@@ -51,7 +51,7 @@ test "tap activates a button through hit testing" {
 // ---- press and release (WCAG 2.5.2; docs/introduction.md) ----
 
 fn pressCounterApp(app: *App, counter: *PressCounter) !NodeId {
-    const btn = try app.tree.append(app.tree.rootId(), .{ .button = .{
+    const btn = try app.tree.appendId(app.tree.rootId(), .{ .button = .{
         .label = "Go",
         .on_press = .{ .ctx = counter, .call = PressCounter.onPress },
     } });
@@ -136,7 +136,7 @@ test "only a press that began on the scrim dismisses a sheet" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
     const sheet = try app.presentSheet("Filter");
-    _ = try app.tree.append(sheet, .{ .toggle = .{ .label = "Only unread" } });
+    try app.tree.append(sheet, .{ .toggle = .{ .label = "Only unread" } });
     app.performLayout();
     const inside = app.tree.rectOf(sheet).center();
 
@@ -156,7 +156,7 @@ test "a button with work in progress takes no second press, and keeps the focus 
     var counter: PressCounter = .{};
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const btn = try app.tree.append(app.tree.rootId(), .{ .button = .{
+    const btn = try app.tree.appendId(app.tree.rootId(), .{ .button = .{
         .label = "Count primes",
         .on_press = .{ .ctx = &counter, .call = PressCounter.onPress },
     } });
@@ -187,8 +187,8 @@ test "tap activates an action tile" {
     var counter: PressCounter = .{};
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const group = try app.tree.append(app.tree.rootId(), .{ .tile_group = .{} });
-    const tile = try app.tree.append(group, .{ .tile = .{
+    const group = try app.tree.appendId(app.tree.rootId(), .{ .tile_group = .{} });
+    const tile = try app.tree.appendId(group, .{ .tile = .{
         .label = "Sign out",
         .on_press = .{ .ctx = &counter, .call = PressCounter.onPress },
     } });
@@ -203,7 +203,7 @@ test "tap activates an action tile" {
 test "tap on empty space does nothing" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    _ = try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Go" } });
+    try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Go" } });
     try app.tap(.{ .x = 399, .y = 399 });
     try testing.expect(app.focused == null);
 }
@@ -211,8 +211,8 @@ test "tap on empty space does nothing" {
 test "tab cycles focus, shift-tab reverses" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const a = try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "a" } });
-    const b = try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "b" } });
+    const a = try app.tree.appendId(app.tree.rootId(), .{ .button = .{ .label = "a" } });
+    const b = try app.tree.appendId(app.tree.rootId(), .{ .button = .{ .label = "b" } });
 
     try app.dispatch(.{ .key_down = .{ .key = .tab } });
     try testing.expect(app.focused.?.on(a));
@@ -227,7 +227,7 @@ test "tab cycles focus, shift-tab reverses" {
 test "enter activates focused toggle" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const tg = try app.tree.append(app.tree.rootId(), .{ .toggle = .{ .label = "opt" } });
+    const tg = try app.tree.appendId(app.tree.rootId(), .{ .toggle = .{ .label = "opt" } });
     app.focused = .of(tg);
     try app.dispatch(.{ .key_down = .{ .key = .enter } });
     try testing.expect(app.tree.getConst(tg).?.toggle.on);
@@ -238,7 +238,7 @@ test "enter activates focused toggle" {
 test "enter activates focused checkbox" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const cb = try app.tree.append(app.tree.rootId(), .{ .checkbox = .{ .label = "I agree" } });
+    const cb = try app.tree.appendId(app.tree.rootId(), .{ .checkbox = .{ .label = "I agree" } });
     app.focused = .of(cb);
     try app.dispatch(.{ .key_down = .{ .key = .enter } });
     try testing.expect(app.tree.getConst(cb).?.checkbox.checked);
@@ -249,7 +249,7 @@ test "enter activates focused checkbox" {
 test "typing edits the focused input with utf-8 aware cursor" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const input = try app.tree.append(app.tree.rootId(), .{ .text_input = .{ .label = "Name" } });
+    const input = try app.tree.appendId(app.tree.rootId(), .{ .text_input = .{ .label = "Name" } });
     app.focused = .of(input);
 
     try app.dispatch(.{ .text = .{ .bytes = "héllo" } });
@@ -276,8 +276,8 @@ test "space is text in a field and a key everywhere else" {
     var counter: PressCounter = .{};
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const input = try app.tree.append(app.tree.rootId(), .{ .text_input = .{ .label = "Note" } });
-    const btn = try app.tree.append(app.tree.rootId(), .{ .button = .{
+    const input = try app.tree.appendId(app.tree.rootId(), .{ .text_input = .{ .label = "Note" } });
+    const btn = try app.tree.appendId(app.tree.rootId(), .{ .button = .{
         .label = "Go",
         .on_press = .{ .ctx = &counter, .call = PressCounter.onPress },
     } });
@@ -301,7 +301,7 @@ test "space is text in a field and a key everywhere else" {
 test "ime composition updates then commits" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const input = try app.tree.append(app.tree.rootId(), .{ .text_input = .{ .label = "Search" } });
+    const input = try app.tree.appendId(app.tree.rootId(), .{ .text_input = .{ .label = "Search" } });
     app.focused = .of(input);
 
     try app.dispatch(.{ .ime = .start });
@@ -317,7 +317,7 @@ test "ime composition updates then commits" {
 test "text area: enter inserts a newline instead of submitting" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const ta = try app.tree.append(app.tree.rootId(), .{ .text_area = .{ .label = "Notes" } });
+    const ta = try app.tree.appendId(app.tree.rootId(), .{ .text_area = .{ .label = "Notes" } });
     app.focused = .of(ta);
 
     try app.dispatch(.{ .text = .{ .bytes = "ab" } });
@@ -333,7 +333,7 @@ test "text area: enter inserts a newline instead of submitting" {
 test "text area: arrows move the caret across lines; home/end bound the line" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const ta = try app.tree.append(app.tree.rootId(), .{ .text_area = .{ .label = "Notes", .value = "abc\nde" } });
+    const ta = try app.tree.appendId(app.tree.rootId(), .{ .text_area = .{ .label = "Notes", .value = "abc\nde" } });
     app.focused = .of(ta);
 
     // Caret after 'a'; down keeps the column and lands after 'd'.
@@ -361,7 +361,7 @@ test "text area: arrows move the caret across lines; home/end bound the line" {
 test "text area: ime composition commits through the shared protocol" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const ta = try app.tree.append(app.tree.rootId(), .{ .text_area = .{ .label = "Notes" } });
+    const ta = try app.tree.appendId(app.tree.rootId(), .{ .text_area = .{ .label = "Notes" } });
     app.focused = .of(ta);
 
     try app.dispatch(.{ .ime = .start });
@@ -376,10 +376,10 @@ test "text area: ime composition commits through the shared protocol" {
 test "scroll clamps to content bounds" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const sr = try app.tree.append(app.tree.rootId(), .{ .scroll_region = .{ .height = 50 } });
+    const sr = try app.tree.appendId(app.tree.rootId(), .{ .scroll_region = .{ .height = 50 } });
     var i: usize = 0;
     while (i < 10) : (i += 1) {
-        _ = try app.tree.append(sr, .{ .text = .{ .content = "line" } });
+        try app.tree.append(sr, .{ .text = .{ .content = "line" } });
     }
     app.performLayout();
     const at = app.tree.rectOf(sr).center();
@@ -396,10 +396,10 @@ test "scroll clamps to content bounds" {
 test "window content scrolls without a wrapper" {
     var app = try test_app.init(400, 100);
     defer app.deinit();
-    const first = try app.tree.append(app.tree.rootId(), .{ .text = .{ .content = "line" } });
+    const first = try app.tree.appendId(app.tree.rootId(), .{ .text = .{ .content = "line" } });
     var i: usize = 0;
     while (i < 20) : (i += 1) {
-        _ = try app.tree.append(app.tree.rootId(), .{ .text = .{ .content = "line" } });
+        try app.tree.append(app.tree.rootId(), .{ .text = .{ .content = "line" } });
     }
     app.performLayout();
     const y_before = app.tree.rectOf(first).y;
@@ -419,11 +419,11 @@ test "window content scrolls without a wrapper" {
 test "wheel over a non-overflowing region falls through to the window" {
     var app = try test_app.init(400, 100);
     defer app.deinit();
-    const sr = try app.tree.append(app.tree.rootId(), .{ .scroll_region = .{ .height = 40 } });
-    _ = try app.tree.append(sr, .{ .text = .{ .content = "fits" } });
+    const sr = try app.tree.appendId(app.tree.rootId(), .{ .scroll_region = .{ .height = 40 } });
+    try app.tree.append(sr, .{ .text = .{ .content = "fits" } });
     var i: usize = 0;
     while (i < 20) : (i += 1) {
-        _ = try app.tree.append(app.tree.rootId(), .{ .text = .{ .content = "line" } });
+        try app.tree.append(app.tree.rootId(), .{ .text = .{ .content = "line" } });
     }
     app.performLayout();
     const at = app.tree.rectOf(sr).center();
@@ -436,17 +436,17 @@ test "wheel over a non-overflowing region falls through to the window" {
 test "wheel past a region's limit chains to the enclosing scroller" {
     var app = try test_app.init(400, 100);
     defer app.deinit();
-    const outer = try app.tree.append(app.tree.rootId(), .{ .scroll_region = .{ .height = 80 } });
-    const inner = try app.tree.append(outer, .{ .scroll_region = .{ .height = 40 } });
+    const outer = try app.tree.appendId(app.tree.rootId(), .{ .scroll_region = .{ .height = 80 } });
+    const inner = try app.tree.appendId(outer, .{ .scroll_region = .{ .height = 40 } });
     var i: usize = 0;
     while (i < 10) : (i += 1) {
-        _ = try app.tree.append(inner, .{ .text = .{ .content = "line" } });
+        try app.tree.append(inner, .{ .text = .{ .content = "line" } });
     }
     while (i < 20) : (i += 1) {
-        _ = try app.tree.append(outer, .{ .text = .{ .content = "line" } });
+        try app.tree.append(outer, .{ .text = .{ .content = "line" } });
     }
     while (i < 40) : (i += 1) {
-        _ = try app.tree.append(app.tree.rootId(), .{ .text = .{ .content = "line" } });
+        try app.tree.append(app.tree.rootId(), .{ .text = .{ .content = "line" } });
     }
     app.performLayout();
 
@@ -466,13 +466,13 @@ test "wheel past a region's limit chains to the enclosing scroller" {
 test "a touch drag locks to the region under the initial touch" {
     var app = try test_app.init(400, 100);
     defer app.deinit();
-    const sr = try app.tree.append(app.tree.rootId(), .{ .scroll_region = .{ .height = 40 } });
+    const sr = try app.tree.appendId(app.tree.rootId(), .{ .scroll_region = .{ .height = 40 } });
     var i: usize = 0;
     while (i < 10) : (i += 1) {
-        _ = try app.tree.append(sr, .{ .text = .{ .content = "line" } });
+        try app.tree.append(sr, .{ .text = .{ .content = "line" } });
     }
     while (i < 30) : (i += 1) {
-        _ = try app.tree.append(app.tree.rootId(), .{ .text = .{ .content = "line" } });
+        try app.tree.append(app.tree.rootId(), .{ .text = .{ .content = "line" } });
     }
     app.performLayout();
     const at = app.tree.rectOf(sr).center();
@@ -499,11 +499,11 @@ test "a touch drag locks to the region under the initial touch" {
 test "a touch drag begun over a fitting region scrolls the window" {
     var app = try test_app.init(400, 100);
     defer app.deinit();
-    const sr = try app.tree.append(app.tree.rootId(), .{ .scroll_region = .{ .height = 40 } });
-    _ = try app.tree.append(sr, .{ .text = .{ .content = "fits" } });
+    const sr = try app.tree.appendId(app.tree.rootId(), .{ .scroll_region = .{ .height = 40 } });
+    try app.tree.append(sr, .{ .text = .{ .content = "fits" } });
     var i: usize = 0;
     while (i < 20) : (i += 1) {
-        _ = try app.tree.append(app.tree.rootId(), .{ .text = .{ .content = "line" } });
+        try app.tree.append(app.tree.rootId(), .{ .text = .{ .content = "line" } });
     }
     app.performLayout();
     const at = app.tree.rectOf(sr).center();
@@ -520,7 +520,7 @@ test "keyboard scrolls the window when nothing consumes the keys" {
     defer app.deinit();
     var i: usize = 0;
     while (i < 20) : (i += 1) {
-        _ = try app.tree.append(app.tree.rootId(), .{ .text = .{ .content = "line" } });
+        try app.tree.append(app.tree.rootId(), .{ .text = .{ .content = "line" } });
     }
 
     try app.dispatch(.{ .key_down = .{ .key = .down, .mods = .{} } });
@@ -536,13 +536,13 @@ test "keyboard scrolls the window when nothing consumes the keys" {
 test "keyboard does not scroll the window under an open picker" {
     var app = try test_app.init(400, 100);
     defer app.deinit();
-    const sel = try app.tree.append(app.tree.rootId(), .{ .select = .{
+    const sel = try app.tree.appendId(app.tree.rootId(), .{ .select = .{
         .label = "View",
         .options = &.{ "List", "Grid" },
     } });
     var i: usize = 0;
     while (i < 20) : (i += 1) {
-        _ = try app.tree.append(app.tree.rootId(), .{ .text = .{ .content = "line" } });
+        try app.tree.append(app.tree.rootId(), .{ .text = .{ .content = "line" } });
     }
     app.performLayout();
     try app.tap(app.tree.rectOf(sel).center());
@@ -559,12 +559,12 @@ test "keyboard does not scroll the window under an open picker" {
 test "tab scrolls the focused element into view" {
     var app = try test_app.init(400, 100);
     defer app.deinit();
-    const a = try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "A" } });
+    const a = try app.tree.appendId(app.tree.rootId(), .{ .button = .{ .label = "A" } });
     var i: usize = 0;
     while (i < 20) : (i += 1) {
-        _ = try app.tree.append(app.tree.rootId(), .{ .text = .{ .content = "filler" } });
+        try app.tree.append(app.tree.rootId(), .{ .text = .{ .content = "filler" } });
     }
-    const b = try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "B" } });
+    const b = try app.tree.appendId(app.tree.rootId(), .{ .button = .{ .label = "B" } });
 
     try app.dispatch(.{ .key_down = .{ .key = .tab, .mods = .{} } });
     try testing.expect(app.focused.?.on(a));
@@ -589,11 +589,11 @@ const CtxData = struct { built: u32 = 0 };
 fn buildHome(ctx: ?*anyopaque, app: *App) anyerror!void {
     const data: *CtxData = @ptrCast(@alignCast(ctx.?));
     data.built += 1;
-    _ = try app.tree.append(app.tree.rootId(), .{ .link = .{ .label = "Details", .route = "details" } });
+    try app.tree.append(app.tree.rootId(), .{ .link = .{ .label = "Details", .route = "details" } });
 }
 
 fn buildDetails(_: ?*anyopaque, app: *App) anyerror!void {
-    _ = try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Details" } });
+    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Details" } });
 }
 
 const home_and_details = [_]router_mod.RouteDef{
@@ -687,8 +687,8 @@ fn backControl(app: *App) ?NodeId {
 fn buildTileHome(ctx: ?*anyopaque, app: *App) anyerror!void {
     const data: *CtxData = @ptrCast(@alignCast(ctx.?));
     data.built += 1;
-    const group = try app.tree.append(app.tree.rootId(), .{ .tile_group = .{} });
-    _ = try app.tree.append(group, .{ .tile = .{ .label = "Details", .route = "details" } });
+    const group = try app.tree.appendId(app.tree.rootId(), .{ .tile_group = .{} });
+    try app.tree.append(group, .{ .tile = .{ .label = "Details", .route = "details" } });
 }
 
 test "tile with a route navigates like a link" {
@@ -784,7 +784,7 @@ const crowded_nav = [_]nav_mod.Destination{
 };
 
 fn buildNavSection(_: ?*anyopaque, app: *App) anyerror!void {
-    _ = try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Section" } });
+    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Section" } });
 }
 
 const crowded_routes = [_]router_mod.RouteDef{
@@ -1188,7 +1188,7 @@ test "a nav wide enough for its row asks for nothing" {
 test "a select still opens on release and is chosen by a second press" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const sel = try app.tree.append(app.tree.rootId(), .{ .select = .{
+    const sel = try app.tree.appendId(app.tree.rootId(), .{ .select = .{
         .label = "View",
         .options = &.{ "List", "Grid" },
     } });
@@ -1684,7 +1684,7 @@ test "the roster's labels are the route table's titles" {
 // ---- what leaves the router: the current route (docs/routing.md) ----
 
 fn buildLeaf(_: ?*anyopaque, app: *App) anyerror!void {
-    _ = try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Leaf" } });
+    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Leaf" } });
 }
 
 const observed_routes = [_]router_mod.RouteDef{
@@ -1757,7 +1757,7 @@ test "every change announces the screen on top, with the motion that made it" {
 fn buildTicket(_: ?*anyopaque, app: *App) anyerror!void {
     // A parameterized screen reads its own identity, not app state —
     // which is what makes the entry, not the app, remember it.
-    _ = try app.tree.append(app.tree.rootId(), .{
+    try app.tree.append(app.tree.rootId(), .{
         .heading = .{ .content = app.routeArg(0) orelse "?" },
     });
 }
@@ -1841,15 +1841,15 @@ fn buildScrolled(ctx: ?*anyopaque, app: *App) anyerror!void {
     const c: *ScrollCtx = @ptrCast(@alignCast(ctx.?));
     var r: usize = 0;
     while (r < c.regions) : (r += 1) {
-        const region = try app.tree.append(app.tree.rootId(), .{ .scroll_region = .{ .height = 60 } });
+        const region = try app.tree.appendId(app.tree.rootId(), .{ .scroll_region = .{ .height = 60 } });
         var i: usize = 0;
         while (i < 20) : (i += 1) {
-            _ = try app.tree.append(region, .{ .text = .{ .content = "row" } });
+            try app.tree.append(region, .{ .text = .{ .content = "row" } });
         }
     }
     var i: usize = 0;
     while (i < c.rows) : (i += 1) {
-        _ = try app.tree.append(app.tree.rootId(), .{ .text = .{ .content = "line" } });
+        try app.tree.append(app.tree.rootId(), .{ .text = .{ .content = "line" } });
     }
 }
 
@@ -2285,7 +2285,7 @@ test "tap on content scrolled under the bottom bar hits the nav item" {
     try app.navigate("home");
     // Overflowing content: its rects extend into the bar region.
     for (0..20) |_| {
-        _ = try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "filler" } });
+        try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "filler" } });
     }
     app.performLayout();
 
@@ -2308,7 +2308,7 @@ test "segmented: arrows move the selection and commit" {
     var ctx: SegCtx = .{};
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const seg = try app.tree.append(app.tree.rootId(), .{ .segmented = .{
+    const seg = try app.tree.appendId(app.tree.rootId(), .{ .segmented = .{
         .label = "View",
         .options = &.{ "List", "Grid", "Map" },
         .on_select = .{ .ctx = &ctx, .call = SegCtx.onSelect },
@@ -2331,7 +2331,7 @@ test "segmented: tap selects the segment under the point" {
     var ctx: SegCtx = .{};
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const seg = try app.tree.append(app.tree.rootId(), .{ .segmented = .{
+    const seg = try app.tree.appendId(app.tree.rootId(), .{ .segmented = .{
         .label = "View",
         .options = &.{ "List", "Grid" },
         .on_select = .{ .ctx = &ctx, .call = SegCtx.onSelect },
@@ -2355,7 +2355,7 @@ test "segmented: arrows scroll an overflowing track to reveal the selection" {
     defer app.deinit();
     // 5 chips * 60px = 300 content in a 168px slot (164 inside the pads).
     const opts: []const []const u8 = &.{ "AAAA", "AAAA", "AAAA", "AAAA", "AAAA" };
-    const seg = try app.tree.append(app.tree.rootId(), .{ .segmented = .{ .label = "K", .options = opts } });
+    const seg = try app.tree.appendId(app.tree.rootId(), .{ .segmented = .{ .label = "K", .options = opts } });
     app.focused = .of(seg);
 
     for (0..4) |_| try app.dispatch(.{ .key_down = .{ .key = .right } });
@@ -2374,7 +2374,7 @@ fn buildLinkHome(_: ?*anyopaque, app: *App) anyerror!void {
     // greedy wrap breaks after "and", so the link straddles two lines:
     //   line 1 "Read the terms and"  — link bytes 9..18
     //   line 2 "conditions now."     — link bytes 19..29
-    _ = try app.tree.append(app.tree.rootId(), .{ .text = .{ .spans = &.{
+    try app.tree.append(app.tree.rootId(), .{ .text = .{ .spans = &.{
         .{ .text = "Read the " },
         .{ .text = "terms and conditions", .route = "terms" },
         .{ .text = " now." },
@@ -2382,7 +2382,7 @@ fn buildLinkHome(_: ?*anyopaque, app: *App) anyerror!void {
 }
 
 fn buildLinkTerms(_: ?*anyopaque, app: *App) anyerror!void {
-    _ = try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Terms" } });
+    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Terms" } });
 }
 
 const link_routes = [_]router_mod.RouteDef{
@@ -2451,7 +2451,7 @@ test "an inline link to an unknown route fails where every other route does" {
         .services = .mocks(),
     });
     defer app.deinit();
-    const para = try app.tree.append(app.tree.rootId(), .{ .text = .{ .spans = &.{
+    const para = try app.tree.appendId(app.tree.rootId(), .{ .text = .{ .spans = &.{
         .{ .text = "Go ", .route = "nowhere" },
         .{ .text = "please." },
     } } });
@@ -2470,7 +2470,7 @@ test "an external link span hands its URL to the browser and navigates nowhere" 
     });
     defer app.deinit();
     try app.navigate("home");
-    const para = try app.tree.append(app.tree.rootId(), .{ .text = .{ .spans = &.{
+    const para = try app.tree.appendId(app.tree.rootId(), .{ .text = .{ .spans = &.{
         .{ .text = "Mail " },
         .{ .text = "us", .external = "mailto:help@example.com" },
         .{ .text = "." },
@@ -2496,7 +2496,7 @@ test "an external link element activates through the open_url service" {
     });
     defer app.deinit();
     try app.navigate("home");
-    const link = try app.tree.append(app.tree.rootId(), .{ .link = .{
+    const link = try app.tree.appendId(app.tree.rootId(), .{ .link = .{
         .label = "Full terms",
         .external = "https://example.com/terms",
     } });
@@ -2519,7 +2519,7 @@ test "rtl: an inline link mirrors with the paragraph it sits in" {
     defer app.deinit();
     // A Persian paragraph aligns by its own bytes, so its line hangs
     // from the right margin and the runs read right to left.
-    const para = try app.tree.append(app.tree.rootId(), .{ .text = .{ .spans = &.{
+    const para = try app.tree.appendId(app.tree.rootId(), .{ .text = .{ .spans = &.{
         .{ .text = "سلام " },
         .{ .text = "شرایط", .route = "terms" },
         .{ .text = " را بخوانید" },
@@ -2547,9 +2547,9 @@ test "code block: focusable, arrows walk it sideways, up/down still page" {
     var app = try test_app.init(200, 100);
     defer app.deinit();
     // 60 codepoints at 9px = 540 in a 168px span.
-    const cb = try app.tree.append(app.tree.rootId(), .{ .code_block = .{ .content = "z" ** 60 } });
+    const cb = try app.tree.appendId(app.tree.rootId(), .{ .code_block = .{ .content = "z" ** 60 } });
     for (0..40) |_| {
-        _ = try app.tree.append(app.tree.rootId(), .{ .text = .{ .content = "filler" } });
+        try app.tree.append(app.tree.rootId(), .{ .text = .{ .content = "filler" } });
     }
     app.performLayout();
     // It scrolls, so it is a tab stop — but it never activates.
@@ -2574,9 +2574,9 @@ test "code block: focusable, arrows walk it sideways, up/down still page" {
 test "code block: horizontal wheel scrolls it; vertical passes through" {
     var app = try test_app.init(200, 400);
     defer app.deinit();
-    const cb = try app.tree.append(app.tree.rootId(), .{ .code_block = .{ .content = "q" ** 60 } });
+    const cb = try app.tree.appendId(app.tree.rootId(), .{ .code_block = .{ .content = "q" ** 60 } });
     for (0..40) |_| {
-        _ = try app.tree.append(app.tree.rootId(), .{ .text = .{ .content = "filler" } });
+        try app.tree.append(app.tree.rootId(), .{ .text = .{ .content = "filler" } });
     }
     app.performLayout();
     const at = app.tree.rectOf(cb).center();
@@ -2596,7 +2596,7 @@ test "code block: horizontal wheel scrolls it; vertical passes through" {
 test "code block: the offset does not mirror, because the lines do not" {
     var app = try test_app.mirrored(200, 400);
     defer app.deinit();
-    const cb = try app.tree.append(app.tree.rootId(), .{ .code_block = .{ .content = "w" ** 60 } });
+    const cb = try app.tree.appendId(app.tree.rootId(), .{ .code_block = .{ .content = "w" ** 60 } });
     app.performLayout();
 
     // Verbatim content is defined by its own bytes (the QR rule), so a
@@ -2611,7 +2611,7 @@ test "code block: the offset does not mirror, because the lines do not" {
 test "rtl: setDirection mirrors an intrinsic block and re-lays out" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const btn = try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "OK" } });
+    const btn = try app.tree.appendId(app.tree.rootId(), .{ .button = .{ .label = "OK" } });
     app.performLayout();
     try testing.expectEqual(@as(i32, 16), app.tree.rectOf(btn).x); // left in LTR
 
@@ -2629,7 +2629,7 @@ test "rtl: setDirection mirrors an intrinsic block and re-lays out" {
 test "rtl: an app can be constructed right-to-left up front" {
     var app = try test_app.mirrored(400, 400);
     defer app.deinit();
-    const btn = try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "OK" } });
+    const btn = try app.tree.appendId(app.tree.rootId(), .{ .button = .{ .label = "OK" } });
     app.performLayout();
     try testing.expectEqual(@as(i32, 400 - 16), app.tree.rectOf(btn).right());
 }
@@ -2638,7 +2638,7 @@ test "rtl: segmented arrows follow the pressed direction, not the index" {
     var ctx: SegCtx = .{};
     var app = try test_app.mirrored(400, 400);
     defer app.deinit();
-    const seg = try app.tree.append(app.tree.rootId(), .{ .segmented = .{
+    const seg = try app.tree.appendId(app.tree.rootId(), .{ .segmented = .{
         .label = "View",
         .options = &.{ "List", "Grid", "Map" },
         .on_select = .{ .ctx = &ctx, .call = SegCtx.onSelect },
@@ -2661,7 +2661,7 @@ test "rtl: radio arrows mirror horizontally but keep the vertical axis" {
     var ctx: SegCtx = .{};
     var app = try test_app.mirrored(400, 400);
     defer app.deinit();
-    const rg = try app.tree.append(app.tree.rootId(), .{ .radio_group = .{
+    const rg = try app.tree.appendId(app.tree.rootId(), .{ .radio_group = .{
         .label = "Delivery",
         .options = &.{ "Email", "SMS", "None" },
         .on_select = .{ .ctx = &ctx, .call = SegCtx.onSelect },
@@ -2683,7 +2683,7 @@ test "rtl: a right-edge tap on segmented selects the first (rightmost) chip" {
     var ctx: SegCtx = .{};
     var app = try test_app.mirrored(400, 400);
     defer app.deinit();
-    const seg = try app.tree.append(app.tree.rootId(), .{ .segmented = .{
+    const seg = try app.tree.appendId(app.tree.rootId(), .{ .segmented = .{
         .label = "View",
         .options = &.{ "List", "Grid" },
         .on_select = .{ .ctx = &ctx, .call = SegCtx.onSelect },
@@ -2702,7 +2702,7 @@ test "rtl: the sheet close control pins to the left corner" {
     var app = try test_app.mirrored(400, 600);
     defer app.deinit();
     const sheet = try app.presentSheet("Options");
-    _ = try app.tree.append(sheet, .{ .text = .{ .content = "body" } });
+    try app.tree.append(sheet, .{ .text = .{ .content = "body" } });
     app.performLayout();
 
     var it = app.tree.children(sheet);
@@ -2744,7 +2744,7 @@ test "segmented: horizontal scroll moves the track without changing the selectio
     var app = try test_app.init(200, 400);
     defer app.deinit();
     const opts: []const []const u8 = &.{ "AAAA", "AAAA", "AAAA", "AAAA", "AAAA" };
-    const seg = try app.tree.append(app.tree.rootId(), .{ .segmented = .{ .label = "K", .options = opts } });
+    const seg = try app.tree.appendId(app.tree.rootId(), .{ .segmented = .{ .label = "K", .options = opts } });
     app.performLayout();
     const at = app.tree.rectOf(seg).center();
 
@@ -2768,7 +2768,7 @@ test "segmented: a touch drag keeps the track after the finger drifts off it" {
     var app = try test_app.init(200, 400);
     defer app.deinit();
     const opts: []const []const u8 = &.{ "AAAA", "AAAA", "AAAA", "AAAA", "AAAA" };
-    const seg = try app.tree.append(app.tree.rootId(), .{ .segmented = .{ .label = "K", .options = opts } });
+    const seg = try app.tree.appendId(app.tree.rootId(), .{ .segmented = .{ .label = "K", .options = opts } });
     app.performLayout();
     const at = app.tree.rectOf(seg).center();
 
@@ -2783,9 +2783,9 @@ test "scroll: the dominant axis wins and the minor one is dropped" {
     var app = try test_app.init(200, 100);
     defer app.deinit();
     const opts: []const []const u8 = &.{ "AAAA", "AAAA", "AAAA", "AAAA", "AAAA" };
-    const seg = try app.tree.append(app.tree.rootId(), .{ .segmented = .{ .label = "K", .options = opts } });
+    const seg = try app.tree.appendId(app.tree.rootId(), .{ .segmented = .{ .label = "K", .options = opts } });
     // Tall filler so the window itself can scroll vertically.
-    for (0..20) |_| _ = try app.tree.append(app.tree.rootId(), .{ .text = .{ .content = "Filler" } });
+    for (0..20) |_| try app.tree.append(app.tree.rootId(), .{ .text = .{ .content = "Filler" } });
     app.performLayout();
     const at = app.tree.rectOf(seg).center();
 
@@ -2804,7 +2804,7 @@ test "segmented: tap honors the scroll offset" {
     var app = try test_app.init(200, 400);
     defer app.deinit();
     const opts: []const []const u8 = &.{ "AAAA", "AAAA", "AAAA", "AAAA", "AAAA" };
-    const seg = try app.tree.append(app.tree.rootId(), .{ .segmented = .{
+    const seg = try app.tree.appendId(app.tree.rootId(), .{ .segmented = .{
         .label = "K",
         .options = opts,
         .selected = 4,
@@ -2824,7 +2824,7 @@ test "radio group: arrows move the selection and commit" {
     var ctx: SegCtx = .{};
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const rg = try app.tree.append(app.tree.rootId(), .{ .radio_group = .{
+    const rg = try app.tree.appendId(app.tree.rootId(), .{ .radio_group = .{
         .label = "Delivery",
         .options = &.{ "Email", "SMS", "None" },
         .on_select = .{ .ctx = &ctx, .call = SegCtx.onSelect },
@@ -2853,7 +2853,7 @@ test "radio group: tap selects the row under the point" {
     var ctx: SegCtx = .{};
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const rg = try app.tree.append(app.tree.rootId(), .{ .radio_group = .{
+    const rg = try app.tree.appendId(app.tree.rootId(), .{ .radio_group = .{
         .label = "Delivery",
         .options = &.{ "Email", "SMS" },
         .on_select = .{ .ctx = &ctx, .call = SegCtx.onSelect },
@@ -2878,7 +2878,7 @@ test "radio group: tap selects the row under the point" {
 test "select: enter opens the picker focused on the current choice" {
     var app = try test_app.init(400, 600);
     defer app.deinit();
-    const sel = try app.tree.append(app.tree.rootId(), .{ .select = .{
+    const sel = try app.tree.appendId(app.tree.rootId(), .{ .select = .{
         .label = "Language",
         .options = &.{ "English", "Deutsch", "Français" },
         .selected = 1,
@@ -2897,7 +2897,7 @@ test "picker: escape closes without committing and restores focus" {
     var ctx: SegCtx = .{};
     var app = try test_app.init(400, 600);
     defer app.deinit();
-    const sel = try app.tree.append(app.tree.rootId(), .{ .select = .{
+    const sel = try app.tree.appendId(app.tree.rootId(), .{ .select = .{
         .label = "Language",
         .options = &.{ "English", "Deutsch" },
         .on_select = .{ .ctx = &ctx, .call = SegCtx.onSelect },
@@ -2917,7 +2917,7 @@ test "picker: activating a row commits the choice and closes" {
     var ctx: SegCtx = .{};
     var app = try test_app.init(400, 600);
     defer app.deinit();
-    const sel = try app.tree.append(app.tree.rootId(), .{ .select = .{
+    const sel = try app.tree.appendId(app.tree.rootId(), .{ .select = .{
         .label = "Language",
         .options = &.{ "English", "Deutsch", "Français" },
         .on_select = .{ .ctx = &ctx, .call = SegCtx.onSelect },
@@ -2947,7 +2947,7 @@ const filter_test_options: []const []const u8 = &.{
 test "picker: long option lists gain a filter field, focused on open" {
     var app = try test_app.init(400, 600);
     defer app.deinit();
-    const sel = try app.tree.append(app.tree.rootId(), .{ .select = .{
+    const sel = try app.tree.appendId(app.tree.rootId(), .{ .select = .{
         .label = "Country",
         .options = filter_test_options,
     } });
@@ -2960,7 +2960,7 @@ test "picker: long option lists gain a filter field, focused on open" {
     // Short lists stay bare and keep focus on the current choice.
     var short = try test_app.init(400, 600);
     defer short.deinit();
-    const s = try short.tree.append(short.tree.rootId(), .{ .select = .{
+    const s = try short.tree.appendId(short.tree.rootId(), .{ .select = .{
         .label = "Language",
         .options = &.{ "English", "Deutsch" },
     } });
@@ -2978,7 +2978,7 @@ test "picker: typing filters rows and a filtered row commits its option index" {
     var ctx: SegCtx = .{};
     var app = try test_app.init(400, 600);
     defer app.deinit();
-    const sel = try app.tree.append(app.tree.rootId(), .{ .select = .{
+    const sel = try app.tree.appendId(app.tree.rootId(), .{ .select = .{
         .label = "Country",
         .options = filter_test_options,
         .on_select = .{ .ctx = &ctx, .call = SegCtx.onSelect },
@@ -3008,7 +3008,7 @@ test "picker: typing filters rows and a filtered row commits its option index" {
 test "picker: backspace re-widens the filter and no matches leaves words" {
     var app = try test_app.init(400, 600);
     defer app.deinit();
-    const sel = try app.tree.append(app.tree.rootId(), .{ .select = .{
+    const sel = try app.tree.appendId(app.tree.rootId(), .{ .select = .{
         .label = "Country",
         .options = filter_test_options,
     } });
@@ -3043,7 +3043,7 @@ test "picker: backspace re-widens the filter and no matches leaves words" {
 test "picker: arrows clamp at the option list ends" {
     var app = try test_app.init(400, 600);
     defer app.deinit();
-    const sel = try app.tree.append(app.tree.rootId(), .{ .select = .{
+    const sel = try app.tree.appendId(app.tree.rootId(), .{ .select = .{
         .label = "Language",
         .options = &.{ "English", "Deutsch" },
     } });
@@ -3061,7 +3061,7 @@ test "picker: taps commit on a row and cancel on the scrim" {
     var ctx: SegCtx = .{};
     var app = try test_app.init(400, 600);
     defer app.deinit();
-    const sel = try app.tree.append(app.tree.rootId(), .{ .select = .{
+    const sel = try app.tree.appendId(app.tree.rootId(), .{ .select = .{
         .label = "Language",
         .options = &.{ "English", "Deutsch" },
         .on_select = .{ .ctx = &ctx, .call = SegCtx.onSelect },
@@ -3093,7 +3093,7 @@ test "picker stacks above an open sheet and escape peels one layer" {
     var app = try test_app.init(400, 600);
     defer app.deinit();
     const sheet = try app.presentSheet("Options");
-    const sel = try app.tree.append(sheet, .{ .select = .{
+    const sel = try app.tree.appendId(sheet, .{ .select = .{
         .label = "Language",
         .options = &.{ "English", "Deutsch" },
     } });
@@ -3115,14 +3115,14 @@ test "picker stacks above an open sheet and escape peels one layer" {
 test "presentSheet focuses its close button and confines tab to the sheet" {
     var app = try test_app.init(400, 600);
     defer app.deinit();
-    const behind = try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Behind" } });
+    const behind = try app.tree.appendId(app.tree.rootId(), .{ .button = .{ .label = "Behind" } });
     app.focused = .of(behind);
 
     const sheet = try app.presentSheet("Options");
     const close = focus.firstFocusable(&app.tree, sheet).?.node;
     try testing.expect(app.focused.?.on(close));
 
-    const extra = try app.tree.append(sheet, .{ .toggle = .{ .label = "Wrap text" } });
+    const extra = try app.tree.appendId(sheet, .{ .toggle = .{ .label = "Wrap text" } });
     try app.dispatch(.{ .key_down = .{ .key = .tab } });
     try testing.expect(app.focused.?.on(extra));
     // Wraps inside the sheet; "Behind" is unreachable while it is open.
@@ -3133,7 +3133,7 @@ test "presentSheet focuses its close button and confines tab to the sheet" {
 test "escape dismisses the sheet and restores focus to the invoker" {
     var app = try test_app.init(400, 600);
     defer app.deinit();
-    const behind = try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Behind" } });
+    const behind = try app.tree.appendId(app.tree.rootId(), .{ .button = .{ .label = "Behind" } });
     app.focused = .of(behind);
 
     _ = try app.presentSheet("Options");
@@ -3147,7 +3147,7 @@ test "tap on the scrim dismisses the sheet; background is not hittable" {
     var counter: PressCounter = .{};
     var app = try test_app.init(400, 600);
     defer app.deinit();
-    const behind = try app.tree.append(app.tree.rootId(), .{ .button = .{
+    const behind = try app.tree.appendId(app.tree.rootId(), .{ .button = .{
         .label = "Behind",
         .on_press = .{ .ctx = &counter, .call = PressCounter.onPress },
     } });
@@ -3190,7 +3190,7 @@ test "notify shows the front notice as a banner and dedups by title" {
 test "the banner reserves its band at the viewport bottom" {
     var app = try test_app.init(400, 600);
     defer app.deinit();
-    const btn = try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Go" } });
+    const btn = try app.tree.appendId(app.tree.rootId(), .{ .button = .{ .label = "Go" } });
 
     app.performLayout();
     const before = app.tree.rectOf(btn).y;
@@ -3207,7 +3207,7 @@ test "the banner reserves its band at the viewport bottom" {
 test "notice never steals focus and dismissal keeps focus sane" {
     var app = try test_app.init(400, 600);
     defer app.deinit();
-    const btn = try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Go" } });
+    const btn = try app.tree.appendId(app.tree.rootId(), .{ .button = .{ .label = "Go" } });
     app.focused = .of(btn);
 
     try app.notify(.{ .title = "Saved", .route = "home", .important = true });
@@ -3506,7 +3506,7 @@ test "copyText journals into the app's clipboard mock" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
     var copier: Copier = .{ .app = &app };
-    const btn = try app.tree.append(app.tree.rootId(), .{ .button = .{
+    const btn = try app.tree.appendId(app.tree.rootId(), .{ .button = .{
         .label = "Copy code",
         .on_press = .{ .ctx = &copier, .call = Copier.onPress },
     } });
@@ -3521,7 +3521,7 @@ test "copyText journals into the app's clipboard mock" {
 test "activating a copyable writes its value to the clipboard" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const c = try app.tree.append(app.tree.rootId(), .{ .copyable = .{
+    const c = try app.tree.appendId(app.tree.rootId(), .{ .copyable = .{
         .label = "Recovery code",
         .value = "XKCD-1234",
     } });
@@ -3542,9 +3542,9 @@ test "activating a copyable writes its value to the clipboard" {
 test "acknowledgement latches on the copyable that just copied" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const a = try app.tree.append(app.tree.rootId(), .{ .copyable = .{ .label = "Recovery code", .value = "XKCD-1234" } });
-    const b = try app.tree.append(app.tree.rootId(), .{ .copyable = .{ .label = "Invite link", .value = "nok.re/x" } });
-    const btn = try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Done" } });
+    const a = try app.tree.appendId(app.tree.rootId(), .{ .copyable = .{ .label = "Recovery code", .value = "XKCD-1234" } });
+    const b = try app.tree.appendId(app.tree.rootId(), .{ .copyable = .{ .label = "Invite link", .value = "nok.re/x" } });
+    const btn = try app.tree.appendId(app.tree.rootId(), .{ .button = .{ .label = "Done" } });
     app.performLayout();
     try testing.expect(app.ack == null);
 
@@ -3578,9 +3578,9 @@ test "acknowledgement latches on the copyable that just copied" {
 test "any input releases the acknowledgement, scrolling included" {
     var app = try test_app.init(400, 120);
     defer app.deinit();
-    const c = try app.tree.append(app.tree.rootId(), .{ .copyable = .{ .label = "Recovery code", .value = "XKCD-1234" } });
+    const c = try app.tree.appendId(app.tree.rootId(), .{ .copyable = .{ .label = "Recovery code", .value = "XKCD-1234" } });
     var i: usize = 0;
-    while (i < 20) : (i += 1) _ = try app.tree.append(app.tree.rootId(), .{ .text = .{ .content = "filler" } });
+    while (i < 20) : (i += 1) try app.tree.append(app.tree.rootId(), .{ .text = .{ .content = "filler" } });
     app.performLayout();
 
     // Enter on the focused field arms it exactly as a tap does.
@@ -3625,17 +3625,17 @@ test "navigating away leaves no acknowledgement behind" {
 }
 
 fn buildCopyScreen(_: ?*anyopaque, app: *App) anyerror!void {
-    _ = try app.tree.append(app.tree.rootId(), .{ .copyable = .{ .label = "Recovery code", .value = "XKCD-1234" } });
+    try app.tree.append(app.tree.rootId(), .{ .copyable = .{ .label = "Recovery code", .value = "XKCD-1234" } });
 }
 
 test "scroll emphasis latches on the moved surface until other input" {
     var app = try test_app.init(400, 100);
     defer app.deinit();
-    const sr = try app.tree.append(app.tree.rootId(), .{ .scroll_region = .{ .height = 50 } });
+    const sr = try app.tree.appendId(app.tree.rootId(), .{ .scroll_region = .{ .height = 50 } });
     var i: usize = 0;
     while (i < 10) : (i += 1) {
-        _ = try app.tree.append(sr, .{ .text = .{ .content = "line" } });
-        _ = try app.tree.append(app.tree.rootId(), .{ .text = .{ .content = "filler" } });
+        try app.tree.append(sr, .{ .text = .{ .content = "line" } });
+        try app.tree.append(app.tree.rootId(), .{ .text = .{ .content = "filler" } });
     }
     app.performLayout();
     const at = app.tree.rectOf(sr).center();
@@ -3665,11 +3665,11 @@ test "scroll emphasis latches on the moved surface until other input" {
 /// span — with a counter on the last one, which is where the fold puts
 /// the interesting question: it is reachable only through the sheet.
 fn buildOverflowingRow(app: *App, counter: *PressCounter) !NodeId {
-    const row = try app.tree.append(app.tree.rootId(), .{ .stack = .{ .axis = .horizontal, .gap = 8 } });
+    const row = try app.tree.appendId(app.tree.rootId(), .{ .stack = .{ .axis = .horizontal, .gap = 8 } });
     for ([_][]const u8{ "One", "Two", "Three", "Four" }) |label| {
-        _ = try app.tree.append(row, .{ .button = .{ .label = label } });
+        try app.tree.append(row, .{ .button = .{ .label = label } });
     }
-    _ = try app.tree.append(row, .{ .button = .{
+    try app.tree.append(row, .{ .button = .{
         .label = "Five",
         .on_press = .{ .ctx = counter, .call = PressCounter.onPress },
     } });
@@ -3887,9 +3887,9 @@ test "a row of actions inside a sheet wraps instead of folding" {
     var app = try test_app.init(400, 600);
     defer app.deinit();
     const sheet = try app.presentSheet("Share");
-    const row = try app.tree.append(sheet, .{ .stack = .{ .axis = .horizontal, .gap = 8 } });
+    const row = try app.tree.appendId(sheet, .{ .stack = .{ .axis = .horizontal, .gap = 8 } });
     for ([_][]const u8{ "One", "Two", "Three", "Four", "Five" }) |label| {
-        _ = try app.tree.append(row, .{ .button = .{
+        try app.tree.append(row, .{ .button = .{
             .label = label,
             .on_press = .{ .ctx = &counter, .call = PressCounter.onPress },
         } });
@@ -4019,16 +4019,16 @@ test "a row of buttons and a link folds, and the link is still a link in the she
 }
 
 fn buildHomeWithActionRow(_: ?*anyopaque, app: *App) anyerror!void {
-    const row = try app.tree.append(app.tree.rootId(), .{ .stack = .{ .axis = .horizontal } });
-    _ = try app.tree.append(row, .{ .button = .{ .label = "Save" } });
-    _ = try app.tree.append(row, .{ .button = .{ .label = "Cancel", .secondary = true } });
-    _ = try app.tree.append(row, .{ .button = .{ .label = "Add reminder" } });
-    _ = try app.tree.append(row, .{ .button = .{ .label = "Disabled", .disabled = true } });
-    _ = try app.tree.append(row, .{ .link = .{ .label = "More details", .route = "details" } });
+    const row = try app.tree.appendId(app.tree.rootId(), .{ .stack = .{ .axis = .horizontal } });
+    try app.tree.append(row, .{ .button = .{ .label = "Save" } });
+    try app.tree.append(row, .{ .button = .{ .label = "Cancel", .secondary = true } });
+    try app.tree.append(row, .{ .button = .{ .label = "Add reminder" } });
+    try app.tree.append(row, .{ .button = .{ .label = "Disabled", .disabled = true } });
+    try app.tree.append(row, .{ .link = .{ .label = "More details", .route = "details" } });
 }
 
 fn buildEmpty(_: ?*anyopaque, app: *App) anyerror!void {
-    _ = try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Details" } });
+    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Details" } });
 }
 
 // ---- the UTF-8 boundary, under layout (tree_test.zig owns the
@@ -4041,7 +4041,7 @@ test "a fetched document with invalid bytes lays out instead of panicking" {
     // Markdown promises arbitrary bytes never crash; before the
     // validating copy this parsed fine and panicked at first layout,
     // when the measurer's UTF-8 iterator met the raw bytes.
-    const doc = try app.tree.append(app.tree.rootId(), .{ .document = .{
+    const doc = try app.tree.appendId(app.tree.rootId(), .{ .document = .{
         .label = "Fetched",
         .source = "# T\xffitle\n\npara \xc3\n\n- item \x80\n",
     } });
@@ -4062,7 +4062,7 @@ test "a fetched document with invalid bytes lays out instead of panicking" {
 test "typed bytes pass the same boundary as appended ones" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const input = try app.tree.append(app.tree.rootId(), .{ .text_input = .{ .label = "Name" } });
+    const input = try app.tree.appendId(app.tree.rootId(), .{ .text_input = .{ .label = "Name" } });
     app.focused = .of(input);
     // A shell should never send these, but a value is measured prefix
     // by prefix, so one bad splice would poison every later caret move.
@@ -4127,9 +4127,9 @@ test "the tail sheet follows a folded original's state, not only its words" {
 // ---- the arena reclaim point (tree.zig; router.rebuild) ----
 
 fn buildReclaimScreen(_: ?*anyopaque, app: *App) anyerror!void {
-    _ = try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Notes" } });
-    _ = try app.tree.append(app.tree.rootId(), .{ .text = .{ .content = "A paragraph long enough to cost real bytes every rebuild." } });
-    _ = try app.tree.append(app.tree.rootId(), .{ .text_input = .{ .label = "Title" } });
+    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Notes" } });
+    try app.tree.append(app.tree.rootId(), .{ .text = .{ .content = "A paragraph long enough to cost real bytes every rebuild." } });
+    try app.tree.append(app.tree.rootId(), .{ .text_input = .{ .label = "Title" } });
 }
 
 fn reclaimCycle(app: *App) !void {
@@ -4193,8 +4193,8 @@ test "chrome keeps its nodes across the reclaim, strings and all" {
 test "focus rings follow the input that moved focus" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const a = try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "a" } });
-    const b = try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "b" } });
+    const a = try app.tree.appendId(app.tree.rootId(), .{ .button = .{ .label = "a" } });
+    const b = try app.tree.appendId(app.tree.rootId(), .{ .button = .{ .label = "b" } });
     // Programmatic focus (tests, a11y actions) shows itself.
     try testing.expect(app.focus_visible);
 
@@ -4216,7 +4216,7 @@ test "focus rings follow the input that moved focus" {
 test "delivered semantics carry their origin for the ring" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const btn = try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Go" } });
+    const btn = try app.tree.appendId(app.tree.rootId(), .{ .button = .{ .label = "Go" } });
 
     // A resolved press is a pointer; a delivered traversal is not.
     try app.deliver(.{ .press = .of(btn) });
@@ -4231,8 +4231,8 @@ test "a tap on nothing clears an editable's focus, and only an editable's" {
     var counter: PressCounter = .{};
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    const input = try app.tree.append(app.tree.rootId(), .{ .text_input = .{ .label = "Name" } });
-    const btn = try app.tree.append(app.tree.rootId(), .{ .button = .{
+    const input = try app.tree.appendId(app.tree.rootId(), .{ .text_input = .{ .label = "Name" } });
+    const btn = try app.tree.appendId(app.tree.rootId(), .{ .button = .{
         .label = "Go",
         .on_press = .{ .ctx = &counter, .call = PressCounter.onPress },
     } });
@@ -4274,7 +4274,7 @@ test "a tap on a sheet's empty area clears its field's focus too" {
     var app = try test_app.init(400, 600);
     defer app.deinit();
     const sheet = try app.presentSheet("Filters");
-    const field = try app.tree.append(sheet, .{ .text_input = .{ .label = "Query" } });
+    const field = try app.tree.appendId(sheet, .{ .text_input = .{ .label = "Query" } });
     app.performLayout();
 
     try app.tap(app.tree.rectOf(field).center());

@@ -342,8 +342,8 @@ fn onOpenSheet(ctx: ?*anyopaque) void {
     const state: *State = @ptrCast(@alignCast(ctx.?));
     const app = state.app;
     const sheet = app.presentSheet("Sheet demo") catch return;
-    _ = app.tree.append(sheet, .{ .text = .{ .content = "A modal bottom sheet. Everything behind is inert; Esc or a tap outside dismisses it and focus returns where it was." } }) catch return;
-    _ = app.tree.append(sheet, .{ .toggle = .{ .label = "A choice inside the sheet" } }) catch return;
+    app.tree.append(sheet, .{ .text = .{ .content = "A modal bottom sheet. Everything behind is inert; Esc or a tap outside dismisses it and focus returns where it was." } }) catch return;
+    app.tree.append(sheet, .{ .toggle = .{ .label = "A choice inside the sheet" } }) catch return;
 }
 
 fn onNotifySaved(ctx: ?*anyopaque) void {
@@ -571,19 +571,19 @@ fn buildHome(ctx: ?*anyopaque, app: *h.App) !void {
     const tree = &app.tree;
     const root = tree.rootId();
 
-    _ = try tree.append(root, .{ .heading = .{ .level = .h1, .spans = &.{
+    try tree.append(root, .{ .heading = .{ .level = .h1, .spans = &.{
         .{ .text = "Kitchen " },
         .{ .text = "Sink", .strong = true },
     } } });
-    _ = try tree.append(root, .{ .text = .{ .content = "Every element nokre has. There is no hover, no animation, no color — and nothing to configure." } });
-    state.status_id = try tree.append(root, .{ .text = .{ .content = "Ready.", .style = .{ .scale = .small, .ink = .dark } } });
-    _ = try tree.append(root, .{ .divider = .{} });
+    try tree.append(root, .{ .text = .{ .content = "Every element nokre has. There is no hover, no animation, no color — and nothing to configure." } });
+    state.status_id = try tree.appendId(root, .{ .text = .{ .content = "Ready.", .style = .{ .scale = .small, .ink = .dark } } });
+    try tree.append(root, .{ .divider = .{} });
 
-    _ = try tree.append(root, .{ .heading = .{ .content = "Type", .level = .h2 } });
-    _ = try tree.append(root, .{ .heading = .{ .content = "Subheading (h3)", .level = .h3 } });
-    _ = try tree.append(root, .{ .text = .{ .content = "Body prose wraps greedily at word boundaries and never hyphenates." } });
-    _ = try tree.append(root, .{ .text = .{ .content = "const answer = 42; // mono", .style = .{ .family = .mono } } });
-    _ = try tree.append(root, .{ .text = .{ .spans = &.{
+    try tree.append(root, .{ .heading = .{ .content = "Type", .level = .h2 } });
+    try tree.append(root, .{ .heading = .{ .content = "Subheading (h3)", .level = .h3 } });
+    try tree.append(root, .{ .text = .{ .content = "Body prose wraps greedily at word boundaries and never hyphenates." } });
+    try tree.append(root, .{ .text = .{ .content = "const answer = 42; // mono", .style = .{ .family = .mono } } });
+    try tree.append(root, .{ .text = .{ .spans = &.{
         .{ .text = "Inline spans: " },
         .{ .text = "strong", .strong = true },
         .{ .text = ", " },
@@ -594,41 +594,41 @@ fn buildHome(ctx: ?*anyopaque, app: *h.App) !void {
         .{ .text = "strike", .strike = true },
         .{ .text = " — one text node to assistive tech, so the words must read correctly without any of it." },
     } } });
-    _ = try tree.append(root, .{ .text = .{ .spans = &.{
+    try tree.append(root, .{ .text = .{ .spans = &.{
         .{ .text = "A span with a route is an inline " },
         .{ .text = "link", .route = "details" },
         .{ .text = ": underlined, its own tab stop, and announced as a link — the one carve-out from the rule that spans are invisible." },
     } } });
 
-    _ = try tree.append(root, .{ .heading = .{ .content = "Deeper levels (h4, h5, h6)", .level = .h4 } });
-    _ = try tree.append(root, .{ .heading = .{ .content = "Every level is bold (h5)", .level = .h5 } });
-    _ = try tree.append(root, .{ .heading = .{ .content = "Weight, not size, separates these (h6)", .level = .h6 } });
+    try tree.append(root, .{ .heading = .{ .content = "Deeper levels (h4, h5, h6)", .level = .h4 } });
+    try tree.append(root, .{ .heading = .{ .content = "Every level is bold (h5)", .level = .h5 } });
+    try tree.append(root, .{ .heading = .{ .content = "Weight, not size, separates these (h6)", .level = .h6 } });
 
-    _ = try tree.append(root, .{ .heading = .{ .content = "Lists", .level = .h3 } });
-    const steps = try tree.append(root, .{ .list = .{ .ordered = true, .start = 9 } });
+    try tree.append(root, .{ .heading = .{ .content = "Lists", .level = .h3 } });
+    const steps = try tree.appendId(root, .{ .list = .{ .ordered = true, .start = 9 } });
     for ([_][]const u8{
         "Ordinals are derived from the list, never authored.",
         "The marker column is sized for the widest one, so the words line up even when the count reaches double digits.",
         "Nesting is capped at three levels.",
     }) |line| {
-        const step = try tree.append(steps, .{ .list_item = .{} });
-        _ = try tree.append(step, .{ .text = .{ .content = line } });
+        const step = try tree.appendId(steps, .{ .list_item = .{} });
+        try tree.append(step, .{ .text = .{ .content = line } });
     }
-    const bullets = try tree.append(root, .{ .list = .{} });
-    const bullet = try tree.append(bullets, .{ .list_item = .{} });
-    _ = try tree.append(bullet, .{ .text = .{ .content = "Unordered items take the bullet at every depth —" } });
-    const nested = try tree.append(bullet, .{ .list = .{} });
-    const nested_item = try tree.append(nested, .{ .list_item = .{} });
-    _ = try tree.append(nested_item, .{ .text = .{ .content = "the indent is what carries the depth." } });
+    const bullets = try tree.appendId(root, .{ .list = .{} });
+    const bullet = try tree.appendId(bullets, .{ .list_item = .{} });
+    try tree.append(bullet, .{ .text = .{ .content = "Unordered items take the bullet at every depth —" } });
+    const nested = try tree.appendId(bullet, .{ .list = .{} });
+    const nested_item = try tree.appendId(nested, .{ .list_item = .{} });
+    try tree.append(nested_item, .{ .text = .{ .content = "the indent is what carries the depth." } });
 
-    _ = try tree.append(root, .{ .heading = .{ .content = "Blockquote", .level = .h3 } });
-    const quote = try tree.append(root, .{ .blockquote = .{} });
-    _ = try tree.append(quote, .{ .text = .{ .content = "A 1px rule on the leading edge and an indent. The rule is a drawn edge, so nothing bleeds across it." } });
-    _ = try tree.append(quote, .{ .text = .{ .content = "\u{2014} the attribution is words inside the quote, not a field on it", .style = .{ .scale = .small, .ink = .dark } } });
+    try tree.append(root, .{ .heading = .{ .content = "Blockquote", .level = .h3 } });
+    const quote = try tree.appendId(root, .{ .blockquote = .{} });
+    try tree.append(quote, .{ .text = .{ .content = "A 1px rule on the leading edge and an indent. The rule is a drawn edge, so nothing bleeds across it." } });
+    try tree.append(quote, .{ .text = .{ .content = "\u{2014} the attribution is words inside the quote, not a field on it", .style = .{ .scale = .small, .ink = .dark } } });
 
-    _ = try tree.append(root, .{ .heading = .{ .content = "Code block", .level = .h3 } });
-    _ = try tree.append(root, .{ .text = .{ .content = "Verbatim: whitespace preserved, never reflowed. A block wider than the page scrolls sideways — arrows when focused, a horizontal drag anywhere on it.", .style = .{ .scale = .small, .ink = .dark } } });
-    _ = try tree.append(root, .{ .code_block = .{
+    try tree.append(root, .{ .heading = .{ .content = "Code block", .level = .h3 } });
+    try tree.append(root, .{ .text = .{ .content = "Verbatim: whitespace preserved, never reflowed. A block wider than the page scrolls sideways — arrows when focused, a horizontal drag anywhere on it.", .style = .{ .scale = .small, .ink = .dark } } });
+    try tree.append(root, .{ .code_block = .{
         .content =
         \\const std = @import("std");
         \\
@@ -639,69 +639,69 @@ fn buildHome(ctx: ?*anyopaque, app: *h.App) !void {
         ,
     } });
 
-    _ = try tree.append(root, .{ .heading = .{ .content = "Icons", .level = .h3 } });
-    _ = try tree.append(root, .{ .text = .{ .content = "Named Lucide glyphs, sized like text. Unlabeled ones are decorative; labeled ones read as images.", .style = .{ .scale = .small, .ink = .dark } } });
-    const icon_row = try tree.append(root, .{ .stack = .{ .axis = .horizontal } });
-    _ = try tree.append(icon_row, .{ .icon = .{ .name = .accessibility, .label = "Accessibility" } });
-    _ = try tree.append(icon_row, .{ .icon = .{ .name = .activity } });
-    _ = try tree.append(icon_row, .{ .icon = .{ .name = .airplay, .scale = .h3 } });
-    _ = try tree.append(icon_row, .{ .icon = .{ .name = .alarm_clock_check, .scale = .h2, .ink = .dark } });
-    _ = try tree.append(icon_row, .{ .icon = .{ .name = .air_vent, .scale = .h1 } });
+    try tree.append(root, .{ .heading = .{ .content = "Icons", .level = .h3 } });
+    try tree.append(root, .{ .text = .{ .content = "Named Lucide glyphs, sized like text. Unlabeled ones are decorative; labeled ones read as images.", .style = .{ .scale = .small, .ink = .dark } } });
+    const icon_row = try tree.appendId(root, .{ .stack = .{ .axis = .horizontal } });
+    try tree.append(icon_row, .{ .icon = .{ .name = .accessibility, .label = "Accessibility" } });
+    try tree.append(icon_row, .{ .icon = .{ .name = .activity } });
+    try tree.append(icon_row, .{ .icon = .{ .name = .airplay, .scale = .h3 } });
+    try tree.append(icon_row, .{ .icon = .{ .name = .alarm_clock_check, .scale = .h2, .ink = .dark } });
+    try tree.append(icon_row, .{ .icon = .{ .name = .air_vent, .scale = .h1 } });
 
-    const box = try tree.append(root, .{ .box = .{} });
-    _ = try tree.append(box, .{ .text = .{ .content = "A box: 1px border, 12px padding. Boxes group; they do not decorate." } });
+    const box = try tree.appendId(root, .{ .box = .{} });
+    try tree.append(box, .{ .text = .{ .content = "A box: 1px border, 12px padding. Boxes group; they do not decorate." } });
 
-    _ = try tree.append(root, .{ .heading = .{ .content = "Badges", .level = .h3 } });
-    const badge_row = try tree.append(root, .{ .stack = .{ .axis = .horizontal } });
-    _ = try tree.append(badge_row, .{ .badge = .{ .label = "Active" } });
-    _ = try tree.append(badge_row, .{ .badge = .{ .label = "Owner" } });
-    _ = try tree.append(badge_row, .{ .badge = .{ .label = "3 pending" } });
+    try tree.append(root, .{ .heading = .{ .content = "Badges", .level = .h3 } });
+    const badge_row = try tree.appendId(root, .{ .stack = .{ .axis = .horizontal } });
+    try tree.append(badge_row, .{ .badge = .{ .label = "Active" } });
+    try tree.append(badge_row, .{ .badge = .{ .label = "Owner" } });
+    try tree.append(badge_row, .{ .badge = .{ .label = "3 pending" } });
 
-    _ = try tree.append(root, .{ .heading = .{ .content = "Meter", .level = .h3 } });
-    _ = try tree.append(root, .{ .meter = .{ .label = "12 of 30 days", .value = 12, .max = 30 } });
+    try tree.append(root, .{ .heading = .{ .content = "Meter", .level = .h3 } });
+    try tree.append(root, .{ .meter = .{ .label = "12 of 30 days", .value = 12, .max = 30 } });
 
-    _ = try tree.append(root, .{ .heading = .{ .content = "QR code", .level = .h3 } });
-    _ = try tree.append(root, .{ .qr = .{ .label = "Invite link", .value = "https://example.com/invite/XKCD-1234" } });
+    try tree.append(root, .{ .heading = .{ .content = "QR code", .level = .h3 } });
+    try tree.append(root, .{ .qr = .{ .label = "Invite link", .value = "https://example.com/invite/XKCD-1234" } });
 
-    _ = try tree.append(root, .{ .heading = .{ .content = "Form", .level = .h2 } });
-    _ = try tree.append(root, .{ .text_input = .{
+    try tree.append(root, .{ .heading = .{ .content = "Form", .level = .h2 } });
+    try tree.append(root, .{ .text_input = .{
         .label = "Your name",
         .placeholder = "Type, then press Enter",
         .on_change = .{ .ctx = state, .call = onNameChange },
         .on_submit = .{ .ctx = state, .call = onNameSubmit },
     } });
-    _ = try tree.append(root, .{ .text_input = .{
+    try tree.append(root, .{ .text_input = .{
         .label = "Passphrase",
         .placeholder = "Obscured as you type",
         .obscured = true,
     } });
-    state.notify_toggle_id = try tree.append(root, .{ .toggle = .{
+    state.notify_toggle_id = try tree.appendId(root, .{ .toggle = .{
         .label = "Notify me",
         .on_toggle = .{ .ctx = state, .call = onToggleNotify },
     } });
-    _ = try tree.append(root, .{ .checkbox = .{
+    try tree.append(root, .{ .checkbox = .{
         .label = "I agree to the terms",
     } });
-    _ = try tree.append(root, .{ .radio_group = .{
+    try tree.append(root, .{ .radio_group = .{
         .label = "Delivery",
         .options = &delivery_options,
         .on_select = .{ .ctx = state, .call = onDeliverySelect },
     } });
-    _ = try tree.append(root, .{ .select = .{
+    try tree.append(root, .{ .select = .{
         .label = "Language",
         .options = &language_options,
         .on_select = .{ .ctx = state, .call = onLanguageSelect },
     } });
-    _ = try tree.append(root, .{ .select = .{
+    try tree.append(root, .{ .select = .{
         .label = "Country",
         .options = &country_options,
         .on_select = .{ .ctx = state, .call = onCountrySelect },
     } });
-    _ = try tree.append(root, .{ .text_area = .{
+    try tree.append(root, .{ .text_area = .{
         .label = "Notes",
         .placeholder = "Anything else? Enter adds a line; the field grows.",
     } });
-    _ = try tree.append(root, .{ .copyable = .{
+    try tree.append(root, .{ .copyable = .{
         .label = "Recovery code",
         .value = "XKCD-1234-QRST",
     } });
@@ -709,84 +709,84 @@ fn buildHome(ctx: ?*anyopaque, app: *h.App) !void {
     // Nothing here asks for it: a row of actions that runs out of width
     // folds its tail behind "More" on its own. Narrow the window until
     // this one does.
-    _ = try tree.append(root, .{ .text = .{ .content = "A row of actions folds when it runs out of width: the last one still fully visible becomes More, and the sheet it opens holds it and everything after it. Narrow the window to watch it happen.", .style = .{ .scale = .small, .ink = .dark } } });
-    const row_stack = try tree.append(root, .{ .stack = .{ .axis = .horizontal } });
-    _ = try tree.append(row_stack, .{ .button = .{ .label = "Save", .on_press = .{ .ctx = state, .call = onSave } } });
-    _ = try tree.append(row_stack, .{ .button = .{ .label = "Cancel", .secondary = true } });
-    _ = try tree.append(row_stack, .{ .button = .{ .label = "Add reminder", .icon = .alarm_clock_plus } });
-    _ = try tree.append(row_stack, .{ .button = .{ .label = "Disabled", .disabled = true } });
-    _ = try tree.append(row_stack, .{ .link = .{ .label = "More details", .route = "details" } });
+    try tree.append(root, .{ .text = .{ .content = "A row of actions folds when it runs out of width: the last one still fully visible becomes More, and the sheet it opens holds it and everything after it. Narrow the window to watch it happen.", .style = .{ .scale = .small, .ink = .dark } } });
+    const row_stack = try tree.appendId(root, .{ .stack = .{ .axis = .horizontal } });
+    try tree.append(row_stack, .{ .button = .{ .label = "Save", .on_press = .{ .ctx = state, .call = onSave } } });
+    try tree.append(row_stack, .{ .button = .{ .label = "Cancel", .secondary = true } });
+    try tree.append(row_stack, .{ .button = .{ .label = "Add reminder", .icon = .alarm_clock_plus } });
+    try tree.append(row_stack, .{ .button = .{ .label = "Disabled", .disabled = true } });
+    try tree.append(row_stack, .{ .link = .{ .label = "More details", .route = "details" } });
 
-    _ = try tree.append(root, .{ .text = .{ .content = "Icon-only buttons: a named glyph on the 24px target, label announced.", .style = .{ .scale = .small, .ink = .dark } } });
-    const pager_row = try tree.append(root, .{ .stack = .{ .axis = .horizontal } });
-    _ = try tree.append(pager_row, .{ .button = .{ .label = "Previous month", .icon = .chevron_left, .icon_only = true } });
-    _ = try tree.append(pager_row, .{ .text = .{ .content = "March" } });
-    _ = try tree.append(pager_row, .{ .button = .{ .label = "Next month", .icon = .chevron_right, .icon_only = true } });
+    try tree.append(root, .{ .text = .{ .content = "Icon-only buttons: a named glyph on the 24px target, label announced.", .style = .{ .scale = .small, .ink = .dark } } });
+    const pager_row = try tree.appendId(root, .{ .stack = .{ .axis = .horizontal } });
+    try tree.append(pager_row, .{ .button = .{ .label = "Previous month", .icon = .chevron_left, .icon_only = true } });
+    try tree.append(pager_row, .{ .text = .{ .content = "March" } });
+    try tree.append(pager_row, .{ .button = .{ .label = "Next month", .icon = .chevron_right, .icon_only = true } });
 
-    _ = try tree.append(root, .{ .heading = .{ .content = "Vendor sign-in", .level = .h3 } });
+    try tree.append(root, .{ .heading = .{ .content = "Vendor sign-in", .level = .h3 } });
     // `provider` is rendering only — the sink links no services, and a
     // real flow would build its authorize URL and call the oauth
     // service from `on_press` (docs/services.md). The words are the
     // app's to supply, from the vendor's published strings. Google's G
     // is the one colored thing nokre ever draws; it is the renderer's,
     // and there is no way to ask for color anywhere else.
-    _ = try tree.append(root, .{ .text = .{ .content = "Conforming vendor buttons: the mark is nokre's to draw, the words are yours. Apple's flips black/white with the appearance; Google's G keeps the vendor's colors on either theme.", .style = .{ .scale = .small, .ink = .dark } } });
-    _ = try tree.append(root, .{ .button = .{
+    try tree.append(root, .{ .text = .{ .content = "Conforming vendor buttons: the mark is nokre's to draw, the words are yours. Apple's flips black/white with the appearance; Google's G keeps the vendor's colors on either theme.", .style = .{ .scale = .small, .ink = .dark } } });
+    try tree.append(root, .{ .button = .{
         .label = "Sign in with Apple",
         .provider = .apple,
         .on_press = .{ .ctx = state, .call = onAppleSignIn },
     } });
-    _ = try tree.append(root, .{ .button = .{
+    try tree.append(root, .{ .button = .{
         .label = "Sign in with Google",
         .provider = .google,
         .on_press = .{ .ctx = state, .call = onGoogleSignIn },
     } });
 
-    _ = try tree.append(root, .{ .heading = .{ .content = "Tiles", .level = .h2 } });
-    const tiles = try tree.append(root, .{ .tile_group = .{
+    try tree.append(root, .{ .heading = .{ .content = "Tiles", .level = .h2 } });
+    const tiles = try tree.appendId(root, .{ .tile_group = .{
         .description = "Row-shaped actions: a route tile navigates and carries a chevron, an action tile presses like a button. A description under the group wraps at the group width.",
     } });
-    _ = try tree.append(tiles, .{ .tile = .{
+    try tree.append(tiles, .{ .tile = .{
         .label = "More details",
         .detail = "A route tile: navigates, chevron and all",
         .route = "details",
     } });
-    _ = try tree.append(tiles, .{ .tile = .{
+    try tree.append(tiles, .{ .tile = .{
         .label = "Save",
         .on_press = .{ .ctx = state, .call = onSave },
     } });
 
-    _ = try tree.append(root, .{ .heading = .{ .content = "Layers", .level = .h2 } });
-    const layer_stack = try tree.append(root, .{ .stack = .{ .axis = .horizontal } });
-    _ = try tree.append(layer_stack, .{ .button = .{ .label = "Open sheet", .on_press = .{ .ctx = state, .call = onOpenSheet } } });
-    _ = try tree.append(layer_stack, .{ .button = .{ .label = "Notify quietly", .on_press = .{ .ctx = state, .call = onNotifySaved } } });
-    _ = try tree.append(layer_stack, .{ .button = .{ .label = "Notify important", .on_press = .{ .ctx = state, .call = onNotifySync } } });
+    try tree.append(root, .{ .heading = .{ .content = "Layers", .level = .h2 } });
+    const layer_stack = try tree.appendId(root, .{ .stack = .{ .axis = .horizontal } });
+    try tree.append(layer_stack, .{ .button = .{ .label = "Open sheet", .on_press = .{ .ctx = state, .call = onOpenSheet } } });
+    try tree.append(layer_stack, .{ .button = .{ .label = "Notify quietly", .on_press = .{ .ctx = state, .call = onNotifySaved } } });
+    try tree.append(layer_stack, .{ .button = .{ .label = "Notify important", .on_press = .{ .ctx = state, .call = onNotifySync } } });
 
-    _ = try tree.append(root, .{ .heading = .{ .content = "Workers", .level = .h2 } });
-    _ = try tree.append(root, .{ .text = .{ .content = "Heavy synchronous compute runs on a worker: messages out, replies back on the UI thread. Press, then keep scrolling — nothing freezes, and a notice carries the result in case you wandered off. Two jobs, two worker roles, two report lines: press both and they run side by side, neither waiting on nor cancelling the other. The count reports a percentage, so its button fills as it goes; the hash reports none, so its button says `…` and nothing it cannot know.", .style = .{ .scale = .small, .ink = .dark } } });
+    try tree.append(root, .{ .heading = .{ .content = "Workers", .level = .h2 } });
+    try tree.append(root, .{ .text = .{ .content = "Heavy synchronous compute runs on a worker: messages out, replies back on the UI thread. Press, then keep scrolling — nothing freezes, and a notice carries the result in case you wandered off. Two jobs, two worker roles, two report lines: press both and they run side by side, neither waiting on nor cancelling the other. The count reports a percentage, so its button fills as it goes; the hash reports none, so its button says `…` and nothing it cannot know.", .style = .{ .scale = .small, .ink = .dark } } });
     // Each job reports into its own nodes, right under its own button:
     // two workers running at once cannot share one bar and one line
     // without lying about which of them the numbers belong to.
-    state.primes_button_id = try tree.append(root, .{ .button = .{ .label = "Count primes", .on_press = .{ .ctx = state, .call = onCountPrimes } } });
+    state.primes_button_id = try tree.appendId(root, .{ .button = .{ .label = "Count primes", .on_press = .{ .ctx = state, .call = onCountPrimes } } });
     // The same reading, rendered both ways on purpose: compact inside
     // the control, and full width with words beside it.
-    state.primes_meter_id = try tree.append(root, .{ .meter = .{ .label = "Prime count progress", .value = 0, .max = 100 } });
-    state.primes_result_id = try tree.append(root, .{ .text = .{ .content = "No count has run yet.", .style = .{ .scale = .small, .ink = .dark } } });
-    state.hash_button_id = try tree.append(root, .{ .button = .{ .label = "Hash 32 MB", .on_press = .{ .ctx = state, .call = onHashPayload } } });
-    state.hash_result_id = try tree.append(root, .{ .text = .{ .content = "No hash has run yet.", .style = .{ .scale = .small, .ink = .dark } } });
+    state.primes_meter_id = try tree.appendId(root, .{ .meter = .{ .label = "Prime count progress", .value = 0, .max = 100 } });
+    state.primes_result_id = try tree.appendId(root, .{ .text = .{ .content = "No count has run yet.", .style = .{ .scale = .small, .ink = .dark } } });
+    state.hash_button_id = try tree.appendId(root, .{ .button = .{ .label = "Hash 32 MB", .on_press = .{ .ctx = state, .call = onHashPayload } } });
+    state.hash_result_id = try tree.appendId(root, .{ .text = .{ .content = "No hash has run yet.", .style = .{ .scale = .small, .ink = .dark } } });
 
-    _ = try tree.append(root, .{ .heading = .{ .content = "HTTP", .level = .h2 } });
-    _ = try tree.append(root, .{ .text = .{ .content = "One request out from a tap; exactly one result back on the UI thread, in the same delivery lane as worker replies. The result lands below; the second button aims at a host that cannot exist. Both wear `…` while their request is out — with no percentage, because HTTP reports none — and the failing one gives its button back too.", .style = .{ .scale = .small, .ink = .dark } } });
-    const http_row = try tree.append(root, .{ .stack = .{ .axis = .horizontal } });
+    try tree.append(root, .{ .heading = .{ .content = "HTTP", .level = .h2 } });
+    try tree.append(root, .{ .text = .{ .content = "One request out from a tap; exactly one result back on the UI thread, in the same delivery lane as worker replies. The result lands below; the second button aims at a host that cannot exist. Both wear `…` while their request is out — with no percentage, because HTTP reports none — and the failing one gives its button back too.", .style = .{ .scale = .small, .ink = .dark } } });
+    const http_row = try tree.appendId(root, .{ .stack = .{ .axis = .horizontal } });
     // Each button hands its own job to the request, and the job carries
     // the button back to the result.
-    state.example_job = .{ .state = state, .button_id = try tree.append(http_row, .{ .button = .{ .label = "GET example.com", .on_press = .{ .ctx = state, .call = onFetchExample } } }) };
-    state.nowhere_job = .{ .state = state, .button_id = try tree.append(http_row, .{ .button = .{ .label = "GET nowhere", .on_press = .{ .ctx = state, .call = onFetchNowhere } } }) };
-    state.http_result_id = try tree.append(root, .{ .text = .{ .content = "No request has run yet.", .style = .{ .family = .mono, .scale = .small, .ink = .dark } } });
+    state.example_job = .{ .state = state, .button_id = try tree.appendId(http_row, .{ .button = .{ .label = "GET example.com", .on_press = .{ .ctx = state, .call = onFetchExample } } }) };
+    state.nowhere_job = .{ .state = state, .button_id = try tree.appendId(http_row, .{ .button = .{ .label = "GET nowhere", .on_press = .{ .ctx = state, .call = onFetchNowhere } } }) };
+    state.http_result_id = try tree.appendId(root, .{ .text = .{ .content = "No request has run yet.", .style = .{ .family = .mono, .scale = .small, .ink = .dark } } });
 
-    _ = try tree.append(root, .{ .heading = .{ .content = "Localization", .level = .h2 } });
-    _ = try tree.append(root, .{ .text = .{ .content = "ARB catalogs, compiled — no codegen, no runtime parsing. Every locale must translate every key, and plural forms are validated per locale: the Russian entry below would not build without all four of its forms.", .style = .{ .scale = .small, .ink = .dark } } });
-    _ = try tree.append(root, .{ .segmented = .{
+    try tree.append(root, .{ .heading = .{ .content = "Localization", .level = .h2 } });
+    try tree.append(root, .{ .text = .{ .content = "ARB catalogs, compiled — no codegen, no runtime parsing. Every locale must translate every key, and plural forms are validated per locale: the Russian entry below would not build without all four of its forms.", .style = .{ .scale = .small, .ink = .dark } } });
+    try tree.append(root, .{ .segmented = .{
         .label = "Catalog locale",
         .options = &l10n_locale_options,
         .selected = switch (state.l10n_locale) {
@@ -796,16 +796,16 @@ fn buildHome(ctx: ?*anyopaque, app: *h.App) !void {
         },
         .on_select = .{ .ctx = state, .call = onL10nLocale },
     } });
-    state.l10n_text_id = try tree.append(root, .{ .text = .{ .content = L.tr(state.l10n_locale, .l10nGreeting) } });
+    state.l10n_text_id = try tree.appendId(root, .{ .text = .{ .content = L.tr(state.l10n_locale, .l10nGreeting) } });
     var l10n_buf: [128]u8 = undefined;
     const l10n_items = try L.fmt(&l10n_buf, state.l10n_locale, .l10nItems, .{ .count = state.l10n_count });
-    state.l10n_items_id = try tree.append(root, .{ .text = .{ .content = l10n_items } });
-    const l10n_row = try tree.append(root, .{ .stack = .{ .axis = .horizontal } });
-    _ = try tree.append(l10n_row, .{ .button = .{ .label = "Add item", .on_press = .{ .ctx = state, .call = onL10nAdd } } });
-    _ = try tree.append(l10n_row, .{ .button = .{ .label = "Remove item", .on_press = .{ .ctx = state, .call = onL10nRemove } } });
+    state.l10n_items_id = try tree.appendId(root, .{ .text = .{ .content = l10n_items } });
+    const l10n_row = try tree.appendId(root, .{ .stack = .{ .axis = .horizontal } });
+    try tree.append(l10n_row, .{ .button = .{ .label = "Add item", .on_press = .{ .ctx = state, .call = onL10nAdd } } });
+    try tree.append(l10n_row, .{ .button = .{ .label = "Remove item", .on_press = .{ .ctx = state, .call = onL10nRemove } } });
 
-    _ = try tree.append(root, .{ .heading = .{ .content = "Appearance", .level = .h2 } });
-    _ = try tree.append(root, .{ .segmented = .{
+    try tree.append(root, .{ .heading = .{ .content = "Appearance", .level = .h2 } });
+    try tree.append(root, .{ .segmented = .{
         .label = "Appearance",
         .options = &.{ "Light", "Dark", "Automatic" },
         .selected = switch (app.scheme) {
@@ -815,16 +815,16 @@ fn buildHome(ctx: ?*anyopaque, app: *h.App) !void {
         },
         .on_select = .{ .ctx = state, .call = onSchemeSelect },
     } });
-    _ = try tree.append(root, .{ .heading = .{ .content = "Overflow", .level = .h2 } });
-    _ = try tree.append(root, .{ .text = .{ .content = "A track wider than the screen scrolls to follow the selection.", .style = .{ .scale = .small, .ink = .dark } } });
-    _ = try tree.append(root, .{ .segmented = .{
+    try tree.append(root, .{ .heading = .{ .content = "Overflow", .level = .h2 } });
+    try tree.append(root, .{ .text = .{ .content = "A track wider than the screen scrolls to follow the selection.", .style = .{ .scale = .small, .ink = .dark } } });
+    try tree.append(root, .{ .segmented = .{
         .label = "Month",
         .options = &.{ "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December" },
     } });
 
-    _ = try tree.append(root, .{ .heading = .{ .content = "Shades", .level = .h2 } });
-    _ = try tree.append(root, .{ .text = .{ .content = "All thirteen grays, g0 to g12. The middle one is the 50-50 gray.", .style = .{ .scale = .small, .ink = .dark } } });
-    const shade_row = try tree.append(root, .{ .stack = .{ .axis = .horizontal, .gap = 0 } });
+    try tree.append(root, .{ .heading = .{ .content = "Shades", .level = .h2 } });
+    try tree.append(root, .{ .text = .{ .content = "All thirteen grays, g0 to g12. The middle one is the 50-50 gray.", .style = .{ .scale = .small, .ink = .dark } } });
+    const shade_row = try tree.appendId(root, .{ .stack = .{ .axis = .horizontal, .gap = 0 } });
     // The ramp is only readable whole — a swatch pushed off the right
     // edge takes one end of the scale with it — so the size comes from
     // the width instead of a constant. A swatch hugs its content, so
@@ -838,16 +838,16 @@ fn buildHome(ctx: ?*anyopaque, app: *h.App) !void {
     const row_w = app.viewport.w - 2 * 16; // the root stack's content width
     const swatch_pad = std.math.clamp(@divTrunc(@divTrunc(row_w, @as(i32, shades.len)) - 8, 2), 4, 16);
     inline for (shades) |f| {
-        const swatch = try tree.append(shade_row, .{ .box = .{ .fill = @field(h.Gray, f.name), .border = false, .padding = swatch_pad } });
-        _ = try tree.append(swatch, .{ .text = .{ .content = " ", .style = .{ .scale = .small } } });
+        const swatch = try tree.appendId(shade_row, .{ .box = .{ .fill = @field(h.Gray, f.name), .border = false, .padding = swatch_pad } });
+        try tree.append(swatch, .{ .text = .{ .content = " ", .style = .{ .scale = .small } } });
     }
 
-    _ = try tree.append(root, .{ .heading = .{ .content = "Table", .level = .h2 } });
-    const table = try tree.append(root, .{ .table = .{} });
-    const header = try tree.append(table, .{ .row = .{ .header = true } });
+    try tree.append(root, .{ .heading = .{ .content = "Table", .level = .h2 } });
+    const table = try tree.appendId(root, .{ .table = .{} });
+    const header = try tree.appendId(table, .{ .row = .{ .header = true } });
     for ([_][]const u8{ "Element", "Focusable" }) |label| {
-        const cell = try tree.append(header, .{ .cell = .{} });
-        _ = try tree.append(cell, .{ .text = .{ .content = label } });
+        const cell = try tree.appendId(header, .{ .cell = .{} });
+        try tree.append(cell, .{ .text = .{ .content = label } });
     }
     const rows = [_][2][]const u8{
         .{ "button", "yes" },
@@ -855,41 +855,41 @@ fn buildHome(ctx: ?*anyopaque, app: *h.App) !void {
         .{ "scroll region", "yes" },
     };
     for (rows) |r| {
-        const row = try tree.append(table, .{ .row = .{} });
+        const row = try tree.appendId(table, .{ .row = .{} });
         for (r) |cell_text| {
-            const cell = try tree.append(row, .{ .cell = .{} });
-            _ = try tree.append(cell, .{ .text = .{ .content = cell_text } });
+            const cell = try tree.appendId(row, .{ .cell = .{} });
+            try tree.append(cell, .{ .text = .{ .content = cell_text } });
         }
     }
 
-    _ = try tree.append(root, .{ .heading = .{ .content = "Scroll", .level = .h2 } });
+    try tree.append(root, .{ .heading = .{ .content = "Scroll", .level = .h2 } });
     // Not a round 120: that edge would land exactly on a line boundary
     // and the region would read as complete. 140 cuts line 5 mid-glyph
     // — the visible cut is the scrollability affordance.
-    const scroll = try tree.append(root, .{ .scroll_region = .{ .height = 140 } });
+    const scroll = try tree.appendId(root, .{ .scroll_region = .{ .height = 140 } });
     for (0..12) |i| {
         var buf: [32]u8 = undefined;
         const line = try std.fmt.bufPrint(&buf, "Scrollable line {d}", .{i + 1});
-        _ = try tree.append(scroll, .{ .text = .{ .content = line } });
+        try tree.append(scroll, .{ .text = .{ .content = line } });
     }
 }
 
 fn buildDetails(_: ?*anyopaque, app: *h.App) !void {
     const tree = &app.tree;
     const root = tree.rootId();
-    _ = try tree.append(root, .{ .heading = .{ .content = "Details", .level = .h1 } });
-    _ = try tree.append(root, .{ .text = .{ .content = "A second screen. Navigation is a stack; there are no transitions. The nav below is app chrome: it survives every route change." } });
-    _ = try tree.append(root, .{ .link = .{ .label = "Back home", .route = "home" } });
+    try tree.append(root, .{ .heading = .{ .content = "Details", .level = .h1 } });
+    try tree.append(root, .{ .text = .{ .content = "A second screen. Navigation is a stack; there are no transitions. The nav below is app chrome: it survives every route change." } });
+    try tree.append(root, .{ .link = .{ .label = "Back home", .route = "home" } });
 
     // A parameterized screen (docs/routing.md): the reference carries the
     // id, so the two tiles below lead to two different screens through
     // one route. On the web each is its own address — `#ticket~2938`.
-    _ = try tree.append(root, .{ .heading = .{ .content = "Route arguments", .level = .h2 } });
-    const group = try tree.append(root, .{ .tile_group = .{ .description = "Same route, different screens" } });
+    try tree.append(root, .{ .heading = .{ .content = "Route arguments", .level = .h2 } });
+    const group = try tree.appendId(root, .{ .tile_group = .{ .description = "Same route, different screens" } });
     for ([_]u32{ 2938, 4471 }) |id| {
         var ref: [16]u8 = undefined;
         var label: [24]u8 = undefined;
-        _ = try tree.append(group, .{ .tile = .{
+        try tree.append(group, .{ .tile = .{
             .label = try std.fmt.bufPrint(&label, "Ticket {d}", .{id}),
             .route = try std.fmt.bufPrint(&ref, "ticket~{d}", .{id}),
         } });
@@ -903,11 +903,11 @@ fn buildTicket(_: ?*anyopaque, app: *h.App) !void {
     const root = tree.rootId();
     var title: [24]u8 = undefined;
     const id = app.routeArg(0) orelse "?";
-    _ = try tree.append(root, .{ .heading = .{
+    try tree.append(root, .{ .heading = .{
         .content = try std.fmt.bufPrint(&title, "Ticket {s}", .{id}),
         .level = .h1,
     } });
-    _ = try tree.append(root, .{ .text = .{ .content = "One route, one builder, one argument. The stack entry owns that argument, so popping back to a sibling ticket still knows which one it was." } });
+    try tree.append(root, .{ .text = .{ .content = "One route, one builder, one argument. The stack entry owns that argument, so popping back to a sibling ticket still knows which one it was." } });
 }
 
 /// Shaped like content fetched at runtime rather than written here: it
@@ -956,7 +956,7 @@ const terms_markdown =
 ;
 
 fn buildTerms(_: ?*anyopaque, app: *h.App) !void {
-    _ = try app.tree.append(app.tree.rootId(), .{ .document = .{
+    try app.tree.append(app.tree.rootId(), .{ .document = .{
         .label = "Terms of Service",
         .source = terms_markdown,
     } });

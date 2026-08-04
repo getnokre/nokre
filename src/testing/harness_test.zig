@@ -31,14 +31,14 @@ const TodoCtx = struct {
 fn buildTodo(ctx: ?*anyopaque, app: *App) anyerror!void {
     const data: *TodoCtx = @ptrCast(@alignCast(ctx.?));
     const root = app.tree.rootId();
-    _ = try app.tree.append(root, .{ .heading = .{ .content = "Todo", .level = .h1 } });
-    _ = try app.tree.append(root, .{ .text_input = .{
+    try app.tree.append(root, .{ .heading = .{ .content = "Todo", .level = .h1 } });
+    try app.tree.append(root, .{ .text_input = .{
         .label = "New item",
         .placeholder = "What needs doing?",
         .on_change = .{ .ctx = data, .call = TodoCtx.onChange },
         .on_submit = .{ .ctx = data, .call = TodoCtx.onSubmit },
     } });
-    _ = try app.tree.append(root, .{ .toggle = .{ .label = "Show done" } });
+    try app.tree.append(root, .{ .toggle = .{ .label = "Show done" } });
 }
 
 test "e2e: fill a form with keyboard only" {
@@ -124,7 +124,7 @@ test "e2e: tap refuses targets a finger could not hit" {
     for (0..60) |i| {
         var buf: [16]u8 = undefined;
         const label = try std.fmt.bufPrint(&buf, "Filler {d}", .{i});
-        _ = try h.app.tree.append(h.app.tree.rootId(), .{ .toggle = .{ .label = label } });
+        try h.app.tree.append(h.app.tree.rootId(), .{ .toggle = .{ .label = label } });
     }
     h.app.invalidate();
     {
@@ -138,7 +138,7 @@ test "e2e: tap refuses a button whose work is still running" {
     var ctx: TodoCtx = .{};
     var h = try Harness.init(testing.allocator, .{ .w = 480, .h = 640 }, &ctx, buildTodo);
     defer h.deinit();
-    const btn = try h.app.tree.append(h.app.tree.rootId(), .{ .button = .{ .label = "Count primes", .in_progress = true } });
+    const btn = try h.app.tree.appendId(h.app.tree.rootId(), .{ .button = .{ .label = "Count primes", .in_progress = true } });
     h.app.invalidate();
 
     // The button is deliberately still focusable, so the plain "not
@@ -160,7 +160,7 @@ test "e2e: a switch with work in flight takes no press and loses no place" {
     var ctx: TodoCtx = .{};
     var h = try Harness.init(testing.allocator, .{ .w = 480, .h = 640 }, &ctx, buildTodo);
     defer h.deinit();
-    const sw = try h.app.tree.append(h.app.tree.rootId(), .{ .toggle = .{ .label = "Push to phone", .in_progress = true } });
+    const sw = try h.app.tree.appendId(h.app.tree.rootId(), .{ .toggle = .{ .label = "Push to phone", .in_progress = true } });
     h.app.invalidate();
 
     // Keyboard-reachable while busy — that is the whole point of the
@@ -208,19 +208,19 @@ const ChoiceCtx = struct {
 fn buildChoices(ctx: ?*anyopaque, app: *App) anyerror!void {
     const data: *ChoiceCtx = @ptrCast(@alignCast(ctx.?));
     const root = app.tree.rootId();
-    _ = try app.tree.append(root, .{ .heading = .{ .content = "Preferences", .level = .h1 } });
-    _ = try app.tree.append(root, .{ .segmented = .{
+    try app.tree.append(root, .{ .heading = .{ .content = "Preferences", .level = .h1 } });
+    try app.tree.append(root, .{ .segmented = .{
         .label = "View",
         .options = &.{ "List", "Grid", "Compact" },
         .on_select = .{ .ctx = data, .call = ChoiceCtx.onView },
     } });
-    _ = try app.tree.append(root, .{ .radio_group = .{
+    try app.tree.append(root, .{ .radio_group = .{
         .label = "Delivery",
         .options = &.{ "Email", "SMS", "Post" },
         .selected = 2,
         .on_select = .{ .ctx = data, .call = ChoiceCtx.onDelivery },
     } });
-    _ = try app.tree.append(root, .{ .select = .{
+    try app.tree.append(root, .{ .select = .{
         .label = "Country",
         .options = &.{ "Brazil", "Canada", "Denmark", "Egypt", "France", "Ghana", "Hungary", "Iceland", "Japan" },
         .on_select = .{ .ctx = data, .call = ChoiceCtx.onCountry },
@@ -354,7 +354,7 @@ test "e2e: harness rejects screens that fail the audit" {
     const bad = struct {
         fn build(_: ?*anyopaque, app: *App) anyerror!void {
             // Skipped heading level: h2 with no h1 before it.
-            _ = try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Section", .level = .h2 } });
+            try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Section", .level = .h2 } });
         }
     };
     diag.quiet = true;
@@ -384,7 +384,7 @@ test "e2e: expectTree snapshots the laid-out tree inline" {
 }
 
 fn buildMinimal(_: ?*anyopaque, app: *App) anyerror!void {
-    _ = try app.tree.append(app.tree.rootId(), .{ .toggle = .{ .label = "Show done" } });
+    try app.tree.append(app.tree.rootId(), .{ .toggle = .{ .label = "Show done" } });
 }
 
 test "e2e: step trace writes a tree snapshot per action" {
@@ -416,7 +416,7 @@ test "e2e: step trace writes a tree snapshot per action" {
 }
 
 fn buildRecovery(_: ?*anyopaque, app: *App) anyerror!void {
-    _ = try app.tree.append(app.tree.rootId(), .{ .copyable = .{
+    try app.tree.append(app.tree.rootId(), .{ .copyable = .{
         .label = "Recovery code",
         .value = "XKCD-1234",
     } });
@@ -447,7 +447,7 @@ const consent_routes = [_]@import("../core/router.zig").RouteDef{
 };
 
 fn buildTermsDoc(_: ?*anyopaque, app: *App) anyerror!void {
-    _ = try app.tree.append(app.tree.rootId(), .{ .document = .{
+    try app.tree.append(app.tree.rootId(), .{ .document = .{
         .label = "Consent",
         .source =
         \\By continuing you accept the [terms of service](terms).
@@ -456,7 +456,7 @@ fn buildTermsDoc(_: ?*anyopaque, app: *App) anyerror!void {
 }
 
 fn buildTermsTarget(_: ?*anyopaque, app: *App) anyerror!void {
-    _ = try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Terms" } });
+    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Terms" } });
 }
 
 test "e2e: an inline link is tapped and tabbed to by its words" {
@@ -481,7 +481,7 @@ const ticket_routes = [_]@import("../core/router.zig").RouteDef{
 };
 
 fn buildInbox(_: ?*anyopaque, app: *App) anyerror!void {
-    _ = try app.tree.append(app.tree.rootId(), .{ .document = .{
+    try app.tree.append(app.tree.rootId(), .{ .document = .{
         .label = "Inbox",
         .source =
         \\Latest: [the flaky build](ticket~2938).
@@ -490,7 +490,7 @@ fn buildInbox(_: ?*anyopaque, app: *App) anyerror!void {
 }
 
 fn buildTicketScreen(_: ?*anyopaque, app: *App) anyerror!void {
-    _ = try app.tree.append(app.tree.rootId(), .{
+    try app.tree.append(app.tree.rootId(), .{
         .heading = .{ .content = app.routeArg(0) orelse "?" },
     });
 }
@@ -513,7 +513,7 @@ test "e2e: a Markdown link carries route arguments" {
 // build from its Farsi catalog. Only the titles move; `setRouteTitles`
 // accepts nothing else about a table changing.
 fn buildBlank(_: ?*anyopaque, app: *App) anyerror!void {
-    _ = try app.tree.append(app.tree.rootId(), .{ .text = .{ .content = "…" } });
+    try app.tree.append(app.tree.rootId(), .{ .text = .{ .content = "…" } });
 }
 
 const shop_routes = [_]@import("../core/router.zig").RouteDef{
@@ -591,9 +591,9 @@ test "e2e: a missing link is diagnosed alongside the labels that do exist" {
 }
 
 fn buildActionRow(_: ?*anyopaque, app: *App) anyerror!void {
-    const row = try app.tree.append(app.tree.rootId(), .{ .stack = .{ .axis = .horizontal, .gap = 8 } });
+    const row = try app.tree.appendId(app.tree.rootId(), .{ .stack = .{ .axis = .horizontal, .gap = 8 } });
     for ([_][]const u8{ "Publish", "Save draft", "Duplicate", "Archive", "Delete" }) |label| {
-        _ = try app.tree.append(row, .{ .button = .{ .label = label } });
+        try app.tree.append(row, .{ .button = .{ .label = label } });
     }
 }
 

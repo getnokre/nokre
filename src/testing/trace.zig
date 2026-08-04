@@ -289,8 +289,8 @@ test "dump serializes roles, rects, state, and focus" {
     var app = try test_app.init(200, 200);
     defer app.deinit();
     const root = app.tree.rootId();
-    _ = try app.tree.append(root, .{ .heading = .{ .content = "Hi \"there\"", .level = .h2 } });
-    const cb = try app.tree.append(root, .{ .toggle = .{ .label = "Done", .on = true } });
+    try app.tree.append(root, .{ .heading = .{ .content = "Hi \"there\"", .level = .h2 } });
+    const cb = try app.tree.appendId(root, .{ .toggle = .{ .label = "Done", .on = true } });
     app.focused = .of(cb);
 
     var out: std.ArrayList(u8) = .empty;
@@ -307,7 +307,7 @@ test "dump serializes sheets and notices" {
     var app = try test_app.init(200, 200);
     defer app.deinit();
     try app.notify(.{ .title = "Sync failed", .description = "Changes kept locally.", .route = "details", .important = true });
-    _ = try app.tree.append(app.tree.rootId(), .{ .sheet = .{ .title = "Options" } });
+    try app.tree.append(app.tree.rootId(), .{ .sheet = .{ .title = "Options" } });
 
     var out: std.ArrayList(u8) = .empty;
     defer out.deinit(testing.allocator);

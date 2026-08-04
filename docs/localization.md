@@ -15,11 +15,11 @@ const L = h.l10n.Bundle(&.{
 locale: L.Locale = L.default_locale,
 
 // In a build function or action:
-_ = try tree.append(root, .{ .heading = .{ .content = L.tr(state.locale, .inboxTitle), .level = .h1 } });
+try tree.append(root, .{ .heading = .{ .content = L.tr(state.locale, .inboxTitle), .level = .h1 } });
 
 var buf: [128]u8 = undefined;
 const line = try L.fmt(&buf, state.locale, .nUnread, .{ .count = unread });
-_ = try tree.append(root, .{ .text = .{ .content = line } });
+try tree.append(root, .{ .text = .{ .content = line } });
 ```
 
 `Bundle` returns a type: `Locale` (one enum field per source, named by

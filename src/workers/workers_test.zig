@@ -539,7 +539,7 @@ test "harness: settleWorkers is the moment async work lands" {
         fn build(ctx: ?*anyopaque, app: *App) !void {
             _ = ctx;
             const root = app.tree.rootId();
-            _ = try app.tree.append(root, .{ .heading = .{ .content = "Search", .level = .h1 } });
+            try app.tree.append(root, .{ .heading = .{ .content = "Search", .level = .h1 } });
         }
     };
     var ctx: Ctx = .{ .sink = .{ .gpa = gpa } };

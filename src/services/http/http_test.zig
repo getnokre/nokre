@@ -293,7 +293,7 @@ test "harness: fulfillHttp and failHttp land the result at the call" {
         sink: Sink,
         fn build(_: ?*anyopaque, app: *App) !void {
             const root = app.tree.rootId();
-            _ = try app.tree.append(root, .{ .heading = .{ .content = "Fetch", .level = .h1 } });
+            try app.tree.append(root, .{ .heading = .{ .content = "Fetch", .level = .h1 } });
         }
     };
     var ctx: Ctx = .{ .sink = .{ .gpa = gpa } };
@@ -325,7 +325,7 @@ test "harness: onHttp is the fake server; settleHttp answers to quiescence" {
 
         fn build(_: ?*anyopaque, app: *App) !void {
             const root = app.tree.rootId();
-            _ = try app.tree.append(root, .{ .heading = .{ .content = "Fetch", .level = .h1 } });
+            try app.tree.append(root, .{ .heading = .{ .content = "Fetch", .level = .h1 } });
         }
 
         // First response in hand, the app asks a follow-up question —
