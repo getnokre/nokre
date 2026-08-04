@@ -29,25 +29,15 @@ byte-identical unless the change is intentionally visual), e2e where
 the apps have it, site rebuilt last per the publish order. Stop for
 owner review before the next item — never chain.
 
-One hard sequencing constraint: the test-identity migration (item 1)
-lands **before or alongside** the chosen-locale work (item 2), because
-hardcoded-label lookups get strictly more fragile once labels can
-change language at runtime.
+The one hard sequencing constraint this file carried — test identity
+before the chosen locale — was discharged when the test-identity
+migration shipped (2026-08-04, below): the consumer's lookups are
+role+name and its fixtures pin `en`, so the chosen-locale work is free
+to move labels at runtime.
 
 ## Execution order
 
-### 1. Test identity — refusal affirmed, migrate the consumer
-
-**Decided: the refusal stands.** nokre's query surface stays label and
-role+name only; no stable key will be added. The work is entirely on
-the consumer side: its ~1,634 control lookups by hardcoded English
-label (re-count) migrate to role+name per the consumer's own written
-rule, and its tests pin a locale explicitly so name-based lookups stay
-deterministic when item 2 makes the chosen locale switchable. This was
-the survey's largest single coupling; it is now a migration, not a
-question.
-
-### 2. The chosen locale, and route titles
+### 1. The chosen locale, and route titles
 
 nokre owns the *device* locale but not the app's *chosen* one, so the
 apps fan the choice out by hand (17 controller assignments in one app,
@@ -58,7 +48,7 @@ app already holds `Chrome` and direction; holding the chosen locale,
 and letting `RouteDef.title` be a function of it, deletes both
 fan-outs. No design fork here — the sketch is the plan.
 
-### 3. `App.Chrome` without silent English
+### 2. `App.Chrome` without silent English
 
 **Decided: comptime-checked catalogue, opt-in.** The English defaults
 stay for the zero-config hello-world case. An app that opts into
@@ -69,7 +59,7 @@ drift — the failure mode the survey caught (the two apps already
 disagreed on one key) becomes unrepresentable for any app that has
 opted in.
 
-### 4. Worker queueing
+### 3. Worker queueing
 
 **Decided: the handle grows a small bounded FIFO.** A second ask
 queues instead of answering `error.Interrupted`; a mutation can no
@@ -80,7 +70,7 @@ refusal that every consumer papers over with the same code was not
 buying determinism, it was exporting complexity. Document the queue's
 bound and overflow behavior as the contract.
 
-### 5. `expectGolden` on the harness
+### 4. `expectGolden` on the harness
 
 Taking a golden from consumer code is a five-step incantation (set the
 module-global `testing.golden.update`, build a Skia surface at the
@@ -88,7 +78,7 @@ viewport, swap the measurer, render, unpack four accessors into
 `expectMatches`) — both apps carry the same 19-line wrapper. One
 harness verb, and the module-global update flag becomes an argument.
 
-### 6. A recording headless shell
+### 5. A recording headless shell
 
 A consumer building a headless native binary (system tests, e2e
 drivers) hand-declares nokre ABI symbols — 21 extern declarations
@@ -96,7 +86,7 @@ across 4 files in the consumer, with exact `callconv(.c)` signatures.
 A rename here is at best a link error there. nokre ships the
 null/recording shell it is currently forcing every consumer to write.
 
-### 7. Vendoring
+### 6. Vendoring
 
 **Decided: revision constant plus published manifest.** A `revision`
 constant in nokre source that consumers assert (replacing the prose
@@ -141,6 +131,13 @@ they don't collide. No consumer API changes except where noted.
 
 ## Shipped from this list (2026-08-04, for the record)
 
+- Test identity: the stable-key refusal affirmed; nokre unchanged. The
+  consumer's ~1,650 label lookups (both apps' fixtures, tests, and e2e
+  drivers) migrated to role+name, `getByLabel` removed from the
+  fixture surfaces, fixture locales pinned to `en` ahead of the
+  chosen-locale item; absence/focus assertions, notice titles, e2e
+  content waits, and inline link spans stay name-based by design
+  (rokovski `ae0e47a9`).
 - Navigation error surface: bad references are recorded refusals
   (`Router.refused`, `vet`, the `unresolvable_route` audit rule);
   docs/routing.md "Errors, and refusals" is the home.
