@@ -37,15 +37,27 @@ free to move labels at runtime — and did, the same day (below).
 
 ## Structural, nokre-internal
 
-What remains, now that the execution-order list is done. One session
-each. No consumer API changes except where noted.
-
-- **`render.dom` has one word for two things.** `dom.Options` is the
-  serializer's options, `dom.stylesheet.Options` the CSS options, and
-  the live driver bypasses `dom.zig` to import the serializer
-  directly. Rename one, or make the re-export the only path.
+Nothing remains. The execution-order list and the structural list are
+both done; everything below is the record.
 
 ## Shipped from this list (2026-08-04, for the record)
+
+- `render.dom` says Options once: the serializer's options moved to
+  where they are consumed — `dom.Emitter.Options`, beside
+  `dom.stylesheet.Options`, each scoped to the thing it configures —
+  and the flattened `dom.Options` re-export is deleted. The live
+  driver's bypass import went with it: both drivers name the walk
+  through `dom.zig`, so what the edition exports and what its own
+  drivers use cannot drift (the sibling `serialize_test.zig` keeps its
+  direct imports, the sibling-test convention's way, and dom.zig says
+  so). A published name moved, so `nokre.revision` bumped to 5 and all
+  three pins with it — the survey found neither app touches
+  `render.dom` and the site generator builds its Emitter options as
+  anonymous literals, so the pin is the whole consumer migration.
+  Tests, goldens (byte-identical), and check-targets green on all
+  three builds; site rebuilt against the clean commit.
+  docs/internals/dom-edition.md keeps the edition's facts (nokre
+  `c3c5f40`, rokovski `eff2608d`, site `f7b7d7b`).
 
 - One `services.Failure`, owner-confirmed at the session's start: the
   three structurally identical `struct { name }` declarations http,
