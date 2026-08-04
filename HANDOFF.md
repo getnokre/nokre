@@ -37,18 +37,7 @@ free to move labels at runtime — and did, the same day (below).
 
 ## Execution order
 
-### 1. Worker queueing
-
-**Decided: the handle grows a small bounded FIFO.** A second ask
-queues instead of answering `error.Interrupted`; a mutation can no
-longer fail because an unrelated solve happened to be in flight. Both
-apps' byte-identical 220-line `QueuedPowSolver` (and the corpus-read
-sibling) are deleted in the same pass. The deciding evidence: a
-refusal that every consumer papers over with the same code was not
-buying determinism, it was exporting complexity. Document the queue's
-bound and overflow behavior as the contract.
-
-### 2. `expectGolden` on the harness
+### 1. `expectGolden` on the harness
 
 Taking a golden from consumer code is a five-step incantation (set the
 module-global `testing.golden.update`, build a Skia surface at the
@@ -56,7 +45,7 @@ viewport, swap the measurer, render, unpack four accessors into
 `expectMatches`) — both apps carry the same 19-line wrapper. One
 harness verb, and the module-global update flag becomes an argument.
 
-### 3. A recording headless shell
+### 2. A recording headless shell
 
 A consumer building a headless native binary (system tests, e2e
 drivers) hand-declares nokre ABI symbols — 21 extern declarations
@@ -64,7 +53,7 @@ across 4 files in the consumer, with exact `callconv(.c)` signatures.
 A rename here is at best a link error there. nokre ships the
 null/recording shell it is currently forcing every consumer to write.
 
-### 4. Vendoring
+### 3. Vendoring
 
 **Decided: revision constant plus published manifest.** A `revision`
 constant in nokre source that consumers assert (replacing the prose
@@ -109,6 +98,21 @@ they don't collide. No consumer API changes except where noted.
 
 ## Shipped from this list (2026-08-04, for the record)
 
+- Worker queueing, as the ask surface: `workers.spawnAsker`/`ask`
+  answer every question exactly once, in ask order, from a bounded
+  FIFO on the slot — `max_pending_asks` (32) counting the one in
+  flight, a full queue refusing with `error.TooManyAsks`, `retire`
+  draining so every accepted ask is answered. Only the front question
+  is ever in the worker's inbox, so `interrupted()` mid-answer means
+  retirement and an unrelated ask can no longer make in-flight work
+  stale. `h.Queue` is the same FIFO for single-flight ports without a
+  worker. Both apps' 220-line `QueuedPowSolver` deleted — the solver
+  adapter keeps a lockstep ring of the port's two-word callbacks,
+  which the ask-order contract makes state-machine-free — and the
+  corpus-read sibling rides `h.Queue`; e2e idle probes read
+  `pending()`. docs/services.md owns the consumer contract,
+  docs/internals/workers.md the machinery (nokre `6d09a90`, rokovski
+  `64acc8e8`).
 - The chrome catalogue: `Chrome.Catalog` is `Chrome` field for field
   with the defaults stripped — generated from `Chrome` itself, so the
   two cannot drift — and `Chrome.fromCatalog` is the hand-off. An
