@@ -12,6 +12,7 @@ const text = @import("../core/text.zig");
 const tree_mod = @import("../core/tree.zig");
 const element_mod = @import("../core/element.zig");
 const layout = @import("../core/layout.zig");
+const wrap = @import("../core/wrap.zig");
 const app_mod = @import("../core/app.zig");
 const canvas_mod = @import("canvas.zig");
 
@@ -522,7 +523,7 @@ fn drawNotice(app: *App, canvas: Painter, id: NodeId, r: Rect, n: element_mod.No
     }
     const size = text.Scale.body.px();
     var y = r.y + metrics.notice_pad;
-    var lines = layout.wrap(app.measurer, .prose, size, n.title, col.w);
+    var lines = wrap.wrap(app.measurer, .prose, size, n.title, col.w);
     while (lines.next()) |line| {
         // The title is single-voice chrome: it anchors to the leading
         // edge of its column, like field labels.
@@ -608,7 +609,7 @@ fn drawLinkFocusRing(app: *App, canvas: Painter, id: NodeId) void {
     const stop = app.focused orelse return;
     if (!stop.node.eql(id)) return;
     const span_index = stop.span orelse return;
-    var buf: [layout.max_span_rects]Rect = undefined;
+    var buf: [wrap.max_span_rects]Rect = undefined;
     for (input.spanRectsOf(app, id, span_index, &buf)) |r| {
         // Flush around the line box, not held clear of it: the lines
         // above and below leave no room for the clear, and no need for
@@ -1150,7 +1151,7 @@ fn drawButton(app: *App, canvas: Painter, r: Rect, b: element_mod.Button, focuse
         // The glyph form has no pill, so the ellipsis stands on the bare
         // tap target exactly where the glyph did.
         if (b.in_progress)
-            drawCenteredText(app, canvas, r, layout.ellipsis, ink)
+            drawCenteredText(app, canvas, r, wrap.ellipsis, ink)
         else
             drawGlyph(app, canvas, r, b.icon.?.utf8(), ink);
     } else {
@@ -1279,7 +1280,7 @@ fn drawPillButton(app: *App, canvas: Painter, r: Rect, b: element_mod.Button, fo
         if (b.progress_percent != null and !b.disabled)
             drawButtonProgress(app, canvas, r, b.progress_percent.?, b.secondary)
         else
-            drawCenteredText(app, pen, r, layout.ellipsis, fg);
+            drawCenteredText(app, pen, r, wrap.ellipsis, fg);
         return;
     }
     if (mirrored(app)) {
@@ -1363,7 +1364,7 @@ fn drawControlWait(app: *App, canvas: Painter, r: Rect, control_w: i32) void {
         .y = r.y,
         .w = control_w,
         .h = r.h,
-    }, layout.ellipsis, .ink);
+    }, wrap.ellipsis, .ink);
 }
 
 /// An iOS-style pill switch: the knob travels toward the trailing edge
@@ -1561,7 +1562,7 @@ fn drawComplexLine(app: *App, canvas: Painter, x: i32, baseline: i32, face: text
 
 fn drawWrapped(app: *App, canvas: Painter, r: Rect, face: text.Face, scale: text.Scale, content: []const u8, ink: Gray) void {
     var y = r.y;
-    var it = layout.wrap(app.measurer, face, scale.px(), content, r.w);
+    var it = wrap.wrap(app.measurer, face, scale.px(), content, r.w);
     if (!bidi.isComplex(content)) {
         while (it.next()) |line| {
             canvas.drawText(r.x, y + scale.baseline(), face, scale.px(), line, ink);
@@ -1569,7 +1570,7 @@ fn drawWrapped(app: *App, canvas: Painter, r: Rect, face: text.Face, scale: text
         }
         return;
     }
-    var cursor: layout.ParagraphCursor = .{ .content = content };
+    var cursor: wrap.ParagraphCursor = .{ .content = content };
     while (it.next()) |line| {
         const start = @intFromPtr(line.ptr) - @intFromPtr(content.ptr);
         cursor.advanceTo(app.bidi_scratch, start);
@@ -1592,18 +1593,18 @@ fn drawWrapped(app: *App, canvas: Painter, r: Rect, face: text.Face, scale: text
 /// measured width so drawing and measurement cannot drift apart.
 fn drawSpanWrapped(app: *App, canvas: Painter, r: Rect, base: text.Face, scale: text.Scale, content: []const u8, spans: []const element_mod.Span, base_ink: Gray) void {
     var y = r.y;
-    var pieces: [layout.max_line_pieces]layout.LinePiece = undefined;
-    var cursor: layout.ParagraphCursor = .{ .content = content };
-    var it = layout.wrapSpans(app.measurer, base, scale.px(), content, spans, r.w);
+    var pieces: [wrap.max_line_pieces]wrap.LinePiece = undefined;
+    var cursor: wrap.ParagraphCursor = .{ .content = content };
+    var it = wrap.wrapSpans(app.measurer, base, scale.px(), content, spans, r.w);
     while (it.next()) |line| {
         const start = @intFromPtr(line.ptr) - @intFromPtr(content.ptr);
         cursor.advanceTo(app.bidi_scratch, start);
         const baseline = y + scale.baseline();
         const origin = if (cursor.complex and cursor.rtl)
-            r.x + r.w - layout.spanLineWidth(app.measurer, base, scale.px(), content, spans, start, start + line.len)
+            r.x + r.w - wrap.spanLineWidth(app.measurer, base, scale.px(), content, spans, start, start + line.len)
         else
             r.x;
-        const line_pieces = layout.linePieces(
+        const line_pieces = wrap.linePieces(
             app.measurer,
             base,
             scale.px(),
@@ -1759,7 +1760,7 @@ fn drawTextArea(app: *App, canvas: Painter, r: Rect, area: element_mod.TextArea,
         var y = field.y + field_pad;
         var caret_drawn = false;
         var last_span: editing.LineSpan = .{ .start = 0, .end = 0 };
-        var it = layout.wrap(app.measurer, .prose, size, area.value, inner_w);
+        var it = wrap.wrap(app.measurer, .prose, size, area.value, inner_w);
         while (it.next()) |line| {
             const start = @intFromPtr(line.ptr) - @intFromPtr(area.value.ptr);
             const span: editing.LineSpan = .{ .start = start, .end = start + line.len };
@@ -1792,7 +1793,7 @@ fn drawTextArea(app: *App, canvas: Painter, r: Rect, area: element_mod.TextArea,
     var y = field.y + field_pad;
     var caret_drawn = false;
     var last_start: usize = 0;
-    var it = layout.wrap(app.measurer, .prose, size, area.value, field.w - 2 * field_pad);
+    var it = wrap.wrap(app.measurer, .prose, size, area.value, field.w - 2 * field_pad);
     while (it.next()) |line| {
         const start = @intFromPtr(line.ptr) - @intFromPtr(area.value.ptr);
         const end = start + line.len;
@@ -1863,14 +1864,14 @@ fn drawCopyable(app: *App, canvas: Painter, r: Rect, id: NodeId, c: element_mod.
     // steps back. The value anchors to the leading edge; the glyph holds
     // the trailing slot on either side.
     const avail = field.w - 2 * field_pad - @max(copy_w, check_w) - metrics.icon_gap;
-    if (layout.elideMiddle(app.measurer, .mono, size, c.value, avail)) |e| {
+    if (wrap.elideMiddle(app.measurer, .mono, size, c.value, avail)) |e| {
         const head_w = app.measurer.measure(.mono, size, c.value[0..e.head_end]);
-        const ell_w = app.measurer.measure(.mono, size, layout.ellipsis);
+        const ell_w = app.measurer.measure(.mono, size, wrap.ellipsis);
         const tail_w = app.measurer.measure(.mono, size, c.value[e.tail_start..]);
         var x = startX(app, field.x + field_pad, avail, head_w + ell_w + tail_w);
         canvas.drawText(x, ty, .mono, size, c.value[0..e.head_end], .ink);
         x += head_w;
-        canvas.drawText(x, ty, .mono, size, layout.ellipsis, .mid);
+        canvas.drawText(x, ty, .mono, size, wrap.ellipsis, .mid);
         x += ell_w;
         canvas.drawText(x, ty, .mono, size, c.value[e.tail_start..], .ink);
     } else {

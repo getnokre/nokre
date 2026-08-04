@@ -19,6 +19,7 @@ const event_mod = @import("event.zig");
 const focus = @import("focus.zig");
 const geometry = @import("geometry.zig");
 const input = @import("input.zig");
+const scrolling = @import("scrolling.zig");
 const layout = @import("layout.zig");
 const nav_mod = @import("nav.zig");
 const notices_mod = @import("notices.zig");
@@ -91,7 +92,7 @@ pub const App = struct {
     root_scroll: i32 = 0,
     /// Live touch-drag lock, set at scroll `.begin` and cleared at
     /// `.end`: the targets under the initial touch own every `.move`.
-    scroll_gesture: ?input.ScrollGesture = null,
+    scroll_gesture: ?scrolling.ScrollGesture = null,
     /// The press in flight, waiting on its release (see input.zig's
     /// `Press`). Null between presses, and cleared without activating
     /// when a scroll claims the same finger.
@@ -543,7 +544,7 @@ pub const App = struct {
             .key_down => |k| try input.handleKey(self, k.key, k.mods),
             .text => |t| try editing.insertText(self, t.bytes),
             .ime => |ime| try editing.handleIme(self, ime),
-            .scroll => |s| input.handleScroll(self, s),
+            .scroll => |s| scrolling.handleScroll(self, s),
             .edge_pan => |p| try input.handleEdgePan(self, p),
         }
         self.releaseAck(held);

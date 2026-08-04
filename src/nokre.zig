@@ -10,6 +10,7 @@ pub const text = @import("core/text.zig");
 pub const element = @import("core/element.zig");
 pub const tree = @import("core/tree.zig");
 pub const layout = @import("core/layout.zig");
+pub const wrap = @import("core/wrap.zig");
 pub const event = @import("core/event.zig");
 pub const focus = @import("core/focus.zig");
 pub const router = @import("core/router.zig");
@@ -147,6 +148,7 @@ test {
     _ = element;
     _ = tree;
     _ = layout;
+    _ = wrap;
     _ = event;
     _ = focus;
     _ = router;
@@ -167,9 +169,12 @@ test {
     // Test suites for the larger modules live in sibling *_test.zig files.
     _ = @import("core/app_test.zig");
     _ = @import("core/bidi_test.zig");
+    _ = @import("core/input_test.zig");
     _ = @import("core/layout_test.zig");
     _ = @import("core/markdown_test.zig");
+    _ = @import("core/router_test.zig");
     _ = @import("core/tree_test.zig");
+    _ = @import("core/wrap_test.zig");
     _ = @import("render/renderer_test.zig");
     _ = @import("render/dom/serialize_test.zig");
     _ = @import("a11y/semantics_test.zig");

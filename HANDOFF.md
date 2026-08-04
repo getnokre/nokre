@@ -113,14 +113,6 @@ this writing; re-count before acting, the apps move.
   which of them call `workersViewReady` — invisible asymmetries unless
   all four are diffed. A `Runner(comptime Adapter)` in `c_shell.zig`
   drops each to ~12 lines.
-- **File splits, pure moves:** `layout.zig`'s line-breaking tail
-  (~420 lines, no `Tree`/`Ctx` references) → `core/wrap.zig`;
-  `input.zig`'s scroll block (~220 lines) → `core/scrolling.zig`
-  matching the editing/overlays/nav split; `app_test.zig` (4288
-  lines) split along its own section headers, giving `input.zig` and
-  `router.zig` the sibling `_test.zig` files the convention promises.
-  `serialize.node`'s largest arms (button 72 lines, tile 42) extracted
-  to named emitters like the file's existing four.
 - **Two C copies of "open a URL" per desktop.** The desktop shells
   transcribe oauth's `windows.c`/`linux.c` launchers (their comments
   say so). Deduping means oauth's loopback leg names the shell symbol

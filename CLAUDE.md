@@ -71,10 +71,10 @@ fact has one home; complement, never duplicate. Start with
 - Modules past a few hundred lines keep their tests in a sibling
   `*_test.zig`, wired in `src/nokre.zig`'s test block; small modules keep
   design-proof tests inline.
-- App behavior is split by concern: `input.zig` (tap/key/scroll),
-  `editing.zig` (text + IME), `overlays.zig` (sheet + picker),
-  `nav.zig` (roster + collapse), `notices.zig` — free functions over
-  `*App`; `app.zig` aliases the
+- App behavior is split by concern: `input.zig` (tap/key),
+  `scrolling.zig` (the scroll chain), `editing.zig` (text + IME),
+  `overlays.zig` (sheet + picker), `nav.zig` (roster + collapse),
+  `notices.zig` — free functions over `*App`; `app.zig` aliases the
   consumer-facing ones as methods.
 - New element = the full checklist in `docs/internals/contributing.md`
   (element, layout, **DOM markup**, a11y, validate/audit, input, tests,

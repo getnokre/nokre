@@ -12,6 +12,7 @@ const focus = @import("../core/focus.zig");
 const geometry = @import("../core/geometry.zig");
 const input = @import("../core/input.zig");
 const layout = @import("../core/layout.zig");
+const wrap = @import("../core/wrap.zig");
 const queries = @import("queries.zig");
 
 const App = app_mod.App;
@@ -77,7 +78,7 @@ fn inProgress(el: element_mod.Element) bool {
 pub fn tapLink(app: *App, stop: focus.Focus) !void {
     app.performLayout();
     const span_index = stop.span orelse return tap(app, stop.node);
-    var buf: [layout.max_span_rects]geometry.Rect = undefined;
+    var buf: [wrap.max_span_rects]geometry.Rect = undefined;
     const rects = input.spanRectsOf(app, stop.node, span_index, &buf);
     const label = queries.linkLabel(&app.tree, stop) orelse "";
     if (rects.len == 0) {

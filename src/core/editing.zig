@@ -9,6 +9,7 @@ const bidi = @import("bidi.zig");
 const element_mod = @import("element.zig");
 const event_mod = @import("event.zig");
 const layout = @import("layout.zig");
+const wrap = @import("wrap.zig");
 const text = @import("text.zig");
 const tree_mod = @import("tree.zig");
 
@@ -144,7 +145,7 @@ const AreaLines = struct { prev: ?LineSpan, cur: LineSpan, next: ?LineSpan };
 /// at a soft-wrap boundary belongs to the end of the earlier line.
 fn areaLines(app: *App, id: NodeId, area: *const element_mod.TextArea) AreaLines {
     const inner_w = app.tree.rectOf(id).w - 2 * (layout.metrics.input_pad + layout.metrics.border);
-    var it = layout.wrap(app.measurer, .prose, text.Scale.body.px(), area.value, inner_w);
+    var it = wrap.wrap(app.measurer, .prose, text.Scale.body.px(), area.value, inner_w);
     var prev: ?LineSpan = null;
     var cur: ?LineSpan = null;
     var last: ?LineSpan = null;

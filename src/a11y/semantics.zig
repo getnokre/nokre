@@ -10,6 +10,7 @@ const app_mod = @import("../core/app.zig");
 const focus = @import("../core/focus.zig");
 const input = @import("../core/input.zig");
 const layout = @import("../core/layout.zig");
+const wrap = @import("../core/wrap.zig");
 
 const Tree = tree_mod.Tree;
 const NodeId = tree_mod.NodeId;
@@ -316,7 +317,7 @@ fn percentText(pct: u8) []const u8 {
 fn appendLinkSpans(snap: *Snapshot, app: *App, id: NodeId, parent: usize) !void {
     const el = app.tree.getConst(id).?;
     const spans = focus.spansOf(el.*);
-    var buf: [layout.max_span_rects]geometry.Rect = undefined;
+    var buf: [wrap.max_span_rects]geometry.Rect = undefined;
     for (spans, 0..) |span, i| {
         // Routed or external, one role: `link` is what it does on this
         // screen — where it goes is the press's business.

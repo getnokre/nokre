@@ -8,6 +8,7 @@ const color = @import("../core/color.zig");
 const element_mod = @import("../core/element.zig");
 const geometry = @import("../core/geometry.zig");
 const layout = @import("../core/layout.zig");
+const wrap = @import("../core/wrap.zig");
 const renderer = @import("renderer.zig");
 const text = @import("../core/text.zig");
 const test_app = @import("../core/test_app.zig");
@@ -476,7 +477,7 @@ test "an in-progress button swaps its words for a centered ellipsis, at the size
     for (rec.ops.items) |op| {
         switch (op) {
             .draw_text => |t| {
-                if (std.mem.eql(u8, t.bytes, layout.ellipsis)) {
+                if (std.mem.eql(u8, t.bytes, wrap.ellipsis)) {
                     ellipses += 1;
                     // Centered in the pill the label sized — not at the
                     // leading pad, where a label would start.
@@ -520,7 +521,7 @@ test "a busy switch stands its track down for the ellipsis and keeps the row" {
     var words: usize = 0;
     for (rec.ops.items) |op| switch (op) {
         .draw_text => |t| {
-            if (std.mem.eql(u8, t.bytes, layout.ellipsis)) {
+            if (std.mem.eql(u8, t.bytes, wrap.ellipsis)) {
                 ellipses += 1;
                 // Centered in the track's own slot, not in the row: the
                 // words keep the column beside it.
@@ -554,7 +555,7 @@ test "a busy checkbox does the same in its own narrower slot" {
     var found = false;
     for (rec.ops.items) |op| switch (op) {
         .draw_text => |t| {
-            if (std.mem.eql(u8, t.bytes, layout.ellipsis)) {
+            if (std.mem.eql(u8, t.bytes, wrap.ellipsis)) {
                 const w = app.measurer.measure(.prose, t.size_px, t.bytes);
                 try testing.expectEqual(r.x + @divTrunc(metrics.checkbox_box - w, 2), t.x);
                 found = true;
@@ -581,7 +582,7 @@ test "a known percentage takes the ellipsis's slot without moving the pill" {
     // never the box or its fill.
     try testing.expectEqual(app.tree.rectOf(resting).w, r.w);
     try testing.expectEqual(app.tree.rectOf(resting).h, r.h);
-    try testing.expect(!rec.containsText(layout.ellipsis));
+    try testing.expect(!rec.containsText(wrap.ellipsis));
 
     const track: Rect = .{
         .x = r.x + metrics.border + metrics.button_pad_h,
@@ -697,7 +698,7 @@ test "an in-progress glyph-form button stands the ellipsis where its glyph was" 
         const t = op.draw_text;
         // No pill to swap the words inside: the glyph itself stands down.
         try testing.expect(t.face.family != .icons);
-        if (std.mem.eql(u8, t.bytes, layout.ellipsis)) {
+        if (std.mem.eql(u8, t.bytes, wrap.ellipsis)) {
             const w = app.measurer.measure(.prose, t.size_px, t.bytes);
             try testing.expectEqual(r.x + @divTrunc(r.w - w, 2), t.x);
             try testing.expectEqual(Gray.ink, t.gray);
@@ -1798,7 +1799,7 @@ test "an inline link underlines and rings every line it crosses" {
     defer rec.deinit();
 
     app.performLayout();
-    var buf: [layout.max_span_rects]Rect = undefined;
+    var buf: [wrap.max_span_rects]Rect = undefined;
     const rects = @import("../core/input.zig").spanRectsOf(&app, para, 1, &buf);
     try testing.expectEqual(@as(usize, 2), rects.len);
 

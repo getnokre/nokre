@@ -29,6 +29,7 @@ const app_mod = @import("../../core/app.zig");
 const color = @import("../../core/color.zig");
 const element_mod = @import("../../core/element.zig");
 const layout = @import("../../core/layout.zig");
+const wrap = @import("../../core/wrap.zig");
 const nav_mod = @import("../../core/nav.zig");
 const semantics = @import("../../a11y/semantics.zig");
 const text_mod = @import("../../core/text.zig");
@@ -378,78 +379,7 @@ pub fn node(em: *Emitter, id: NodeId) anyerror!void {
 
         // ---- controls ----
 
-        .button => |b| {
-            // A folded action is not on the row any more; the `more`
-            // beside it is what stands there.
-            if (b.folded) return;
-            try em.raw("<button type=\"button\" class=\"btn");
-            if (b.secondary) try em.raw(" secondary");
-            if (b.provider != null) try em.raw(" auth");
-            if (b.provider == .google) try em.raw(" google");
-            if (b.icon_only) try em.raw(" icon-only");
-            try em.raw("\"");
-            if (b.disabled) try em.raw(" disabled");
-            try em.stop(id);
-            // Waiting is written in words, so the label already says it;
-            // `aria-busy` is what says it to a screen reader mid-task.
-            if (b.in_progress) {
-                // The strut is hidden, so the name moves onto the
-                // control: a button that stopped being named while it
-                // worked would be one a screen-reader user lost hold of.
-                try em.raw(" aria-busy=\"true\" aria-label=\"");
-                try em.text(b.label);
-                try em.raw("\"");
-            }
-            try em.raw(">");
-            // Work in flight replaces the words rather than sitting
-            // beside them: a percentage fills the pill as it goes, and
-            // a job that cannot report one says so with an ellipsis.
-            // Waiting is written, never animated. The label stays as
-            // the button's accessible name either way — a control that
-            // stopped being named while it worked would be a control a
-            // screen-reader user lost hold of.
-            if (b.in_progress) {
-                // The pill keeps the size its label gave it. Layout
-                // measured the words, so the words stay in flow as a
-                // strut — hidden, with the name moved onto the control
-                // — and what replaces them is drawn over the top. A
-                // button that shrank when it started working would be
-                // motion by another name.
-                try em.raw("<span class=\"btn-strut\" aria-hidden=\"true\">");
-                try em.text(b.label);
-                try em.raw("</span>");
-                if (b.progress_percent) |pct| {
-                    if (!b.disabled) {
-                        try em.print("<span class=\"btn-track\" aria-hidden=\"true\">" ++
-                            "<span class=\"btn-fill\" style=\"width:{d}%\"></span></span>", .{@min(pct, 100)});
-                    }
-                } else {
-                    try em.print("<span class=\"btn-wait\" aria-hidden=\"true\">{s}</span>", .{layout.ellipsis});
-                }
-            } else {
-                // The vendor's mark leads the words, decorative beside
-                // the real label like every lead mark. It stands down
-                // while work runs (the branch above), exactly as the
-                // reference's lead does. Google's G is four arc glyphs
-                // the stylesheet overlays into one drawing and colors
-                // on the live pill — the markup itself carries no
-                // color, here or anywhere.
-                if (b.provider) |p| switch (p) {
-                    .apple => try em.raw("<span class=\"brand-mark\" aria-hidden=\"true\">&#xE900;</span>"),
-                    .google => try em.raw("<span class=\"brand-mark g\" aria-hidden=\"true\">" ++
-                        "<span>&#xE901;</span><span>&#xE902;</span><span>&#xE903;</span><span>&#xE904;</span></span>"),
-                };
-                if (b.icon) |name| try icon(em, name, "", .ink, .body, .mark);
-                if (b.icon_only) {
-                    try em.raw("<span class=\"visually-hidden\">");
-                    try em.text(b.label);
-                    try em.raw("</span>");
-                } else {
-                    try em.text(b.label);
-                }
-            }
-            try em.raw("</button>");
-        },
+        .button => |b| try button(em, id, b),
         .link => |l| {
             if (l.folded) return;
             // `block`, because a `link` element is not a run inside a
@@ -573,48 +503,7 @@ pub fn node(em: *Emitter, id: NodeId) anyerror!void {
                 try em.raw("</p></div>");
             }
         },
-        .tile => |t| {
-            // A navigating tile is a link; an acting one is a button —
-            // the same split the snapshot makes.
-            const navigates = t.route.len != 0;
-            if (navigates) {
-                try em.raw("<a class=\"tile\"");
-                try em.href(t.route);
-                try em.stop(id);
-                try em.raw(">");
-            } else {
-                try em.raw("<button type=\"button\" class=\"tile\"");
-                try em.stop(id);
-                try em.raw(">");
-            }
-            // The leading mark takes the *square* box while the trailing
-            // chevron below takes the mark box, in the same row. They are
-            // not the same kind of glyph: the chevron is a mark inside a
-            // control, costing its own advance, while the leading one is
-            // a band a column of rows share, so it costs `lineHeight`
-            // whatever glyph it holds (`layout.tileIconBand`). The row's
-            // flex gap spends `icon_gap` on each of them.
-            if (t.icon) |name| try icon(em, name, "", .ink, .body, .square);
-            try em.raw("<span class=\"tile-text\"><span class=\"tile-label\">");
-            try em.text(t.label);
-            try em.raw("</span>");
-            if (t.detail.len != 0) {
-                try em.raw("<span class=\"tile-detail\">");
-                try em.text(t.detail);
-                try em.raw("</span>");
-            }
-            try em.raw("</span>");
-            if (navigates) {
-                // The chevron points where navigation goes, so a
-                // mirrored chrome flips it — the reference's
-                // `tile_chevron` / `tile_chevron_rtl` pair.
-                const mark: IconName = if (em.app.direction == .rtl) .chevron_left else .chevron_right;
-                try icon(em, mark, "", .ink, .body, .mark);
-                try em.raw("</a>");
-            } else {
-                try em.raw("</button>");
-            }
-        },
+        .tile => |t| try tile(em, id, t),
         .more => |m| {
             // Drawn *as* one of the buttons it stands among — the same
             // outlined pill, leading an ellipsis — so the row keeps
@@ -787,6 +676,125 @@ pub fn node(em: *Emitter, id: NodeId) anyerror!void {
             try em.text(p.label);
             try em.raw("</div>");
         },
+    }
+}
+
+/// One `button`, in every form the type permits: the secondary,
+/// provider, and icon faces, and work in progress written as words —
+/// never animated.
+fn button(em: *Emitter, id: NodeId, b: element_mod.Button) !void {
+    // A folded action is not on the row any more; the `more`
+    // beside it is what stands there.
+    if (b.folded) return;
+    try em.raw("<button type=\"button\" class=\"btn");
+    if (b.secondary) try em.raw(" secondary");
+    if (b.provider != null) try em.raw(" auth");
+    if (b.provider == .google) try em.raw(" google");
+    if (b.icon_only) try em.raw(" icon-only");
+    try em.raw("\"");
+    if (b.disabled) try em.raw(" disabled");
+    try em.stop(id);
+    // Waiting is written in words, so the label already says it;
+    // `aria-busy` is what says it to a screen reader mid-task.
+    if (b.in_progress) {
+        // The strut is hidden, so the name moves onto the
+        // control: a button that stopped being named while it
+        // worked would be one a screen-reader user lost hold of.
+        try em.raw(" aria-busy=\"true\" aria-label=\"");
+        try em.text(b.label);
+        try em.raw("\"");
+    }
+    try em.raw(">");
+    // Work in flight replaces the words rather than sitting
+    // beside them: a percentage fills the pill as it goes, and
+    // a job that cannot report one says so with an ellipsis.
+    // Waiting is written, never animated. The label stays as
+    // the button's accessible name either way — a control that
+    // stopped being named while it worked would be a control a
+    // screen-reader user lost hold of.
+    if (b.in_progress) {
+        // The pill keeps the size its label gave it. Layout
+        // measured the words, so the words stay in flow as a
+        // strut — hidden, with the name moved onto the control
+        // — and what replaces them is drawn over the top. A
+        // button that shrank when it started working would be
+        // motion by another name.
+        try em.raw("<span class=\"btn-strut\" aria-hidden=\"true\">");
+        try em.text(b.label);
+        try em.raw("</span>");
+        if (b.progress_percent) |pct| {
+            if (!b.disabled) {
+                try em.print("<span class=\"btn-track\" aria-hidden=\"true\">" ++
+                    "<span class=\"btn-fill\" style=\"width:{d}%\"></span></span>", .{@min(pct, 100)});
+            }
+        } else {
+            try em.print("<span class=\"btn-wait\" aria-hidden=\"true\">{s}</span>", .{wrap.ellipsis});
+        }
+    } else {
+        // The vendor's mark leads the words, decorative beside
+        // the real label like every lead mark. It stands down
+        // while work runs (the branch above), exactly as the
+        // reference's lead does. Google's G is four arc glyphs
+        // the stylesheet overlays into one drawing and colors
+        // on the live pill — the markup itself carries no
+        // color, here or anywhere.
+        if (b.provider) |p| switch (p) {
+            .apple => try em.raw("<span class=\"brand-mark\" aria-hidden=\"true\">&#xE900;</span>"),
+            .google => try em.raw("<span class=\"brand-mark g\" aria-hidden=\"true\">" ++
+                "<span>&#xE901;</span><span>&#xE902;</span><span>&#xE903;</span><span>&#xE904;</span></span>"),
+        };
+        if (b.icon) |name| try icon(em, name, "", .ink, .body, .mark);
+        if (b.icon_only) {
+            try em.raw("<span class=\"visually-hidden\">");
+            try em.text(b.label);
+            try em.raw("</span>");
+        } else {
+            try em.text(b.label);
+        }
+    }
+    try em.raw("</button>");
+}
+
+/// One `tile`: an anchor when it navigates, a button when it acts —
+/// the same split the snapshot makes.
+fn tile(em: *Emitter, id: NodeId, t: element_mod.Tile) !void {
+    const navigates = t.route.len != 0;
+    if (navigates) {
+        try em.raw("<a class=\"tile\"");
+        try em.href(t.route);
+        try em.stop(id);
+        try em.raw(">");
+    } else {
+        try em.raw("<button type=\"button\" class=\"tile\"");
+        try em.stop(id);
+        try em.raw(">");
+    }
+    // The leading mark takes the *square* box while the trailing
+    // chevron below takes the mark box, in the same row. They are
+    // not the same kind of glyph: the chevron is a mark inside a
+    // control, costing its own advance, while the leading one is
+    // a band a column of rows share, so it costs `lineHeight`
+    // whatever glyph it holds (`layout.tileIconBand`). The row's
+    // flex gap spends `icon_gap` on each of them.
+    if (t.icon) |name| try icon(em, name, "", .ink, .body, .square);
+    try em.raw("<span class=\"tile-text\"><span class=\"tile-label\">");
+    try em.text(t.label);
+    try em.raw("</span>");
+    if (t.detail.len != 0) {
+        try em.raw("<span class=\"tile-detail\">");
+        try em.text(t.detail);
+        try em.raw("</span>");
+    }
+    try em.raw("</span>");
+    if (navigates) {
+        // The chevron points where navigation goes, so a
+        // mirrored chrome flips it — the reference's
+        // `tile_chevron` / `tile_chevron_rtl` pair.
+        const mark: IconName = if (em.app.direction == .rtl) .chevron_left else .chevron_right;
+        try icon(em, mark, "", .ink, .body, .mark);
+        try em.raw("</a>");
+    } else {
+        try em.raw("</button>");
     }
 }
 

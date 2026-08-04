@@ -12,6 +12,7 @@ const event_mod = @import("../core/event.zig");
 const geometry = @import("../core/geometry.zig");
 const input = @import("../core/input.zig");
 const layout = @import("../core/layout.zig");
+const wrap = @import("../core/wrap.zig");
 const semantics = @import("../a11y/semantics.zig");
 const accesskit = @import("../a11y/accesskit.zig");
 
@@ -326,7 +327,7 @@ pub fn a11yAction(ctx: ?*anyopaque, target: u64, action: i32) callconv(.c) void 
             app.performLayout();
             // An inline link is clicked at the middle of its first
             // rect; the whole paragraph's centre would land on prose.
-            var buf: [layout.max_span_rects]geometry.Rect = undefined;
+            var buf: [wrap.max_span_rects]geometry.Rect = undefined;
             const r = if (stop.span) |i| blk: {
                 const rects = input.spanRectsOf(app, stop.node, i, &buf);
                 if (rects.len == 0) return;

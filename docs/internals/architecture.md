@@ -36,12 +36,14 @@ nokre is a strict layer cake. Each layer knows only the layer below it.
 | [src/core/icon_names.zig](../../src/core/icon_names.zig) | the generated icon-name table from lucide-static (`tools/gen-icon-names.py`), regenerated only with the face itself |
 | [src/core/element.zig](../../src/core/element.zig) | the closed element set (`Element` union) |
 | [src/core/tree.zig](../../src/core/tree.zig) | retained tree, generational `NodeId`s |
-| [src/core/layout.zig](../../src/core/layout.zig) | block-flow layout, word wrap, row wrap (`rowOverflow`), metrics |
+| [src/core/layout.zig](../../src/core/layout.zig) | block-flow layout, row wrap (`rowOverflow`), metrics |
+| [src/core/wrap.zig](../../src/core/wrap.zig) | word wrap, span segmentation, bidi line pieces, middle elision |
 | [src/core/event.zig](../../src/core/event.zig) | pointer (press/release) / key / text / IME / scroll — no hover |
 | [src/core/focus.zig](../../src/core/focus.zig) | document-order focus traversal |
 | [src/core/router.zig](../../src/core/router.zig) | named-screen stack with per-entry arguments, instant rebuilds, the current-route observer |
 | [src/core/app.zig](../../src/core/app.zig) | the App struct: state, lifecycle, dispatch |
-| [src/core/input.zig](../../src/core/input.zig) | press/release, key and scroll handling, hit testing |
+| [src/core/input.zig](../../src/core/input.zig) | press/release, key handling, hit testing |
+| [src/core/scrolling.zig](../../src/core/scrolling.zig) | the scroll chain: regions, horizontal tracks, the gesture lock |
 | [src/core/editing.zig](../../src/core/editing.zig) | text-field editing, IME protocol |
 | [src/core/overlays.zig](../../src/core/overlays.zig) | modal sheet + select and section pickers |
 | [src/core/nav.zig](../../src/core/nav.zig) | the nav roster (plus the current screen when it is off it) and its two shapes: row of items → collapsed chip |
