@@ -1313,7 +1313,7 @@ test "tab reaches an inline link and Enter navigates" {
     try testing.expectEqualStrings("terms", app.router.current().?);
 }
 
-test "an inline link to an unknown route fails where every other route does" {
+test "an inline link to an unknown route is refused where every other route is" {
     var app = try App.init(testing.allocator, .{
         .viewport = .{ .w = 400, .h = 400 },
         .routes = &link_routes,
@@ -1327,8 +1327,15 @@ test "an inline link to an unknown route fails where every other route does" {
     app.performLayout();
     app.focused = .{ .node = para, .span = 0 };
     // The parser needs no router access to stay honest: the name is
-    // resolved at activation, like a `link` element's.
-    try testing.expectError(error.UnknownRoute, app.dispatch(.{ .key_down = .{ .key = .enter } }));
+    // resolved at activation, like a `link` element's — and refused the
+    // same way, a record and an untouched stack rather than an error
+    // (router.zig). The audit is what turns the record into a failing
+    // test, and its `unresolvable_route` rule names this span's node
+    // without waiting for the press.
+    try app.dispatch(.{ .key_down = .{ .key = .enter } });
+    try testing.expectEqual(.unknown_route, app.router.refused.?.reason);
+    try testing.expectEqualStrings("nowhere", app.router.refused.?.ref());
+    try testing.expectEqual(@as(usize, 0), app.router.depth());
 }
 
 test "an external link span hands its URL to the browser and navigates nowhere" {

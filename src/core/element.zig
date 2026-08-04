@@ -101,9 +101,9 @@ pub const Span = struct {
     strike: bool = false,
     /// Makes this run an inline link: underlined, its own tab stop, and
     /// on activation resolved by the router exactly like a `link`
-    /// element's route — so a bad reference fails as `error.UnknownRoute`
-    /// (or, carrying arguments, `error.RouteArgCount` /
-    /// `error.RouteArgCharset`) where every other bad route does.
+    /// element's route — so a bad reference is refused where every
+    /// other bad route is (a recorded no-op, router.zig), and the
+    /// audit's `unresolvable_route` rule names the span's node.
     route: ?[]const u8 = null,
     /// The other kind of link destination, exclusive with `route`: an
     /// external URL handed to the system browser on activation (the

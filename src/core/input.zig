@@ -314,9 +314,9 @@ pub fn activateStop(app: *App, stop: focus.Focus) !void {
     if (span_index >= spans.len) return;
     const span = spans[span_index];
     if (span.route) |route| {
-        // The router resolves the name, so a bad one fails as
-        // `error.UnknownRoute` exactly where every other bad route does —
-        // the parser needs no router access to stay honest.
+        // The router resolves the name, so a bad one is refused exactly
+        // where every other bad route is (router.zig's record) — the
+        // parser needs no router access to stay honest.
         app.needs_frame = true;
         try app.navigate(route);
     } else if (span.external) |url| {

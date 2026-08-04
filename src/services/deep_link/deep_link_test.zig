@@ -141,6 +141,10 @@ const RouteCtx = struct {
         const self: *RouteCtx = @ptrCast(@alignCast(ctx.?));
         const app = self.app orelse return;
         const route = deep_link.fragment(url) orelse return;
+        // A URL is a stranger's bytes: vet before navigating, so a bad
+        // fragment is dropped at the door rather than recorded as a
+        // programmer error (docs/routing.md).
+        if (app.router.vet(route) != null) return;
         app.navigate(route) catch {};
     }
 };

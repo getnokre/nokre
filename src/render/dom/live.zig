@@ -214,8 +214,15 @@ fn boot(w: i32, h: i32, route_len: usize) callconv(.c) i32 {
     app.setViewport(.{ .w = w, .h = h });
     // `switchTo`, for the reason `navigate` gives: arriving by
     // reference resets the stack, and a reader who typed a URL has
-    // nothing behind them.
-    if (route_len != 0) app.router.switchTo(app, scratch.items[0..route_len]) catch return 0;
+    // nothing behind them. Vetted, because switchTo no longer errors on
+    // a bad reference (router.zig) and this one is the site manifest's
+    // — a wrong one should fail the boot loudly, not paint a screen
+    // with nothing on it.
+    if (route_len != 0) {
+        const reference = scratch.items[0..route_len];
+        if (app.router.vet(reference) != null) return 0;
+        app.router.switchTo(app, reference) catch return 0;
+    }
     if (comptime @hasDecl(root, "nokreWebRefs")) refs = root.nokreWebRefs(app);
     booted = true;
     return 1;
@@ -424,10 +431,14 @@ fn imeCancel() callconv(.c) void {
 /// the reader typed into. `switchTo`, because arriving by reference
 /// resets the stack — one screen, one URL, and nothing behind you
 /// (docs/routing.md). A reference the router cannot honor leaves the
-/// app where it is, which is why the glue puts the bar back.
+/// app where it is, which is why the glue puts the bar back — and the
+/// bar's bytes are a stranger's, so they are vetted at this door and
+/// never reach the router's programmer-error record (router.zig).
 fn navigate(len: usize) callconv(.c) i32 {
     if (!booted) return 0;
-    app.router.switchTo(app, scratch.items[0..len]) catch return 0;
+    const reference = scratch.items[0..len];
+    if (app.router.vet(reference) != null) return 0;
+    app.router.switchTo(app, reference) catch return 0;
     return 1;
 }
 

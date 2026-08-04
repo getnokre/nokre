@@ -44,8 +44,9 @@ announced to assistive tech as a link inside the paragraph — a link
 nobody can hear is worse than no link at all, so the invisibility rule
 stops exactly where behavior starts. A destination is exactly one of
 two kinds, and the split is semantic, never visual: a `route` resolves
-through the router like a `link` element's, so a bad one fails as
-`error.UnknownRoute` where every other bad route does; an `external`
+through the router like a `link` element's, so a bad one is refused
+where every other bad route is and the audit names the node
+([routing.md](routing.md), errors and refusals); an `external`
 URL is handed to the system browser through the
 [open_url](services.md) service, whose closed scheme allowlist
 (https/http/mailto) is checked at `append` — nokre still renders no

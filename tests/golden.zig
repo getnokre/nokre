@@ -379,6 +379,20 @@ test "golden: a blockquote's leading rule spans everything it quotes" {
     try renderGolden(&harness, "blockquote");
 }
 
+/// The screen a fixture's destinations lead to, never visited: the
+/// audit resolves every route a control carries against the table
+/// (`unresolvable_route`), so a fixture that links somewhere needs the
+/// somewhere to exist.
+fn buildUnvisited(_: ?*anyopaque, app: *h.App) !void {
+    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Unvisited", .level = .h1 } });
+}
+
+const inline_link_routes = [_]h.RouteDef{
+    .{ .name = "home", .title = "Home", .build = buildInlineLinks },
+    .{ .name = "terms", .title = "Terms", .build = buildUnvisited },
+    .{ .name = "privacy", .title = "Privacy", .build = buildUnvisited },
+};
+
 fn buildInlineLinks(_: ?*anyopaque, app: *h.App) !void {
     const tree = &app.tree;
     const root = tree.rootId();
@@ -393,7 +407,7 @@ fn buildInlineLinks(_: ?*anyopaque, app: *h.App) !void {
 }
 
 test "golden: inline links underline, and a focused one rings every line" {
-    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 220 }, null, buildInlineLinks);
+    var harness = try h.testing.Harness.initWithRoutes(std.testing.allocator, .{ .w = 360, .h = 220 }, &inline_link_routes, null, "home");
     defer harness.deinit();
     // Tab to the first link: it wraps, so the ring is two boxes.
     try harness.pressKey(.tab, .{});
@@ -616,8 +630,14 @@ fn buildTiles(_: ?*anyopaque, app: *h.App) !void {
     try tree.append(group, .{ .tile = .{ .label = "Leave circle", .on_press = .{ .call = noopPress } } });
 }
 
+const tile_routes = [_]h.RouteDef{
+    .{ .name = "home", .title = "Home", .build = buildTiles },
+    .{ .name = "members", .title = "Members", .build = buildUnvisited },
+    .{ .name = "invites", .title = "Invites", .build = buildUnvisited },
+};
+
 test "golden: tile group with focused row, details, chevrons, and description" {
-    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 280 }, null, buildTiles);
+    var harness = try h.testing.Harness.initWithRoutes(std.testing.allocator, .{ .w = 360, .h = 280 }, &tile_routes, null, "home");
     defer harness.deinit();
     // Focus the first tile: pins the mixed-radius stroke (top corners
     // curving with the group border, bottom at the row radius) and the
@@ -642,8 +662,14 @@ fn buildMarkedTiles(_: ?*anyopaque, app: *h.App) !void {
     try tree.append(group, .{ .tile = .{ .label = "Leave circle", .on_press = .{ .call = noopPress }, .icon = .log_out } });
 }
 
+const marked_tile_routes = [_]h.RouteDef{
+    .{ .name = "home", .title = "Home", .build = buildMarkedTiles },
+    .{ .name = "members", .title = "Members", .build = buildUnvisited },
+    .{ .name = "invites", .title = "Invites", .build = buildUnvisited },
+};
+
 test "golden: a tile group's marks share one leading band" {
-    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 220 }, null, buildMarkedTiles);
+    var harness = try h.testing.Harness.initWithRoutes(std.testing.allocator, .{ .w = 360, .h = 220 }, &marked_tile_routes, null, "home");
     defer harness.deinit();
     try renderGolden(&harness, "tiles-marked");
 }
@@ -1075,8 +1101,13 @@ fn buildNoticeScreen(_: ?*anyopaque, app: *h.App) !void {
     try app.notify(.{ .title = "Sync failed", .description = "Changes are kept locally.", .route = "library", .icon = .cloud_off, .important = true });
 }
 
+const notice_routes = [_]h.RouteDef{
+    .{ .name = "home", .title = "Home", .build = buildNoticeScreen },
+    .{ .name = "library", .title = "Library", .build = buildUnvisited },
+};
+
 test "golden: notice banner in the bottom pane" {
-    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 400, .h = 300 }, null, buildNoticeScreen);
+    var harness = try h.testing.Harness.initWithRoutes(std.testing.allocator, .{ .w = 400, .h = 300 }, &notice_routes, null, "home");
     defer harness.deinit();
     try renderGolden(&harness, "notice-banner");
 }
@@ -1091,8 +1122,13 @@ fn buildNoticesPaneScreen(_: ?*anyopaque, app: *h.App) !void {
     try app.openNoticesPane();
 }
 
+const notices_pane_routes = [_]h.RouteDef{
+    .{ .name = "home", .title = "Home", .build = buildNoticesPaneScreen },
+    .{ .name = "library", .title = "Library", .build = buildUnvisited },
+};
+
 test "golden: notices pane lists every pending notice" {
-    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 400, .h = 360 }, null, buildNoticesPaneScreen);
+    var harness = try h.testing.Harness.initWithRoutes(std.testing.allocator, .{ .w = 400, .h = 360 }, &notices_pane_routes, null, "home");
     defer harness.deinit();
     try renderGolden(&harness, "notices-pane");
 }
@@ -1111,13 +1147,18 @@ fn buildCrowdedNoticesPaneScreen(_: ?*anyopaque, app: *h.App) !void {
     try app.openNoticesPane();
 }
 
+const crowded_pane_routes = [_]h.RouteDef{
+    .{ .name = "home", .title = "Home", .build = buildCrowdedNoticesPaneScreen },
+    .{ .name = "library", .title = "Library", .build = buildUnvisited },
+};
+
 test "golden: a notices pane past its cap scrolls instead of clipping its rows" {
     // A phone on its side. `sheet_min_top` is a far bigger share of 390
     // than of 844, so five notices come to more than the pane may be
     // tall; the rows go in a scroll region and the last visible one is
     // cut by the region's edge with the indicator beside it, rather than
     // drawn past the pane and lost.
-    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 844, .h = 390 }, null, buildCrowdedNoticesPaneScreen);
+    var harness = try h.testing.Harness.initWithRoutes(std.testing.allocator, .{ .w = 844, .h = 390 }, &crowded_pane_routes, null, "home");
     defer harness.deinit();
     try renderGolden(&harness, "notices-pane-scrolled");
 }
@@ -1131,8 +1172,13 @@ fn buildIndicatorScreen(_: ?*anyopaque, app: *h.App) !void {
     app.minimizeNotices();
 }
 
+const indicator_routes = [_]h.RouteDef{
+    .{ .name = "home", .title = "Home", .build = buildIndicatorScreen },
+    .{ .name = "library", .title = "Library", .build = buildUnvisited },
+};
+
 test "golden: minimized notices leave only the indicator" {
-    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 400, .h = 300 }, null, buildIndicatorScreen);
+    var harness = try h.testing.Harness.initWithRoutes(std.testing.allocator, .{ .w = 400, .h = 300 }, &indicator_routes, null, "home");
     defer harness.deinit();
     try renderGolden(&harness, "notices-minimized");
 }
@@ -1239,8 +1285,13 @@ fn buildPersianRtl(_: ?*anyopaque, app: *h.App) !void {
     try tree.append(root, .{ .text = .{ .content = "English keeps its own left-aligned paragraph beside them." } });
 }
 
+const rtl_routes = [_]h.RouteDef{
+    .{ .name = "home", .title = "Home", .build = buildPersianRtl },
+    .{ .name = "account", .title = "Account", .build = buildUnvisited },
+};
+
 test "golden: RTL locale mirrors the chrome; text still aligns by content" {
-    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 400, .h = 480 }, null, buildPersianRtl);
+    var harness = try h.testing.Harness.initWithRoutes(std.testing.allocator, .{ .w = 400, .h = 480 }, &rtl_routes, null, "home");
     defer harness.deinit();
     try renderGolden(&harness, "persian-rtl-chrome");
 }

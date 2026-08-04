@@ -263,6 +263,16 @@ fails on:
   mutation: a list is appended before its items exist, so `append` has
   nothing to check and the whole-tree pass is the only place the rule
   can live
+- `unresolvable_route` — a `link`, `tile`, `nav_item`, `notice` or
+  inline span whose route reference the router cannot honor: a dead end
+  wearing an interactive face. Not about mutation either — `append`
+  cannot check it, because the tree has no router; this pass has the
+  whole App and asks it. Spans inside a `document` are exempt: there a
+  destination belongs to the document lane (the browser, or a site
+  generator's own resolver), not the route table — one that does route
+  in-app is still caught at activation, by the refusal record. The
+  audit gate also fails on that record and on a raised notice routing
+  nowhere ([routing.md](routing.md), errors and refusals)
 - `cleanly_clipped_scroll_region` — an overflowing fixed-height scroll
   region whose offset-0 edge cuts nothing visible. The resting
   indicator is deliberately quiet, so the mid-element cut is what makes

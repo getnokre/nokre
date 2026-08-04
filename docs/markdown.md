@@ -149,8 +149,9 @@ inside a `document`.
 A destination without a URI scheme is a route reference:
 `[label](destination)` becomes an inline link span resolved by the
 router at activation exactly like a `link` element's — so one that does
-not resolve fails as `error.UnknownRoute` where every other bad route
-does, and the parser needs no router access.
+not resolve is refused where every other bad route is
+([routing.md](routing.md), errors and refusals), and the parser needs
+no router access.
 
 A destination may carry route arguments, since `~` is not a URI scheme:
 `[the flaky build](ticket~2938)` is an in-app link to that ticket

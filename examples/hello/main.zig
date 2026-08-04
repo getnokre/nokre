@@ -76,7 +76,10 @@ fn onNotification(ctx: ?*anyopaque, event: N.Event) void {
         // tap is what started the process — so this runs before anything
         // the user does in this session.
         .opened => |p| {
-            state.app.navigate(p.route) catch {};
+            // A payload's route is the OS handing back bytes: vet before
+            // navigating, so a stale or mangled one is dropped here and
+            // never reads as a programmer error (docs/routing.md).
+            if (state.app.router.vet(p.route) == null) state.app.navigate(p.route) catch {};
             note(state, "Opened from a notification.");
         },
         // No OS banner is drawn over an app that is on screen, so this

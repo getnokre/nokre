@@ -557,14 +557,37 @@ test "a reference with the wrong number of arguments is refused" {
     defer app.deinit();
     try app.navigate("home");
 
-    try testing.expectError(error.RouteArgCount, app.navigate("ticket")); // too few
-    try testing.expectError(error.RouteArgCount, app.navigate("ticket~1~2")); // too many
-    try testing.expectError(error.RouteArgCount, app.navigate("home~1")); // takes none
-    try testing.expectError(error.UnknownRoute, app.navigate("nope~1"));
+    // A refusal is a record, not an error (router.zig): the call
+    // returns clean, the stack does not move, and `refused` names the
+    // reference — which is what the audit fails a test over.
+    try app.navigate("ticket"); // too few
+    try testing.expectEqual(.arg_count, app.router.refused.?.reason);
+    try app.navigate("ticket~1~2"); // too many
+    try testing.expectEqual(.arg_count, app.router.refused.?.reason);
+    try app.navigate("home~1"); // takes none
+    try testing.expectEqual(.arg_count, app.router.refused.?.reason);
+    try app.navigate("nope~1");
+    try testing.expectEqual(.unknown_route, app.router.refused.?.reason);
+    try testing.expectEqualStrings("nope~1", app.router.refused.?.ref());
 
-    // Refused before anything is committed, exactly like UnknownRoute.
+    // Refused before anything is committed, exactly like the unknown name.
     try testing.expectEqualStrings("home", app.router.currentRef().?);
     try testing.expectEqual(@as(usize, 1), app.router.depth());
+}
+
+test "vet answers what a verb would refuse, without recording it" {
+    var data: CtxData = .{};
+    var app = try argApp(&data);
+    defer app.deinit();
+    try app.navigate("home");
+
+    // The door for bytes from outside the program: the answer a verb
+    // would give, with nothing written down — a stranger's typo is not
+    // a programmer error.
+    try testing.expectEqual(null, app.router.vet("ticket~42"));
+    try testing.expectEqual(.unknown_route, app.router.vet("nope").?);
+    try testing.expectEqual(.arg_count, app.router.vet("ticket").?);
+    try testing.expect(app.router.refused == null);
 }
 
 test "an argument is an identifier, not a payload" {
@@ -574,11 +597,18 @@ test "an argument is an identifier, not a payload" {
     try app.navigate("home");
 
     // Free text is a URL's business, not a route's (docs/services.md).
-    try testing.expectError(error.RouteArgCharset, app.navigate("ticket~has space"));
-    try testing.expectError(error.RouteArgCharset, app.navigate("ticket~a/b"));
-    try testing.expectError(error.RouteArgCharset, app.navigate("ticket~%20"));
+    try app.navigate("ticket~has space");
+    try testing.expectEqual(.arg_charset, app.router.refused.?.reason);
+    app.router.refused = null;
+    try app.navigate("ticket~a/b");
+    try testing.expectEqual(.arg_charset, app.router.refused.?.reason);
+    app.router.refused = null;
+    try app.navigate("ticket~%20");
+    try testing.expectEqual(.arg_charset, app.router.refused.?.reason);
+    app.router.refused = null;
     // A trailing separator is a missing argument, not an empty one.
-    try testing.expectError(error.RouteArgCharset, app.navigate("ticket~"));
+    try app.navigate("ticket~");
+    try testing.expectEqual(.arg_charset, app.router.refused.?.reason);
 
     // But `.` and `-` are in, which is why they are not the separator:
     // versions, ids and slugs are arguments without escaping.
@@ -586,11 +616,15 @@ test "an argument is an identifier, not a payload" {
     try testing.expectEqualStrings("1.2.3-rc1", app.routeArg(0).?);
 
     // A reference arrives from outside the app, so its length is bounded
-    // even when the arity checks out.
+    // even when the arity checks out — and the record keeps only what
+    // fits, enough to name the culprit.
     var long: [router_mod.max_ref_bytes + 8]u8 = undefined;
     @memset(&long, 'a');
     @memcpy(long[0..7], "ticket~");
-    try testing.expectError(error.RouteRefTooLong, app.navigate(&long));
+    try app.navigate(&long);
+    try testing.expectEqual(.ref_too_long, app.router.refused.?.reason);
+    try testing.expectEqual(@as(usize, router_mod.max_ref_bytes), app.router.refused.?.ref().len);
+    try testing.expectEqualStrings("ticket~1.2.3-rc1", app.router.currentRef().?);
 }
 
 test "routeRef is resolve's writing mirror" {

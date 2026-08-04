@@ -22,6 +22,21 @@
 //! shell leaves null. A reference is an identity for a screen — one
 //! screen, one reference, wherever the user came from — so the trail
 //! that led there stays in memory where it belongs.
+//!
+//! A reference that does not resolve is a *refusal*, not an error. The
+//! four ways one can be wrong — unknown name, wrong arity, an argument
+//! outside the charset, over-long — are all programmer errors, and no
+//! call site has anything to do with one but drop it: the consumer
+//! survey that drove this found 87 `catch {}` around navigation and not
+//! one handler. So the navigating verbs leave the stack exactly as it
+//! was and record what they refused in `refused`, where the audit —
+//! which the harness runs after every action — turns it into a failing
+//! test with the reference in the diagnostic. What is left in a verb's
+//! error set is the machine failing (allocation, and the screen
+//! builder's own errors), which a `catch {}` is an honest answer to.
+//! Bytes from outside the program — an address bar, a deep link, a
+//! notification payload — are vetted at the door with `vet`, so a
+//! stranger's typo never lands in the programmer-error record.
 
 const std = @import("std");
 const app_mod = @import("app.zig");
@@ -129,10 +144,36 @@ pub const RouteObserver = struct {
     call: ?*const fn (ctx: ?*anyopaque, route: []const u8, change: Change) void = null,
 };
 
+/// What a navigating verb refused, and why — the record `Router.refused`
+/// keeps. It owns a bounded copy of the reference (an over-long one is
+/// truncated to `max_ref_bytes` — enough to name the culprit) because
+/// the caller's bytes may be gone by the time anyone reads it.
+pub const Refusal = struct {
+    reason: Reason,
+    len: u16,
+    bytes: [max_ref_bytes]u8,
+
+    /// One name per way `resolve` can say no. The same taxonomy `ref`
+    /// reports as errors — there the caller is the site *building* the
+    /// reference and can act; here nobody can, which is the whole
+    /// argument for a record over an error.
+    pub const Reason = enum { unknown_route, arg_count, arg_charset, ref_too_long };
+
+    pub fn ref(self: *const Refusal) []const u8 {
+        return self.bytes[0..self.len];
+    }
+};
+
 pub const Router = struct {
     routes: []const RouteDef,
     stack: std.ArrayList(Entry),
     observer: RouteObserver = .{},
+    /// The last navigation refused, kept until the next refusal — never
+    /// cleared, because a refusal is a bug and the audit fails the test
+    /// that trips one; in production the record is what a debugger
+    /// finds. Only the navigating verbs write it: `vet` answers without
+    /// recording, which is what the untrusted entry points use.
+    refused: ?Refusal = null,
 
     /// One screen on the stack. It owns the reference it was entered
     /// with, arguments and all — which is the point: two `note` screens
@@ -318,7 +359,10 @@ pub const Router = struct {
     }
 
     pub fn push(self: *Router, app: *App, reference: []const u8) !void {
-        const idx = try self.resolve(reference);
+        const idx = switch (self.resolve(reference)) {
+            .idx => |i| i,
+            .refused => |why| return self.refuse(reference, why),
+        };
         // Where the outgoing screen was scrolled to, saved into the entry
         // that survives underneath. This is the only motion that has to:
         // pop, replace and switchTo all drop the entry they would be
@@ -339,7 +383,10 @@ pub const Router = struct {
     }
 
     pub fn replace(self: *Router, app: *App, reference: []const u8) !void {
-        const idx = try self.resolve(reference);
+        const idx = switch (self.resolve(reference)) {
+            .idx => |i| i,
+            .refused => |why| return self.refuse(reference, why),
+        };
         try self.stack.ensureUnusedCapacity(app.gpa, 1);
         const entry = try own(app.gpa, idx, reference);
         if (self.stack.items.len != 0) self.dropTop(app.gpa);
@@ -353,7 +400,10 @@ pub const Router = struct {
     /// a visitor crossing the nav has: that pushes, so the section they
     /// were in stays behind them (nav.zig).
     pub fn switchTo(self: *Router, app: *App, reference: []const u8) !void {
-        const idx = try self.resolve(reference);
+        const idx = switch (self.resolve(reference)) {
+            .idx => |i| i,
+            .refused => |why| return self.refuse(reference, why),
+        };
         try self.stack.ensureTotalCapacity(app.gpa, 1);
         const entry = try own(app.gpa, idx, reference);
         for (self.stack.items) |e| app.gpa.free(e.ref);
@@ -385,22 +435,42 @@ pub const Router = struct {
         if (self.stack.pop()) |e| gpa.free(e.ref);
     }
 
+    /// Whether `reference` would be honored, and if not, why not — the
+    /// reading gate without the navigation. The door for bytes from
+    /// outside the program (an address bar, a deep link, a notification
+    /// payload): vetting first keeps a stranger's typo out of `refused`,
+    /// which records programmer errors and is read as one by the audit.
+    pub fn vet(self: *const Router, reference: []const u8) ?Refusal.Reason {
+        return switch (self.resolve(reference)) {
+            .idx => null,
+            .refused => |why| why,
+        };
+    }
+
+    const Resolved = union(enum) { idx: usize, refused: Refusal.Reason };
+
     /// A reference to a route index, validating everything about it
-    /// before anything is committed: a bad one leaves the stack exactly
-    /// as it was.
-    fn resolve(self: *const Router, reference: []const u8) !usize {
-        if (reference.len > max_ref_bytes) return error.RouteRefTooLong;
+    /// before anything is committed: a refused one leaves the stack
+    /// exactly as it was.
+    fn resolve(self: *const Router, reference: []const u8) Resolved {
+        if (reference.len > max_ref_bytes) return .{ .refused = .ref_too_long };
         var it = std.mem.splitScalar(u8, reference, arg_separator);
-        const name = it.next() orelse return error.UnknownRoute;
-        const idx = self.find(name) orelse return error.UnknownRoute;
+        const name = it.next() orelse return .{ .refused = .unknown_route };
+        const idx = self.find(name) orelse return .{ .refused = .unknown_route };
         var n: usize = 0;
         while (it.next()) |a| : (n += 1) {
             // Empty fails here too: a trailing `~` is a missing argument,
             // not an empty one — an identifier has no empty form.
-            if (!validIdent(a)) return error.RouteArgCharset;
+            if (!validIdent(a)) return .{ .refused = .arg_charset };
         }
-        if (n != self.routes[idx].args) return error.RouteArgCount;
-        return idx;
+        if (n != self.routes[idx].args) return .{ .refused = .arg_count };
+        return .{ .idx = idx };
+    }
+
+    fn refuse(self: *Router, reference: []const u8, why: Refusal.Reason) void {
+        var r = Refusal{ .reason = why, .len = @intCast(@min(reference.len, max_ref_bytes)), .bytes = undefined };
+        @memcpy(r.bytes[0..r.len], reference[0..r.len]);
+        self.refused = r;
     }
 
     fn find(self: *const Router, name: []const u8) ?usize {

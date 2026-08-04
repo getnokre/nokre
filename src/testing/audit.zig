@@ -113,6 +113,16 @@ pub const Violation = struct {
         /// can adjust, which is exactly what that rule's own viewport
         /// exemption refuses.
         empty_code_block,
+        /// A control's route destination must resolve against the route
+        /// table — a link, tile, inline span, or notice whose reference
+        /// nobody can honor is a control that does nothing when pressed,
+        /// which to any user is a dead end wearing an interactive face.
+        /// Append cannot catch it (the tree has no router); this pass
+        /// has the whole App and asks `router.vet`. Together with the
+        /// refusal record (`audit`, below) this is what lets the
+        /// navigating verbs stop returning errors nobody handled:
+        /// a mistyped reference fails the first test that shows it.
+        unresolvable_route,
         /// An overflowing scroll region must visibly cut an element at
         /// its offset-0 viewport edge. The resting indicator is
         /// deliberately quiet (see the renderer), so the mid-element
@@ -126,7 +136,25 @@ pub const Violation = struct {
 };
 
 /// Fails with diagnostics on stderr if any rule is violated.
+///
+/// Two navigation checks ride along with the tree rules, here because
+/// this gate already runs after every action and they are not about any
+/// node: the router's refusal record — a navigating verb was handed a
+/// reference it could not honor (router.zig says why that is a record
+/// and not an error) — and the raised notices' routes, which `notify`
+/// accepts unchecked and which a quiet notice keeps out of the tree
+/// until its pane opens.
 pub fn audit(app: *App) !void {
+    if (app.router.refused) |r| {
+        diag.print("navigation refused: \"{s}\" ({s})\n", .{ r.ref(), @tagName(r.reason) });
+        return error.NavigationRefused;
+    }
+    for (app.notices.items) |n| {
+        if (n.route.len > 0 and app.router.vet(n.route) != null) {
+            diag.print("notice \"{s}\" routes to \"{s}\", which resolves to no screen\n", .{ n.title, n.route });
+            return error.NavigationRefused;
+        }
+    }
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(app.gpa);
     try collect(app, &violations);
@@ -282,6 +310,27 @@ pub fn collect(app: *App, out: *std.ArrayList(Violation)) !void {
                 if (n.title.len == 0) {
                     try out.append(app.gpa, .{ .id = id, .rule = .empty_notice });
                 }
+                if (n.route.len > 0 and app.router.vet(n.route) != null) {
+                    try out.append(app.gpa, .{ .id = id, .rule = .unresolvable_route });
+                }
+            },
+            // The three pure route destinations `routeDestination` names,
+            // plus the inline spans below: everything whose activation is
+            // a reference the router must honor.
+            .link => |l| {
+                if (l.external == null and l.route.len > 0 and app.router.vet(l.route) != null) {
+                    try out.append(app.gpa, .{ .id = id, .rule = .unresolvable_route });
+                }
+            },
+            .tile => |t| {
+                if (t.route.len > 0 and app.router.vet(t.route) != null) {
+                    try out.append(app.gpa, .{ .id = id, .rule = .unresolvable_route });
+                }
+            },
+            .nav_item => |n| {
+                if (app.router.vet(n.route) != null) {
+                    try out.append(app.gpa, .{ .id = id, .rule = .unresolvable_route });
+                }
             },
             .badge => |b| {
                 if (b.label.len == 0) {
@@ -339,6 +388,19 @@ pub fn collect(app: *App, out: *std.ArrayList(Violation)) !void {
             else => &.{},
         };
         if (spans.len > 0) {
+            // Not inside a `document`: there a destination belongs to
+            // the document lane — the site generator's own resolver,
+            // the browser under `addressing: "documents"` — and the
+            // route table is not its authority. An in-app document
+            // whose spans do route is still covered at activation, by
+            // the refusal record this same gate fails on.
+            if (!insideDocument(app, id)) for (spans) |span| {
+                const route = span.route orelse continue;
+                if (app.router.vet(route) != null) {
+                    try out.append(app.gpa, .{ .id = id, .rule = .unresolvable_route });
+                    break;
+                }
+            };
             const base_ink: color.Gray = switch (el.*) {
                 .text => |t| t.style.ink,
                 else => .ink,
@@ -373,6 +435,17 @@ fn routeDestination(el: *const element_mod.Element) ?[]const u8 {
         .nav_item => |n| n.route,
         else => null,
     };
+}
+
+/// Whether `id` sits under a `document` node — the subtree whose
+/// destinations the route table does not govern (see the span check in
+/// `collect`).
+fn insideDocument(app: *App, id: NodeId) bool {
+    var node: ?NodeId = app.tree.parentOf(id);
+    while (node) |n| : (node = app.tree.parentOf(n)) {
+        if (app.tree.getConst(n).?.role() == .document) return true;
+    }
+    return false;
 }
 
 /// Whether `id` sits inside the active layer rooted at `scope`. With no

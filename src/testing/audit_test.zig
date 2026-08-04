@@ -3,6 +3,7 @@
 const std = @import("std");
 const app_mod = @import("../core/app.zig");
 const audit_mod = @import("audit.zig");
+const diag = @import("diag.zig");
 const layout = @import("../core/layout.zig");
 const router_mod = @import("../core/router.zig");
 const test_app = @import("../core/test_app.zig");
@@ -20,10 +21,15 @@ fn buildAuditScreen(_: ?*anyopaque, app: *App) anyerror!void {
 const nav_routes = [_]router_mod.RouteDef{
     .{ .name = "home", .title = "Home", .build = buildAuditScreen },
     .{ .name = "settings", .title = "Settings", .build = buildAuditScreen },
+    .{ .name = "docs", .title = "Docs", .build = buildAuditScreen },
+    .{ .name = "roadmap", .title = "Roadmap", .build = buildAuditScreen },
 };
 
 /// A `w` x `h` app over `nav_routes` — a nav's destinations are routes
-/// now, so a nav needs a route table to be named from (`App.setNav`).
+/// now, so a nav needs a route table to be named from (`App.setNav`),
+/// and every route a fixture writes on a control must resolve
+/// (`unresolvable_route`), so a test whose elements go anywhere needs
+/// the table its references answer to.
 fn navApp(w: i32, h: i32) !App {
     return App.init(testing.allocator, .{
         .viewport = .{ .w = w, .h = h },
@@ -154,7 +160,7 @@ test "audit flags duplicate interactive labels" {
 }
 
 test "two tiles naming different destinations may not share a label" {
-    var app = try test_app.init(400, 400);
+    var app = try navApp(400, 400);
     defer app.deinit();
     const group = try app.tree.appendId(app.tree.rootId(), .{ .tile_group = .{} });
     try app.tree.append(group, .{ .tile = .{ .label = "Docs", .route = "docs" } });
@@ -168,7 +174,7 @@ test "two tiles naming different destinations may not share a label" {
 }
 
 test "two doors to the same route are repetition, not ambiguity" {
-    var app = try test_app.init(400, 400);
+    var app = try navApp(400, 400);
     defer app.deinit();
     // The site's own shape: a routed link and a tile both saying "Docs"
     // about the docs route. Whichever is invoked lands the same place,
@@ -200,7 +206,7 @@ test "duplicate labels over actions stay flagged, same function or not" {
 }
 
 test "audit flags a tile label emptied after construction" {
-    var app = try test_app.init(400, 400);
+    var app = try navApp(400, 400);
     defer app.deinit();
     const group = try app.tree.appendId(app.tree.rootId(), .{ .tile_group = .{} });
     const tile = try app.tree.appendId(group, .{ .tile = .{ .label = "Docs", .route = "docs" } });
@@ -366,7 +372,7 @@ test "audit flags a select selection mutated out of range" {
 }
 
 test "audit passes a framework-built sheet and notice" {
-    var app = try test_app.init(400, 600);
+    var app = try navApp(400, 600);
     defer app.deinit();
     _ = try app.presentSheet("Options");
     try app.notify(.{ .title = "Saved", .route = "home", .important = true });
@@ -378,7 +384,7 @@ test "audit passes a framework-built sheet and notice" {
 }
 
 test "audit passes the framework-built notices pane" {
-    var app = try test_app.init(400, 600);
+    var app = try navApp(400, 600);
     defer app.deinit();
     try app.notify(.{ .title = "Saved", .route = "home" });
     try app.notify(.{ .title = "Sync failed", .route = "home", .important = true });
@@ -482,7 +488,7 @@ test "audit flags a badge label emptied after construction" {
 }
 
 test "audit flags a notice title emptied after construction" {
-    var app = try test_app.init(400, 600);
+    var app = try navApp(400, 600);
     defer app.deinit();
     try app.notify(.{ .title = "Saved", .route = "home", .important = true });
     const notice = layout.findNotice(&app.tree).?;
@@ -674,4 +680,84 @@ test "audit flags span inks dimmed after construction" {
     try collect(&app, &violations);
     try testing.expectEqual(@as(usize, 1), violations.items.len);
     try testing.expectEqual(Violation.Rule.insufficient_text_contrast, violations.items[0].rule);
+}
+
+test "audit flags a route destination the router cannot honor" {
+    var app = try navApp(400, 400);
+    defer app.deinit();
+    // One of each pure route destination (`routeDestination`), all
+    // resolving — and one link whose reference names no route: a dead
+    // end wearing an interactive face.
+    try app.tree.append(app.tree.rootId(), .{ .link = .{ .label = "Docs", .route = "docs" } });
+    const group = try app.tree.appendId(app.tree.rootId(), .{ .tile_group = .{} });
+    try app.tree.append(group, .{ .tile = .{ .label = "Roadmap", .route = "roadmap" } });
+    const dead = try app.tree.appendId(app.tree.rootId(), .{ .link = .{ .label = "Gone", .route = "nowhere" } });
+
+    var violations: std.ArrayList(Violation) = .empty;
+    defer violations.deinit(testing.allocator);
+    try collect(&app, &violations);
+    try testing.expectEqual(@as(usize, 1), violations.items.len);
+    try testing.expectEqual(Violation.Rule.unresolvable_route, violations.items[0].rule);
+    try testing.expectEqual(dead, violations.items[0].id);
+}
+
+test "a span's destination faces the same audit as a link's" {
+    var app = try navApp(400, 400);
+    defer app.deinit();
+    // The wrong arity is as unresolvable as the wrong name: `docs`
+    // declares no arguments.
+    const id = try app.tree.appendId(app.tree.rootId(), .{ .text = .{ .spans = &.{
+        .{ .text = "read ", .route = "docs~42" },
+        .{ .text = "this." },
+    } } });
+
+    var violations: std.ArrayList(Violation) = .empty;
+    defer violations.deinit(testing.allocator);
+    try collect(&app, &violations);
+    try testing.expectEqual(@as(usize, 1), violations.items.len);
+    try testing.expectEqual(Violation.Rule.unresolvable_route, violations.items[0].rule);
+    try testing.expectEqual(id, violations.items[0].id);
+}
+
+test "audit fails the test a refused navigation left behind" {
+    var app = try navApp(400, 400);
+    defer app.deinit();
+    try app.navigate("home");
+    try audit(&app);
+
+    // The verb returned clean and the stack did not move (router.zig);
+    // the record is how the mistake still fails the first test that
+    // makes it.
+    try app.navigate("nowhere");
+    diag.quiet = true;
+    defer diag.quiet = false;
+    try testing.expectError(error.NavigationRefused, audit(&app));
+}
+
+test "a notice routing nowhere is caught before its pane ever opens" {
+    var app = try navApp(400, 600);
+    defer app.deinit();
+    // Quiet, so no banner: the route sits in app state with no node to
+    // hang a violation on, which is why the gate reads the notices
+    // directly.
+    try app.notify(.{ .title = "Sync failed", .route = "nowhere" });
+    diag.quiet = true;
+    defer diag.quiet = false;
+    try testing.expectError(error.NavigationRefused, audit(&app));
+}
+
+test "a document's destinations answer to their own lane, not the table" {
+    var app = try navApp(400, 400);
+    defer app.deinit();
+    // The site generator's shape: a parsed document whose links name
+    // files its own resolver honors — no route table governs them.
+    try app.tree.append(app.tree.rootId(), .{ .document = .{
+        .label = "Introduction",
+        .source = "See [the elements](elements.md) for the closed set.",
+    } });
+
+    var violations: std.ArrayList(Violation) = .empty;
+    defer violations.deinit(testing.allocator);
+    try collect(&app, &violations);
+    try testing.expectEqual(@as(usize, 0), violations.items.len);
 }

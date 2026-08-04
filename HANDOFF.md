@@ -16,18 +16,12 @@ this writing; re-count before acting, the apps move.
 
 ## Contract redesigns, ranked by measured consumer cost
 
-1. **The navigation error surface.** `router.resolve` answers
-   `UnknownRoute` / `RouteArgCharset` / `RouteArgCount` /
-   `RouteRefTooLong` — all programmer errors, none actionable at the
-   call site — and `rebuild` adds the screen builder's own error on
-   top. The consumer's verdict is 87 `catch {}` navigation sites:
-   every mistyped route reference is a silent no-op in production.
-   Route-reference validity against the route table is decidable at
-   `Router.init`; a redesign would leave allocation as the only
-   runtime error and surface a bad ref as a diagnostic, not an error
-   nobody has ever handled.
+(The list's original #1, the navigation error surface, shipped
+2026-08-04: a bad reference is now a recorded refusal the audit fails
+tests over — `Router.refused`, `vet`, the `unresolvable_route` rule —
+and docs/routing.md "Errors, and refusals" is the contract's home.)
 
-2. **A payload-carrying `Action`.** `Action` carries no data, so a
+1. **A payload-carrying `Action`.** `Action` carries no data, so a
    list row's identity must be baked into a generated function: the
    apps hold 21 comptime handler tables (`[max]*const fn` filled by an
    inline loop), two of them byte-identical copies of a `handlerTable`
@@ -37,7 +31,7 @@ this writing; re-count before acting, the apps move.
    index-carrying call (`fn (ctx, index)`) deletes the tables and makes
    the staleness question answerable once.
 
-3. **Sheets as declared builders.** A sheet is a tree node, so every
+2. **Sheets as declared builders.** A sheet is a tree node, so every
    controller with a modal carries
    `render_sheet: *const fn (…) anyerror!void = undefined`, assigned
    in one wiring function and invoked at 29 `catch {}` sites. The
@@ -48,7 +42,7 @@ this writing; re-count before acting, the apps move.
    `RouteDef`'s shape (a fn the framework calls on present and on
    state change) turns the pointer into data nokre owns.
 
-4. **Reload safety, and focus across reload.** `router.reload` starts
+3. **Reload safety, and focus across reload.** `router.reload` starts
    focus over by design — and both apps carry byte-identical modules
    to cope: `reloads.zig` (25 lines re-deriving "is a reload safe
    right now" from `focusScope`, the focused node's role, and a
@@ -58,7 +52,7 @@ this writing; re-count before acting, the apps move.
    labels). Both are questions nokre should answer: a
    reload-safety predicate, and a reload that can carry focus.
 
-5. **`App.Chrome` without silent English.** All 17 chrome strings
+4. **`App.Chrome` without silent English.** All 17 chrome strings
    default to English literals, so a mapping a consumer forgets
    compiles and ships English — the audit cannot object to a valid
    label in the wrong language, and the survey caught the two apps
@@ -66,7 +60,7 @@ this writing; re-count before acting, the apps move.
    hello-world needs no catalogue); the options are a no-default
    `Chrome` for l10n'd apps or a comptime-checked catalogue hand-off.
 
-6. **The chosen locale, and route titles.** nokre owns the *device*
+5. **The chosen locale, and route titles.** nokre owns the *device*
    locale but not the app's *chosen* one, so the apps fan the choice
    out by hand (17 controller assignments in one app, 12 in the other
    — forget one line and that screen stays in the old language
@@ -76,7 +70,7 @@ this writing; re-count before acting, the apps move.
    locale, and letting `RouteDef.title` be a function of it, deletes
    both fan-outs.
 
-7. **Worker queueing.** A worker handle answers a second ask with
+6. **Worker queueing.** A worker handle answers a second ask with
    `error.Interrupted`, so a mutation can fail because an unrelated
    solve happened to be in flight. Both apps carry a byte-identical
    220-line `QueuedPowSolver` (and a sibling for corpus reads) that
@@ -84,14 +78,14 @@ this writing; re-count before acting, the apps move.
    grows a small FIFO or the refusal is documented as a guarantee with
    the queue as the blessed consumer pattern — today it is neither.
 
-8. **A recording headless shell.** A consumer building a headless
+7. **A recording headless shell.** A consumer building a headless
    native binary (system tests, e2e drivers) hand-declares nokre ABI
    symbols — 21 extern declarations across 4 files in the consumer,
    with exact `callconv(.c)` signatures. A rename here is at best a
    link error there. nokre should ship the null/recording shell it is
    forcing every consumer to write.
 
-9. **`expectGolden` on the harness.** Taking a golden from consumer
+8. **`expectGolden` on the harness.** Taking a golden from consumer
     code is a five-step incantation (set the module-global
     `testing.golden.update`, build a Skia surface at the viewport,
     swap the measurer, render, unpack four accessors into

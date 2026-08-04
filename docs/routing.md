@@ -139,7 +139,7 @@ sum~10~5           two arguments, in order
 ```
 
 Every one of them resolves through the same table, so a reference that
-does not name a route fails as `error.UnknownRoute` wherever it appears.
+does not name a route is refused the same way wherever it appears.
 Resolution is the only place that parses — the Markdown parser, the
 elements, and the input layer all pass the reference through untouched.
 
@@ -225,7 +225,7 @@ command: `#sum~10~5` is fine, `#delete~42` is not. Anything in an address
 bar gets opened by link previewers, history restores, and people pasting,
 none of which intended to act.
 
-### Errors
+### Errors, and refusals
 
 The table is validated once, in `App.init`, rather than leaving a bad
 name to surface as a mystery at first navigation:
@@ -236,15 +236,42 @@ name to surface as a mystery at first navigation:
 | `error.RouteNameCharset` | a name outside `[a-zA-Z0-9_.-]` — including one carrying a `~`, which would make every reference to it ambiguous |
 | `error.DuplicateRouteName` | two routes sharing a name — otherwise every reference would quietly resolve to the first |
 
-A reference is validated at resolution, and a bad one leaves the stack
-exactly as it was — never half-applied:
+A reference is validated at resolution — but a bad one is a **refusal,
+not an error**. `navigate`, `switchTo` and `router.replace` leave the
+stack exactly as it was, return normally, and record what they refused
+in `router.refused`: the reference (bounded to `max_ref_bytes`) and a
+reason —
 
 | | |
 |---|---|
-| `error.UnknownRoute` | no route by that name |
-| `error.RouteArgCount` | not the number of arguments the route declares |
-| `error.RouteArgCharset` | an argument outside the charset, or empty (a trailing `~` is a *missing* argument, not an empty one) |
-| `error.RouteRefTooLong` | past 256 bytes — a reference can arrive from outside the app, and one enormous argument would pass the arity check |
+| `unknown_route` | no route by that name |
+| `arg_count` | not the number of arguments the route declares |
+| `arg_charset` | an argument outside the charset, or empty (a trailing `~` is a *missing* argument, not an empty one) |
+| `ref_too_long` | past 256 bytes — a reference can arrive from outside the app, and one enormous argument would pass the arity check |
+
+Every one of these is a programmer error, and nothing at a navigation
+call site can do about one but drop it — so no error asks to be
+handled. What is left in the verbs' error sets is the machine failing:
+allocation, and your own screen builder's errors. The record is how the
+mistake still surfaces: the test harness checks it after every action
+(and audits every route a `link`, `tile`, span or `notice` carries —
+the `unresolvable_route` rule), so a mistyped reference fails the first
+test that shows or presses it, with the reference in the diagnostic.
+
+The same taxonomy *is* an error set on `App.routeRef`, because there
+the caller is the site building the reference and can act on it.
+
+**Bytes from outside the program are different.** An address bar, a
+deep-link fragment, a notification payload — a stranger's typo there is
+not a programmer error, and it must not read as one. Ask first:
+
+```zig
+if (app.router.vet(route) == null) try app.navigate(route);
+```
+
+`vet` answers what a verb would refuse — same checks, same reasons —
+and records nothing. The web shell already vets the fragment at its own
+door, which is what keeps the bar restored and the app unmoved.
 
 ## The address bar
 
