@@ -92,7 +92,7 @@ site rebuild (published pages churn where those strings appear).
 Restores "two editions consult one catalog" — the guarantee the
 chrome-keys item existed to establish.
 
-### 0.5 A routeless notice grows a live control that presses into a recorded programmer error
+### 0.5 DONE (nokre `65e4ac6`, revision 17) — a routeless notice grew a live control that pressed into a recorded programmer error
 `Notify.route` defaults to `""` and that is the overwhelmingly normal
 case — 55 of 59 `notify` calls in the user app are routeless. But
 `installBanner` (notices.zig:250-258) appends the `.open` icon_button
@@ -647,8 +647,18 @@ passes bump `revision` and move all three pins.
    predicted published-page churn did not happen: this site runs the
    default chrome, so every one of those strings is byte-identical and
    only `data-n` moved.
-2. **0.5 routeless-notice gate** (+ the one-spelling-of-no-route
-   rider) — golden regeneration in all three trees, reviewed.
+2. ~~**0.5 routeless-notice gate**~~ — DONE, revision 17 (nokre
+   `65e4ac6`, rokovski `ea7a2c69`, site `cfa2eac`). Owner picked the
+   empty string as the one spelling: `Span.route` is `[]const u8 = ""`
+   and `Notice.route` gained the default, so `error.EmptySpanRoute` is
+   gone — an empty span route *is* how a run says it is prose. No
+   golden regeneration was needed anywhere: every existing notice
+   golden in all three trees passes a route, so one new golden
+   (`notice-banner-routeless`) was minted to give the change a picture.
+   Two invariants made literally true on the way: `dupeSpans` no longer
+   retains a zero-length consumer pointer, and `tree.zig`'s header
+   names the `App.Chrome` strings it borrows by contract instead of
+   claiming it never borrows.
 3. **0.6 + 0.7 admission sweep** — family refusal, wasm len clamp,
    focus one-home vet, iap no-handler; one pass, all doors.
 4. **A1 containers** (additive; consumers migrate the 25 structs and
