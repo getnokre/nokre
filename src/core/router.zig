@@ -185,7 +185,7 @@ pub const Refusal = struct {
     len: u16,
     bytes: [max_ref_bytes]u8,
 
-    /// One name per way `resolve` can say no — the same taxonomy `ref`
+    /// One name per way `resolve` can say no — the same taxonomy `writeRef`
     /// reports as errors: there the caller is the site *building* the
     /// reference and can act; here nobody can, which is the whole
     /// argument for a record over an error. Plus the one refusal that
@@ -338,7 +338,7 @@ pub const Router = struct {
     /// buffer size it guessed; here the table checks the reference at
     /// the site that builds it, and `[max_ref_bytes]u8` is always
     /// enough — a reference this accepts is one `resolve` will.
-    pub fn ref(self: *const Router, buf: []u8, name: []const u8, args: []const []const u8) ![]u8 {
+    pub fn writeRef(self: *const Router, buf: []u8, name: []const u8, args: []const []const u8) ![]u8 {
         const idx = self.find(name) orelse return error.UnknownRoute;
         if (args.len != self.routes[idx].args) return error.RouteArgCount;
         var len: usize = name.len;
@@ -386,10 +386,10 @@ pub const Router = struct {
         return &self.stack.items[self.stack.items.len - 1];
     }
 
-    pub fn push(self: *Router, app: *App, reference: []const u8) !void {
-        const idx = switch (self.resolve(reference)) {
+    pub fn push(self: *Router, app: *App, ref: []const u8) !void {
+        const idx = switch (self.resolve(ref)) {
             .idx => |i| i,
-            .refused => |why| return self.refuse(reference, why),
+            .refused => |why| return self.refuse(ref, why),
         };
         // Where the outgoing screen was scrolled to, saved into the entry
         // that survives underneath. This is the only motion that has to:
@@ -399,7 +399,7 @@ pub const Router = struct {
         // Room first, then the copy: the only fallible step left cannot
         // then strand an owned reference outside the stack.
         try self.stack.ensureUnusedCapacity(app.gpa, 1);
-        self.stack.appendAssumeCapacity(try own(app.gpa, idx, reference));
+        self.stack.appendAssumeCapacity(try own(app.gpa, idx, ref));
         try self.rebuild(app, .push, .fresh, .dropped, .fresh);
     }
 
@@ -410,30 +410,30 @@ pub const Router = struct {
         try self.rebuild(app, .pop, .restored, .dropped, .fresh);
     }
 
-    pub fn replace(self: *Router, app: *App, reference: []const u8) !void {
-        const idx = switch (self.resolve(reference)) {
+    pub fn replace(self: *Router, app: *App, ref: []const u8) !void {
+        const idx = switch (self.resolve(ref)) {
             .idx => |i| i,
-            .refused => |why| return self.refuse(reference, why),
+            .refused => |why| return self.refuse(ref, why),
         };
         try self.stack.ensureUnusedCapacity(app.gpa, 1);
-        const entry = try own(app.gpa, idx, reference);
+        const entry = try own(app.gpa, idx, ref);
         if (self.stack.items.len != 0) self.dropTop(app.gpa);
         self.stack.appendAssumeCapacity(entry);
         try self.rebuild(app, .replace, .fresh, .dropped, .fresh);
     }
 
-    /// Enters `reference` with the stack reset to just it: arriving somewhere
+    /// Enters `ref` with the stack reset to just it: arriving somewhere
     /// with nothing behind you — which is what a visitor following a
     /// shared link has (`navigate` in render/dom/live.zig), and not what
     /// a visitor crossing the nav has: that pushes, so the section they
     /// were in stays behind them (nav.zig).
-    pub fn switchTo(self: *Router, app: *App, reference: []const u8) !void {
-        const idx = switch (self.resolve(reference)) {
+    pub fn switchTo(self: *Router, app: *App, ref: []const u8) !void {
+        const idx = switch (self.resolve(ref)) {
             .idx => |i| i,
-            .refused => |why| return self.refuse(reference, why),
+            .refused => |why| return self.refuse(ref, why),
         };
         try self.stack.ensureTotalCapacity(app.gpa, 1);
-        const entry = try own(app.gpa, idx, reference);
+        const entry = try own(app.gpa, idx, ref);
         for (self.stack.items) |e| app.gpa.free(e.ref);
         self.stack.clearRetainingCapacity();
         self.stack.appendAssumeCapacity(entry);
@@ -481,13 +481,13 @@ pub const Router = struct {
         if (self.stack.pop()) |e| gpa.free(e.ref);
     }
 
-    /// Whether `reference` would be honored, and if not, why not — the
+    /// Whether `ref` would be honored, and if not, why not — the
     /// reading gate without the navigation. The door for bytes from
     /// outside the program (an address bar, a deep link, a notification
     /// payload): vetting first keeps a stranger's typo out of `refused`,
     /// which records programmer errors and is read as one by the audit.
-    pub fn vet(self: *const Router, reference: []const u8) ?Refusal.Reason {
-        return switch (self.resolve(reference)) {
+    pub fn vet(self: *const Router, ref: []const u8) ?Refusal.Reason {
+        return switch (self.resolve(ref)) {
             .idx => null,
             .refused => |why| why,
         };

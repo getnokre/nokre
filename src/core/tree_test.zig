@@ -342,16 +342,16 @@ test "append rejects a malformed off-roster marker" {
     const root = tree.rootId();
     const nav = try tree.appendId(root, .{ .nav = .{} });
 
-    try std.testing.expectError(error.NavItemOutsideNav, tree.append(root, .{ .nav_here = .{ .label = "Terms" } }));
-    try std.testing.expectError(error.EmptyNavHere, tree.append(nav, .{ .nav_here = .{ .label = "" } }));
+    try std.testing.expectError(error.NavItemOutsideNav, tree.append(root, .{ .nav_here = .{ .value = "Terms" } }));
+    try std.testing.expectError(error.EmptyNavHere, tree.append(nav, .{ .nav_here = .{ .value = "" } }));
 
     try tree.append(nav, .{ .nav_item = .{ .label = "Home", .route = "home", .icon = .house } });
-    try tree.append(nav, .{ .nav_here = .{ .label = "Terms" } });
+    try tree.append(nav, .{ .nav_here = .{ .value = "Terms" } });
     // It is the tail of the row and there is one of it: a destination
     // behind it would be read after the screen it stands on, and a
     // second marker would say you are in two places.
     try std.testing.expectError(error.NavItemAfterNavHere, tree.append(nav, .{ .nav_item = .{ .label = "Late", .route = "late", .icon = .circle } }));
-    try std.testing.expectError(error.MultipleNavHere, tree.append(nav, .{ .nav_here = .{ .label = "Also" } }));
+    try std.testing.expectError(error.MultipleNavHere, tree.append(nav, .{ .nav_here = .{ .value = "Also" } }));
 }
 
 test "append keeps the two nav shapes exclusive of the marker too" {
@@ -362,7 +362,7 @@ test "append keeps the two nav shapes exclusive of the marker too" {
     try tree.append(nav, .{ .nav_current = .{ .section = "Library", .icon = .library } });
     // The chip already carries what the marker would have said, so the
     // collapsed shape has no room for one (`element.NavHere`).
-    try std.testing.expectError(error.NavShapeIsExclusive, tree.append(nav, .{ .nav_here = .{ .label = "Terms" } }));
+    try std.testing.expectError(error.NavShapeIsExclusive, tree.append(nav, .{ .nav_here = .{ .value = "Terms" } }));
 }
 
 test "append rejects a folded-tail control anywhere but on a row" {

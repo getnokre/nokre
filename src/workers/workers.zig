@@ -155,13 +155,13 @@ pub fn Outbox(comptime Reply: type) type {
 
 /// Type-erased worker role, shared by every transport: create the
 /// instance, feed it one decoded message, destroy it.
-pub const Vt = struct {
+pub const VTable = struct {
     create: *const fn (gpa: std.mem.Allocator) anyerror!*anyopaque,
     handle: *const fn (inst: *anyopaque, payload: []const u8, attachments: []?[]u8, raw: *RawOutbox) anyerror!void,
     destroy: *const fn (inst: *anyopaque, gpa: std.mem.Allocator) void,
 };
 
-pub fn vtFor(comptime T: type) *const Vt {
+pub fn vtFor(comptime T: type) *const VTable {
     comptime validateWorker(T);
     const Shim = struct {
         fn create(gpa: std.mem.Allocator) anyerror!*anyopaque {
@@ -182,7 +182,7 @@ pub fn vtFor(comptime T: type) *const Vt {
             gpa.destroy(inst);
         }
     };
-    const vt = Vt{ .create = Shim.create, .handle = Shim.handle, .destroy = Shim.destroy };
+    const vt = VTable{ .create = Shim.create, .handle = Shim.handle, .destroy = Shim.destroy };
     return &vt;
 }
 
@@ -284,7 +284,7 @@ const Transport = union(enum) {
 };
 
 const InlineWorker = struct {
-    vt: *const Vt,
+    vtable: *const VTable,
     inst: ?*anyopaque,
     inbox: std.ArrayList(Frame) = .empty,
 };
@@ -614,14 +614,14 @@ pub const Runtime = struct {
                     .gpa = g,
                     .send_owned_fn = inlineSendOwned,
                 };
-                iw.vt.handle(iw.inst.?, frame.bytes[1..], frame.attachments, &raw) catch |e| {
+                iw.vtable.handle(iw.inst.?, frame.bytes[1..], frame.attachments, &raw) catch |e| {
                     var buf: FaultBuf = undefined;
                     self.enqueueDelivery(@intCast(i), slot.gen, faultFrame(&buf, e));
                 };
             }
             if (slot.state == .retiring and iw.inst != null) {
                 worked = true;
-                iw.vt.destroy(iw.inst.?, g);
+                iw.vtable.destroy(iw.inst.?, g);
                 iw.inst = null;
                 self.enqueueDelivery(@intCast(i), slot.gen, &[1]u8{retired_frame});
             }
@@ -657,7 +657,7 @@ pub const Runtime = struct {
                 .inl => |*iw| {
                     for (iw.inbox.items) |f| f.free(g);
                     iw.inbox.deinit(g);
-                    if (iw.inst) |inst| iw.vt.destroy(inst, g);
+                    if (iw.inst) |inst| iw.vtable.destroy(inst, g);
                 },
                 .thread => |w| {
                     requestThreadRetire(w);
@@ -792,7 +792,7 @@ fn startTransport(comptime T: type, rt: *Runtime, slot: *Slot, index: u32, gen: 
         // Inline creation is eager, so a failing `init` surfaces at the
         // spawn (a test wants the error now, not a died fault later).
         const inst = try vt.create(rt.gpa);
-        slot.transport = .{ .inl = .{ .vt = vt, .inst = inst } };
+        slot.transport = .{ .inl = .{ .vtable = vt, .inst = inst } };
     } else if (comptime is_wasm) {
         post_transport.spawn(reg.?, index);
         slot.transport = .post;
@@ -1240,7 +1240,7 @@ pub fn frameFromEnvelope(g: std.mem.Allocator, plain_kind: u8, envelope: []const
 
 // Comptime-cut wrappers: the dead transport's module is an empty struct
 // on the other platform, so its calls must never be analyzed there.
-fn spawnThread(g: std.mem.Allocator, rt: *Runtime, vt: *const Vt, index: u32, gen: u32) !ThreadPtr {
+fn spawnThread(g: std.mem.Allocator, rt: *Runtime, vt: *const VTable, index: u32, gen: u32) !ThreadPtr {
     if (comptime is_wasm) unreachable else return thread_transport.spawn(g, rt, vt, index, gen);
 }
 fn enqueueThread(w: ThreadPtr, frame: Frame) !void {

@@ -799,7 +799,7 @@ test "the row names a screen that is none of its destinations" {
     try app.navigate("terms");
     try testing.expectEqual(@as(usize, 3), app.tree.childCount(nav));
     const here = navHere(&app).?;
-    try testing.expectEqualStrings("Terms", app.tree.getConst(here).?.nav_here.label);
+    try testing.expectEqualStrings("Terms", app.tree.getConst(here).?.nav_here.value);
     var it = app.tree.children(nav);
     _ = it.next();
     _ = it.next();
@@ -819,7 +819,7 @@ test "the marker names the route, arguments and all" {
 
     // The title names the route, not the instance: `ticket~42` and
     // `ticket~43` are both "Ticket" (router.zig).
-    try testing.expectEqualStrings("Ticket", app.tree.getConst(navHere(&app).?).?.nav_here.label);
+    try testing.expectEqualStrings("Ticket", app.tree.getConst(navHere(&app).?).?.nav_here.value);
 }
 
 test "the marker is a label, not a destination" {
@@ -965,7 +965,7 @@ test "setLocale renames the destinations, the chip, and the marker" {
     // The marker for a screen that is no destination is labelled from
     // the same table, so it follows without being told.
     try app.navigate("terms");
-    try testing.expectEqualStrings("Koşullar", app.tree.getConst(navHere(&app).?).?.nav_here.label);
+    try testing.expectEqualStrings("Koşullar", app.tree.getConst(navHere(&app).?).?.nav_here.value);
 
     // And the collapsed shape, which names the section it stands on.
     var narrow = try offRosterApp(300);

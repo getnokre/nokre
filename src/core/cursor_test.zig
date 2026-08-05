@@ -168,7 +168,7 @@ test "every chrome method appends the element it names" {
     try std.testing.expectEqual(Role.nav, tree.getConst(nav.at).?.role());
     try nav.navItem(.{ .label = "Home", .route = "home", .icon = .house });
     try expectLast(&tree, nav.at, .nav_item);
-    try nav.navHere(.{ .label = "Settings" });
+    try nav.navHere(.{ .value = "Settings" });
     try expectLast(&tree, nav.at, .nav_here);
     try tree.remove(nav.at);
     const chip_nav = try root.nav();

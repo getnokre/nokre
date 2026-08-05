@@ -1045,8 +1045,8 @@ fn drawNavHere(app: *App, canvas: Painter, r: Rect, n: element_mod.NavHere) void
     const plate = layout.navItemPlate(r);
     canvas.fillRect(plate, layout.navItemRadius(), .g10);
     canvas.strokeRect(plate, layout.navItemRadius(), metrics.border, .mid);
-    const group = layout.navItemWidth(app.measurer, element_mod.nav_here_icon, n.label);
-    drawNavGroup(app, canvas, r, element_mod.nav_here_icon, n.label, .ink, r.x + @divTrunc(r.w - group, 2), metrics.nav_item_pad_v);
+    const group = layout.navItemWidth(app.measurer, element_mod.nav_here_icon, n.value);
+    drawNavGroup(app, canvas, r, element_mod.nav_here_icon, n.value, .ink, r.x + @divTrunc(r.w - group, 2), metrics.nav_item_pad_v);
 }
 
 /// Glyph, gap, words, starting at `gx` — mirrored whole under RTL so

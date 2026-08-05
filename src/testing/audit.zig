@@ -279,7 +279,7 @@ pub fn collect(app: *App, out: *std.ArrayList(Violation), options: Options) !voi
                 }
             },
             .nav_here => |n| {
-                if (n.label.len == 0) {
+                if (n.value.len == 0) {
                     try out.append(app.gpa, .{ .id = id, .rule = .empty_nav_here });
                 }
             },

@@ -62,7 +62,7 @@ pub const ThreadWorker = struct {
     gpa: std.mem.Allocator,
     runtime: *workers.Runtime,
     io: std.Io,
-    vt: *const workers.Vt,
+    vtable: *const workers.VTable,
     index: u32,
     gen: u32,
     mutex: std.Io.Mutex = .init,
@@ -72,12 +72,12 @@ pub const ThreadWorker = struct {
     thread: std.Thread = undefined,
 };
 
-pub fn spawn(gpa: std.mem.Allocator, rt: *workers.Runtime, vt: *const workers.Vt, index: u32, gen: u32) !*ThreadWorker {
+pub fn spawn(gpa: std.mem.Allocator, rt: *workers.Runtime, vt: *const workers.VTable, index: u32, gen: u32) !*ThreadWorker {
     const io = acquireIo(gpa);
     errdefer releaseIo();
     const w = try gpa.create(ThreadWorker);
     errdefer gpa.destroy(w);
-    w.* = .{ .gpa = gpa, .runtime = rt, .io = io, .vt = vt, .index = index, .gen = gen };
+    w.* = .{ .gpa = gpa, .runtime = rt, .io = io, .vtable = vt, .index = index, .gen = gen };
     w.thread = try std.Thread.spawn(.{}, main, .{w});
     return w;
 }
@@ -110,7 +110,7 @@ pub fn join(w: *ThreadWorker, gpa: std.mem.Allocator) void {
 }
 
 fn main(w: *ThreadWorker) void {
-    const inst = w.vt.create(w.gpa) catch {
+    const inst = w.vtable.create(w.gpa) catch {
         w.runtime.enqueueDelivery(w.index, w.gen, &[1]u8{workers.died_frame});
         return;
     };
@@ -130,9 +130,9 @@ fn main(w: *ThreadWorker) void {
             .gpa = w.gpa,
             .send_owned_fn = sendReplyOwned,
         };
-        w.vt.handle(inst, frame.bytes[1..], frame.attachments, &raw) catch |e| postFault(w, e);
+        w.vtable.handle(inst, frame.bytes[1..], frame.attachments, &raw) catch |e| postFault(w, e);
     }
-    w.vt.destroy(inst, w.gpa);
+    w.vtable.destroy(inst, w.gpa);
     w.runtime.enqueueDelivery(w.index, w.gen, &[1]u8{workers.retired_frame});
 }
 

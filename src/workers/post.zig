@@ -34,7 +34,7 @@ pub fn drop(slot: u32) void {
 // ---- the compute-worker role ----
 // One worker per instance: module state, like the shell's own globals.
 
-var role_vt: ?*const workers.Vt = null;
+var role_vt: ?*const workers.VTable = null;
 var role_inst: *anyopaque = undefined;
 var role_gpa: std.mem.Allocator = undefined;
 
@@ -84,7 +84,7 @@ pub fn handleFrame(frame: []const u8) void {
 /// `owned` says whether `frame` is ours to free (the envelope path) or
 /// a borrow of the scratch (the plain path — no attachments, and the
 /// @constCast above is never written through).
-fn handleMsg(vt: *const workers.Vt, frame: workers.Frame, owned: bool) void {
+fn handleMsg(vt: *const workers.VTable, frame: workers.Frame, owned: bool) void {
     defer if (owned) frame.free(role_gpa);
     var arena_state = std.heap.ArenaAllocator.init(role_gpa);
     defer arena_state.deinit();

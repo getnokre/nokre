@@ -706,7 +706,7 @@ fn layoutNavChrome(tree: *Tree, measurer: text.Measurer, nav: NodeId, viewport: 
 fn navRowPillWidth(measurer: text.Measurer, el: *const element_mod.Element) ?i32 {
     return switch (el.*) {
         .nav_item => |n| navItemPillWidth(measurer, n.icon, n.label),
-        .nav_here => |n| navItemPillWidth(measurer, element_mod.nav_here_icon, n.label),
+        .nav_here => |n| navItemPillWidth(measurer, element_mod.nav_here_icon, n.value),
         else => null,
     };
 }

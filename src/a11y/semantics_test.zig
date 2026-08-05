@@ -818,7 +818,7 @@ test "the click action is Element.isInteractive, for every element kind" {
         try app.tree.append(root, .{ .copyable = .{ .label = "Recovery code", .value = "XKCD-1234" } });
         const nav = try app.tree.appendId(root, .{ .nav = .{} });
         try app.tree.append(nav, .{ .nav_item = .{ .label = "Home", .route = "home", .icon = .house } });
-        try app.tree.append(nav, .{ .nav_here = .{ .label = "Detail" } });
+        try app.tree.append(nav, .{ .nav_here = .{ .value = "Detail" } });
         try app.tree.append(root, .{ .back = .{} });
         // A row too wide to fit: layout folds its tail and installs the
         // `more` control — the only way a real tree ever holds one.

@@ -178,7 +178,7 @@ fn dumpNode(gpa: std.mem.Allocator, out: *std.ArrayList(u8), app: *App, id: Node
             try out.appendSlice(gpa, " collapsed");
         },
         .nav_here => |n| {
-            try appendQuoted(gpa, out, n.label);
+            try appendQuoted(gpa, out, n.value);
             try out.appendSlice(gpa, " here");
         },
         .sheet => |s| try appendQuoted(gpa, out, s.title),

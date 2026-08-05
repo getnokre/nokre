@@ -288,7 +288,7 @@ pub fn syncNavChrome(app: *App) !void {
         try clearChildren(app, nav);
         for (roster) |item| {
             _ = if (item.here)
-                try app.tree.append(nav, .{ .nav_here = .{ .label = item.label, .name = app.chrome.current_screen } })
+                try app.tree.append(nav, .{ .nav_here = .{ .value = item.label, .name = app.chrome.current_screen } })
             else
                 try app.tree.append(nav, .{ .nav_item = .{ .label = item.label, .route = item.route, .icon = item.icon } });
         }
@@ -368,10 +368,10 @@ fn rowMatches(app: *const App, nav: NodeId, roster: []const RosterItem) bool {
     for (roster) |item| {
         const el = app.tree.getConst(it.next() orelse return false).?;
         if (item.here) {
-            // The label is the whole of it: the marker's glyph is a
+            // The value is the whole of it: the marker's glyph is a
             // constant, and two routes sharing a title render alike. Its
             // *name* is chrome and is re-said in place (`setChrome`).
-            if (el.* != .nav_here or !std.mem.eql(u8, el.nav_here.label, item.label)) return false;
+            if (el.* != .nav_here or !std.mem.eql(u8, el.nav_here.value, item.label)) return false;
         } else if (el.* != .nav_item or !std.mem.eql(u8, el.nav_item.label, item.label)) return false;
     }
     return true;

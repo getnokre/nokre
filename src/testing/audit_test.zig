@@ -315,7 +315,7 @@ test "the off-roster marker is not a destination the nav count sees" {
         }
         unreachable;
     };
-    app.tree.get(here).?.nav_here.label = "";
+    app.tree.get(here).?.nav_here.value = "";
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(testing.allocator);
     try collect(&app, &violations, .{});

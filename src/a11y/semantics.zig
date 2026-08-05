@@ -245,7 +245,7 @@ fn appendNode(snap: *Snapshot, app: *App, id: NodeId, parent: ?usize) !void {
         // The same name/value split, for the screen that is no section:
         // "Current screen" is what it is called, the title is what it
         // is showing.
-        .nav_here => |n| node.value = n.label,
+        .nav_here => |n| node.value = n.value,
         .nav_item => |n| {
             node.selected = if (app.router.current()) |c| std.mem.eql(u8, c, n.route) else false;
         },

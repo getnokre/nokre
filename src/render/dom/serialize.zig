@@ -625,7 +625,7 @@ pub fn node(em: *Emitter, id: NodeId) anyerror!void {
             // takes no focus, and answers no press.
             try em.raw("<span class=\"chip current here\"><span class=\"visually-hidden\">Current screen: </span>");
             try icon(em, element_mod.nav_here_icon, "", .ink, .body, .mark);
-            try em.text(n.label);
+            try em.text(n.value);
             try em.raw("</span>");
         },
         .back => {

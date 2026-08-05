@@ -327,8 +327,8 @@ pub const App = struct {
         self.gpa.destroy(self.bidi_scratch);
     }
 
-    pub fn navigate(self: *App, route: []const u8) !void {
-        try self.router.push(self, route);
+    pub fn navigate(self: *App, ref: []const u8) !void {
+        try self.router.push(self, ref);
     }
 
     pub fn navigateBack(self: *App) !void {
@@ -441,12 +441,12 @@ pub const App = struct {
 
     /// Formats a reference into `buf` — `routeArg`'s writing mirror,
     /// at the same hop for the same reason. The router validates it
-    /// against the table before a byte lands (router.zig `ref`), so
+    /// against the table before a byte lands (router.zig `writeRef`), so
     /// the site that builds a reference is the site that learns it is
     /// wrong, and no consumer holds the `~` literal or a guessed
     /// buffer size. `[Router.max_ref_bytes]u8` always fits.
     pub fn routeRef(self: *const App, buf: []u8, name: []const u8, args: []const []const u8) ![]u8 {
-        return self.router.ref(buf, name, args);
+        return self.router.writeRef(buf, name, args);
     }
 
     /// Writes `utf8` to the platform clipboard (the clipboard service —

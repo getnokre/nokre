@@ -622,7 +622,7 @@ pub const Tree = struct {
             // this catches a marker built by hand.
             .nav_here => |n| {
                 if (parent_role != .nav) return error.NavItemOutsideNav;
-                if (n.label.len == 0) return error.EmptyNavHere;
+                if (n.value.len == 0) return error.EmptyNavHere;
             },
             // The folded tail of a row of actions, and nothing else:
             // installed by `overflow.syncOverflowChrome` on the row that
@@ -966,7 +966,7 @@ pub const Tree = struct {
                 n.route = try dupeValid(a, n.route);
             },
             .nav_current => |*n| n.section = try dupeValid(a, n.section),
-            .nav_here => |*n| n.label = try dupeValid(a, n.label),
+            .nav_here => |*n| n.value = try dupeValid(a, n.value),
             .sheet => |*s| s.title = try dupeValid(a, s.title),
             .notice => |*n| {
                 n.title = try dupeValid(a, n.title);

@@ -228,7 +228,7 @@ it — the same rule labels already follow.
 
 ### Building a reference
 
-Writing one is `routeArg`'s mirror — `App.routeRef` (`router.ref`
+Writing one is `routeArg`'s mirror — `App.routeRef` (`router.writeRef`
 underneath) formats a name and its arguments into a buffer you hand it,
 validated against the same table `navigate` resolves through:
 

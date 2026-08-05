@@ -1283,8 +1283,12 @@ pub const NavCurrent = struct {
 /// reader has something stable to look for.
 pub const NavHere = struct {
     /// `RouteDef.title` for the screen on top. Named, not derived: see
-    /// that field's rationale (router.zig). It is the marker's *value*.
-    label: []const u8,
+    /// that field's rationale (router.zig). `value` because that is what
+    /// a11y makes of it: the node's *value* (semantics.zig), never its
+    /// name — the marker's accessible name is the chrome's "Current
+    /// screen" (`name`, below), and `title` in this file always means
+    /// accessible name.
+    value: []const u8,
     /// And this is its name (`App.Chrome.current_screen`), copied in at
     /// construction like `nav_current`'s.
     name: []const u8 = default_chrome.current_screen,

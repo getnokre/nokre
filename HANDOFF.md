@@ -1,6 +1,12 @@
 # HANDOFF — the second ergonomics round (2026-08-04, evening)
 
-Status: **in execution** (started 2026-08-05). Landed so far: A1
+Status: **EXECUTED WHOLE** (2026-08-05, revisions 6→15). The
+owner-approved B1+B3+B6 sweep (revision 15) closed the round: `ref`
+is the one parameter word across every public navigation verb
+(`Router.ref` became `writeRef` to unshadow it — owner call),
+`NavHere.label` is `value` (owner chose over `title`; the two apps'
+dead nav_here e2e branches fixed in the same pass), `workers.Vt` is
+`VTable` with its fields. Landed before it: A1
 (revision 6) — bind/bindAt on all four action types, `nokre.ctx`
 deleted, both apps + site + docs migrated; A2 (revision 7) —
 `App.refresh` + the `reload_in_build` refusal, 39 hand policies and

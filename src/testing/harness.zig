@@ -387,7 +387,7 @@ pub const Harness = struct {
         var it = self.app.tree.dfs();
         while (it.next()) |id| {
             const el = self.app.tree.getConst(id).?;
-            if (el.* == .nav_here and std.mem.eql(u8, el.nav_here.label, title)) return;
+            if (el.* == .nav_here and std.mem.eql(u8, el.nav_here.value, title)) return;
         }
         return queries.noMatch(&self.app.tree, "nav destination titled", title);
     }
