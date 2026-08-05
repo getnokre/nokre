@@ -340,6 +340,12 @@ ends the two-name-per-verb split; a third edition's driver would have
 been a third copy.
 
 ### A6. One-shot in-flight gate — the mutation twin of `Load`
+*(A4's migration found the matching harness gap: nothing spells "this
+control is busy". `expectEnabled`/`expectDisabled` read `disabled` and
+`expectValue` reads the a11y node's value, so four consumer tests still
+reach into the raw tree for `in_progress`. The verb belongs beside
+`Gate`, which is the thing that produces the state — fold it into this
+pass rather than leaving app-local sugar `Gate` would orphan.)*
 `Load` is deliberately display-only; `Button.in_progress` renders
 busy; nothing *produces* busy. So every mutation hand-rolls
 `if (self.x) return; self.x = true; ... self.x = false;` — **22 flags
