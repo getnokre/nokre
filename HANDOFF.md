@@ -498,9 +498,11 @@ dissolves the day the slot exists.
 - **Golden-test recipe** (build surface): both consumer build.zigs
   hand-copy the same ~20 lines nokre's own build writes (the
   `"build_options"` name contract, `update_goldens`, `linkSkia`,
-  `setCwd`). `nokre.addGoldenTests(dep, .{...})` would own the
-  contract. Candidate only — the owner has killed convenience
-  wrappers before.
+  `setCwd`). **DECIDED 2026-08-05: ship `nokre.addGoldenTests(dep, .{...})`.**
+  Not a convenience wrapper in the sense the owner has killed before —
+  the `build_options` name is a real contract between nokre and a
+  consumer's build, and a hand-copy that drifts fails in a confusing
+  place. Two consumers copy it today; a third would copy it again.
 
 ---
 
@@ -519,7 +521,7 @@ touches an owner-killed rename.
 | `Router.replace` | alias `App.replaceWith` — or a doc line saying why not | the one navigation verb without an App alias, zero uses anywhere; a consumer needing it rediscovers the condemned `app.router.X(app)` shape. Either resolution is fine; today it is silently neither. |
 | shell.h haptic "kind 0/kind 1" | `NOKRE_HAPTIC_ARMED/DISARMED` enum | the only unnamed wire values left in the header; the Zig side is wire-pinned and named, ios/shell.m compares raw `0`. |
 | `hsk_` ABI prefix | *log only* — candidate `nokre_skia_` | the one non-`nokre_` symbol family in every consumer link, exported by a file named nokre_skia. Mechanical but leaks into getting-started.md's literal linker transcript; owner weighs doc churn. |
-| `ImeEvent.update.cursor` | *decide* — store it or drop it | plumbed through all five shells and live.js, then dropped by `handleIme`; renderers cannot draw the in-composition caret the wire pretends to carry. (a) store on the editables and draw, honoring the "day one" claim; (b) delete from the wire in a pinned pass. Doing neither leaves a contract nobody can observe. |
+| `ImeEvent.update.cursor` | **DECIDED: store it and draw it** | plumbed through all five shells and live.js, then dropped by `handleIme` (editing.zig:124 reads only `u.composition`); the caret always draws at the *end* of the composition run (renderer.zig:1693). **Owner picked (a), 2026-08-05**: the caret moves within the pre-edit string during CJK composition, so pinning it to the end is wrong the moment a user moves back, and elements.md already claims IME is live on every platform. Costs a field on the editables, a draw change, and golden churn. |
 | journal `clear` roster | add the five or write the rule down | services.zig:109 names per-phase `clear` a convention; five services answer it, five don't (oauth, iap, notification, deep_link, locale). Consumer pressure today is 3 sites — the cheap fix is a sentence saying boot-scoped journals deliberately don't reset. |
 
 Consumer-side vocabulary the apps invented that A-items would retire:
