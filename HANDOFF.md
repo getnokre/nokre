@@ -388,7 +388,7 @@ empty line when ready-and-zero; pairs with `Rows.truncated` (A1) for
 the disclosure line. The full section idiom (heading + gate + list +
 create link) is a candidate second step — log, owner decides.
 
-### A8. The stale-reply surface: shipped verbs, unreachable pit of success
+### A8 PARTLY DONE (nokre `9327d27`, revision 29) — the stale-reply surface: shipped verbs, unreachable pit of success
 Filed as one item because the fixes are small but the *decision* is
 one posture question. Receipts, all verified today:
 - `refresh(.{ .route })` — the option built for "a reply landed after
@@ -437,7 +437,7 @@ per controller.
   (`pub const tr = L.mixinTr;`) — one line per controller instead of
   three, or zero.
 
-### A10. Mid-flight patches: the last `tree.get` ritual
+### A10 DONE (nokre `9327d27`, revision 29) — mid-flight patches: the last `tree.get` ritual
 Nine clusters across the user app (transfer.zig:310, write.zig:711,
 state.zig:744-983) hand-roll recorded-NodeId → `tree.get` → field
 poke → `invalidate()` for progress/status that must not rebuild under
@@ -930,8 +930,38 @@ passes bump `revision` and move all three pins.
     consumer callers but was kept — it still answers a locale source
     with no tree of its own, which nokre's own test uses; retiring it
     is a separate argument.
-11. **A8 posture pass** (owner decides the menu first) and **A10
-    patch verbs** (owner picks leaf-id vs patch-pair shape).
+11. ~~**A8 posture pass** and **A10 patch verbs**~~ — DONE, revision 29
+    (nokre `9327d27`, rokovski `9fdae713`, site `8f3e0d1`).
+
+    **Owner took only `bindKey` from A8's menu**; the route-scoped
+    `navigate` twin and the refresh doc/audit steer were declined. Also
+    corrected: the survey's headline "0 route-scoped `refresh`
+    adoptions" is org-only — the user app uses it **66 of 204 times**,
+    so the verb is discoverable and one app simply never learned the
+    habit. **Owner picked per-leaf `...Id` twins** over a generic
+    `Cursor.appendId`.
+
+    A key is copied by the tree at append, and that is load-bearing:
+    the natural key is a field of the row, so a borrowed one would
+    still point into that row's buffer after a refill and the pressed
+    row's key would become its successor's. Copied verbatim, not
+    validated — U+FFFD substitution maps two identities onto one, which
+    is a collision. A missing key is a decline; a stale in-range index
+    is a live wrong row.
+
+    **The wrong-admin bug is latent, not live**, and the trace is the
+    point: on that route a listing cannot be in flight while the
+    buttons show, the handler clears rows before refreshing, and
+    `refresh` never declines there because the screen has no editable,
+    no picker and no notice — three accidents of one screen, not rules.
+    One text field or the org app's first `notify` away from live. The
+    same class **was** live in shape elsewhere: `publications.zig`
+    converted an id to a position and returned **0** on a miss —
+    somebody else's first row — then converted it back to an id.
+
+    Left open: six sites still hand-roll `in_progress` as a boolean
+    that must also turn *off*, which `patchProgress(id, pct)` cannot
+    express. A `patchBusy` would be a third verb; not taken.
 12. **A11 field-error slot** — element-set argument on its own terms,
     with A12's smaller items and **Part B + C sweeps** closing the
     round once no in-flight migration can collide with renames.
