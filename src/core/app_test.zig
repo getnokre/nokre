@@ -2615,6 +2615,130 @@ test "closeSheet rebuilds deliberately: a held edit does not stop it" {
     try testing.expectEqual(@as(u32, 2), host.screen_builds);
 }
 
+/// The gesture-close fixture: a screen whose *content is* the state a
+/// controller writes while its own sheet stands over it — the shape
+/// that makes `refresh`'s decline safe only if every close rebuilds.
+const GestureCloseHost = struct {
+    status: []const u8 = "Member",
+    screen_builds: u32 = 0,
+
+    fn buildScreen(ctx: ?*anyopaque, app: *App) anyerror!void {
+        const self: *GestureCloseHost = @ptrCast(@alignCast(ctx.?));
+        self.screen_builds += 1;
+        try app.tree.append(app.tree.rootId(), .{ .text = .{ .content = self.status } });
+        try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Remove member" } });
+    }
+
+    fn buildSheet(_: ?*anyopaque, app: *App) anyerror!void {
+        const sheet = try app.presentSheet("Remove member");
+        try app.tree.append(sheet, .{ .button = .{ .label = "Remove" } });
+    }
+
+    fn fixture(self: *GestureCloseHost) !App {
+        return App.init(testing.allocator, .{
+            .viewport = .{ .w = 400, .h = 600 },
+            .routes = &.{.{ .name = "team", .title = .{ .fixed = "Team" }, .build = buildScreen }},
+            .ctx = self,
+            .services = .mocks(),
+        });
+    }
+
+    /// Opens the sheet, then does what a controller does when its work
+    /// answers underneath one: writes the state and says `refresh`,
+    /// which correctly declines to rebuild behind a live sheet. The
+    /// screen is now one rebuild behind its own state, and the *only*
+    /// thing that catches it up is the close.
+    fn openAndFailBehind(self: *GestureCloseHost, app: *App) !void {
+        try app.openSheet(.{ .ctx = self, .call = buildSheet });
+        const before = self.screen_builds;
+        self.status = "Could not remove: last owner";
+        app.refresh(.{});
+        try testing.expectEqual(before, self.screen_builds);
+        try testing.expect(queryLabel(app, self.status) == null);
+    }
+};
+
+test "escape closes the sheet and the screen behind catches up with the state" {
+    var host: GestureCloseHost = .{};
+    var app = try host.fixture();
+    defer app.deinit();
+    try app.navigate("team");
+    try host.openAndFailBehind(&app);
+
+    // Without the rebuild the failure would first appear at whatever
+    // unrelated moment next reloads this screen — worse than losing it,
+    // because it arrives detached from the press that caused it.
+    try app.dispatch(.{ .key_down = .{ .key = .escape } });
+    try testing.expect(layout.findSheet(&app.tree) == null);
+    try testing.expectEqual(@as(u32, 2), host.screen_builds);
+    try testing.expect(queryLabel(&app, host.status) != null);
+}
+
+test "a tap on the scrim closes the sheet and the screen behind catches up" {
+    var host: GestureCloseHost = .{};
+    var app = try host.fixture();
+    defer app.deinit();
+    try app.navigate("team");
+    try host.openAndFailBehind(&app);
+
+    app.performLayout();
+    try app.tap(.{ .x = 2, .y = 2 });
+    try testing.expect(layout.findSheet(&app.tree) == null);
+    try testing.expectEqual(@as(u32, 2), host.screen_builds);
+    try testing.expect(queryLabel(&app, host.status) != null);
+}
+
+test "the pinned close control closes the sheet and the screen behind catches up" {
+    var host: GestureCloseHost = .{};
+    var app = try host.fixture();
+    defer app.deinit();
+    try app.navigate("team");
+    try host.openAndFailBehind(&app);
+
+    const sheet = layout.findSheet(&app.tree) orelse return error.NoSheet;
+    const close = childOfRole(&app, sheet, .sheet_close) orelse return error.NoCloseControl;
+    app.performLayout();
+    try app.tap(app.tree.rectOf(close).center());
+    try testing.expect(layout.findSheet(&app.tree) == null);
+    try testing.expectEqual(@as(u32, 2), host.screen_builds);
+    try testing.expect(queryLabel(&app, host.status) != null);
+}
+
+test "the close's rebuild still hands focus back to the control that opened the sheet" {
+    var host: GestureCloseHost = .{};
+    var app = try host.fixture();
+    defer app.deinit();
+    try app.navigate("team");
+    const invoker = queryLabel(&app, "Remove member") orelse return error.NoInvoker;
+    app.focused = .of(invoker);
+    try host.openAndFailBehind(&app);
+
+    // Two hand-backs compose rather than fight: the teardown returns
+    // focus to the invoker's node, and the reload that follows re-finds
+    // it *by name* in the tree it just built (router.zig `restoreFocus`)
+    // — so the keyboard lands on the live control, not the dead id.
+    try app.dispatch(.{ .key_down = .{ .key = .escape } });
+    const after = app.focused orelse return error.FocusLost;
+    try testing.expect(!after.node.eql(invoker));
+    try testing.expectEqualStrings("Remove member", app.tree.getConst(after.node).?.label());
+}
+
+test "the close's rebuild leaves the notice chrome the teardown just restored" {
+    var host: GestureCloseHost = .{};
+    var app = try host.fixture();
+    defer app.deinit();
+    try app.navigate("team");
+    app.notify(.{ .title = "Saved", .route = "team", .important = true });
+    try app.openSheet(.{ .ctx = &host, .call = GestureCloseHost.buildSheet });
+    try testing.expect(layout.findNotice(&app.tree) == null);
+
+    // `teardownSheet` puts the banner back and `clearContent` keeps
+    // chrome across the rebuild, so the two do not undo each other.
+    try app.dispatch(.{ .key_down = .{ .key = .escape } });
+    try testing.expect(layout.findNotice(&app.tree) != null);
+    try testing.expect(layout.findIndicator(&app.tree) == null);
+}
+
 test "refresh from inside a build declines quietly, with nothing on the record" {
     var host: RefreshHost = .{ .refresh_in_build = true };
     var app = try host.fixture();

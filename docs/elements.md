@@ -1519,7 +1519,10 @@ That one declaration is the whole lifecycle:
   swallowed there rather than at your call site. A Cancel button wires
   straight to it — `.on_press = .bind(nokre.App.closeSheet, app)`, the
   App being the only state the verb takes — so a controller declares no
-  close of its own.
+  close of its own. The framework's own dismissals go through the same
+  verb (Esc, the scrim, the ×), which is what lets `App.refresh` leave
+  the content behind a live sheet alone: whatever the user writes under
+  their own dialog is on screen the moment the dialog goes.
 - **The sheet closed?** However it happened — Esc, the close control, a
   tap outside, `closeSheet`, `dismissSheet`, a navigation — the builder
   is dropped (so `sheetTagAs` already answers null) and its optional
@@ -1551,10 +1554,12 @@ occupying the full 44px touch target — in the header corner and moves
 focus to it; everything
 behind the sheet is inert — unreachable by Tab, tap, and scroll — and is
 dimmed by a 1px `.paper` checkerboard scrim, which keeps the pixels
-inside the thirteen-gray palette. Esc or a tap on the scrim dismisses
-it (`App.dismissSheet` does so programmatically), and focus returns to
-the element that had it. One sheet at a time; a second `presentSheet` is
-rejected at the call site.
+inside the thirteen-gray palette. The close control, Esc and a tap on
+the scrim all take the `App.closeSheet` road — one user gesture, one
+outcome, screen behind rebuilt — and focus returns to the element that
+had it. (`App.dismissSheet` is the same closure *without* the rebuild,
+for a caller that is about to build the screen itself.) One sheet at a
+time; a second `presentSheet` is rejected at the call site.
 
 It appears in place, fully formed — no slide, no fade (WCAG 2.3.3, and
 nokre has no animation to begin with).

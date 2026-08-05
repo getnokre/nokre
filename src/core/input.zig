@@ -255,13 +255,13 @@ fn onScrim(app: *App, p: Point) bool {
 }
 
 /// Leaves the open layer the way Esc does: the picker closes without
-/// committing, the sheet dismisses, the notices pane minimizes with its
+/// committing, the sheet closes, the notices pane minimizes with its
 /// notices still pending.
 fn dismissLayer(app: *App) void {
     const layer = layout.topModalLayer(&app.tree) orelse return;
     switch (app.tree.getConst(layer).?.role()) {
         .picker => overlays.closePicker(app, null),
-        .sheet => overlays.dismissSheet(app),
+        .sheet => overlays.closeSheet(app),
         .notices_pane => notices.minimizeNotices(app),
         // topModalLayer returns nothing else.
         else => unreachable,
@@ -384,7 +384,7 @@ pub fn activate(app: *App, id: NodeId) !void {
         },
         .link => |l| if (l.external) |url| try open_url.open(app, url) else try app.navigate(l.route),
         .tile => |t| if (t.route.len > 0) try app.navigate(t.route) else t.on_press.invoke(),
-        .sheet_close => overlays.dismissSheet(app),
+        .sheet_close => overlays.closeSheet(app),
         .back => try app.navigateBack(),
         .icon_button => |ib| try activateIcon(app, id, ib.glyph),
         .select => try overlays.openPicker(app, id),
@@ -589,7 +589,7 @@ pub fn handleKey(app: *App, key: event_mod.Key, mods: event_mod.Modifiers) !void
                 return;
             }
             if (!composing and layout.findSheet(&app.tree) != null) {
-                overlays.dismissSheet(app);
+                overlays.closeSheet(app);
                 return;
             }
             if (!composing and layout.findNoticesPane(&app.tree) != null) {

@@ -163,17 +163,19 @@ fn onSaved(state: *State, result: Result) void {
 `refresh` is "this state changed; update whatever is showing,
 politely." If an open sheet owns the screen its builder runs again — a
 sheet is a tree node a reload would take with it, so the state change
-re-presents it instead, and the content behind it waits for whatever
-closes the sheet. Otherwise it reloads, unless `reloadSafe` says the
-user holds something a rebuild would take — then it declines, and
-declining is fine by construction: the state is already written, and
-the next navigation or gesture rebuilds from it. `Refresh.route` scopes
-the whole thing to a screen: a reply that lands after the user has
-walked away leaves the screen it no longer owns alone (`""`, the
-default, means whatever is on top; the comparison is by route *name*,
-so `"note"` covers `note~42`). Called from inside a builder — a load
-the builder issued, answered synchronously — it declines quietly too:
-the builder reads the answered state the line after. Every consumer
+re-presents it instead, and the content behind it waits for the close,
+which always rebuilds it — Esc, the scrim, the × and `closeSheet`
+alike, so state written under a sheet lands the moment the sheet goes.
+Otherwise it reloads, unless `reloadSafe` says the user holds something
+a rebuild would take — then it declines, and declining is fine by
+construction: the state is already written, and the next navigation or
+gesture rebuilds from it. `Refresh.route` scopes the whole thing to a
+screen: a reply that lands after the user has walked away leaves the
+screen it no longer owns alone (`""`, the default, means whatever is on
+top; the comparison is by route *name*, so `"note"` covers `note~42`).
+Called from inside a builder — a load the builder issued, answered
+synchronously — it declines quietly too: the builder reads the answered
+state the line after. Every consumer
 used to compose all of this by hand, per controller; the survey found
 22 copies.
 

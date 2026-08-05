@@ -268,6 +268,15 @@ pub fn sheetTagAs(app: *const App, comptime E: type, ctx: ?*anyopaque) ?E {
 /// builds the screen from it. The one failure that is a programmer
 /// error, a `reload` issued from inside a builder, is recorded by the
 /// router either way (`Router.refused`), so the `catch` hides nothing.
+///
+/// **Every gesture that closes a sheet arrives here** — Esc, the scrim,
+/// the pinned × (input.zig), and a consumer's own Cancel. That is what
+/// makes `App.refresh` safe to decline a rebuild while a sheet is up: a
+/// controller that writes state behind its own dialog is answered by
+/// the sheet's re-present now and by this reload the moment the sheet
+/// goes, rather than at some unrelated later rebuild, detached from the
+/// action that caused it. Route a fourth door through `dismissSheet`
+/// and that decline starts losing screens again.
 pub fn closeSheet(app: *App) void {
     dismissSheet(app);
     app.reload() catch {};
@@ -324,8 +333,9 @@ pub fn dropSheetBuilder(app: *App) void {
 /// the rest of the tree is inert: focus, taps, and scrolling stay
 /// inside. A close control (×, accessible name "Close") is pinned to
 /// the header corner — an inescapable sheet cannot be built — and Esc
-/// or tapping outside also dismiss. Focus moves in now and returns to
-/// the invoking element on dismissal.
+/// or tapping outside also close — all three through `closeSheet`, so
+/// the screen behind is rebuilt whichever the user reaches for. Focus
+/// moves in now and returns to the invoking element on dismissal.
 pub fn presentSheet(app: *App, title: []const u8) !NodeId {
     closePicker(app, null); // an in-flight choice does not survive a new layer
     // Whatever this sheet is, it is not the one a folded row opened —
@@ -345,7 +355,17 @@ pub fn presentSheet(app: *App, title: []const u8) !NodeId {
     return sheet;
 }
 
-/// No-op when no sheet is open.
+/// Takes the sheet down and leaves the screen behind exactly as it
+/// stood. No-op when no sheet is open.
+///
+/// The half of `closeSheet` without the rebuild, for the two callers a
+/// rebuild would be wrong for: a stale folded-tail sheet dropped from
+/// inside layout (overflow.zig), and a sheet taken down on the way to a
+/// navigation that is about to build the screen itself. A *user's*
+/// close is not one of those — it takes `closeSheet`, whose doc says
+/// why — and a consumer that dismisses here after writing state has
+/// promised to rebuild the screen itself, because `App.refresh` will
+/// not have.
 pub fn dismissSheet(app: *App) void {
     teardownSheet(app);
     dropSheetBuilder(app);

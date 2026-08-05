@@ -438,7 +438,10 @@ pub const App = struct {
         if (self.sheet_builder != null) {
             // The sheet owns the screen and answers the state itself;
             // the content behind it stays as it was, like every hand
-            // policy kept it — whatever closes the sheet rebuilds.
+            // policy kept it. What makes that safe rather than a way to
+            // lose the state is that every close rebuilds — Esc, the
+            // scrim, the × and Cancel are all `overlays.closeSheet`,
+            // which is where that invariant is enforced and argued.
             overlays.representSheet(self) catch {};
             return;
         }
