@@ -1066,12 +1066,11 @@ passes bump `revision` and move all three pins.
     no in-flight representation at all, where its sibling in
     `settings_sheets.zig` does. A behavioural change outside this item.
 
-*(superseded entry retained below for the reasoning)*
-
-13a. **`TextInput.readonly`** — QUEUED, owner-requested 2026-08-05.
-    Not an item in this file: it appears only as prose in A11 as "the
-    flagged candidate", carried over from an earlier round with no
-    design attached.
+13a. **Why it is `disabled` and not `readonly`** — the reasoning behind
+    item 13, kept because the same evidence will otherwise be
+    re-derived into the same mistake. It was never an item in this
+    file: it appears only as prose in A11 as "the flagged candidate",
+    carried over from an earlier round with no design attached.
 
     **The owner set the presentation rule that decides its shape, and
     it corrects how A11's evidence was read.** A value that is not
