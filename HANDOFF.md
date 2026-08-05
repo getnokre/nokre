@@ -281,7 +281,7 @@ open: today a failed *four-eyes deletion* confirm sheet vanishes into
 `catch {}` ×7. (Not the killed presentSheet assert: nothing here
 asserts at the primitive; it types the door above it.)
 
-### A4. The harness's missing half: asserting what was sent
+### A4 DONE (nokre `28ba1fc`, revision 24) — the harness's missing half: asserting what was sent
 Round 2 gave the *answering* side suffix verbs (`fulfillHttpPath`,
 `failHttpPath`, `httpIndexOf`). The *observing* side never landed, so
 tests reach four levels deep: **72 `pendingAt(` + 31 `headerValue(` +
@@ -807,7 +807,23 @@ passes bump `revision` and move all three pins.
    framework already says a bare `presentSheet` dies on reload), so no
    refusal was added. Owner's call whether it wants one.
 
-7. **A4 harness expect verbs** (+ riders); fixtures shrink again.
+7. ~~**A4 harness expect verbs**~~ — nokre DONE, revision 24 (nokre
+   `28ba1fc`, site `0b753bb`); consumer test migration in the same
+   pass. `takeRequest` became `httpRequest` and *peeks*: none of the
+   104 read sites wants removal and 45 answer the request two lines
+   later, so taking it out unanswered would strand the app's one-shot
+   slot with its busy flag up — the bug the harness exists to catch.
+   `body_contains` is a list with an `excludes` twin, and headers are
+   three fields, because twelve sites assert an `Authorization` is
+   absent and six assert a PoW nonce rode along without asserting its
+   random value.
+
+   The value riders needed **no new verb**: `expectValue` already read
+   `tile.detail`, `copyable.value` and `qr.value`, and nobody found it
+   because its own doc and testing.md both said it only read text
+   inputs and segmented controls. Ten raw tree reads existed to work
+   around a wrong sentence. Two failure headings that printed
+   themselves over silence when nothing was parked now say so.
 8. **A5 driver tier** (wait.until* + shared verb names; both Devices
    collapse; org's `describe` improvement lands in the shared home).
 9. **A6 Gate + A7 empty branch** (one pass — both are loadGate-family
