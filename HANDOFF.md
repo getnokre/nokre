@@ -779,6 +779,17 @@ passes bump `revision` and move all three pins.
    honest verb for "take the sheet down, I am about to build the screen
    myself", which is how eight consumer sites use it.
 
+   Consumer follow-through (rokovski `a17edcf5`): with the screen
+   rebuilding, all seven org failure arms moved back off the notices
+   ring — a refusal leaves no residue to carry away, so the surface it
+   was refused on is the one that reports it, while the gift code stays
+   on the ring because something did happen. `danger.zig` lost its
+   notify outright: the two states thought to need it cannot reach it.
+   Pre-existing defect found there and left for a decision — `Invites`
+   serves two routes and resets its notice only on organization change,
+   so a failure leaks across navigation and the org section reports it
+   out of context. That is about notice *lifetime*, not channel.
+
    **A fourth door of the same class, reported and left**:
    `overflow.closeTailSheet` (overflow.zig:283) dismisses without
    rebuilding, so pressing a folded action in the More sheet writes
