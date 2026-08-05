@@ -8,9 +8,12 @@
 //!     });
 //!
 //!     L.tr(loc, .refresh)                          // no placeholders
+//!     L.trAny(loc, key)                            // key chosen at runtime
 //!     try L.fmt(&buf, loc, .greeting, .{ .name = user })
 //!     try L.fmt(&buf, loc, .nItems, .{ .count = 3 })
 //!     L.resolve("fa-IR")                           // → .fa (or the default)
+//!     L.of(app).tr(.refresh)                       // locale resolved once
+//!     app.setChrome(L.chrome(loc))                 // reserved chrome keys
 //!
 //! What Flutter checks at generation time — and much it never checks —
 //! nokre checks at compile time, because the whole catalog is in view:
@@ -31,10 +34,13 @@
 //!
 //! The refusals (docs/localization.md): no DateTime or double
 //! placeholders, no NumberFormat/DateFormat, no runtime catalog
-//! loading, no fallback locale chains inside a bundle. Dates, floats,
-//! and grouping are app-side formatting; counts are integers, rendered
+//! loading, no fallback locale chains inside a bundle. Floats and
+//! grouping are app-side formatting; counts are integers, rendered
 //! in the catalog locale's own digit shapes (fa ۰–۹, ar ٠–٩, ASCII
-//! otherwise — a fixed table, no knob; see `digitsOfTag`).
+//! otherwise — a fixed table, no knob; see `digitsOfTag`). Calendar
+//! dates are the one date shape admitted, as `{when, date, skeleton}`
+//! over a caller-supplied civil `Date` (`dateFromMillis`) — integer
+//! math on a value the caller owns, never a clock read here.
 //!
 //! This is a core-adjacent pure module, not a service: it binds no
 //! externs and holds no state, per-app or otherwise. The `locale`
@@ -43,6 +49,7 @@
 
 const std = @import("std");
 const bidi = @import("../core/bidi.zig");
+const element_mod = @import("../core/element.zig");
 const tree_mod = @import("../core/tree.zig");
 
 pub const arb = @import("arb.zig");
@@ -55,7 +62,50 @@ pub const Direction = bidi.Direction;
 
 pub const Kind = arb.Kind;
 
+/// What a `date` placeholder is fed: a civil (proleptic Gregorian)
+/// calendar date, already computed by the caller. A plain value on
+/// purpose — no clock, no zone, no notion of "now" — so the same
+/// arguments are the same bytes forever. `month` and `day` are
+/// 1-based; a `month` outside 1–12 reads as December at the `MMM`
+/// skeleton rather than trapping mid-frame, the totality both
+/// consumer date modules shipped before this subsumed them.
+pub const Date = struct { year: i64, month: u8, day: u8 };
+
+/// Epoch milliseconds (UTC) to the civil date the instant falls on —
+/// Howard Hinnant's days-from-civil algorithm, inverted; `@divFloor`
+/// keeps pre-1970 instants on the right day. UTC and nothing else:
+/// servers speak epoch millis, and a surface precise enough for a
+/// zone to matter should not be a formatted label. This is the
+/// integer-only civil-date math both rokovski apps had transcribed
+/// by hand, moved to the one place every catalog can reach it.
+pub fn dateFromMillis(millis: i64) Date {
+    const days = @divFloor(millis, 86_400_000);
+    const z = days + 719_468;
+    const era = @divFloor(z, 146_097);
+    const doe = z - era * 146_097;
+    const yoe = @divTrunc(doe - @divTrunc(doe, 1460) + @divTrunc(doe, 36524) - @divTrunc(doe, 146_096), 365);
+    const doy = doe - (365 * yoe + @divTrunc(yoe, 4) - @divTrunc(yoe, 100));
+    const mp = @divTrunc(5 * doy + 2, 153);
+    const day = doy - @divTrunc(153 * mp + 2, 5) + 1;
+    const month = mp + (if (mp < 10) @as(i64, 3) else -9);
+    return .{
+        .year = yoe + era * 400 + @intFromBool(month <= 2),
+        .month = @intCast(month),
+        .day = @intCast(day),
+    };
+}
+
 const Param = struct { name: []const u8, kind: Kind };
+
+/// The reserved keys a `{…, date, MMM}` reference reads its words
+/// from, in month order. Words, so they live where words live — the
+/// catalog, one per locale, checked at compile time like every other
+/// message — rather than in a table here that would make nokre the
+/// translator of twelve nouns.
+const month_key_names = [12][]const u8{
+    "monthJan", "monthFeb", "monthMar", "monthApr", "monthMay", "monthJun",
+    "monthJul", "monthAug", "monthSep", "monthOct", "monthNov", "monthDec",
+};
 
 /// Builds the bundle type from embedded ARB sources. The first source
 /// is the template: it defines the key set, the placeholder metadata,
@@ -147,14 +197,62 @@ pub fn Bundle(comptime arb_sources: []const []const u8) type {
     }
     const params_table = params_v;
 
+    // The month words, resolved once per locale iff some message uses
+    // `{…, date, MMM}` — a catalog that never writes a textual date
+    // owes no month keys. When one does, all twelve reserved keys must
+    // exist (key parity then makes every locale carry them), and each
+    // must be a plain message: a placeholder inside a month word has
+    // no arguments to draw from where the word is emitted.
+    comptime var month_names_v: [n_locales][]const []const u8 = @splat(&.{});
+    comptime {
+        var uses_mmm = false;
+        for (catalog) |per_locale| for (per_locale) |segs| {
+            if (segsUseMonthNames(segs)) uses_mmm = true;
+        };
+        if (uses_mmm) {
+            var idx: [12]usize = undefined;
+            for (month_key_names, 0..) |mk, m| {
+                idx[m] = keyIndex(&keys, mk) orelse
+                    @compileError("nokre l10n: a message uses '{…, date, MMM}', which reads its " ++
+                        "month words from the reserved keys monthJan…monthDec — the template is " ++
+                        "missing '" ++ mk ++ "'");
+                if (params_table[idx[m]].len != 0)
+                    @compileError("nokre l10n: reserved month key '" ++ mk ++
+                        "' must be a plain message with no placeholders");
+            }
+            for (0..n_locales) |i| {
+                var names: []const []const u8 = &.{};
+                for (idx) |j| names = names ++ &[_][]const u8{joinLiterals(catalog[i][j])};
+                month_names_v[i] = names;
+            }
+        }
+    }
+    const month_names = month_names_v;
+
+    // trAny's answer, generated dense: one slot per (locale, key),
+    // filled at comptime with the same joined constant `tr` returns —
+    // O(1) at a runtime key, no map, no hashing. A message with
+    // placeholders has no whole text to store, so its slot is null and
+    // reading it is the runtime twin of `tr`'s compile error.
+    comptime var any_table_v: [n_locales][n_keys]?[]const u8 = undefined;
+    comptime {
+        for (0..n_locales) |i| for (0..n_keys) |j| {
+            any_table_v[i][j] = if (params_table[j].len == 0) joinLiterals(catalog[i][j]) else null;
+        };
+    }
+    const any_table = any_table_v;
+
     // Structural validation per locale: plural categories against the
-    // locale's own CLDR rules, select case sets against the template.
+    // locale's own CLDR rules, select case sets against the template,
+    // and no bare reference to a date placeholder — a date without a
+    // skeleton has no format to render.
     comptime {
         for (keys, 0..) |k, j| {
             const tmpl_selects = collectSelects(catalog[0][j], &.{});
             for (files, 0..) |f, i| {
                 const ctx = "locale '" ++ f.locale ++ "', message '" ++ k ++ "'";
                 validateSegs(ctx, f.locale, catalog[i][j], tmpl_selects);
+                rejectBareDateArgs(ctx, catalog[i][j], params_table[j]);
             }
         }
     }
@@ -175,6 +273,8 @@ pub fn Bundle(comptime arb_sources: []const []const u8) type {
     const key_vals = key_vals_v;
 
     return struct {
+        const Self = @This();
+
         /// One field per ARB source, named by its @@locale ('-' becomes
         /// '_', so "pt-BR" is `.pt_BR`). Field order is source order.
         pub const Locale = @Enum(LocaleInt, .exhaustive, &locale_names, &locale_vals);
@@ -220,6 +320,20 @@ pub fn Bundle(comptime arb_sources: []const []const u8) type {
             }
         }
 
+        /// `tr` for a key that exists only at runtime — a table-driven
+        /// label (month words, enum-indexed captions) where `tr`'s
+        /// comptime key would force a hand-written switch per arm. One
+        /// dense table read, same constant bytes as `tr`. Reading a
+        /// message *with* placeholders is a programming error — the
+        /// runtime twin of the compile error `tr` gives — and panics
+        /// naming the key; there is no argument struct here to render
+        /// it with.
+        pub fn trAny(locale: Locale, key: Key) []const u8 {
+            return any_table[@intFromEnum(locale)][@intFromEnum(key)] orelse
+                std.debug.panic("nokre l10n: message '{s}' has placeholders — trAny reads whole " ++
+                    "messages; use fmt with a comptime key", .{@tagName(key)});
+        }
+
         /// Formats a message into `buf`, returning the written slice.
         /// `args` must carry exactly the message's placeholders — one
         /// field per name, integers for counts, slices for strings —
@@ -232,7 +346,7 @@ pub fn Bundle(comptime arb_sources: []const []const u8) type {
             switch (locale) {
                 inline else => |loc| {
                     const i = comptime @intFromEnum(loc);
-                    try emitSegs(catalog[i][j], locale_tags[i], params_table[j], args, 0, &sink);
+                    try emitSegs(catalog[i][j], locale_tags[i], params_table[j], month_names[i], args, 0, &sink);
                 },
             }
             return buf[0..sink.pos];
@@ -256,10 +370,10 @@ pub fn Bundle(comptime arb_sources: []const []const u8) type {
                     // A counting sink cannot run out of anything, so
                     // the emitter's one error is unreachable here.
                     var count: Sink = .{ .buf = null };
-                    emitSegs(catalog[i][j], locale_tags[i], params_table[j], args, 0, &count) catch unreachable;
+                    emitSegs(catalog[i][j], locale_tags[i], params_table[j], month_names[i], args, 0, &count) catch unreachable;
                     const out = try tree.strings().alloc(u8, count.pos);
                     var sink: Sink = .{ .buf = out };
-                    emitSegs(catalog[i][j], locale_tags[i], params_table[j], args, 0, &sink) catch unreachable;
+                    emitSegs(catalog[i][j], locale_tags[i], params_table[j], month_names[i], args, 0, &sink) catch unreachable;
                     return out;
                 },
             }
@@ -281,6 +395,82 @@ pub fn Bundle(comptime arb_sources: []const []const u8) type {
             }
             return default_locale;
         }
+
+        /// The bundle's calls with the locale already in hand — what a
+        /// controller holds instead of re-deriving
+        /// `resolve(app.locale())` beside every message. A value, not
+        /// a reference: it is the resolution, made once, and it stays
+        /// honest because a build or an action is one moment in one
+        /// locale — anything that changes the locale rebuilds anyway.
+        pub const Bound = struct {
+            locale: Locale,
+
+            pub inline fn tr(self: Bound, comptime key: Key) []const u8 {
+                return Self.tr(self.locale, key);
+            }
+
+            pub inline fn trAny(self: Bound, key: Key) []const u8 {
+                return Self.trAny(self.locale, key);
+            }
+
+            pub inline fn fmt(self: Bound, buf: []u8, comptime key: Key, args: anytype) error{NoSpace}![]const u8 {
+                return Self.fmt(buf, self.locale, key, args);
+            }
+
+            pub inline fn fmtIn(self: Bound, tree: *tree_mod.Tree, comptime key: Key, args: anytype) error{OutOfMemory}![]const u8 {
+                return Self.fmtIn(tree, self.locale, key, args);
+            }
+        };
+
+        /// `L.of(app).tr(.key)` — the app's chosen locale
+        /// (`App.locale()`, "" until chosen), resolved once into a
+        /// `Bound`. `anytype` and not `*App` on purpose: this module
+        /// is pure and binds no App; anything that answers `locale()`
+        /// with a tag — the App, a test harness — can stand here.
+        pub fn of(app: anytype) Bound {
+            return .{ .locale = resolve(app.locale()) };
+        }
+
+        /// nokre's own words (`App.Chrome`) out of this catalog: one
+        /// reserved key per field, its name derived from the field's —
+        /// `back` is `chromeBack`, `current_screen` is
+        /// `chromeCurrentScreen`. Feed it straight to `App.setChrome`.
+        /// The derivation is the whole point: a chrome string nokre
+        /// grows is a missing-key compile error in every app that
+        /// calls this, in every locale it ships — the guarantee the
+        /// old `Chrome.Catalog` literal gave, moved to where the words
+        /// live, with the field to key spelling no longer an app's to
+        /// get wrong. The strings are constant data, borrowed like
+        /// every `tr` answer.
+        pub fn chrome(locale: Locale) element_mod.Chrome {
+            switch (locale) {
+                inline else => |loc| return comptime chromeAt(@intFromEnum(loc)),
+            }
+        }
+
+        fn chromeAt(comptime i: usize) element_mod.Chrome {
+            comptime {
+                // Evaluated outside Bundle()'s own quota (chrome() is
+                // analyzed only when an app references it), so it
+                // budgets for itself: a linear key scan per field.
+                @setEvalBranchQuota(@intCast(@min(4_000 * @as(u64, n_keys) + 100_000, std.math.maxInt(u32))));
+                var out: element_mod.Chrome = undefined;
+                for (@typeInfo(element_mod.Chrome).@"struct".fields) |f| {
+                    const key_name = chromeKeyName(f.name);
+                    const j = keyIndex(&keys, key_name) orelse
+                        @compileError("nokre l10n: the template is missing '" ++ key_name ++
+                            "' — Bundle.chrome derives one reserved key per App.Chrome field " ++
+                            "(here '" ++ f.name ++ "'), so a localized app says every chrome " ++
+                            "word or does not build");
+                    if (params_table[j].len != 0)
+                        @compileError("nokre l10n: reserved chrome key '" ++ key_name ++
+                            "' must be a plain message with no placeholders — chrome strings " ++
+                            "are constant data, re-said whole on locale change");
+                    @field(out, f.name) = joinLiterals(catalog[i][j]);
+                }
+                return out;
+            }
+        }
     };
 }
 
@@ -293,7 +483,43 @@ fn kindName(comptime k: Kind) []const u8 {
     return switch (k) {
         .string => "a String",
         .int => "an integer (a plural count or int placeholder)",
+        .date => "a date (a {name, date, skeleton} civil date)",
     };
+}
+
+/// The reserved chrome key a `Chrome` field reads from: `chrome` plus
+/// the field name camel-cased at its underscores — `back` is
+/// `chromeBack`, `current_screen` `chromeCurrentScreen`. Derived, not
+/// listed, so a field nokre grows names its key in the same breath.
+fn chromeKeyName(comptime field: []const u8) []const u8 {
+    comptime var out: []const u8 = "chrome";
+    comptime var upper = true;
+    inline for (field) |c| {
+        if (c == '_') {
+            upper = true;
+            continue;
+        }
+        out = out ++ &[_]u8{if (upper) std.ascii.toUpper(c) else c};
+        upper = false;
+    }
+    return out;
+}
+
+/// Does any reference in these segments render a month *word* (the
+/// `MMM` skeleton)? Decides whether the bundle owes the reserved
+/// monthJan…monthDec keys at all.
+fn segsUseMonthNames(comptime segs: arb.Segs) bool {
+    for (segs) |seg| switch (seg) {
+        .literal, .pound, .arg => {},
+        .date => |d| if (d.skeleton == .MMM) return true,
+        .plural => |p| for (p.branches) |b| {
+            if (segsUseMonthNames(b.segs)) return true;
+        },
+        .select => |s| for (s.branches) |b| {
+            if (segsUseMonthNames(b.segs)) return true;
+        },
+    };
+    return false;
 }
 
 fn keyIndex(comptime keys: []const []const u8, comptime key: []const u8) ?usize {
@@ -336,6 +562,7 @@ fn collectUsage(comptime ctx: []const u8, comptime segs: arb.Segs, comptime rps_
     for (segs) |seg| switch (seg) {
         .literal, .pound => {},
         .arg => |name| rps = constrain(ctx, rps, name, null, allow_new),
+        .date => |d| rps = constrain(ctx, rps, d.arg, .date, allow_new),
         .plural => |p| {
             rps = constrain(ctx, rps, p.arg, .int, allow_new);
             for (p.branches) |b| rps = collectUsage(ctx, b.segs, rps, allow_new);
@@ -353,7 +580,7 @@ const SelectSet = struct { arg: []const u8, names: []const []const u8 };
 fn collectSelects(comptime segs: arb.Segs, comptime acc_in: []const SelectSet) []const SelectSet {
     var acc = acc_in;
     for (segs) |seg| switch (seg) {
-        .literal, .pound, .arg => {},
+        .literal, .pound, .arg, .date => {},
         .plural => |p| for (p.branches) |b| {
             acc = collectSelects(b.segs, acc);
         },
@@ -374,7 +601,7 @@ fn selectSetFor(comptime sets: []const SelectSet, comptime a: []const u8) ?[]con
 
 fn validateSegs(comptime ctx: []const u8, comptime tag: []const u8, comptime segs: arb.Segs, comptime tmpl_selects: []const SelectSet) void {
     for (segs) |seg| switch (seg) {
-        .literal, .pound, .arg => {},
+        .literal, .pound, .arg, .date => {},
         .plural => |p| {
             const rule = plural_rules.forLocale(tag) orelse
                 @compileError("nokre l10n: " ++ ctx ++ ": no integer plural rules for '" ++ tag ++
@@ -461,6 +688,23 @@ fn validateSegs(comptime ctx: []const u8, comptime tag: []const u8, comptime seg
     };
 }
 
+/// A date placeholder is only readable through a skeleton: `{when}`
+/// bare would have to pick a format on its own, which is exactly the
+/// locale-library guessing nokre refuses. Caught here, per locale, so
+/// the translation carrying it fails the build even before any call
+/// site formats the message.
+fn rejectBareDateArgs(comptime ctx: []const u8, comptime segs: arb.Segs, comptime params: []const Param) void {
+    for (segs) |seg| switch (seg) {
+        .literal, .pound, .date => {},
+        .arg => |name| if (paramKind(params, name) == .date)
+            @compileError("nokre l10n: " ++ ctx ++ ": '{" ++ name ++ "}' is a date placeholder " ++
+                "and a bare reference has no format — write {" ++ name ++ ", date, skeleton} " ++
+                "(y, M, d, MMM, or yMd)"),
+        .plural => |p| for (p.branches) |b| rejectBareDateArgs(ctx, b.segs, params),
+        .select => |s| for (s.branches) |b| rejectBareDateArgs(ctx, b.segs, params),
+    };
+}
+
 /// A concrete integer the category selects, for the missing-form
 /// diagnostic: the first member of a finite category, the table's
 /// stated sample otherwise.
@@ -528,8 +772,28 @@ fn checkArgs(comptime A: type, comptime params: []const Param, comptime key_name
             .string => if (!isStringy(f.type))
                 @compileError("nokre l10n: message '" ++ key_name ++ "': argument '." ++
                     p.name ++ "' must be []const u8"),
+            .date => if (!isCivilDate(f.type))
+                @compileError("nokre l10n: message '" ++ key_name ++ "': argument '." ++
+                    p.name ++ "' must be a civil date — a struct with integer year, month, " ++
+                    "and day fields (l10n.Date; l10n.dateFromMillis for epoch milliseconds)"),
         }
     }
+}
+
+/// A civil date by shape, not by name: `l10n.Date`, an anonymous
+/// `.{ .year = …, .month = …, .day = … }`, or a domain struct that
+/// already carries the three fields — anything whose year, month, and
+/// day are integers.
+fn isCivilDate(comptime T: type) bool {
+    if (@typeInfo(T) != .@"struct") return false;
+    inline for (.{ "year", "month", "day" }) |name| {
+        if (!@hasField(T, name)) return false;
+        switch (@typeInfo(@FieldType(T, name))) {
+            .int, .comptime_int => {},
+            else => return false,
+        }
+    }
+    return true;
 }
 
 fn isStringy(comptime T: type) bool {
@@ -593,7 +857,9 @@ fn digitsOfTag(comptime tag: []const u8) Digits {
 /// digit shapes are the catalog locale's (`digitsOfTag`); the minus
 /// sign stays ASCII '-' in every set — digits are the decided scope,
 /// and localized punctuation would be a separate argument to have.
-fn writeDecimal(comptime digits: Digits, sink: *Sink, v: i64) error{NoSpace}!void {
+/// `min_digits` zero-pads the magnitude (the sign stays outside the
+/// pad): 1 everywhere except the date `yMd` skeleton's ISO fields.
+fn writeDecimal(comptime digits: Digits, sink: *Sink, v: i64, comptime min_digits: usize) error{NoSpace}!void {
     var tmp: [20]u8 = undefined;
     var n: u64 = @abs(v);
     var i: usize = tmp.len;
@@ -602,6 +868,10 @@ fn writeDecimal(comptime digits: Digits, sink: *Sink, v: i64) error{NoSpace}!voi
         tmp[i] = '0' + @as(u8, @intCast(n % 10));
         n /= 10;
         if (n == 0) break;
+    }
+    while (tmp.len - i < min_digits) {
+        i -= 1;
+        tmp[i] = '0';
     }
     if (v < 0) try sink.write("-");
     switch (digits) {
@@ -632,27 +902,60 @@ fn paramKind(comptime params: []const Param, comptime name: []const u8) Kind {
     unreachable; // usage collection put every used name in params
 }
 
-fn emitSegs(comptime segs: arb.Segs, comptime tag: []const u8, comptime params: []const Param, args: anytype, pound: i64, sink: *Sink) error{NoSpace}!void {
+fn emitSegs(comptime segs: arb.Segs, comptime tag: []const u8, comptime params: []const Param, comptime months: []const []const u8, args: anytype, pound: i64, sink: *Sink) error{NoSpace}!void {
     inline for (segs) |seg| switch (seg) {
         .literal => |s| try sink.write(s),
         .arg => |name| switch (comptime paramKind(params, name)) {
             .string => try sink.write(@field(args, name)),
-            .int => try writeDecimal(comptime digitsOfTag(tag), sink, intValue(@field(args, name))),
+            .int => try writeDecimal(comptime digitsOfTag(tag), sink, intValue(@field(args, name)), 1),
+            .date => unreachable, // a date arg is always a `.date` seg
         },
-        .pound => try writeDecimal(comptime digitsOfTag(tag), sink, pound),
-        .plural => |p| try emitPlural(p, tag, params, args, sink),
-        .select => |s| try emitSelect(s, tag, params, args, pound, sink),
+        .pound => try writeDecimal(comptime digitsOfTag(tag), sink, pound, 1),
+        .date => |d| try emitDate(d, tag, months, @field(args, d.arg), sink),
+        .plural => |p| try emitPlural(p, tag, params, months, args, sink),
+        .select => |s| try emitSelect(s, tag, params, months, args, pound, sink),
     };
 }
 
-fn emitPlural(comptime p: arb.Plural, comptime tag: []const u8, comptime params: []const Param, args: anytype, sink: *Sink) error{NoSpace}!void {
+/// One civil-date component (or the ISO composite) in the catalog
+/// locale's digit shapes. Deterministic by construction: the value is
+/// the caller's, the words are the catalog's reserved month keys, and
+/// the only arithmetic is a decimal write.
+fn emitDate(comptime d: arb.DateRef, comptime tag: []const u8, comptime months: []const []const u8, v: anytype, sink: *Sink) error{NoSpace}!void {
+    const digits = comptime digitsOfTag(tag);
+    switch (comptime d.skeleton) {
+        .y => try writeDecimal(digits, sink, @intCast(v.year), 1),
+        .M => try writeDecimal(digits, sink, @intCast(v.month), 1),
+        .d => try writeDecimal(digits, sink, @intCast(v.day), 1),
+        .MMM => {
+            // Total over u8, as the consumer switches this subsumed
+            // were: 1–11 name their month, everything else reads as
+            // December rather than trapping mid-frame.
+            const month: i64 = @intCast(v.month);
+            const m: usize = if (month >= 1 and month <= 12) @intCast(month) else 12;
+            try sink.write(months[m - 1]);
+        },
+        .yMd => {
+            // ISO 8601, zero-padded — the one composed skeleton, for
+            // the locale-blind numeric date; digit shapes still apply,
+            // like every other number the catalog renders.
+            try writeDecimal(digits, sink, @intCast(v.year), 4);
+            try sink.write("-");
+            try writeDecimal(digits, sink, @intCast(v.month), 2);
+            try sink.write("-");
+            try writeDecimal(digits, sink, @intCast(v.day), 2);
+        },
+    }
+}
+
+fn emitPlural(comptime p: arb.Plural, comptime tag: []const u8, comptime params: []const Param, comptime months: []const []const u8, args: anytype, sink: *Sink) error{NoSpace}!void {
     const count = intValue(@field(args, p.arg));
     const n: u64 = @abs(count);
     // ICU precedence: =N exacts win over categories.
     inline for (p.branches) |br| {
         if (comptime br.selector == .exact) {
             if (n == comptime br.selector.exact)
-                return emitSegs(br.segs, tag, params, args, count, sink);
+                return emitSegs(br.segs, tag, params, months, args, count, sink);
         }
     }
     const rule = comptime plural_rules.forLocale(tag).?; // validated at Bundle time
@@ -660,13 +963,13 @@ fn emitPlural(comptime p: arb.Plural, comptime tag: []const u8, comptime params:
     inline for (p.branches) |br| {
         if (comptime br.selector == .category and br.selector.category != .other) {
             if (cat == comptime br.selector.category)
-                return emitSegs(br.segs, tag, params, args, count, sink);
+                return emitSegs(br.segs, tag, params, months, args, count, sink);
         }
     }
     // The mandatory other — also the landing spot for a finite category
     // whose members were all peeled off by exacts above.
     const other = comptime otherBranch(p);
-    return emitSegs(other, tag, params, args, count, sink);
+    return emitSegs(other, tag, params, months, args, count, sink);
 }
 
 fn otherBranch(comptime p: arb.Plural) arb.Segs {
@@ -676,16 +979,16 @@ fn otherBranch(comptime p: arb.Plural) arb.Segs {
     unreachable; // validateSegs required it
 }
 
-fn emitSelect(comptime s: arb.Select, comptime tag: []const u8, comptime params: []const Param, args: anytype, pound: i64, sink: *Sink) error{NoSpace}!void {
+fn emitSelect(comptime s: arb.Select, comptime tag: []const u8, comptime params: []const Param, comptime months: []const []const u8, args: anytype, pound: i64, sink: *Sink) error{NoSpace}!void {
     const v: []const u8 = @field(args, s.arg);
     inline for (s.branches) |br| {
         if (comptime !std.mem.eql(u8, br.name, "other")) {
             if (std.mem.eql(u8, v, br.name))
-                return emitSegs(br.segs, tag, params, args, pound, sink);
+                return emitSegs(br.segs, tag, params, months, args, pound, sink);
         }
     }
     const other = comptime selectOther(s);
-    return emitSegs(other, tag, params, args, pound, sink);
+    return emitSegs(other, tag, params, months, args, pound, sink);
 }
 
 fn selectOther(comptime s: arb.Select) arb.Segs {

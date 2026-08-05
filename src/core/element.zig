@@ -950,34 +950,16 @@ pub const Chrome = struct {
     /// room is claimed before there is anything to measure.
     more: []const u8 = "More",
 
-    /// The localized app's opt-in: `Chrome`, field for field, with the
-    /// defaults stripped — so a catalog that misses a chrome string
-    /// does not compile. Generated from `Chrome` itself rather than
-    /// written twice, which is what makes the guarantee total: a
-    /// string added above is a field required here in the same breath,
-    /// and every app that opted in stops compiling until its catalog
-    /// says the new word — the drift the defaults would have absorbed
-    /// silently.
-    pub const Catalog = blk: {
-        const src = @typeInfo(Chrome).@"struct".fields;
-        var names: [src.len][]const u8 = undefined;
-        var types: [src.len]type = undefined;
-        for (src, &names, &types) |f, *name, *T| {
-            name.* = f.name;
-            T.* = f.type;
-        }
-        break :blk @Struct(.auto, null, &names, &types, &@splat(.{}));
-    };
-
-    /// A full catalog, said as the `Chrome` it covers — the shape a
-    /// localized app hands `App.setChrome`.
-    pub fn fromCatalog(catalog: Catalog) Chrome {
-        var chrome: Chrome = undefined;
-        inline for (@typeInfo(Chrome).@"struct".fields) |f| {
-            @field(chrome, f.name) = @field(catalog, f.name);
-        }
-        return chrome;
-    }
+    // The localized app's opt-in lives with the words, not here:
+    // `l10n` `Bundle.chrome(locale)` derives one reserved catalog key
+    // per field above (`chromeBack`, `chromeCurrentScreen`, …) and
+    // builds this struct whole, so a missing chrome word — including
+    // one a new field creates — is a missing-key compile error in the
+    // catalog. A field added above therefore names its key in the same
+    // breath, and every localized app stops compiling until its
+    // catalogs say the new word. The bare literal with these defaults
+    // stays for what defaults are for: the English-only app, or one
+    // saying a word or two.
 };
 
 /// The English nokre ships, and what every chrome element's own field

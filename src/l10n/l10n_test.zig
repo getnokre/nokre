@@ -454,6 +454,290 @@ test "metadata-declared placeholder is usable by translations only" {
     );
 }
 
+// --- the bound view ---------------------------------------------------------
+
+test "of resolves an app-shaped locale() once into a bound view" {
+    // `of` takes anything that answers locale() with a tag — the App in
+    // production, this stand-in here — so the pure module stays pure.
+    const FakeApp = struct {
+        tag: []const u8,
+        pub fn locale(self: *const @This()) []const u8 {
+            return self.tag;
+        }
+    };
+    var app: FakeApp = .{ .tag = "fa-IR" };
+    const b = L.of(&app);
+    try std.testing.expectEqual(L.Locale.fa, b.locale);
+
+    // Never-chosen ("") resolves to the template, as resolve documents.
+    var fresh: FakeApp = .{ .tag = "" };
+    try std.testing.expectEqual(L.Locale.en, L.of(&fresh).locale);
+}
+
+test "the bound calls are the unbound calls to the byte" {
+    const FakeApp = struct {
+        tag: []const u8,
+        pub fn locale(self: *const @This()) []const u8 {
+            return self.tag;
+        }
+    };
+    var app: FakeApp = .{ .tag = "fa" };
+    const b = L.of(&app);
+    try std.testing.expectEqualStrings(L.tr(.fa, .appTitle), b.tr(.appTitle));
+    try std.testing.expectEqualStrings(L.trAny(.fa, .farewell), b.trAny(.farewell));
+
+    var buf1: [64]u8 = undefined;
+    var buf2: [64]u8 = undefined;
+    try std.testing.expectEqualStrings(
+        try L.fmt(&buf1, .fa, .nItems, .{ .count = 3 }),
+        try b.fmt(&buf2, .nItems, .{ .count = 3 }),
+    );
+
+    const Tree = @import("../core/tree.zig").Tree;
+    var tree = try Tree.init(std.testing.allocator);
+    defer tree.deinit();
+    try std.testing.expectEqualStrings(
+        try L.fmt(&buf1, .fa, .greeting, .{ .name = "دریوش" }),
+        try b.fmtIn(&tree, .greeting, .{ .name = "دریوش" }),
+    );
+}
+
+// --- trAny ------------------------------------------------------------------
+
+test "trAny answers a runtime key with tr's constant bytes" {
+    // Comptime-key parity, both locales, across the paramless keys.
+    inline for (.{ .appTitle, .quoted, .uni, .farewell }) |k| {
+        try std.testing.expectEqualStrings(L.tr(.en, k), L.trAny(.en, k));
+        try std.testing.expectEqualStrings(L.tr(.fa, k), L.trAny(.fa, k));
+    }
+    // And a key that exists only at runtime — the case tr cannot serve,
+    // and the reason the table exists.
+    var key: L.Key = .appTitle;
+    _ = &key;
+    try std.testing.expectEqualStrings("Notes", L.trAny(.en, key));
+    try std.testing.expectEqualStrings("یادداشت‌ها", L.trAny(.fa, key));
+    // A key with placeholders panics naming itself — the runtime twin
+    // of tr's compile error; not exercisable under `zig test`, and the
+    // slot being null (never message text) is the table's guarantee.
+}
+
+// --- the date placeholder ---------------------------------------------------
+//
+// The catalogs below carry the exact month words and message shapes the
+// two rokovski apps shipped in their hand-written date modules; the
+// expected strings are those modules' own test expectations, verbatim —
+// the byte-identity this placeholder promised when it subsumed them.
+
+const date_en_arb =
+    \\{
+    \\  "@@locale": "en",
+    \\  "dateLabel": "{when, date, d} {when, date, MMM} {when, date, y}",
+    \\  "@dateLabel": {
+    \\    "description": "A calendar date, in each locale's own order",
+    \\    "placeholders": { "when": { "type": "date" } }
+    \\  },
+    \\  "cycleLabel": "{when, date, MMM} {when, date, y}",
+    \\  "iso": "{when, date, yMd}",
+    \\  "numeric": "{when, date, M}/{when, date, d}",
+    \\  "monthJan": "Jan", "monthFeb": "Feb", "monthMar": "Mar", "monthApr": "Apr",
+    \\  "monthMay": "May", "monthJun": "Jun", "monthJul": "Jul", "monthAug": "Aug",
+    \\  "monthSep": "Sep", "monthOct": "Oct", "monthNov": "Nov", "monthDec": "Dec"
+    \\}
+;
+
+const date_fa_arb =
+    \\{
+    \\  "@@locale": "fa",
+    \\  "dateLabel": "{when, date, d} {when, date, MMM} {when, date, y}",
+    \\  "cycleLabel": "{when, date, MMM} {when, date, y}",
+    \\  "iso": "{when, date, yMd}",
+    \\  "numeric": "{when, date, M}/{when, date, d}",
+    \\  "monthJan": "ژانویه", "monthFeb": "فوریه", "monthMar": "مارس", "monthApr": "آوریل",
+    \\  "monthMay": "مه", "monthJun": "ژوئن", "monthJul": "ژوئیه", "monthAug": "اوت",
+    \\  "monthSep": "سپتامبر", "monthOct": "اکتبر", "monthNov": "نوامبر", "monthDec": "دسامبر"
+    \\}
+;
+
+const date_tr_arb =
+    \\{
+    \\  "@@locale": "tr",
+    \\  "dateLabel": "{when, date, d} {when, date, MMM} {when, date, y}",
+    \\  "cycleLabel": "{when, date, MMM} {when, date, y}",
+    \\  "iso": "{when, date, yMd}",
+    \\  "numeric": "{when, date, M}/{when, date, d}",
+    \\  "monthJan": "Oca", "monthFeb": "Şub", "monthMar": "Mar", "monthApr": "Nis",
+    \\  "monthMay": "May", "monthJun": "Haz", "monthJul": "Tem", "monthAug": "Ağu",
+    \\  "monthSep": "Eyl", "monthOct": "Eki", "monthNov": "Kas", "monthDec": "Ara"
+    \\}
+;
+
+const D = l10n.Bundle(&.{ date_en_arb, date_fa_arb, date_tr_arb });
+
+test "dateFromMillis: integer civil math, UTC, floor division before 1970" {
+    // The epoch's own day (the org app's test), a leap day, and the
+    // instant one millisecond into 2026.
+    try std.testing.expectEqual(l10n.Date{ .year = 1970, .month = 1, .day = 1 }, l10n.dateFromMillis(0));
+    try std.testing.expectEqual(l10n.Date{ .year = 2024, .month = 2, .day = 29 }, l10n.dateFromMillis(1_709_164_800_000));
+    try std.testing.expectEqual(l10n.Date{ .year = 2026, .month = 1, .day = 1 }, l10n.dateFromMillis(1_767_225_600_000));
+    // @divFloor, not @divTrunc: the millisecond before the epoch is
+    // still the last day of 1969, not a day zero.
+    try std.testing.expectEqual(l10n.Date{ .year = 1969, .month = 12, .day = 31 }, l10n.dateFromMillis(-1));
+}
+
+test "an instant reads as the calendar date it falls on, per locale" {
+    // The org app's own expectations for 2026-01-01, en and tr; the fa
+    // line is the user app's dateLabel under the same catalog words.
+    var buf: [64]u8 = undefined;
+    const when = l10n.dateFromMillis(1_767_225_600_000);
+    try std.testing.expectEqualStrings("1 Jan 2026", try D.fmt(&buf, .en, .dateLabel, .{ .when = when }));
+    try std.testing.expectEqualStrings("1 Oca 2026", try D.fmt(&buf, .tr, .dateLabel, .{ .when = when }));
+    try std.testing.expectEqualStrings("۱ ژانویه ۲۰۲۶", try D.fmt(&buf, .fa, .dateLabel, .{ .when = when }));
+}
+
+test "a month-year label takes any year/month/day-shaped value" {
+    // The user app's monthly cycle: the domain answers (month, year),
+    // and any struct carrying integer year/month/day fields is a date —
+    // no conversion ritual between a domain model and its label.
+    var buf: [64]u8 = undefined;
+    const march = .{ .year = 2026, .month = 3, .day = 1 };
+    try std.testing.expectEqualStrings("Mar 2026", try D.fmt(&buf, .en, .cycleLabel, .{ .when = march }));
+    try std.testing.expectEqualStrings("Mar 2026", try D.fmt(&buf, .tr, .cycleLabel, .{ .when = march }));
+    try std.testing.expectEqualStrings("مارس ۲۰۲۶", try D.fmt(&buf, .fa, .cycleLabel, .{ .when = march }));
+}
+
+test "every month has its own word, read through the reserved keys" {
+    var buf: [64]u8 = undefined;
+    var seen: [12][64]u8 = undefined;
+    var lens: [12]usize = undefined;
+    for (1..13) |m| {
+        const out = try D.fmt(&buf, .tr, .cycleLabel, .{
+            .when = l10n.Date{ .year = 2026, .month = @intCast(m), .day = 1 },
+        });
+        @memcpy(seen[m - 1][0..out.len], out);
+        lens[m - 1] = out.len;
+    }
+    for (0..12) |a| {
+        for (0..a) |b| {
+            try std.testing.expect(!std.mem.eql(u8, seen[a][0..lens[a]], seen[b][0..lens[b]]));
+        }
+    }
+    // The keys are ordinary messages too: a runtime month indexes a
+    // table of keys and trAny reads the word — the pattern that
+    // replaced the twelve-arm switches.
+    const month_keys = [12]D.Key{
+        .monthJan, .monthFeb, .monthMar, .monthApr, .monthMay, .monthJun,
+        .monthJul, .monthAug, .monthSep, .monthOct, .monthNov, .monthDec,
+    };
+    try std.testing.expectEqualStrings("Şub", D.trAny(.tr, month_keys[1]));
+    try std.testing.expectEqualStrings("فوریه", D.trAny(.fa, month_keys[1]));
+}
+
+test "MMM is total: an out-of-range month reads as December" {
+    // The consumer modules mapped `else` to December; the placeholder
+    // keeps that totality rather than trapping mid-frame.
+    var buf: [64]u8 = undefined;
+    try std.testing.expectEqualStrings("Dec 1", try D.fmt(&buf, .en, .cycleLabel, .{
+        .when = l10n.Date{ .year = 1, .month = 13, .day = 1 },
+    }));
+}
+
+test "yMd is ISO 8601, zero-padded, in the catalog's digit shapes" {
+    var buf: [64]u8 = undefined;
+    const when: l10n.Date = .{ .year = 2026, .month = 1, .day = 2 };
+    try std.testing.expectEqualStrings("2026-01-02", try D.fmt(&buf, .en, .iso, .{ .when = when }));
+    // Digit shaping is the catalog's, exactly as for counts.
+    try std.testing.expectEqualStrings("۲۰۲۶-۰۱-۰۲", try D.fmt(&buf, .fa, .iso, .{ .when = when }));
+    // Components stay unpadded — the message owns its separators.
+    try std.testing.expectEqualStrings("1/2", try D.fmt(&buf, .en, .numeric, .{ .when = when }));
+}
+
+test "date placeholders come out of fmtIn byte-identical to fmt" {
+    const Tree = @import("../core/tree.zig").Tree;
+    var tree = try Tree.init(std.testing.allocator);
+    defer tree.deinit();
+    var buf: [64]u8 = undefined;
+    const when = l10n.dateFromMillis(1_767_225_600_000);
+    try std.testing.expectEqualStrings(
+        try D.fmt(&buf, .fa, .dateLabel, .{ .when = when }),
+        try D.fmtIn(&tree, .fa, .dateLabel, .{ .when = when }),
+    );
+}
+
+// --- reserved chrome keys ---------------------------------------------------
+//
+// Each key's value is its own name (second locale: prefixed), so a
+// crossed wire between a Chrome field and its derived key would name
+// itself in the failure. The compile-error side — a catalog *missing*
+// a chrome key — cannot be a `zig test` (it is a build failure, which
+// is the point); it is the same missing-key diagnostic every other
+// catalog error uses, naming the key and the field it serves.
+
+const chrome_en_arb =
+    \\{
+    \\  "@@locale": "en",
+    \\  "chromeBack": "chromeBack", "chromeClose": "chromeClose",
+    \\  "chromeSection": "chromeSection", "chromeCurrentScreen": "chromeCurrentScreen",
+    \\  "chromeSections": "chromeSections", "chromeNotices": "chromeNotices",
+    \\  "chromeShowNotices": "chromeShowNotices", "chromeShowAllNotices": "chromeShowAllNotices",
+    \\  "chromeMinimizeNotices": "chromeMinimizeNotices",
+    \\  "chromeDismissAllNotices": "chromeDismissAllNotices",
+    \\  "chromeOpenPrefix": "chromeOpenPrefix", "chromeDismissPrefix": "chromeDismissPrefix",
+    \\  "chromeImportant": "chromeImportant", "chromeOther": "chromeOther",
+    \\  "chromeCopied": "chromeCopied", "chromeMore": "chromeMore"
+    \\}
+;
+
+const chrome_tr_arb =
+    \\{
+    \\  "@@locale": "tr",
+    \\  "chromeBack": "tr-chromeBack", "chromeClose": "tr-chromeClose",
+    \\  "chromeSection": "tr-chromeSection", "chromeCurrentScreen": "tr-chromeCurrentScreen",
+    \\  "chromeSections": "tr-chromeSections", "chromeNotices": "tr-chromeNotices",
+    \\  "chromeShowNotices": "tr-chromeShowNotices", "chromeShowAllNotices": "tr-chromeShowAllNotices",
+    \\  "chromeMinimizeNotices": "tr-chromeMinimizeNotices",
+    \\  "chromeDismissAllNotices": "tr-chromeDismissAllNotices",
+    \\  "chromeOpenPrefix": "tr-chromeOpenPrefix", "chromeDismissPrefix": "tr-chromeDismissPrefix",
+    \\  "chromeImportant": "tr-chromeImportant", "chromeOther": "tr-chromeOther",
+    \\  "chromeCopied": "tr-chromeCopied", "chromeMore": "tr-chromeMore"
+    \\}
+;
+
+const C = l10n.Bundle(&.{ chrome_en_arb, chrome_tr_arb });
+
+test "chrome derives one reserved key per Chrome field, per locale" {
+    const element = @import("../core/element.zig");
+    const en = C.chrome(.en);
+    const tr_chrome = C.chrome(.tr);
+    // Every field, not a sample: the derivation (camel-casing at the
+    // underscores under a `chrome` prefix) is proven for each field the
+    // struct has today and any it grows — a new field fails the C
+    // bundle's compile before this loop can even run.
+    inline for (@typeInfo(element.Chrome).@"struct".fields) |f| {
+        var expected: [64]u8 = undefined;
+        var n: usize = "chrome".len;
+        @memcpy(expected[0..n], "chrome");
+        var upper = true;
+        for (f.name) |ch| {
+            if (ch == '_') {
+                upper = true;
+                continue;
+            }
+            expected[n] = if (upper) std.ascii.toUpper(ch) else ch;
+            upper = false;
+            n += 1;
+        }
+        try std.testing.expectEqualStrings(expected[0..n], @field(en, f.name));
+        try std.testing.expectEqualStrings("tr-", @field(tr_chrome, f.name)[0..3]);
+        try std.testing.expectEqualStrings(expected[0..n], @field(tr_chrome, f.name)[3..]);
+    }
+    // The zero-config side of the contract: every Chrome field keeps a
+    // default, so the bare literal (the English-only app) stays whole
+    // when a field is added — the half `Chrome.Catalog` used to assert.
+    inline for (@typeInfo(element.Chrome).@"struct".fields) |f| {
+        comptime std.debug.assert(f.default_value_ptr != null);
+    }
+}
+
 test "fmtIn is fmt into the tree arena: identical bytes, no cap" {
     const Tree = @import("../core/tree.zig").Tree;
     var tree = try Tree.init(std.testing.allocator);

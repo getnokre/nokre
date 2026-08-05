@@ -10,6 +10,12 @@ every `issuing` guard deleted (refresh declines quietly in-build; bare
 transports; consumer client-array collapse examined and correctly
 declined (every slot is a distinct named adapter, not correlation
 plumbing — the doctrine change in PORTING.md is the consumer payoff);
+A7 (revision 11) — `L.of(app)` bound bundle, runtime `trAny` table,
+the `date` ARB placeholder (components + `yMd`; month words as
+reserved `monthJan…Dec` catalog keys) and `L.chrome(locale)` derived
+from the `Chrome` fields (`Chrome.Catalog` deleted); both apps'
+wrapper pairs, month switches, civil-date modules and `chromeFor`
+literals deleted, goldens byte-identical;
 A4+A5 (revision 10) — the closed builder cursor (comptime-checked
 against `Role`) + `Tree.fmt`/`L.fmtIn` into the arena; all three
 consumers fully migrated (only id-storing appends stay raw, by the

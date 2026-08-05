@@ -7,10 +7,15 @@
 //!
 //! The subset is deliberate, matching Flutter's gen_l10n where the
 //! feature is deterministic and refusing where it is not:
-//! - `{name}` placeholders typed by @-metadata (String, int, num);
-//!   `double`, `DateTime`, and `format:` are refused — float and date
-//!   formatting are locale-library behavior that varies by platform,
-//!   and nokre's core is integer math with no clock.
+//! - `{name}` placeholders typed by @-metadata (String, int, num, or
+//!   nokre's own `date`); `double`, `DateTime`, and `format:` are
+//!   refused — float formatting and platform DateFormat are
+//!   locale-library behavior that varies by OS, and nokre's core is
+//!   integer math with no clock.
+//! - `{when, date, skeleton}` with a closed skeleton set (`y`, `M`,
+//!   `d`, `MMM`, `yMd`) over a caller-supplied *civil* date — no clock,
+//!   no zone, no platform table; `MMM` reads its words from the
+//!   catalog's reserved `monthJan`…`monthDec` keys (l10n.zig).
 //! - `{n, plural, ...}` with `=N` exacts, CLDR category keywords, and
 //!   `#`; `offset:` and `selectordinal` are refused until someone
 //!   argues a case.
@@ -26,9 +31,24 @@
 
 const std = @import("std");
 
-pub const Kind = enum { string, int };
+pub const Kind = enum { string, int, date };
 
 pub const Category = enum { zero, one, two, few, many, other };
+
+/// The date formats a `{when, date, …}` reference may ask for — a
+/// closed set, ICU-skeleton-named so a reader arriving from Flutter
+/// recognizes them, each with one fixed expansion (l10n.zig's
+/// emitter): the components `y`/`M`/`d` (unpadded) and `MMM` (the
+/// month's word from the reserved `monthJan`…`monthDec` keys) let each
+/// locale's *message* choose its own order and separators — the same
+/// authority translators already hold over every other word — while
+/// `yMd` is the one composed form, ISO 8601 `y-MM-dd`, for the places
+/// that want a locale-blind numeric date. Combined text skeletons
+/// (`yMMMd`) are refused on purpose: they would fix an order the
+/// message can already state, a second way to say the same label.
+pub const DateSkeleton = enum { y, M, d, MMM, yMd };
+
+pub const DateRef = struct { arg: []const u8, skeleton: DateSkeleton };
 
 pub const Seg = union(enum) {
     literal: []const u8,
@@ -37,6 +57,9 @@ pub const Seg = union(enum) {
     arg: []const u8,
     /// `#` inside a plural branch: the nearest enclosing plural's count.
     pound,
+    /// `{name, date, skeleton}`: one component (or ISO form) of a civil
+    /// date the caller supplies.
+    date: DateRef,
     plural: Plural,
     select: Select,
 };
@@ -254,13 +277,22 @@ fn parsePlaceholderMeta(comptime label: []const u8, comptime src: []const u8, co
                 // nokre reads it as an integer — counts are integers, and
                 // fractional plurals would drag float formatting into core.
                 kind = .int;
-            } else if (std.mem.eql(u8, t.value, "double") or std.mem.eql(u8, t.value, "DateTime")) {
-                fail(label, src, i, "placeholder type '" ++ t.value ++ "' is refused: float and " ++
-                    "date formatting are locale-library behavior that varies by platform, and " ++
-                    "nokre renders the same bytes everywhere. Format the value in app code and " ++
-                    "pass a String or int");
+            } else if (std.mem.eql(u8, t.value, "date")) {
+                // nokre's own kind, not Flutter's: a civil date the
+                // caller computed (l10n.Date), rendered by the fixed
+                // skeletons — no clock and no platform DateFormat.
+                kind = .date;
+            } else if (std.mem.eql(u8, t.value, "DateTime")) {
+                fail(label, src, i, "placeholder type 'DateTime' is refused: it drags a clock, a " ++
+                    "zone, and the platform's DateFormat into the catalog. Declare " ++
+                    "\"type\": \"date\" and write {name, date, skeleton}: nokre formats a civil " ++
+                    "date the caller supplies (l10n.dateFromMillis) with integer math");
+            } else if (std.mem.eql(u8, t.value, "double")) {
+                fail(label, src, i, "placeholder type 'double' is refused: float formatting is " ++
+                    "locale-library behavior that varies by platform, and nokre renders the same " ++
+                    "bytes everywhere. Format the value in app code and pass a String or int");
             } else {
-                fail(label, src, i, "unknown placeholder type '" ++ t.value ++ "' (String, int, or num)");
+                fail(label, src, i, "unknown placeholder type '" ++ t.value ++ "' (String, int, num, or date)");
             }
         } else if (std.mem.eql(u8, field.value, "format") or std.mem.eql(u8, field.value, "optionalParameters")) {
             fail(label, src, i, "placeholder 'format' is refused: NumberFormat/DateFormat output " ++
@@ -525,14 +557,26 @@ fn parseArg(comptime ctx: []const u8, comptime msg: []const u8, comptime start: 
         }
     }
 
+    if (std.mem.eql(u8, kind.value, "date")) {
+        const sk = parseIdent(ctx, msg, i);
+        i = skipMsgWs(msg, sk.end);
+        if (i >= msg.len or msg[i] != '}')
+            failMsg(ctx, "expected '}' after '{" ++ name.value ++ ", date, " ++ sk.value ++ "'");
+        const skeleton = std.meta.stringToEnum(DateSkeleton, sk.value) orelse
+            failMsg(ctx, "unknown date skeleton '" ++ sk.value ++ "' — the set is closed: " ++
+                "y, M, d (unpadded components), MMM (the reserved monthJan…monthDec words), " ++
+                "or yMd (ISO 8601 y-MM-dd). Order and separators belong to the message: " ++
+                "write the components where the locale wants them");
+        return .{ .seg = .{ .date = .{ .arg = name.value, .skeleton = skeleton } }, .end = i + 1 };
+    }
+
     if (std.mem.eql(u8, kind.value, "selectordinal"))
         failMsg(ctx, "'selectordinal' is not supported — ordinal rules are a second CLDR table " ++
             "no nokre consumer has needed; ask for it with a use case");
-    if (std.mem.eql(u8, kind.value, "number") or std.mem.eql(u8, kind.value, "date") or
-        std.mem.eql(u8, kind.value, "time"))
+    if (std.mem.eql(u8, kind.value, "number") or std.mem.eql(u8, kind.value, "time"))
         failMsg(ctx, "'{" ++ name.value ++ ", " ++ kind.value ++ "}' is refused: locale-library " ++
             "formatting varies by platform. Use a bare {" ++ name.value ++ "} and format in app code");
-    failMsg(ctx, "unknown argument type '" ++ kind.value ++ "' (plural or select)");
+    failMsg(ctx, "unknown argument type '" ++ kind.value ++ "' (plural, select, or date)");
 }
 
 fn selectorEql(comptime a: PluralSelector, comptime b: PluralSelector) bool {

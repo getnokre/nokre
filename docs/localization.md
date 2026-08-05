@@ -21,14 +21,17 @@ try b.text(try L.fmtIn(&app.tree, loc, .nUnread, .{ .count = unread }));
 
 `Bundle` returns a type: `Locale` (one enum field per source, named by
 its `@@locale` — `"pt-BR"` becomes `.pt_BR`), `Key` (one field per
-message id), and six functions:
+message id), and the calls:
 
 | Call | Contract |
 | --- | --- |
 | `tr(locale, .key)` | A message with no placeholders, as a slice of constant data. No buffer, no error. Calling it on a message *with* placeholders is a compile error pointing at `fmt`. |
+| `trAny(locale, key)` | `tr` for a key that exists only at **runtime** — a table-driven label (month words, enum-indexed captions) where `tr`'s comptime key would force a switch per arm. One read of a comptime-generated dense table, the same constant bytes `tr` returns. A key whose message has placeholders is a programming error and panics naming the key — the runtime twin of `tr`'s compile error. |
 | `fmt(buf, locale, .key, args)` | Formats into the caller's buffer, returns the written slice. `args` is an anonymous struct with exactly the message's placeholders — a missing, extra, or mistyped field is a compile error naming the message. The only runtime error is `NoSpace`: text is never silently truncated. |
 | `fmtIn(tree, locale, .key, args)` | `fmt` into the tree arena — `Tree.fmt`'s contract for a catalog message, and the form for a label the tree is about to store: no buffer to size, no `NoSpace`, the slice valid for the tree's lifetime. Placeholders are checked exactly as `fmt` checks them. `fmt` remains the form for bytes that outlive the tree (storage keys, worker messages). |
 | `resolve(tag)` | Runtime tag → bundled locale: exact match first (case and `-`/`_` ignored), then bare-language match in source order, then the template. `"fa-IR"` finds `.fa`; `"de"` against an en/fa bundle yields `.en`. |
+| `of(app)` | `resolve(app.locale())`, made once, as a **bound view**: `L.of(app).tr(.key)`, and likewise `trAny`/`fmt`/`fmtIn` with the locale argument gone and the resolved locale readable as `.locale`. A value, not a reference — honest because a build or an action is one moment in one locale. Takes anything that answers `locale()` with a tag (the App, a test harness). |
+| `chrome(locale)` | nokre's own words (`App.Chrome`) out of this catalog, via one **reserved key per field** — see [The framework's own words](#the-frameworks-own-words). |
 | `tag(locale)` | The `@@locale` string back — what `App.setLocale` takes, and what storage keeps. |
 | `dir(locale)` | The locale's writing direction (`l10n.Direction`), read from its tag at comptime. Feed it to `App.setDirection` to mirror the chrome — see [Right-to-left](#right-to-left). |
 
@@ -82,11 +85,39 @@ ignored. Each message may carry `@message` metadata; nokre reads only
 
 Supported message syntax, deliberately Flutter-compatible:
 
-- **Placeholders** — `{name}`, typed by metadata: `String`, or
+- **Placeholders** — `{name}`, typed by metadata: `String`,
   `int`/`num` (both are integers here; counts are integers, and
-  fractional plurals would drag float formatting into core). An
-  undeclared placeholder defaults to String, or to int when it is used
-  as a plural count.
+  fractional plurals would drag float formatting into core), or
+  nokre's own `date` (below). An undeclared placeholder defaults to
+  String, or to the kind its usage implies (a plural count is an int,
+  a `{name, date, …}` reference a date).
+- **Dates** — `{when, date, skeleton}` over a **civil date the caller
+  supplies**: any struct with integer `year`, `month`, `day` fields —
+  `l10n.Date`, `l10n.dateFromMillis(millis)` for the epoch
+  milliseconds servers speak (integer Hinnant math, UTC), or a domain
+  model that already carries the three. The skeleton set is closed:
+  `y`, `M`, `d` render one unpadded component; `MMM` renders the
+  month's *word*; `yMd` is ISO 8601 `y-MM-dd`, the locale-blind
+  numeric form. Order and separators belong to the message — each
+  locale writes the components where it wants them, the same authority
+  translators hold over every other word — which is why the combined
+  text skeletons (`yMMMd`) don't exist: they would fix an order the
+  message can already state.
+
+  ```json
+  "dateLabel": "{when, date, d} {when, date, MMM} {when, date, y}",
+  "@dateLabel": { "placeholders": { "when": { "type": "date" } } }
+  ```
+
+  `MMM`'s words are the catalog's, not nokre's: the twelve **reserved
+  keys** `monthJan` … `monthDec`, ordinary messages required (at
+  compile time) the moment any message uses `MMM`, in every locale the
+  bundle carries. Digit shaping applies to date numbers exactly as to
+  counts. A bare reference to a date placeholder (`{when}` with no
+  skeleton) is a compile error — a date without a format would have to
+  guess one, which is the locale-library behavior this kind exists to
+  refuse. No clock and no zone anywhere: the value is the caller's,
+  so the same arguments are the same bytes forever.
 - **Plurals** — `{count, plural, =0{...} one{...} other{...}}`: `=N`
   exact matches (which win over categories, per ICU), the six CLDR
   category keywords, and `#` for the count. Nesting is allowed, and `#`
@@ -169,7 +200,7 @@ change says all of it in three lines beside `setDirection`:
 ```zig
 fn applyLocale(state: *State, loc: L.Locale) void {
     state.app.setLocale(L.tag(loc)) catch {}; // what each screen is called
-    state.app.setChrome(chromeFor(loc));      // nokre's own words
+    state.app.setChrome(L.chrome(loc));       // nokre's own words
     state.app.setDirection(L.dir(loc));       // which way the chrome runs
 }
 ```
@@ -233,28 +264,45 @@ English until an app says otherwise:
 | `more` | "More" | the control an overflowing row of actions folds into |
 
 ```zig
-fn chromeFor(loc: L.Locale) nok.App.Chrome {
-    return .fromCatalog(.{
-        .back = L.tr(loc, .back),
-        .close = L.tr(loc, .close),
-        // …and the rest — all of it, or this does not compile.
-    });
-}
+app.setChrome(L.chrome(loc)); // every word, from the catalog, or no build
 ```
 
-`.fromCatalog` is the localized app's opt-in, and the shape to reach
-for the moment a second language exists: its argument
-(`App.Chrome.Catalog`) is `Chrome` field for field with the defaults
-stripped, so covering every chrome string is checked at compile time.
-That is the posture the rest of this document already holds — a catalog
-mistake is a build error — extended to the one place it could not
-reach: a bare `Chrome` literal compiles with a field missing, and the
-miss ships as English in the middle of a translated nav bar, silently,
-until a reader of that language hears it. The bare literal stays for
-what its defaults are for: the zero-config app, or one saying a word
-or two. Nothing to re-declare when nokre grows a chrome string,
-either — `Catalog` is generated from `Chrome`, so the new field simply
-stops an opted-in app compiling until its catalog says the new word.
+`L.chrome(locale)` is the localized app's opt-in, and the shape to
+reach for the moment a second language exists. It reads one **reserved
+key per `Chrome` field**, the name derived from the field's — `chrome`
+plus the field camel-cased at its underscores:
+
+| Field | Reserved key |
+| --- | --- |
+| `back` | `chromeBack` |
+| `close` | `chromeClose` |
+| `section` | `chromeSection` |
+| `current_screen` | `chromeCurrentScreen` |
+| `sections` | `chromeSections` |
+| `notices` | `chromeNotices` |
+| `show_notices` | `chromeShowNotices` |
+| `show_all_notices` | `chromeShowAllNotices` |
+| `minimize_notices` | `chromeMinimizeNotices` |
+| `dismiss_all_notices` | `chromeDismissAllNotices` |
+| `open_prefix` | `chromeOpenPrefix` |
+| `dismiss_prefix` | `chromeDismissPrefix` |
+| `important` / `other` | `chromeImportant` / `chromeOther` |
+| `copied` | `chromeCopied` |
+| `more` | `chromeMore` |
+
+A catalog missing one of them does not compile — the posture the rest
+of this document already holds, a catalog mistake is a build error,
+extended to the one place it could not reach: a bare `Chrome` literal
+compiles with a field missing, and the miss ships as English in the
+middle of a translated nav bar, silently, until a reader of that
+language hears it. The bare literal stays for what its defaults are
+for: the zero-config app, or one saying a word or two. Nothing to
+re-declare when nokre grows a chrome string, either — the key is
+derived from the field, so the new field simply stops every opted-in
+app compiling until its catalogs say the new word, in every locale
+they carry (key parity does the fanning out). The reserved keys are
+ordinary messages otherwise — placeholder-free, required, translated
+where every other word lives.
 
 One struct and one call, not a setter per control: these are one fact —
 what nokre calls its own chrome — and a locale changes every one of them
@@ -310,9 +358,16 @@ time, plus several it never checks:
   message's interface; every locale must carry exactly those cases. A
   dropped case would fall to `other` silently — in production, in one
   language.
+- **Reserved keys.** A message using `{…, date, MMM}` requires
+  `monthJan`…`monthDec`; an app calling `chrome(locale)` requires one
+  `chrome…` key per `App.Chrome` field. Both are ordinary messages —
+  required placeholder-free, translated everywhere by key parity — and
+  a miss is a build error naming the key. A bare `{when}` reference to
+  a date placeholder, and an unknown date skeleton, fail the same way.
 - **Call sites.** `fmt` args are matched against the message: missing
-  argument, unknown argument, string where a count belongs — each is a
-  compile error naming the message and the field.
+  argument, unknown argument, string where a count belongs, a
+  non-civil-date value where a date belongs — each is a compile error
+  naming the message and the field.
 
 The plural rules live in
 [src/l10n/plural_rules.zig](../src/l10n/plural_rules.zig) — some fifty
@@ -329,11 +384,15 @@ refused loudly, at compile time, with the reason in the error.
 
 - **No `DateTime`, no `double`, no `format:`.** NumberFormat and
   DateFormat delegate to the platform's locale library, which means
-  different bytes on different OS versions — and dates need a clock,
-  which nokre's core does not have. Format dates and decimals in app
-  code and pass a String; pass counts as integers.
-- **No `{n, number}` / `{n, date}` / `{n, time}` argument types**, for
-  the same reason. A bare `{n}` renders an int deterministically.
+  different bytes on different OS versions — and `DateTime` needs a
+  clock, which nokre's core does not have. Format decimals in app code
+  and pass a String; pass counts as integers; pass calendar dates as
+  the `date` kind's civil value — the one date shape admitted, because
+  the caller owns the value and fixed skeletons own the bytes.
+- **No `{n, number}` / `{n, time}` argument types**, for the same
+  reason. A bare `{n}` renders an int deterministically, and
+  `{n, date, skeleton}` is the deterministic date (its skeleton set is
+  closed; there is no freeform pattern to vary by platform).
 - **No `offset:`** — restate the message with `=N` branches, which say
   the same thing without the arithmetic. **No `selectordinal`** — a
   second CLDR table no consumer has needed yet.
@@ -359,7 +418,8 @@ For a reader arriving from Flutter:
 | Plural categories | Whatever branches you wrote; misses fall to `other` | Validated against the locale's CLDR set, both directions |
 | Select cases | Per-locale freeform | Template's set enforced everywhere |
 | Placeholder args | Typed method parameters | Comptime-checked anonymous struct |
-| Number/date formats | intl NumberFormat/DateFormat | Refused; integers only |
+| Number formats | intl NumberFormat | Refused; integers only |
+| Dates | intl DateFormat over a `DateTime` | A caller-supplied civil date, closed skeleton set, month words as reserved catalog keys |
 | Runtime | Parse + lookup through intl | Straight-line writes into your buffer |
 
 The through-line: Flutter treats the catalog as data checked by a tool
