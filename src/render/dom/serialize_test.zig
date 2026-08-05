@@ -301,17 +301,21 @@ test "the default reference is the fragment the web shell mirrors routes into" {
     try expectContains(html, "href=\"#note~42\"");
 }
 
-test "a driver may resolve references its own way" {
+test "a driver resolves references to destinations; the emitter writes both forms" {
+    // The static-site shape: a route is a file of the site's own, or a
+    // source file on another host. The hook only *answers* — every byte
+    // of both attributes below is the emitter's, which is the contract:
+    // no driver holds a half-open quote to splice its own into.
     const Site = struct {
-        fn write(_: ?*anyopaque, em: *serialize.Emitter, route: []const u8) anyerror!void {
-            try em.raw("/");
-            try em.text(route);
-            try em.raw("/");
+        fn resolve(_: ?*anyopaque, _: *serialize.Emitter, route: []const u8) anyerror!serialize.Dest {
+            if (std.mem.eql(u8, route, "docs")) return .{ .internal = "/docs/" };
+            return .{ .external = "https://example.com/src/a.zig?v=1&x=2" };
         }
     };
     var app = try test_app.init(400, 400);
     defer app.deinit();
     try app.tree.append(app.tree.rootId(), .{ .link = .{ .label = "Docs", .route = "docs" } });
+    try app.tree.append(app.tree.rootId(), .{ .link = .{ .label = "Source", .route = "src" } });
 
     var out: std.ArrayList(u8) = .empty;
     defer out.deinit(testing.allocator);
@@ -319,11 +323,16 @@ test "a driver may resolve references its own way" {
         .gpa = testing.allocator,
         .app = &app,
         .out = &out,
-        .options = .{ .refs = .{ .write = Site.write } },
+        .options = .{ .refs = .{ .resolve = Site.resolve } },
     };
     defer em.deinit();
     try serialize.content(&em);
-    try expectContains(out.items, "href=\"/docs/\"");
+    // Internal: a plain href, nothing else on the anchor.
+    try expectContains(out.items, "<a class=\"link block\" href=\"/docs/\">Docs</a>");
+    // External: the emitter's own new-tab pair, and the URL through the
+    // one attribute escape — the resolver returned a raw `&`.
+    try expectContains(out.items, "<a class=\"link block\" href=\"https://example.com/src/a.zig?v=1&amp;x=2\"" ++
+        " target=\"_blank\" rel=\"noopener noreferrer\">Source</a>");
 }
 
 test "a tile with a route is a link; one with an action is a button" {

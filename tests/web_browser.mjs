@@ -673,6 +673,7 @@ export function makeBrowser({
   const popups = [];
   const closes = [];
   const fetches = [];
+  const serviceWorkers = [];
 
   const window = new Proxy(
     {
@@ -720,7 +721,21 @@ export function makeBrowser({
         location.set(new URL(url, location.href).href);
       },
     },
-    navigator: { language },
+    navigator: {
+      language,
+      // Registration only: the URL is recorded exactly as handed over,
+      // because *what* the driver asks for is the property under test —
+      // the site publishes pages under /route/, so a page-relative name
+      // here is the 404 the scenario asserts against. No worker runs;
+      // `PushManager` stays absent, so the push probe still answers no.
+      serviceWorker: {
+        register: (url) => {
+          serviceWorkers.push(String(url));
+          return Promise.resolve({});
+        },
+        addEventListener() {},
+      },
+    },
     innerHeight: window.innerHeight,
     innerWidth: window.innerWidth,
     matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }),
@@ -798,6 +813,10 @@ export function makeBrowser({
     /// Every URL the page asked for. A popup that reports to its opener
     /// must not appear here at all — it never boots an app.
     fetches,
+    /// Every service-worker registration, the URL as the driver passed
+    /// it — a relative string would appear here as the bare string a
+    /// browser would misresolve against the page.
+    serviceWorkers,
     /// How many times this window closed itself — the popup half of the
     /// oauth flow ends with exactly one.
     get closes() {

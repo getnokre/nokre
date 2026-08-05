@@ -37,6 +37,14 @@ pub const stylesheet = @import("stylesheet.zig");
 
 pub const Emitter = serialize.Emitter;
 pub const Refs = serialize.Refs;
+pub const Dest = serialize.Dest;
+
+/// The JavaScript a web build ships beside the wasm module — the live
+/// driver's whole browser half, as data. `addWebSite` copies exactly
+/// this list; a consumer whose own generator publishes the driver
+/// copies it too, so neither can drift from the set the edition
+/// actually needs (driver_files.zig says why it lives in a leaf file).
+pub const driver_files = @import("driver_files.zig").driver_files;
 
 /// The screen: every root child that is not framework chrome.
 pub const content = serialize.content;

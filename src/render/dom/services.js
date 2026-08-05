@@ -73,7 +73,15 @@ export function silentHooks() {
 /// nothing will ever subscribe.
 export function registerServiceWorker() {
   if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
-  navigator.serviceWorker.register("sw.js").catch(() => {});
+  // Resolved against this module, not the page — the same resolution
+  // live.js uses for live-worker.js. The driver files are published
+  // side by side, so the worker lives beside this module wherever the
+  // set landed; a page-relative "sw.js" instead resolves against the
+  // *document*, and under the static site's documents addressing every
+  // page but the root lives at /route/, which turns the registration
+  // into a 404 on every one of them. The worker's scope follows its
+  // URL either way: the site root.
+  navigator.serviceWorker.register(new URL("./sw.js", import.meta.url)).catch(() => {});
 }
 
 // ---- the oauth popup's landing page (docs/internals/oauth.md) ----

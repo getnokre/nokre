@@ -157,7 +157,7 @@ pub fn audit(app: *App) !void {
     }
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(app.gpa);
-    try collect(app, &violations);
+    try collect(app, &violations, .{});
     if (violations.items.len == 0) return;
 
     for (violations.items) |v| {
@@ -169,7 +169,24 @@ pub fn audit(app: *App) !void {
     return error.A11yAuditFailed;
 }
 
-pub fn collect(app: *App, out: *std.ArrayList(Violation)) !void {
+/// The one knob `collect` takes.
+pub const Options = struct {
+    /// Rules whose authority the caller has deliberately replaced —
+    /// findings under them are dropped from `out`, everything else
+    /// stays fatal-grade. The known case is a static-site generator
+    /// skipping `unresolvable_route`: there a document destination is
+    /// the *site resolver's* to honor, not the route table's, and that
+    /// resolver already fails the build harder than this rule would.
+    /// The default skips nothing, which is what `audit` (and so the
+    /// harness gate) always runs with.
+    skip: []const Violation.Rule = &.{},
+};
+
+pub fn collect(app: *App, out: *std.ArrayList(Violation), options: Options) !void {
+    // Which findings this call is answerable for: a caller may hand in
+    // a list it has already put findings in, and the skip below must
+    // not touch those.
+    const start = out.items.len;
     // The clipping rule reads laid-out rects; at harness init nothing
     // has laid out yet. Cheap when clean.
     app.performLayout();
@@ -416,6 +433,18 @@ pub fn collect(app: *App, out: *std.ArrayList(Violation)) !void {
             }
         }
     }
+    // Skipped rules are dropped after the walk rather than tested at
+    // every append: one filter instead of twenty guard sites, and the
+    // walk stays rule-complete — a skipped rule still costs its check,
+    // which is cheap, and cannot be half-skipped by a missed guard.
+    if (options.skip.len == 0) return;
+    var kept = start;
+    for (out.items[start..]) |v| {
+        if (std.mem.indexOfScalar(Violation.Rule, options.skip, v.rule) != null) continue;
+        out.items[kept] = v;
+        kept += 1;
+    }
+    out.shrinkRetainingCapacity(kept);
 }
 
 /// The route a control's activation navigates to, or null when pressing

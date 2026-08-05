@@ -14,7 +14,7 @@ const std = @import("std");
 /// Hand-bumped on every consumer-visible contract change, never by
 /// machinery — the no-CI stance is deliberate
 /// (docs/getting-started.md).
-pub const revision: u32 = 12;
+pub const revision: u32 = 13;
 
 pub const geometry = @import("core/geometry.zig");
 pub const color = @import("core/color.zig");

@@ -44,21 +44,51 @@ const Scale = text_mod.Scale;
 
 /// How a route reference becomes an `href`.
 ///
+/// The hook answers *where the route lives* — a destination, never
+/// bytes. The emitter owns the whole attribute in both forms, so a
+/// driver can never hold a half-open quote: closing `href="` by hand
+/// to smuggle attributes in was the sharpest bypass any consumer had,
+/// and this shape is what removes it. An `internal` destination is a
+/// plain `href`; an `external` one takes the same new-tab posture
+/// every external anchor here takes (`hrefExternal`).
+///
 /// The default is the fragment the web shell already mirrors routes
 /// into (`#note~42`), so a link in a serialized page and a link in a
 /// running app point at the same screen. A driver that publishes one
 /// file per screen — a static site — installs its own.
 ///
 /// `ctx` + function pointer, like every other action in nokre: no
-/// closure is allocated, ever.
+/// closure is allocated, ever. The emitter is passed for its state —
+/// the app a resolver may read the current route off, the allocator,
+/// and the scratch below — never for its output: a hook that writes
+/// `em.out` is re-opening the door this signature closed.
 pub const Refs = struct {
     ctx: ?*anyopaque = null,
-    write: *const fn (ctx: ?*anyopaque, em: *Emitter, route: []const u8) anyerror!void = fragment,
+    resolve: *const fn (ctx: ?*anyopaque, em: *Emitter, route: []const u8) anyerror!Dest = fragment,
 
-    pub fn fragment(_: ?*anyopaque, em: *Emitter, route: []const u8) anyerror!void {
-        try em.raw("#");
-        try em.text(route);
+    pub fn fragment(_: ?*anyopaque, em: *Emitter, route: []const u8) anyerror!Dest {
+        // The one-byte prefix needs a home that outlives this call, and
+        // the emitter's ref scratch is that home: retained capacity
+        // keeps the steady state allocation-free, where a heap string
+        // per href under the live driver would be a leak with a
+        // scroll bar.
+        em.ref_buf.clearRetainingCapacity();
+        try em.ref_buf.append(em.gpa, '#');
+        try em.ref_buf.appendSlice(em.gpa, route);
+        return .{ .internal = em.ref_buf.items };
     }
+};
+
+/// Where a route reference points, as the `Refs` hook answers it. The
+/// slice is borrowed until the attribute is written — a resolver's own
+/// arena, or the emitter's `ref_buf`, both hold exactly long enough.
+pub const Dest = union(enum) {
+    /// A destination on this app or site: a plain `href`, through the
+    /// one attribute escape.
+    internal: []const u8,
+    /// A destination that leaves it: written with the new-tab pair
+    /// every external anchor carries (`hrefExternal` says why).
+    external: []const u8,
 };
 
 pub const Emitter = struct {
@@ -89,9 +119,17 @@ pub const Emitter = struct {
     /// suffix a repeat takes.
     ids: std.ArrayList([]const u8) = .empty,
 
+    /// Scratch for a `Refs` hook that has to assemble its answer — the
+    /// default fragment's `#` prefix. A hook that uses it clears it
+    /// first; the slice it returns is read before the next resolve, so
+    /// one buffer is enough and its capacity is reused frame after
+    /// frame.
+    ref_buf: std.ArrayList(u8) = .empty,
+
     pub fn deinit(self: *Emitter) void {
         for (self.ids.items) |id| self.gpa.free(id);
         self.ids.deinit(self.gpa);
+        self.ref_buf.deinit(self.gpa);
     }
 
     pub fn raw(self: *Emitter, s: []const u8) !void {
@@ -123,16 +161,28 @@ pub const Emitter = struct {
         try self.print(" data-n=\"{d}\"", .{@as(u32, @bitCast(id))});
     }
 
+    /// The route's `href`, in whichever of the two forms `Refs`
+    /// resolved it to. Both attributes are written here in full —
+    /// opening quote, closing quote, and the external posture — so no
+    /// consumer ever writes a byte of one.
     fn href(self: *Emitter, route: []const u8) !void {
-        try self.raw(" href=\"");
-        try self.options.refs.write(self.options.refs.ctx, self, route);
-        try self.raw("\"");
+        const refs = self.options.refs;
+        switch (try refs.resolve(refs.ctx, self, route)) {
+            .internal => |url| {
+                try self.raw(" href=\"");
+                try self.text(url);
+                try self.raw("\"");
+            },
+            .external => |url| try self.hrefExternal(url),
+        }
     }
 
     /// The external twin of `href`: the URL verbatim (through the one
     /// attribute escape — the allowlist already excludes `javascript:`
     /// and friends, so escaping is about markup, not schemes), never
-    /// through `Refs`, which maps route references and nothing else.
+    /// through `Refs`, which maps route references and nothing else —
+    /// though a route `Refs` resolved to an `external` destination
+    /// lands here too: same posture, one writer.
     /// `target="_blank"` because same-tab would tear down the running
     /// app under the live driver and lose a static page's reader their
     /// place; `noopener noreferrer` severs the handle the new page

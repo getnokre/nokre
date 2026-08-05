@@ -918,9 +918,10 @@ pub fn webBootJs(gpa: std.mem.Allocator, web: Web) error{OutOfMemory}![]u8 {
 /// The whole web host page, so a consumer authors no HTML at all: the
 /// title and the manifest come from the declaration, and the two files
 /// beside it — `page.css` and `boot.js`, emitted above — carry the
-/// column and the mount. live.js, services.js, live-worker.js, sw.js,
-/// style.css and the fonts ride along in the same directory (build.zig's
-/// `addWebSite` writes the set); the page names only live.js's boot,
+/// column and the mount. The driver files (`dom.driver_files` states
+/// the set as data), style.css and the fonts ride along in the same
+/// directory (build.zig's `addWebSite` writes them); the page names
+/// only live.js's boot,
 /// which imports the rest itself. It is the only host page nokre has —
 /// the kitchen sink's own site is served from this same emitter — so
 /// there is no second one to drift from.

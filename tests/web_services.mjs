@@ -466,6 +466,23 @@ async function storeWithoutStorage() {
   done("secure_store — a blocked or full storage costs reload-survival and nothing else");
 }
 
+// ---- the service worker's registration ---------------------------
+
+/// The registration URL must be the worker's own address, resolved
+/// against services.js itself — never a page-relative name. Under the
+/// static site's documents addressing every page but the root lives at
+/// /route/, so a page-relative "sw.js" would ask for /route/sw.js: a
+/// 404 on every page load. The stub records the URL exactly as handed
+/// over, so a page-relative registration shows up here as the bare
+/// string a browser would misresolve.
+async function serviceWorkerRooted() {
+  const { browser } = await page();
+  assert.deepEqual(browser.serviceWorkers, [
+    new URL("./sw.js", pathToFileURL(site + "/services.js")).href,
+  ]);
+  done("service worker — registered beside the driver, not beside the page");
+}
+
 // ---- the site's own manifest -------------------------------------
 
 // The one non-service scenario, and it rides this gate because this is
@@ -500,6 +517,7 @@ async function siteManifest() {
 
 const scenarios = [
   siteManifest,
+  serviceWorkerRooted,
   deepLink,
   deepLinkQuiet,
   oauthPopupReports,

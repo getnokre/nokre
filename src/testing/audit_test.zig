@@ -55,7 +55,7 @@ test "audit flags labels emptied after construction" {
 
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(testing.allocator);
-    try collect(&app, &violations);
+    try collect(&app, &violations, .{});
     try testing.expectEqual(@as(usize, 1), violations.items.len);
     try testing.expectEqual(Violation.Rule.unlabeled_interactive, violations.items[0].rule);
 }
@@ -68,7 +68,7 @@ test "audit flags copyable values emptied after construction" {
 
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(testing.allocator);
-    try collect(&app, &violations);
+    try collect(&app, &violations, .{});
     try testing.expectEqual(@as(usize, 1), violations.items.len);
     try testing.expectEqual(Violation.Rule.empty_copyable, violations.items[0].rule);
 }
@@ -81,7 +81,7 @@ test "audit flags a qr label emptied after construction" {
 
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(testing.allocator);
-    try collect(&app, &violations);
+    try collect(&app, &violations, .{});
     try testing.expectEqual(@as(usize, 1), violations.items.len);
     try testing.expectEqual(Violation.Rule.malformed_qr, violations.items[0].rule);
 }
@@ -94,7 +94,7 @@ test "audit flags text ink faded after construction" {
 
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(testing.allocator);
-    try collect(&app, &violations);
+    try collect(&app, &violations, .{});
     try testing.expectEqual(@as(usize, 1), violations.items.len);
     try testing.expectEqual(Violation.Rule.insufficient_text_contrast, violations.items[0].rule);
 }
@@ -106,7 +106,7 @@ test "audit flags skipped heading levels" {
 
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(testing.allocator);
-    try collect(&app, &violations);
+    try collect(&app, &violations, .{});
     try testing.expectEqual(@as(usize, 1), violations.items.len);
     try testing.expectEqual(Violation.Rule.heading_level_skipped, violations.items[0].rule);
 }
@@ -124,7 +124,7 @@ test "audit tracks the previous heading, not the deepest ever seen" {
 
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(testing.allocator);
-    try collect(&app, &violations);
+    try collect(&app, &violations, .{});
     try testing.expectEqual(@as(usize, 1), violations.items.len);
     try testing.expectEqual(Violation.Rule.heading_level_skipped, violations.items[0].rule);
     try testing.expectEqual(skipped, violations.items[0].id);
@@ -141,7 +141,7 @@ test "audit allows ascending any distance between headings" {
 
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(testing.allocator);
-    try collect(&app, &violations);
+    try collect(&app, &violations, .{});
     try testing.expectEqual(@as(usize, 0), violations.items.len);
 }
 
@@ -154,7 +154,7 @@ test "audit flags duplicate interactive labels" {
 
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(testing.allocator);
-    try collect(&app, &violations);
+    try collect(&app, &violations, .{});
     try testing.expectEqual(@as(usize, 1), violations.items.len);
     try testing.expectEqual(Violation.Rule.duplicate_interactive_label, violations.items[0].rule);
 }
@@ -168,7 +168,7 @@ test "two tiles naming different destinations may not share a label" {
 
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(testing.allocator);
-    try collect(&app, &violations);
+    try collect(&app, &violations, .{});
     try testing.expectEqual(@as(usize, 1), violations.items.len);
     try testing.expectEqual(Violation.Rule.duplicate_interactive_label, violations.items[0].rule);
 }
@@ -200,7 +200,7 @@ test "duplicate labels over actions stay flagged, same function or not" {
 
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(testing.allocator);
-    try collect(&app, &violations);
+    try collect(&app, &violations, .{});
     try testing.expectEqual(@as(usize, 1), violations.items.len);
     try testing.expectEqual(Violation.Rule.duplicate_interactive_label, violations.items[0].rule);
 }
@@ -214,7 +214,7 @@ test "audit flags a tile label emptied after construction" {
 
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(testing.allocator);
-    try collect(&app, &violations);
+    try collect(&app, &violations, .{});
     try testing.expectEqual(@as(usize, 1), violations.items.len);
     try testing.expectEqual(Violation.Rule.unlabeled_interactive, violations.items[0].rule);
 }
@@ -240,7 +240,7 @@ test "two duplicates within the open sheet still fail" {
 
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(testing.allocator);
-    try collect(&app, &violations);
+    try collect(&app, &violations, .{});
     try testing.expectEqual(@as(usize, 1), violations.items.len);
     try testing.expectEqual(Violation.Rule.duplicate_interactive_label, violations.items[0].rule);
 }
@@ -282,7 +282,7 @@ test "audit flags a nav degraded below two items by removal" {
 
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(testing.allocator);
-    try collect(&app, &violations);
+    try collect(&app, &violations, .{});
     try testing.expectEqual(@as(usize, 1), violations.items.len);
     try testing.expectEqual(Violation.Rule.nav_item_count, violations.items[0].rule);
 }
@@ -318,7 +318,7 @@ test "the off-roster marker is not a destination the nav count sees" {
     app.tree.get(here).?.nav_here.label = "";
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(testing.allocator);
-    try collect(&app, &violations);
+    try collect(&app, &violations, .{});
     try testing.expectEqual(@as(usize, 1), violations.items.len);
     try testing.expectEqual(Violation.Rule.empty_nav_here, violations.items[0].rule);
 }
@@ -334,7 +334,7 @@ test "audit flags a segmented selection mutated out of range" {
 
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(testing.allocator);
-    try collect(&app, &violations);
+    try collect(&app, &violations, .{});
     try testing.expectEqual(@as(usize, 1), violations.items.len);
     try testing.expectEqual(Violation.Rule.malformed_segmented, violations.items[0].rule);
 }
@@ -350,7 +350,7 @@ test "audit flags a radio group selection mutated out of range" {
 
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(testing.allocator);
-    try collect(&app, &violations);
+    try collect(&app, &violations, .{});
     try testing.expectEqual(@as(usize, 1), violations.items.len);
     try testing.expectEqual(Violation.Rule.malformed_radio_group, violations.items[0].rule);
 }
@@ -366,7 +366,7 @@ test "audit flags a select selection mutated out of range" {
 
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(testing.allocator);
-    try collect(&app, &violations);
+    try collect(&app, &violations, .{});
     try testing.expectEqual(@as(usize, 1), violations.items.len);
     try testing.expectEqual(Violation.Rule.malformed_select, violations.items[0].rule);
 }
@@ -379,7 +379,7 @@ test "audit passes a framework-built sheet and notice" {
 
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(testing.allocator);
-    try collect(&app, &violations);
+    try collect(&app, &violations, .{});
     try testing.expectEqual(@as(usize, 0), violations.items.len);
 }
 
@@ -392,7 +392,7 @@ test "audit passes the framework-built notices pane" {
 
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(testing.allocator);
-    try collect(&app, &violations);
+    try collect(&app, &violations, .{});
     try testing.expectEqual(@as(usize, 0), violations.items.len);
 }
 
@@ -406,7 +406,7 @@ test "audit flags a sheet whose close control was removed" {
 
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(testing.allocator);
-    try collect(&app, &violations);
+    try collect(&app, &violations, .{});
     try testing.expectEqual(@as(usize, 1), violations.items.len);
     try testing.expectEqual(Violation.Rule.sheet_missing_dismiss, violations.items[0].rule);
 }
@@ -424,14 +424,14 @@ test "audit flags a sheet whose only way out has work in progress" {
 
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(testing.allocator);
-    try collect(&app, &violations);
+    try collect(&app, &violations, .{});
     try testing.expectEqual(@as(usize, 1), violations.items.len);
     try testing.expectEqual(Violation.Rule.sheet_missing_dismiss, violations.items[0].rule);
 
     // The same button once the work is done is a way out.
     app.tree.get(btn).?.button.in_progress = false;
     violations.clearRetainingCapacity();
-    try collect(&app, &violations);
+    try collect(&app, &violations, .{});
     try testing.expectEqual(@as(usize, 0), violations.items.len);
 }
 
@@ -442,13 +442,13 @@ test "audit flags a button progress mutated into nonsense" {
 
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(testing.allocator);
-    try collect(&app, &violations);
+    try collect(&app, &violations, .{});
     try testing.expectEqual(@as(usize, 0), violations.items.len);
 
     // A percentage climbing past 100 measures nothing.
     app.tree.get(btn).?.button.progress_percent = 140;
     violations.clearRetainingCapacity();
-    try collect(&app, &violations);
+    try collect(&app, &violations, .{});
     try testing.expectEqual(@as(usize, 1), violations.items.len);
     try testing.expectEqual(Violation.Rule.malformed_progress, violations.items[0].rule);
 
@@ -456,7 +456,7 @@ test "audit flags a button progress mutated into nonsense" {
     app.tree.get(btn).?.button.progress_percent = 40;
     app.tree.get(btn).?.button.in_progress = false;
     violations.clearRetainingCapacity();
-    try collect(&app, &violations);
+    try collect(&app, &violations, .{});
     try testing.expectEqual(@as(usize, 1), violations.items.len);
     try testing.expectEqual(Violation.Rule.malformed_progress, violations.items[0].rule);
 }
@@ -469,7 +469,7 @@ test "audit flags a meter mutated out of range" {
 
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(testing.allocator);
-    try collect(&app, &violations);
+    try collect(&app, &violations, .{});
     try testing.expectEqual(@as(usize, 1), violations.items.len);
     try testing.expectEqual(Violation.Rule.malformed_meter, violations.items[0].rule);
 }
@@ -482,7 +482,7 @@ test "audit flags a badge label emptied after construction" {
 
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(testing.allocator);
-    try collect(&app, &violations);
+    try collect(&app, &violations, .{});
     try testing.expectEqual(@as(usize, 1), violations.items.len);
     try testing.expectEqual(Violation.Rule.empty_badge, violations.items[0].rule);
 }
@@ -496,7 +496,7 @@ test "audit flags a notice title emptied after construction" {
 
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(testing.allocator);
-    try collect(&app, &violations);
+    try collect(&app, &violations, .{});
     try testing.expectEqual(@as(usize, 1), violations.items.len);
     try testing.expectEqual(Violation.Rule.empty_notice, violations.items[0].rule);
 }
@@ -510,7 +510,7 @@ test "audit flags a list with nothing in it" {
 
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(testing.allocator);
-    try collect(&app, &violations);
+    try collect(&app, &violations, .{});
     try testing.expectEqual(@as(usize, 1), violations.items.len);
     try testing.expectEqual(Violation.Rule.empty_list, violations.items[0].rule);
 
@@ -531,7 +531,7 @@ test "audit flags a document whose label was emptied after construction" {
 
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(testing.allocator);
-    try collect(&app, &violations);
+    try collect(&app, &violations, .{});
     try testing.expectEqual(@as(usize, 1), violations.items.len);
     try testing.expectEqual(Violation.Rule.untitled_document, violations.items[0].rule);
 }
@@ -545,7 +545,7 @@ test "audit flags a code block emptied after construction" {
 
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(testing.allocator);
-    try collect(&app, &violations);
+    try collect(&app, &violations, .{});
     try testing.expectEqual(@as(usize, 1), violations.items.len);
     try testing.expectEqual(Violation.Rule.empty_code_block, violations.items[0].rule);
 }
@@ -568,7 +568,7 @@ test "audit flags an overflowing region whose edge lands in a flow gap" {
 
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(testing.allocator);
-    try collect(&app, &violations);
+    try collect(&app, &violations, .{});
     try testing.expectEqual(@as(usize, 1), violations.items.len);
     try testing.expectEqual(Violation.Rule.cleanly_clipped_scroll_region, violations.items[0].rule);
 }
@@ -581,7 +581,7 @@ test "audit flags an edge exactly on an element boundary" {
 
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(testing.allocator);
-    try collect(&app, &violations);
+    try collect(&app, &violations, .{});
     try testing.expectEqual(@as(usize, 1), violations.items.len);
     try testing.expectEqual(Violation.Rule.cleanly_clipped_scroll_region, violations.items[0].rule);
 }
@@ -595,7 +595,7 @@ test "audit flags an edge that only slices a text line's leading" {
 
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(testing.allocator);
-    try collect(&app, &violations);
+    try collect(&app, &violations, .{});
     try testing.expectEqual(@as(usize, 1), violations.items.len);
     try testing.expectEqual(Violation.Rule.cleanly_clipped_scroll_region, violations.items[0].rule);
 }
@@ -608,7 +608,7 @@ test "audit passes an edge cutting mid-glyph, and offset does not fool it" {
 
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(testing.allocator);
-    try collect(&app, &violations);
+    try collect(&app, &violations, .{});
     try testing.expectEqual(@as(usize, 0), violations.items.len);
 
     // The rule judges the offset-0 edge; a live scroll must not
@@ -620,7 +620,7 @@ test "audit passes an edge cutting mid-glyph, and offset does not fool it" {
         el.scroll_region.offset = 40;
         app.invalidate();
     }
-    try collect(&app, &violations);
+    try collect(&app, &violations, .{});
     try testing.expectEqual(@as(usize, 0), violations.items.len);
 }
 
@@ -638,7 +638,7 @@ test "audit passes a straddling bordered box regardless of its interior" {
 
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(testing.allocator);
-    try collect(&app, &violations);
+    try collect(&app, &violations, .{});
     try testing.expectEqual(@as(usize, 0), violations.items.len);
 }
 
@@ -651,14 +651,14 @@ test "audit exempts fill-height regions and content that fits" {
 
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(testing.allocator);
-    try collect(&app, &violations);
+    try collect(&app, &violations, .{});
     try testing.expectEqual(@as(usize, 0), violations.items.len);
 
     var fits = try test_app.init(400, 400);
     defer fits.deinit();
     // Boundary-flush edge, but nothing overflows: nothing to announce.
     try buildScrollFixture(&fits, 120, 3);
-    try collect(&fits, &violations);
+    try collect(&fits, &violations, .{});
     try testing.expectEqual(@as(usize, 0), violations.items.len);
 }
 
@@ -677,7 +677,7 @@ test "audit flags span inks dimmed after construction" {
 
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(testing.allocator);
-    try collect(&app, &violations);
+    try collect(&app, &violations, .{});
     try testing.expectEqual(@as(usize, 1), violations.items.len);
     try testing.expectEqual(Violation.Rule.insufficient_text_contrast, violations.items[0].rule);
 }
@@ -695,7 +695,7 @@ test "audit flags a route destination the router cannot honor" {
 
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(testing.allocator);
-    try collect(&app, &violations);
+    try collect(&app, &violations, .{});
     try testing.expectEqual(@as(usize, 1), violations.items.len);
     try testing.expectEqual(Violation.Rule.unresolvable_route, violations.items[0].rule);
     try testing.expectEqual(dead, violations.items[0].id);
@@ -713,7 +713,7 @@ test "a span's destination faces the same audit as a link's" {
 
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(testing.allocator);
-    try collect(&app, &violations);
+    try collect(&app, &violations, .{});
     try testing.expectEqual(@as(usize, 1), violations.items.len);
     try testing.expectEqual(Violation.Rule.unresolvable_route, violations.items[0].rule);
     try testing.expectEqual(id, violations.items[0].id);
@@ -781,6 +781,31 @@ test "a document's destinations answer to their own lane, not the table" {
 
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(testing.allocator);
-    try collect(&app, &violations);
+    try collect(&app, &violations, .{});
     try testing.expectEqual(@as(usize, 0), violations.items.len);
+}
+
+test "a skipped rule is dropped and every other rule stays fatal-grade" {
+    var app = try navApp(400, 400);
+    defer app.deinit();
+    // One finding under the skipped rule, one under another — the site
+    // generator's exact posture: its own resolver replaces the route
+    // table's authority, and nothing else's.
+    try app.tree.append(app.tree.rootId(), .{ .link = .{ .label = "Gone", .route = "nowhere" } });
+    const btn = try app.tree.appendId(app.tree.rootId(), .{ .button = .{ .label = "Act" } });
+    app.tree.get(btn).?.button.label = "";
+
+    var violations: std.ArrayList(Violation) = .empty;
+    defer violations.deinit(testing.allocator);
+    try collect(&app, &violations, .{ .skip = &.{.unresolvable_route} });
+    try testing.expectEqual(@as(usize, 1), violations.items.len);
+    try testing.expectEqual(Violation.Rule.unlabeled_interactive, violations.items[0].rule);
+
+    // Findings a caller already holds are not this call's to filter.
+    var held: std.ArrayList(Violation) = .empty;
+    defer held.deinit(testing.allocator);
+    try held.append(testing.allocator, .{ .id = btn, .rule = .unresolvable_route });
+    try collect(&app, &held, .{ .skip = &.{ .unresolvable_route, .unlabeled_interactive } });
+    try testing.expectEqual(@as(usize, 1), held.items.len);
+    try testing.expectEqual(Violation.Rule.unresolvable_route, held.items[0].rule);
 }

@@ -1,6 +1,10 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const packaging = @import("src/packaging/packaging.zig");
+/// The web driver's file set, from its one home: `addWebSite` copies
+/// it, the js-parse gate parses it, and consumers read the same list
+/// as `dom.driver_files` (driver_files.zig).
+const dom_driver_files = @import("src/render/dom/driver_files.zig").driver_files;
 
 // ---------------------------------------------------------------------------
 // Consumer-facing build API (docs/getting-started.md). A consumer's
@@ -727,15 +731,16 @@ fn addWebSite(
     var files: std.ArrayList([]const u8) = .empty;
     _ = wf.addCopyFile(wasm, web_wasm);
     files.append(gpa, web_wasm) catch @panic("OOM");
-    // The live driver's browser half (docs/internals/dom-edition.md):
-    // the page loads live.js alone, which imports the other two.
-    // sw.js rides the same copy: the notification service's web half is
-    // a *file the origin serves*, not a module import — a service worker
-    // has to be registerable by URL — so the site carries it whether or
-    // not this app links notifications. An unregistered worker costs a
-    // 404 the driver already swallows; a missing one would make the leg
+    // The live driver's browser half (docs/internals/dom-edition.md),
+    // the set `dom.driver_files` states as data: the page loads live.js
+    // alone, which imports the others. sw.js rides the same copy: the
+    // notification service's web half is a *file the origin serves*,
+    // not a module import — a service worker has to be registerable by
+    // URL — so the site carries it whether or not this app links
+    // notifications. An unregistered worker costs a 404 the driver
+    // already swallows; a missing one would make the leg
     // unimplementable after the fact (docs/internals/notifications.md).
-    inline for (.{ "live.js", "live-worker.js", "services.js", "sw.js" }) |f| {
+    inline for (dom_driver_files) |f| {
         _ = wf.addCopyFile(hb.path("src/render/dom/" ++ f), f);
         files.append(gpa, f) catch @panic("OOM");
     }
@@ -1680,7 +1685,7 @@ fn configureNokre(b: *std.Build, mod: *std.Build.Module, pkg: ?PackageDecl, serv
 /// because `navigator.serviceWorker.register` is called without that
 /// option. A module is strict-mode and a classic script is not, so
 /// checking one as the other would be checking a file no browser loads.
-const js_shipped = [_]struct {
+const JsShipped = struct {
     path: []const u8,
     /// The extension the check copies the file under, which is the only
     /// way to tell node the goal reliably: `node --check` on a bare
@@ -1690,12 +1695,26 @@ const js_shipped = [_]struct {
     /// of the loop, and the copy keeps the original name in front of the
     /// extension so the error names the file a reader can open.
     ext: []const u8,
-}{
-    .{ .path = "src/render/dom/live.js", .ext = ".mjs" },
-    .{ .path = "src/render/dom/live-worker.js", .ext = ".mjs" },
-    .{ .path = "src/render/dom/services.js", .ext = ".mjs" },
-    .{ .path = "src/render/dom/sw.js", .ext = ".cjs" },
-    .{ .path = "src/packaging/testdata/boot.js", .ext = ".mjs" },
+};
+
+/// Derived from `dom.driver_files` rather than re-typed: the copy in
+/// `addWebSite` and the parse here must cover the same set, and a file
+/// added to one list but not the other would ship unparsed — or be
+/// parsed and never shipped. Only the *goal* is stated here, because
+/// only this check needs it.
+const js_shipped: [dom_driver_files.len + 1]JsShipped = blk: {
+    var list: [dom_driver_files.len + 1]JsShipped = undefined;
+    for (dom_driver_files, 0..) |f, i| {
+        list[i] = .{
+            .path = "src/render/dom/" ++ f,
+            // sw.js is the one classic script of the set (the goal note
+            // in the doc comment above says why that distinction is the
+            // whole point of `ext`).
+            .ext = if (std.mem.eql(u8, f, "sw.js")) ".cjs" else ".mjs",
+        };
+    }
+    list[dom_driver_files.len] = .{ .path = "src/packaging/testdata/boot.js", .ext = ".mjs" };
+    break :blk list;
 };
 
 /// Parse the shipped JavaScript, as part of `zig build test`.

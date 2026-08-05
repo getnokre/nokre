@@ -120,7 +120,7 @@ What it writes:
 | in the site | where it comes from |
 | --- | --- |
 | the app's module, under `web_wasm` | the consumer's own compile |
-| `live.js`, `live-worker.js`, `services.js`, `sw.js` | `src/render/dom`, copied by the build graph |
+| `live.js`, `live-worker.js`, `services.js`, `sw.js` | `src/render/dom`, copied by the build graph; the set is also exported as data (`dom.driver_files`) for a generator that publishes the driver itself |
 | `style.css` | *generated*, by running `emit_css.zig` on the host |
 | `fonts/*.ttf` | `src/assets/fonts` |
 | `index.html`, `page.css`, `boot.js`, `manifest.webmanifest`, `icon-*.png` | the packaging tree's `web/` corner (packaging.zig) |
@@ -284,8 +284,8 @@ What the host document owes, and what it keeps:
   Content the module does not carry — a documentation site's Markdown —
   is otherwise a screen that renders empty for one frame and then
   refills, which is worse than the page the reader already had.
-- **`nokreWebRefs`.** The static driver installed a `Refs` to write
-  `/routing/` where the default writes `#routing`; the live one has to
+- **`nokreWebRefs`.** The static driver installed a `Refs` to resolve
+  `routing` to `/routing/` where the default answers `#routing`; the live one has to
   install the *same* one, or the first frame rewrites every link on the
   page into a URL the site publishes nothing at. One mapping, stated
   once, spent by both drivers — and `nokre_dom_href` asks it again for
@@ -537,11 +537,14 @@ try dom.chrome(&em);    // notice, nav, sheet, picker
   the reader's scroll, focus, and caret through the handover. The ids
   are a hydration contract, not decoration.
 - **`Refs`.** How a route reference becomes an `href`, as a `ctx` +
-  function pointer like every other action in nokre. The default writes
-  the fragment the web shell already mirrors routes into (`#note~42`),
-  so a link in a serialized page and a link in a running app point at
-  the same screen. A driver publishing one file per screen installs its
-  own.
+  function pointer like every other action in nokre. The hook resolves
+  a route to a `Dest` — `internal` (a plain href) or `external` (the
+  new-tab pair every external anchor carries) — and the emitter writes
+  the whole attribute for both forms, so no driver ever writes a byte
+  of one. The default resolves to the fragment the web shell already
+  mirrors routes into (`#note~42`), so a link in a serialized page and
+  a link in a running app point at the same screen. A driver publishing
+  one file per screen installs its own.
 - **The `nokre` class.** A driver puts it on whatever it wraps the
   screen in; the stylesheet hangs the root stack's padding, gap and
   bottom-chrome reserve off that one class.

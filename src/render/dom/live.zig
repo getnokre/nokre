@@ -340,10 +340,17 @@ fn chromed() callconv(.c) i32 {
 fn href(len: usize) callconv(.c) [*]const u8 {
     href_out.clearRetainingCapacity();
     if (!booted) return href_out.items.ptr;
+    // The emitter exists for the hook's sake — the app it may read the
+    // current route off, and the scratch the default fragment builds
+    // in — not to write markup: the glue wants the URL's bytes alone,
+    // because they go to `location.assign`, not into an attribute.
     var em: dom.Emitter = .{ .gpa = gpa, .app = app, .out = &href_out };
     defer em.deinit();
     const r: dom.Refs = refs orelse .{};
-    r.write(r.ctx, &em, scratch.items[0..len]) catch {};
+    const dest = r.resolve(r.ctx, &em, scratch.items[0..len]) catch return href_out.items.ptr;
+    switch (dest) {
+        .internal, .external => |url| href_out.appendSlice(gpa, url) catch {},
+    }
     return href_out.items.ptr;
 }
 

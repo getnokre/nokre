@@ -10,6 +10,12 @@ every `issuing` guard deleted (refresh declines quietly in-build; bare
 transports; consumer client-array collapse examined and correctly
 declined (every slot is a distinct named adapter, not correlation
 plumbing — the doctrine change in PORTING.md is the consumer payoff);
+A10.1–3 (revision 13) — the `Refs` hook answers `Dest` and the
+emitter writes both href forms (the site's quote-splice is dead),
+`audit.collect` gains `Options.skip`, `dom.driver_files` is the one
+list `addWebSite` and the js-parse gate derive from, and the sw.js
+registration is module-rooted — the live per-page 404 class is
+closed and the published site finally ships all four driver files;
 A9+A11 (revision 12) — `SheetBuilder.tag` + `openSheetTag` (13
 mirror-zeroing onDismiss shims deleted, none did real work) and
 infallible `notify` (bounded inline ring, reserved at init,
