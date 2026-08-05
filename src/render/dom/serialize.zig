@@ -950,7 +950,7 @@ fn inlines(em: *Emitter, owner: NodeId, plain: []const u8, spans: []const elemen
     for (spans, 0..) |s, i| {
         if (s.isLink()) {
             try em.raw("<a class=\"link\"");
-            if (s.route) |route| try em.href(route) else try em.hrefExternal(s.external.?);
+            if (s.route.len > 0) try em.href(s.route) else try em.hrefExternal(s.external.?);
             // A link inside a paragraph is its own focus stop, so it
             // carries the node *and* which span it is.
             try em.stop(owner);

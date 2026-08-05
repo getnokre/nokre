@@ -197,7 +197,14 @@ pub const Span = struct {
     /// element's route — so a bad reference is refused where every
     /// other bad route is (a recorded no-op, router.zig), and the
     /// audit's `unresolvable_route` rule names the span's node.
-    route: ?[]const u8 = null,
+    ///
+    /// Empty is prose, and empty is the only way to say so: routeless
+    /// is legal and ordinary here, and an optional whose `null` and
+    /// whose `""` would mean the same thing is two spellings of one
+    /// state. Every route-carrying field in the set spells it this way
+    /// and every reader asks the same question — `route.len > 0`, which
+    /// is what the audit already asks (`audit.zig`).
+    route: []const u8 = "",
     /// The other kind of link destination, exclusive with `route`: an
     /// external URL handed to the system browser on activation (the
     /// open_url service). nokre still renders no external content — the
@@ -216,7 +223,7 @@ pub const Span = struct {
     /// drawing), so a destination kind added here cannot be a link to
     /// five of them and prose to the sixth.
     pub fn isLink(self: Span) bool {
-        return self.route != null or self.external != null;
+        return self.route.len > 0 or self.external != null;
     }
 
     /// The drawable face this span resolves to on an element drawn in
@@ -919,7 +926,7 @@ pub const Chrome = struct {
     show_notices: []const u8 = "Show notices",
     /// The banner's expand control, when more than one notice is
     /// pending; with exactly one, the banner offers `open_prefix`
-    /// instead.
+    /// instead — and nothing at all when that one is routeless.
     show_all_notices: []const u8 = "Show all notices",
     minimize_notices: []const u8 = "Minimize notices",
     dismiss_all_notices: []const u8 = "Dismiss all notices",
@@ -1147,7 +1154,10 @@ pub const Notice = struct {
     title: []const u8,
     description: []const u8 = "",
     /// Route reference the notice deep-links to via its open control.
-    route: []const u8,
+    /// Empty — the default, and the ordinary case — means no
+    /// destination, and then there is no open control at all:
+    /// `notices.installBanner` and `installPane` gate it on this.
+    route: []const u8 = "",
     /// Leading mark on the words' side of the row, decorative: the
     /// title stays the accessible name (`notify`'s rationale). A field,
     /// not a child node — it takes no focus and answers no press, so it

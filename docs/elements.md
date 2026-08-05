@@ -114,8 +114,12 @@ URL is handed to the system browser through the
 [open_url](services.md) service, whose closed scheme allowlist
 (https/http/mailto) is checked at `append` — nokre still renders no
 external content. `append` holds both kinds to the rules every other
-control obeys: exactly one non-empty destination, and words that
-aren't only whitespace.
+control obeys: never both destinations at once, and words that aren't
+only whitespace. A span with **no** destination is simply prose, and
+an empty `route` is how a span says so — every route-carrying field in
+the set is a plain `[]const u8` defaulting to `""`, never an optional,
+so "no route" has one spelling and every reader asks one question
+(`route.len > 0`).
 
 A link that wraps — or that a bidi line splits into separate visual
 runs — occupies several rectangles, and every one of them underlines,
@@ -1409,8 +1413,10 @@ drop-oldest, quiet notices first — the banner's important front is the
 last thing to go.
 
 A notice is a title, an optional description, the route its open
-control deep-links to, an optional leading icon (decorative — the title
-stays the accessible name), and an importance. The importance is
+control deep-links to (optional, and usually absent — a notice that
+reports without sending anyone anywhere grows no open control at all),
+an optional leading icon (decorative — the title stays the accessible
+name), and an importance. The importance is
 behavioral, not visual: an **important** notice interrupts as the
 banner and re-surfaces minimized ones; a **quiet** one (the default)
 joins the pending list behind the indicator without taking the screen.
@@ -1420,12 +1426,15 @@ states, all living in the bottom pane:
 
 - **Banner** — the front notice as a row anchored to the viewport
   bottom, hiding the nav while it shows. It reserves its own band, so it
-  can never obscure content. Leading control: *open* (deep-links to the
-  notice's route, minimizing first) when it is the only notice, *expand*
-  (opens the notices pane) when there are more. Trailing controls:
+  can never obscure content. Leading control: *expand* (opens the
+  notices pane) when more than one notice is pending; *open*
+  (deep-links to the notice's route, minimizing first) when it is the
+  only one *and* it carries a route; nothing at all when it is the only
+  one and routeless, and the words take the room. Trailing controls:
   *minimize* and *dismiss*.
 - **Notices pane** — a modal, sheet-like panel listing every pending
-  notice with per-row open/dismiss controls, plus a dismiss-all control
+  notice with a per-row dismiss control (and an open control on the
+  rows that carry a route), plus a dismiss-all control
   (the trash glyph) beside the minimize control in its header. Minimize
   keeps the trailing corner — the slot where a modal closes — so the
   reflex press parks the notices rather than destroying them.

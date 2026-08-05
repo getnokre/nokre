@@ -11,6 +11,13 @@
 //! invalid sequences replaced by U+FFFD (`dupeValid`), so every scan
 //! downstream (wrapping, bidi, cursor motion) may trust sequence
 //! lengths instead of re-checking them.
+//! That duplication rule governs everything a consumer appends. The
+//! framework's own chrome words are the boundary: the ones it installs
+//! from `App.Chrome` — `sheet_close`, `back` and `more`'s labels, the
+//! notices pane's title, and `nav_current`/`nav_here`'s `name` — are
+//! borrowed instead, under the lifetime contract `App.setChrome`
+//! states, which is why those last two structs have one duped field
+//! and one borrowed.
 //! Arena memory is reclaimed on `reclaim` (a router rebuild does this)
 //! or `deinit`, not on node removal; rebuild the tree rather than
 //! churning nodes in place.
@@ -753,9 +760,13 @@ pub const Tree = struct {
             // A link span is a control, and every control here carries
             // a non-empty name and exactly one destination.
             // Whitespace-only words would be an invisible tab stop.
-            if (span.route != null and span.external != null) return error.RouteAndExternal;
-            if (span.route) |route| {
-                if (route.len == 0) return error.EmptySpanRoute;
+            if (span.route.len > 0 and span.external != null) return error.RouteAndExternal;
+            // No empty-route refusal to make here, unlike the `link`
+            // element: a link with no destination is a control that does
+            // nothing, while an empty span route *is* how a run says it
+            // is prose (`Span.route`). There is one spelling, so there
+            // is nothing left to catch.
+            if (span.route.len > 0) {
                 if (std.mem.trim(u8, span.text, " \t\n\r").len == 0) return error.UnlabeledInteractive;
             }
             if (span.external) |url| {
@@ -1020,8 +1031,12 @@ pub const Tree = struct {
             dst.text = buf[off .. off + len];
             // A destination is its own string, not a slice of the
             // concatenation, so it needs its own copy — the tree never
-            // borrows consumer memory.
-            if (src.route) |route| dst.route = try dupeValid(a, route);
+            // borrows consumer memory. That holds for the empty route
+            // too: the rule is unconditional, not conditional on no
+            // reader dereferencing what a routeless span points at.
+            if (src.route.len > 0) {
+                dst.route = try dupeValid(a, src.route);
+            } else dst.route = "";
             if (src.external) |url| dst.external = try dupeValid(a, url);
             off += len;
         }

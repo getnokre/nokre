@@ -555,7 +555,7 @@ test "styling spans stay invisible; a link span becomes a link node" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
     const para = try app.tree.appendId(app.tree.rootId(), .{ .text = .{ .spans = &.{
-        .{ .text = "Read the " },
+        .{ .text = "Read the ", .route = "" },
         .{ .text = "terms", .route = "terms" },
         .{ .text = " and the " },
         .{ .text = "policy", .route = "policy", .strong = true },
@@ -594,7 +594,9 @@ test "styling spans stay invisible; a link span becomes a link node" {
     try testing.expect(policy.rect.w < p.rect.w);
     try testing.expect(!policy.rect.isEmpty());
 
-    // A merely styled run contributes nothing.
+    // A merely styled run contributes nothing — and neither does the
+    // first, which spells its routelessness out (`.route = ""`, the one
+    // spelling of "no route" — `Span.route`).
     try testing.expectEqual(@as(?*const A11yNode, null), snap.findSpan(para, 0));
     try testing.expectEqual(@as(?*const A11yNode, null), snap.findSpan(para, 4));
 }

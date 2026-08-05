@@ -204,13 +204,15 @@ test "each link span is its own stop, in span order; styling spans are not" {
         .{ .text = "terms", .route = "terms" },
         .{ .text = " and the " },
         .{ .text = "policy", .route = "policy" },
-        .{ .text = ", or read on.", .strong = true },
+        .{ .text = ", or read on.", .strong = true, .route = "" },
     } } });
     const after = try tree.appendId(tree.rootId(), .{ .button = .{ .label = "after" } });
 
     const root = tree.rootId();
     // The paragraph itself is never a stop — only its links are, and
-    // the plain and merely-styled runs contribute none.
+    // the plain and merely-styled runs contribute none. The last run
+    // spells its routelessness out (`.route = ""`, the one spelling of
+    // "no route" — `Span.route`) and is no more a stop for saying so.
     try std.testing.expect(!tree.getConst(para).?.isFocusable());
     const terms: Focus = .{ .node = para, .span = 1 };
     const policy: Focus = .{ .node = para, .span = 3 };

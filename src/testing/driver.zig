@@ -260,7 +260,7 @@ pub fn focusVia(app: *App, id: NodeId) !void {
             else => continue,
         };
         for (spans) |s| {
-            if (s.route != null) limit += 1;
+            if (s.isLink()) limit += 1;
         }
     }
     while (steps < limit) : (steps += 1) {

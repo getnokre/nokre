@@ -1100,6 +1100,29 @@ test "golden: notice banner in the bottom pane" {
     try renderGolden(&harness, "notice-banner");
 }
 
+fn buildRoutelessNoticeScreen(_: ?*anyopaque, app: *h.App) !void {
+    const tree = &app.tree;
+    const root = tree.rootId();
+    try tree.append(root, .{ .heading = .{ .content = "Content", .level = .h1 } });
+    try tree.append(root, .{ .text = .{ .content = "Flows above the banner, never under it." } });
+    // The ordinary notice: it reports, and has nowhere to send anyone.
+    // The take beside `notice-banner` is where the missing open control
+    // — and the words spreading into the room it would have taken — is
+    // reviewable as a picture.
+    app.notify(.{ .title = "Sync failed", .description = "Changes are kept locally.", .icon = .cloud_off, .important = true });
+}
+
+const routeless_notice_routes = [_]h.RouteDef{
+    .{ .name = "home", .title = .{ .fixed = "Home" }, .build = buildRoutelessNoticeScreen },
+    .{ .name = "library", .title = .{ .fixed = "Library" }, .build = buildUnvisited },
+};
+
+test "golden: a routeless notice banner, with no open control to offer" {
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 400, .h = 300 }, .{ .routes = &routeless_notice_routes, .initial_route = "home" });
+    defer harness.deinit();
+    try renderGolden(&harness, "notice-banner-routeless");
+}
+
 fn buildNoticesPaneScreen(_: ?*anyopaque, app: *h.App) !void {
     const tree = &app.tree;
     const root = tree.rootId();

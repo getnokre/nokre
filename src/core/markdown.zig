@@ -636,7 +636,10 @@ const Writer = struct {
         emphasis: bool = false,
         code: bool = false,
         strike: bool = false,
-        route: ?[]const u8 = null,
+        /// Spelled as the span field it becomes: empty is prose
+        /// (`Span.route`), so the writer carries no second way to say
+        /// the run has no destination.
+        route: []const u8 = "",
         external: ?[]const u8 = null,
     };
 

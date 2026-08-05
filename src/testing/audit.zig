@@ -412,8 +412,8 @@ pub fn collect(app: *App, out: *std.ArrayList(Violation), options: Options) !voi
             // whose spans do route is still covered at activation, by
             // the refusal record this same gate fails on.
             if (!insideDocument(app, id)) for (spans) |span| {
-                const route = span.route orelse continue;
-                if (app.router.vet(route) != null) {
+                if (span.route.len == 0) continue;
+                if (app.router.vet(span.route) != null) {
                     try out.append(app.gpa, .{ .id = id, .rule = .unresolvable_route });
                     break;
                 }

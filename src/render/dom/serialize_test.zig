@@ -270,12 +270,14 @@ test "spans are Markdown's inline vocabulary, and a routed one is a link" {
     defer app.deinit();
     try app.tree.append(app.tree.rootId(), .{ .text = .{ .spans = &.{
         .{ .text = "Read the " },
-        .{ .text = "terms", .strong = true },
+        .{ .text = "terms", .strong = true, .route = "" },
         .{ .text = ", or the " },
         .{ .text = "policy", .route = "privacy" },
         .{ .text = "." },
     } } });
 
+    // The strong run spells its routelessness out (`.route = ""`, the
+    // one spelling of "no route" — `Span.route`): styling, no anchor.
     const html = try render(&app);
     defer testing.allocator.free(html);
     try testing.expectEqualStrings(
@@ -796,6 +798,29 @@ test "a notice's icon is a decorative square between the controls and the words"
     try expectContains(pane, "Sync failed");
     try expectContains(pane, "Other");
     try expectContains(pane, "Export ready");
+}
+
+test "a routeless notice reaches the page without an open button" {
+    var app = try test_app.init(400, 600);
+    defer app.deinit();
+    // The leading flank is a census of the controls core installed
+    // (`noticeControls`), so a notice with nowhere to go emits its
+    // words straight after the row opens — nothing announces a press
+    // this edition would answer with a refused navigation either.
+    app.notify(.{ .title = "Draft saved", .important = true });
+    const banner = try renderChrome(&app);
+    defer testing.allocator.free(banner);
+    try expectContains(banner, "role=\"status\"><div class=\"notice-words\">");
+    try expectLacks(banner, "Open: ");
+    try expectContains(banner, "aria-label=\"Dismiss: Draft saved\"");
+
+    // The pane keeps the distinction per row.
+    app.notify(.{ .title = "Sync failed", .route = "home" });
+    try app.openNoticesPane();
+    const pane = try renderChrome(&app);
+    defer testing.allocator.free(pane);
+    try expectContains(pane, "aria-label=\"Open: Sync failed\"");
+    try expectLacks(pane, "Open: Draft saved");
 }
 
 test "an off-roster screen names itself, and the marker is not a link" {

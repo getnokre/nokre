@@ -313,12 +313,12 @@ pub fn activateStop(app: *App, stop: focus.Focus) !void {
     const spans = focus.spansOf(el.*);
     if (span_index >= spans.len) return;
     const span = spans[span_index];
-    if (span.route) |route| {
+    if (span.route.len > 0) {
         // The router resolves the name, so a bad one is refused exactly
         // where every other bad route is (router.zig's record) — the
         // parser needs no router access to stay honest.
         app.needs_frame = true;
-        try app.navigate(route);
+        try app.navigate(span.route);
     } else if (span.external) |url| {
         // The scheme passed the allowlist at append, so this cannot
         // fail; the screen does not change — the browser is where the

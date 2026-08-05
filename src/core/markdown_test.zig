@@ -37,7 +37,7 @@ fn dumpChildren(gpa: std.mem.Allocator, out: *std.ArrayList(u8), tree: *Tree, pa
             .text => |t| {
                 try out.print(gpa, " \"{s}\"", .{t.content});
                 for (t.spans) |span| {
-                    if (span.route) |r| try out.print(gpa, " link(\"{s}\"->{s})", .{ span.text, r });
+                    if (span.route.len > 0) try out.print(gpa, " link(\"{s}\"->{s})", .{ span.text, span.route });
                     if (span.external) |u| try out.print(gpa, " ext(\"{s}\"->{s})", .{ span.text, u });
                     if (span.strong) try out.print(gpa, " strong(\"{s}\")", .{span.text});
                     if (span.emphasis) try out.print(gpa, " em(\"{s}\")", .{span.text});

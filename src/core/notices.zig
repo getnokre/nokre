@@ -86,6 +86,9 @@ pub const Notify = struct {
     title: []const u8,
     description: []const u8 = "",
     /// Route reference the notice deep-links to via its open control.
+    /// Empty is the default and the common case — a notice reports,
+    /// and only some of them have somewhere to send the reader; one
+    /// with nowhere to go grows no open control.
     route: []const u8 = "",
     /// Leading mark, decorative: the title stays the accessible name,
     /// so the icon adds recognition without carrying information the
@@ -247,13 +250,19 @@ fn installBanner(app: *App) !void {
         .route = front.route(),
         .icon = front.icon,
     } });
-    if (app.notices.items.len == 1) {
+    if (app.notices.items.len > 1) {
+        try app.tree.append(notice, .{ .icon_button = .{ .glyph = .expand, .label = app.chrome.show_all_notices } });
+    } else if (front.route().len > 0) {
+        // Routeless is the ordinary case (`Notify.route` defaults to
+        // ""), and a notice with nowhere to go has no open control:
+        // offering one would put a focus stop and an announced name on
+        // a press whose only effect is a refused navigation. The layout
+        // and both editions take a census of the controls that are
+        // there (`noticeTextBand`), so the words simply take the room.
         try app.tree.append(notice, .{ .icon_button = .{
             .glyph = .open,
             .label = try chromeLabel(app, app.chrome.open_prefix, front.title()),
         } });
-    } else {
-        try app.tree.append(notice, .{ .icon_button = .{ .glyph = .expand, .label = app.chrome.show_all_notices } });
     }
     try app.tree.append(notice, .{ .icon_button = .{ .glyph = .minimize, .label = app.chrome.minimize_notices } });
     try app.tree.append(notice, .{ .icon_button = .{
@@ -306,7 +315,8 @@ fn installPane(app: *App) !void {
             .route = n.route(),
             .icon = n.icon,
         } });
-        try app.tree.append(row, .{ .icon_button = .{
+        // Per row, on the row's own route — see `installBanner`.
+        if (n.route().len > 0) try app.tree.append(row, .{ .icon_button = .{
             .glyph = .open,
             .label = try chromeLabel(app, app.chrome.open_prefix, n.title()),
         } });

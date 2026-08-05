@@ -510,14 +510,18 @@ test "append holds link spans to the rules every other control obeys" {
     defer tree.deinit();
     const root = tree.rootId();
 
-    // A control with no words is an invisible tab stop; a link with no
-    // destination is a control that does nothing.
+    // A control with no words is an invisible tab stop.
     try std.testing.expectError(error.UnlabeledInteractive, tree.append(root, .{ .text = .{ .spans = &.{
         .{ .text = "   ", .route = "terms" },
     } } }));
-    try std.testing.expectError(error.EmptySpanRoute, tree.append(root, .{ .text = .{ .spans = &.{
+
+    // An empty route is not a refused link, it is prose: one spelling of
+    // "no route" (`Span.route`), so a run that names no destination is
+    // exactly a run that is not a control — no tab stop, no link role.
+    const prose = try tree.appendId(root, .{ .text = .{ .spans = &.{
         .{ .text = "terms", .route = "" },
-    } } }));
+    } } });
+    try std.testing.expect(!tree.getConst(prose).?.text.spans[0].isLink());
 
     // The route is its own string, not a slice of the concatenation, so
     // it needs its own copy — the tree never borrows consumer memory.
@@ -528,9 +532,9 @@ test "append holds link spans to the rules every other control obeys" {
     } } });
     @memset(&route, 0);
     const spans = tree.getConst(para).?.text.spans;
-    try std.testing.expectEqualStrings("terms", spans[1].route.?);
+    try std.testing.expectEqualStrings("terms", spans[1].route);
     try std.testing.expectEqualStrings("Read the terms", tree.getConst(para).?.text.content);
-    try std.testing.expectEqual(@as(?[]const u8, null), spans[0].route);
+    try std.testing.expectEqualStrings("", spans[0].route);
 }
 
 test "append holds external destinations to open_url's closed scheme set, spans and link element alike" {

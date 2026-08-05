@@ -2718,6 +2718,90 @@ test "the pane's dismiss controls remove one notice or all" {
     try testing.expect(layout.findIndicator(&app.tree) == null);
 }
 
+/// The glyphs of a notice row's icon controls, in document order — the
+/// census layout, the renderer and the DOM edition each take of the
+/// same children (`noticeTextBand`, `noticeControls`).
+fn expectRowGlyphs(app: *App, notice: NodeId, want: []const element_mod.Glyph) !void {
+    var seen: usize = 0;
+    var it = app.tree.children(notice);
+    while (it.next()) |c| {
+        const el = app.tree.getConst(c).?;
+        if (el.role() != .icon_button) continue;
+        if (seen == want.len) return error.TestUnexpectedResult;
+        try testing.expectEqual(want[seen], el.icon_button.glyph);
+        seen += 1;
+    }
+    try testing.expectEqual(want.len, seen);
+}
+
+test "a routeless banner grows no open control, and its other chrome is untouched" {
+    var app = try test_app.init(400, 600);
+    defer app.deinit();
+    // The default and the common case: a notice reports, with nowhere
+    // to send the reader. An open control here would announce itself,
+    // take a tab stop, and answer the press with `navigate("")` — an
+    // `unknown_route` refusal the audit fails the test on.
+    app.notify(.{ .title = "Draft saved", .important = true });
+
+    const bare = layout.findNotice(&app.tree).?;
+    try expectRowGlyphs(&app, bare, &.{ .minimize, .dismiss });
+    try testing.expect(queryLabel(&app, "Open: Draft saved") == null);
+    try testing.expect(queryLabel(&app, "Dismiss: Draft saved") != null);
+    try testing.expect(queryLabel(&app, "Minimize notices") != null);
+
+    app.performLayout();
+    const wide = layout.noticeTextRegion(&app.tree, bare, false);
+
+    // The first stop is the surviving chrome, and pressing it parks the
+    // notice — the refusal record stays empty.
+    const first = focus.firstFocusable(&app.tree, bare).?.node;
+    try testing.expectEqual(element_mod.Glyph.minimize, app.tree.getConst(first).?.icon_button.glyph);
+    try app.activate(first);
+    try testing.expectEqual(App.NoticeState.minimized, app.notice_state);
+    try testing.expect(app.router.refused == null);
+
+    // A routed notice keeps the control, and the words give back
+    // exactly the target plus its gap (`noticeTextBand`).
+    app.dismissAllNotices();
+    app.notify(.{ .title = "Sync failed", .route = "home", .important = true });
+    const routed = layout.findNotice(&app.tree).?;
+    try expectRowGlyphs(&app, routed, &.{ .open, .minimize, .dismiss });
+    try testing.expect(queryLabel(&app, "Open: Sync failed") != null);
+    app.performLayout();
+    const narrow = layout.noticeTextRegion(&app.tree, routed, false);
+    const lead = layout.metrics.touch_target + layout.metrics.icon_gap;
+    try testing.expectEqual(wide.w - lead, narrow.w);
+    try testing.expectEqual(wide.x + lead, narrow.x);
+}
+
+test "the pane's open control follows each row's own route" {
+    var app = try test_app.init(400, 600);
+    defer app.deinit();
+    app.notify(.{ .title = "Draft saved" });
+    app.notify(.{ .title = "Sync failed", .route = "home" });
+    try app.openNoticesPane();
+
+    // Same importance, so arrival order and no group captions: the
+    // routeless row leads.
+    var rows = app.tree.children(noticesRegion(&app).?);
+    const bare = rows.next().?;
+    const routed = rows.next().?;
+    try testing.expect(rows.next() == null);
+    try expectRowGlyphs(&app, bare, &.{.dismiss});
+    try expectRowGlyphs(&app, routed, &.{ .open, .dismiss });
+    try testing.expect(queryLabel(&app, "Open: Draft saved") == null);
+    try testing.expect(queryLabel(&app, "Open: Sync failed") != null);
+
+    // The row's own dismiss still names it and still removes it, and no
+    // navigation was refused on the way.
+    const first = focus.firstFocusable(&app.tree, bare).?.node;
+    try testing.expectEqualStrings("Dismiss: Draft saved", app.tree.getConst(first).?.label());
+    try app.activate(first);
+    try testing.expectEqual(@as(usize, 1), app.notices.items.len);
+    try testing.expectEqualStrings("Sync failed", app.notices.items[0].title());
+    try testing.expect(app.router.refused == null);
+}
+
 test "a new important notice re-surfaces minimized ones as the banner" {
     var app = try test_app.init(400, 600);
     defer app.deinit();
