@@ -1,1116 +1,460 @@
-# HANDOFF — the third ergonomics round (2026-08-05, evening)
+# HANDOFF — what a static, multi-locale site needs from nokre (2026-08-06)
 
-Status: **EXECUTING**, one pass at a time, in Part F's order. Part 0 is
-finished: 0.1–0.3 shipped the evening this file was written, and
-0.4–0.7 shipped as passes 1–3 (revisions 16, 17, 18 — commits on each
-item's heading and in Part F). Part A begins at A1. Each item's body
-below is left as it was surveyed, so a DONE heading marks a claim that
-was true when written and a fix that has since landed; where execution
-contradicted the survey, Part F's entry says so. This file succeeds the second
-handoff (executed whole, revisions 6→15, deleted in the working tree)
-at the same home. Counts are grep-verified against the trees as of
-nokre `627ceda` (+ this worktree), rokovski `e4698e12`, site
-`f73799b`. Survey method: six independent full reads — nokre core,
-nokre services/l10n/workers/testing, nokre render/platform/build, the
-rokovski user app (42.8k lines), the rokovski org app (17.9k) with a
-line-level org-vs-user diff, and the site generator + all 27 docs —
-each briefed on the doctrine and both kill lists, hunting only for
-what rounds one and two missed.
+Status: **SURVEY. Nothing here is executed, and nothing here is settled.**
 
-Execution protocol stays the standing one: **one item per pass, owner
-review between, never chain.** Contract changes bump `revision` and
-move all three pins in the same pass. Nothing here re-proposes an
-owner-killed item; where a finding sits *near* one, the adjacency is
-flagged inline so the owner can kill it on sight if it reads as the
-same thing.
+This file succeeds the third ergonomics round (executed whole; recoverable at
+`git show 3855adf:HANDOFF.md`). Parts 0 and A of that round are done through
+revision 32 plus `TextInput.disabled`. What was still open there is carried
+forward in Part E below, one line each, with pointers rather than copies.
 
-The round's headline: the rounds worked. `.bind` has 99 org uses and
-zero manual action wirings; `openSheetTag` is adopted 7/7; `refresh`
-outnumbers residual `reload` 70:8; the site's facade is gone; the
-consumers' remaining duplication has moved *up* a level — from syntax
-ritual to missing *containers, verbs, and identities*. That is what
-Part A is made of. Part 0 is different in kind: five real defects the
-surveys found on the way, three already fixed in this pass.
+**Verification basis.** The findings below were grep- and read-verified against
+nokre `7934318` *plus its working tree* — which has since been committed through
+`3855adf` — and against the site at `8db26a7`. Two consequences: line numbers in
+`serialize.zig`, `stylesheet.zig` and `element.zig` may have moved under the
+`TextInput.disabled` pass, and `nokre.revision` was 32 when surveyed. Check both
+before quoting either. Downstream consumer facts come from the rokovski tree as
+of `eea6de1a`.
+
+Execution protocol is the standing one: **one item per pass, owner review
+between, never chain.** Contract changes bump `revision` and move all three pins
+in the same pass.
 
 ---
 
-## Part 0 — defects (fix before ergonomics)
+## How to read this file
 
-### 0.1 FIXED — the home page promised the identity the owner refused
-`site/src/content.zig:137` shipped "Same logical viewport, same bytes
-— across runs, machines **and platforms**" — the exact claim the
-2026-08-03 editions ruling refused, contradicted by the same page's
-own opening paragraph ("Identity across platforms is not the goal")
-and by introduction.md, pixel-model.md, and roadmap.md. Live on the
-published tree (`docs/index.html`). Changed to introduction.md's exact
-words: "across runs and machines, on the platform that drew them."
-**The rebuild is not run** — publish order is nokre commit → rebuild →
-site commit, and this round's nokre changes should land first.
+This is a brief, not a work order. It was written by an agent working in the
+*consuming* repo, which means it is well-informed about what a static site needs
+and comparatively ignorant about why nokre is shaped the way it is. Treat every
+item as a claim to be checked, not an instruction to be executed.
 
-### 0.2 FIXED — append admitted a caret that panics on the first keystroke
-`Tree.setContent` clamps a stale caret to a codepoint boundary
-(tree.zig:285-297, with the rationale comment) but the append path
-never did: `validateAppend` checks `selected` for three elements and
-`cursor` for none, and `dupeStringsInto` copied `value` leaving
-`cursor` untouched. Pointer-activation masks it (`activate` rewrites
-the cursor), Tab-focus does not — then `insertText` → `splice` →
-`@memcpy` with `start > old.len`: bounds panic in safe builds, UB in
-ReleaseFast; an in-bounds mid-codepoint caret quietly stores invalid
-UTF-8, breaking the invariant every downstream scan trusts
-(tree.zig:10-13). Fixed by clamping in both editable arms of
-`dupeStringsInto` with the same `codepointFloor`, plus a pinning test
-("append clamps the caret the way setContent does", tree_test.zig).
-No consumer appends a nonzero cursor today; no golden moves.
+Specifically:
 
-### 0.3 FIXED — emit_css.zig documented a build step that does not exist
-`src/render/dom/emit_css.zig:8` told its stated audience ("a build
-step in another language") to run `zig build dom-css`; no such step
-exists — `emitStylesheet` compiles and runs the tool inside site
-assembly. The comment now says that, and keeps the correct
-`./emit-css` usage line.
+- **If an item is already solved, say so and close it.** Several near-misses in
+  this file are one export or one commit away from things that exist; the survey
+  may have missed the export that already answers it.
+- **If an item is wrong, say why and kill it.** The doctrine arguments live in
+  this repo, not in the consumer. An item that violates one should die on that
+  ground, and the ground should be written down where the next round can find it.
+- **If an item is right but the shape proposed is wrong, propose the better
+  shape.** Every sketch below is illustrative. None is a design.
+- **Do not chain items to "finish the theme."** The value of most of these is
+  independent; the cost of a wrong one is a contract that consumers build on.
 
-### 0.4 DONE (nokre `d7073e3`, revision 16) — the DOM edition announced four framework-chrome names in English, always
-`serialize.zig` hard-codes `aria-label="Back"` (:632),
-`aria-label="Close"` (:654), `Section: ` (:617) and
-`Current screen: ` (:626) — while revision 11 put the localized words
-*on the elements themselves* (`app.zig:523-524` syncs
-`back.label`/`sheet_close.label` from `Chrome`; `element.label()`
-returns them; that is what VoiceOver hears natively). A Persian app
-announces بازگشت on macOS and "Back" on the web. The serializer even
-does it right two lines away (`:578` reads `em.app.chrome.sections`
-for the nav landmark). The tests pin the English literals
-(serialize_test.zig:809, :835), so a localized app never exercises the
-drift.
-
-Fix: emit the element's own label/name in all four arms —
-```zig
-// before                                   // after
-try em.raw("... aria-label=\"Back\"");      try em.raw("... aria-label=\"");
-                                            try em.text(bk.label);
-try em.raw("...>Section: </span>");         try em.raw("...>"); try em.text(chrome.section_prefix-equivalent);
-```
-— with the two visually-hidden prefixes taken from the same `Chrome`
-fields the a11y tree uses, and the tests re-pinned against the catalog
-rather than English. Contract-visible markup change: revision bump,
-site rebuild (published pages churn where those strings appear).
-Restores "two editions consult one catalog" — the guarantee the
-chrome-keys item existed to establish.
-
-### 0.5 DONE (nokre `65e4ac6`, revision 17) — a routeless notice grew a live control that pressed into a recorded programmer error
-`Notify.route` defaults to `""` and that is the overwhelmingly normal
-case — 55 of 59 `notify` calls in the user app are routeless. But
-`installBanner` (notices.zig:250-258) appends the `.open` icon_button
-unconditionally when one notice is up, and `installPane` (:309-312)
-one per row. Pressing it runs `activateIcon .open` → `navigate("")` →
-`unknown_route` lands in `Router.refused` — the record documented as
-"programmer errors", which the harness audit turns into a failing
-test. So most notices in both real apps carry a focusable, announced
-"Open: {title}" control that collapses the banner and plants a
-phantom refusal. The audit already treats routeless notices as legal
-(`n.route.len > 0 and ...`, audit.zig:330); only the chrome disagrees.
-No nokre test covers a routeless notice's controls — every banner
-test passes `.route = "home"`.
-
-Fix: gate both `.open` appends on `front.route().len > 0` (and per-row
-in the pane). Visual change where a routeless banner shows: regenerate
-goldens (nokre + both apps), review. Rider worth taking in the same
-pass, since the file is open: pick **one** spelling of "no route" —
-today `Span.route` is `?[]const u8 = null` while `Link`/`Tile`/
-`Notify` use `""` and `Notice.route` has no default at all
-(element.zig:200, :556, :821, :1150; notices.zig:89). Routeless being
-legal is the argument for the optional form on Notice/Notify; either
-way, one spelling.
-
-### 0.6 DONE (nokre `aebe154`, revision 18) — `Style.family` let body text into the icon and brand faces, against a documented guarantee
-text.zig:19-26 states `brand` "is **not a face consumers may set on a
-span or a text element, and the element set gives them no way to name
-it**." But `text.Style` carries the full four-member `Family`, and
-`Cursor.styled` hands it straight to append — zero checks anywhere
-(`grep family tree.zig`: no hits; no audit rule). So
-`.{ .family = .brand }` renders trademark artwork as prose, and
-`.icons` bypasses `Icon`'s decorative-vs-labeled discipline. No
-consumer sets `.family` today. Fix at the door, the framework's own
-pattern:
-```zig
-// tree.zig validateAppend, .text arm (and heading spans):
-switch (t.style.family) { .icons, .brand => return error.ReservedFamily, else => {} }
-```
-(The stronger form — `Style` gets its own `enum { prose, mono }`
-mapped to `Family` at the render seam — makes the state
-unrepresentable at comptime; more churn, same guarantee. Owner picks.)
-
-### 0.7 DONE (nokre `aebe154`, revision 18) — three smaller admission gaps, one shape: input the seam trusts
-- **wasm exports trust `len`**: `live.zig`'s seven string-carrying
-  exports (`boot`:222, `text`:413, `imeUpdate`:424, `imeCommit`:429,
-  `navigate`:446, `href`:350, `seedBytes`:242) slice
-  `scratch.items[0..len]` from the caller in a ReleaseSmall build.
-  The C seam already got the drop-at-the-door pass; this seam didn't.
-  One `scratchSlice(len)` helper clamping to `scratch.items.len`,
-  used by all seven.
-- **The three focus doors vet differently and none vets the span**:
-  `c_shell.a11yAction` checks `isFocusable` only when span == null;
-  `live.setFocus` checks the node only; `App.deliver(.focus)` checks
-  nothing (app.zig:753-760) — while the *activation* path vets fully
-  (input.zig:310-315). Vet once inside `deliver(.focus)` (node exists;
-  span in range and `isLink`; else `isFocusable`) and delete the two
-  partial copies — one home, and the seams get simpler, not longer.
-- **`iap.purchase`/`restore` are legal with no stream handler** — the
-  one service where a forgotten registration eats money-shaped events:
-  `dispatchUpdate` drops on null handler (iap.zig:373), and unlike
-  notification (buffers pre-handler, :480-523) or deep_link (journals
-  every delivery), nothing records the loss. Cheapest honest guard:
-  `if (st.handler == null) return error.NoHandler;` in both verbs —
-  the mock then catches the mistake in any harness run. Rokovski
-  registers inside `build` and is unaffected.
+The single most likely failure mode for this round is an agent reading it as a
+list of features to add and adding all of them. Most of the argument's weight is
+in Part C, which asks whether the *category* belongs here at all — and the answer
+may legitimately be "some of it, and not the rest."
 
 ---
 
-## Part A — ranked redesigns
+## The owner has reopened a killed item
 
-### A1 DONE (nokre `9ec8836` + `120bed8`, revisions 19–20) — the borrow model's missing containers: `Str(cap)` and `Rows(T, cap)`
-The single largest remaining consumer cost. nokre's callback-borrow
-discipline ("copy a borrowed slice into a bounded field", nokre's own
-queue.zig:12) forces every surviving string and list into fixed-cap
-storage — and ships neither type.
+The previous handoff refers, in Part C item 4, to *"the killed static-site
+driver."* A static-site driver in nokre was proposed in an earlier round and the
+owner refused it.
 
-Evidence: `Str(cap)` is hand-defined **three times** (user
-channels.zig:94, user forms.zig:26 as `Field`, org rows.zig:5 — a
-file misnamed after its only content) with **244 + 88 uses** across
-18 + N files. The bounded row list — `{ phase: Load, len: usize,
-rows: [N]T, items(), push() }` — is hand-rolled **25 times** (11 user
-+ 8 org `pub fn items(` structs and their kin), every fill an
-undisclosed `self.len = @min(max, replies.len)` truncation, the same
-ceiling comment copy-pasted at 4+ sites, the same
-`if (phase != .idle) return` ensure-guard 15×, and each with its own
-capacity-refusal test. Three org billing screens differ from each
-other by ~24 identifier lines around this scaffold.
+**The owner has reopened that question**, and this file exists because of it.
+That is a deliberate departure from this file's own standing convention that
+nothing re-proposes an owner-killed item.
 
-Change: two pure-data types beside `Load`, same doctrine slot (nokre
-never reads them):
+Two things follow, and both matter:
+
+1. The reopening is real. Do not treat Parts A and B as accidental re-proposals
+   and refuse them on adjacency grounds alone.
+2. The reopening is *not* a decision. The owner reopened the question after
+   seeing a second consumer about to hand-roll the same document shell. If the
+   original kill rationale still holds — and this file cannot see it, because it
+   lived in a handoff that has since been deleted — then **the right outcome is
+   to restate that rationale and kill the items again**, this time in a doc where
+   the next round will find it.
+
+If you can recover the original kill argument from git history, do that first.
+It is the highest-value ten minutes in this round, and it may end the round.
+
+---
+
+## Why now: the second consumer
+
+`getnokre.github.io` has been nokre's only static consumer. A second is
+arriving — `rokovski.com`, the public marketing site — and it is materially
+bigger:
+
+| | getnokre.github.io | rokovski.com |
+|---|---|---|
+| locales | 1 (en) | 3 — `en`, `fa` (RTL), `tr` |
+| static routes | ~20 | 20 × 3 = 60 |
+| generated pages | ~20 | **~4,250** (locale × category × dimension × statement) |
+| markdown collections | docs | articles (4/locale) + docs (3/locale) |
+| structured data | none | FAQPage, Service + AggregateOffer (EUR), ItemList, WebPage, Article |
+| JSON endpoints | none | 2 per locale, consumed by three other packages |
+| interactive surfaces | none | rankings, statement search (both via public API) |
+
+It is today an Astro site. Everything above already works there, which is the
+uncomfortable part: the migration has to *not lose* things nokre currently cannot
+express.
+
+The pages are the product. Those ~4,250 statement pages are a content-SEO
+surface, not a nicety — they are the reason the site exists in its current shape.
+A static generator that cannot emit correct `lang`, canonical, hreflang and
+structured data for them is not a viable target, and the consumer will hand-roll
+all four in its own driver if nokre does not.
+
+That hand-rolling is the actual question this round decides. Not "would these
+features be nice" — **"should the second driver re-implement the first driver's
+document shell, or is that the library's job now?"**
+
+---
+
+## The unwritten rule this round should write down
+
+There is no stated position anywhere in `docs/` on whether SSG and SEO concerns
+belong to the framework or the app. The boundary is drawn three times by
+instance and never once by rule:
+
+1. `docs/internals/dom-edition.md:268` — *"What the host document owes, and what
+   it keeps"*, then an enumeration. Says what the app owes; does not generalise.
+2. `src/render/dom/stylesheet.zig:541-543` — *"the attribute is the driver's to
+   stamp, but the page around an embedded app is not this edition's to turn
+   around."* Closest thing to a rule, and it is about `data-direction`.
+3. `docs/localization.md:400-403`, on a neighbouring question, is the sharpest
+   phrasing of the instinct: *"Downloadable translations are a distribution
+   feature with a cache, a version skew story, and a failure mode on first
+   launch — that is an app, not a GUI library."*
+
+The consuming site states the boundary more plainly than nokre does —
+`getnokre.github.io/src/main.zig:4-7`: *"Everything below is the driver: which
+screens exist, what a reference resolves to, and the document a browser needs
+around a screen. The markup and the stylesheet are the library's."*
+
+**Whatever this round decides, the outcome belongs in a doc.** An unwritten rule
+carried by three instances is exactly what let a consumer-side agent confidently
+brief the owner on the opposite of what the code says. If the answer is "the
+document is the driver's, permanently," that sentence is worth more than any item
+in Part A.
+
+---
+
+## Part A — the document shell
+
+Each item: the claim, the receipt, the argument for the library, the strongest
+argument against, and what "already solved" would look like.
+
+### A1. `lang` and `dir` are emitted by nobody
+
+**Receipt.** `serialize.zig` emits no `lang` and no `dir` — grep for `lang=`,
+`dir=`, `<html`, `doctype` returns nothing; it emits no document at all.
+`getnokre.github.io/src/main.zig:372` hardcodes `<html lang="en">`. And
+**nokre hardcodes it too**: `src/packaging/packaging.zig:1017` (`webIndexHtml`,
+the shell `addWebSite` emits) writes `lang="en"` with nothing parameterising it.
+
+RTL is otherwise nearly complete. `App.direction` (`core/app.zig:69`),
+`App.setDirection`, `l10n.directionOfTag` / `L.dir(loc)` (`l10n.zig:302,1106`),
+the generated stylesheet mirrors on `:root[data-direction="rtl"]`
+(`stylesheet.zig:544`), and the serializer flips chevrons off `em.app.direction`
+(`serialize.zig:693,903`). **Nothing stamps `data-direction`.**
+
+**For the library.** A Persian page served as `lang="en"` is wrong for screen
+readers, for browser translation, for hyphenation and for search engines — and
+nokre already knows the direction. The stylesheet it generates has an RTL branch
+that nothing can currently activate. That reads as an incomplete seam rather than
+a scope boundary.
+
+**Against.** `stylesheet.zig:541-543` states the refusal deliberately: an
+embedded app must not turn the page around it. And `docs/localization.md:155-157`
+takes a stronger line — *"There is no `dir` attribute and no per-locale direction
+flag in ARB — a Persian string in an English locale and an English string in a
+Persian locale each lay out correctly on their own evidence."* If direction is a
+property of runs of text rather than of documents, then a document-level `dir` is
+the wrong idea and the driver is the right place for the one line that
+nevertheless has to exist.
+
+**Note the asymmetry**, because it may be the whole resolution: an *embedded*
+app must not restyle its host, but a *generated document* has no host — nokre
+wrote the whole file. The refusal may simply not apply to the static path, in
+which case this is a one-line fix in `webIndexHtml` plus a stamp in the static
+document writer, and the doctrine is unchanged.
+
+**Already solved if:** something parameterises `webIndexHtml`'s `lang`, or a
+sanctioned `data-direction` stamp exists that the survey missed.
+
+### A2. Canonical, Open Graph, Twitter card
+
+**Receipt.** The reference driver emits canonical with a **hardcoded origin**
+(`main.zig:440`, skipped on 404 at `:436-438`), `og:type` (`:452`),
+`og:site_name` (`:453`), `og:url` (`:460`), `og:title` (`:462`),
+`og:description` (`:464`), plus `theme-color` for both schemes from
+`nok.Gray.paper` (`:447-451`). **No `og:image`. No Twitter card.**
+
+**For the library.** These tags are mechanical, their invariants are easy to get
+wrong (`og:url` must equal canonical; canonical must be absolute; both must be
+absent on a 404), and the second driver will re-derive all of them. The reference
+driver already had to learn "skip canonical on 404" — a second driver gets to
+learn it again, or not.
+
+**Against.** It is eight `print` calls. A library that emits `<meta>` tags on the
+app's behalf is a website framework, which nokre is not. And the origin is
+necessarily config, so the app is in the loop regardless.
+
+**Already solved if:** `packaging.zig` grew a head-writer the survey did not find.
+
+### A3. JSON-LD
+
+**Receipt.** Zero occurrences of `application/ld+json`, `json-ld` or
+`schema.org` in either repo, `src/` or `docs/`.
+
+**Split this one.** The consumer needs five graph types (FAQPage, Service +
+AggregateOffer with EUR, ItemList, WebPage, Article). Those are content, and
+belong to the app. What is *not* content is the emission: a
+`<script type="application/ld+json">` block whose payload must be escaped such
+that a `</script>` inside a string cannot end the block early.
+
+That escaping is the same class of problem as the CSP `connect-src` injection
+you swept 0–255 for in `packaging_test.zig` — and it has the same failure mode: a
+consumer building the string by hand gets it right until one statement's text
+contains the wrong bytes. Statement text is user-adjacent content in three
+languages across 4,250 pages.
+
+**For the library.** The escaper. One function, one test sweep, matching a
+precedent this repo already set.
+
+**Against.** Nothing here is nokre-shaped. It is a JSON writer and a `<script>`
+tag; `std.json` already escapes. If the answer is "use `std.json.Stringify` and
+write the tag yourself," say so in `dom-edition.md` and close it — a documented
+one-liner is a fine resolution.
+
+**Already solved if:** the emitter can express a raw `<script>` block safely
+today, in which case this reduces to a doc line.
+
+### A4. `og:image`
+
+The reference site emits none. The consumer has one (`/og-image.png`) referenced
+only from `<meta>` — no on-page imagery, which costs nothing because the Astro
+site has none either. **This is not an image-element request** and must not be
+read as one; nokre has no image element and that is settled (Part D).
+
+It is a URL in a tag. It rides on whatever A2 decides.
+
+---
+
+## Part B — per-locale generation
+
+**The owner has flagged this as the part that most needs real support.** It is
+also the part where nokre has already moved furthest, which is why it is
+tractable at all.
+
+### What already exists
+
+`4876c99` changed `RouteDef.title` to
+`Title = union(enum) { fixed: []const u8, of_locale: *const fn([]const u8) []const u8 }`
+(`router.zig:213-230`), resolved through `Title.text(locale_tag)` (`:224`), and
+gave the App the chosen locale — `App.setLocale` (`core/app.zig:737`),
+`App.locale()` (`:758`), `Options.locale` at boot (`:345`). `setRouteTitles` and
+`Router.retitle` retired. `128ef2b` added `L.of(app)`, `trAny` for runtime keys,
+and `L.chrome(locale)` deriving one reserved key per `Chrome` field at comptime —
+so a missing chrome word is a compile error rather than shipped English.
+`408d77b` added `Bound.tag()/.dir()/.chrome()` and `L.in(app)`.
+
+**An earlier line in `router.zig:56` reading "Comptime, and a locale is not" is
+gone.** A consumer-side brief quoted it as current doctrine last week; it was
+already false. Worth knowing that this area moved recently and quickly.
+
+### What is still missing
+
+Routes carry no locale segment and there is no per-locale route *set*. Nothing
+generates a tree once per locale, and nothing derives the relationship *between*
+locale variants of one page. Concretely:
+
+### B1. The locale axis
+
+A three-locale static site regenerates the whole tree per locale, and each page
+needs to know both its own locale and the full set. Today that loop is entirely
+driver code.
+
+**The sketch, illustrative only** — the generator declares a locale set and a
+path scheme; nokre supplies the per-locale walk and hands each page its locale
+plus its siblings:
+
 ```zig
-pub fn Str(comptime cap: usize) type   // set (truncating, says so), get, eql, blank
-pub fn Rows(comptime T: type, comptime cap: usize) type
-// items(), clear(), push() ?*T, fill(slice) — and `truncated: bool`,
-// so the ceiling is disclosable instead of silent.
-```
-Before / after at a declaration:
-```zig
-// before: a 20-line struct + its refusal test, × 25
-// after:
-invites: nokre.Rows(InviteRow, 16) = .{},
-```
-The `phase` stays app-side (whether `Rows` carries `Load` is an owner
-call; leaving it out avoids even brushing load.zig's recorded
-"nothing further" stance). Deletes on the order of 700–900 consumer
-lines and closes the silent-truncation class. Meets queue.zig's own
-bar for existing ("every consumer was hand-rolling the same ring") —
-twenty-five times over.
-
-### A2 DONE (nokre `c858cb6`, revision 21) — `.bind` stopped at Action; the trampoline door is exported
-Revision 6 removed the trampoline ritual for the four action types.
-Everything else that carries `{ctx, call}` still pays it:
-**12 identical `Signal` structs** across the apps (each 8 lines,
-byte-copies of `Action` minus `bind` — user transfer.zig:43,
-settings.zig:115 ×2, billing.zig:54, read.zig:58, write.zig:237; org
-×7), **30 port `Callback` types** in the two domain libs (zero have
-bind → 154 org + ~106 user `@ptrCast(@alignCast(ctx.?))` rituals and
-19 local `fn cast` shims survive), ~50 route builders each opening
-with the identical cast prologue, and the wait-predicate plumbing of
-A5. The lib side matters: the domain packages are deliberately
-nokre-free, so they *cannot* borrow `Action.bind`'s machinery today.
-
-Change, two independent pieces:
-1. **Export the factory**: `nokre.bindAs(CallbackT, f, state)` —
-   comptime duck-typed over any struct with
-   `{ ctx: ?*anyopaque, call: *const fn (?*anyopaque, ...) R }`,
-   which is exactly what `Action.bind` already synthesizes privately
-   (element.zig:70). One public fn; the 12 Signals become `Action` (or
-   keep their name and gain bind for free), and consumer ports bind
-   without importing anything but the type shape.
-2. **A typed route table** (owner-scoped — this is the bigger design):
-   `RouteDef.build(ctx, app)` is the last framework-owned
-   `?*anyopaque` consumers touch. A comptime `Routes(State)` wrapper
-   that types the ctx once would delete all ~50 prologues:
-   ```zig
-   // before, × 50 screens:
-   fn build(ctx: ?*anyopaque, app: *App) !void {
-       const state: *State = @ptrCast(@alignCast(ctx.?)); ...
-   // after:
-   fn build(state: *State, app: *App) !void { ...
-   ```
-   Decide scope at session start; piece 1 alone is worth the pass.
-
-### A3 DONE (nokre `3a5a6c6`, revision 22) — finish the sheet door: the typed half, the close verb, the confirm idiom
-Revision 12's tag removed the liveness mirrors; six controllers per
-app then rebuilt the *typed* layer around the raw `u32` identically:
-five hand `enum(u32)` starting at `= 1` to dodge tag 0; six
-`present()` wrappers packing `@intFromEnum` + ctx + `catch {}`; ten
-render prologues (cast → `@enumFromInt(openSheetTag() orelse return)`
-→ `presentSheet` → switch — same explanatory comment copy-pasted in
-four); **13 declarations of `closeSheet`** = `dismissSheet();
-reload() catch {}` — an error `App.refresh` already swallows
-internally as unactionable (app.zig:420-425), left in consumer hands
-at this one door; three `represent()` shims; and **17 hand-assembled
-confirm sheets** (title → body → optional error → primary
-`in_progress` → secondary Cancel) on which the two apps disagree
-about whether Cancel disables while busy.
-
-Also a verified hazard in the flat tag namespace: five enums all
-minting from 0-adjacent values means cross-controller reads collide —
-`billing.zig:511` re-presents its gift sheet over *whatever* sheet is
-open; `settings_sheets.zig:13` does `@enumFromInt` on a tag any other
-controller might own. The workaround comments ("its subject, not its
-liveness") are the shadow state the tag was shipped to kill.
-
-Change, one pass:
-```zig
-// overlays.zig
-pub fn openSheetAs(app: *App, tag: anytype, comptime render: anytype, state: anytype) !void
-// packs @intFromEnum (comptime-refusing enums whose ordinals hit 0),
-// binds ctx like Action.bind, keeps the builder.
-pub fn sheetTagAs(app: *const App, comptime E: type, ctx: ?*anyopaque) ?E
-// answers only when the kept builder's ctx matches — "is MY sheet
-// up", the question every cross-fire site is actually asking.
-pub fn closeSheet(app: *App) void  // dismiss + the quiet rebuild, one home
-```
-plus `Cursor.confirmSheet(.{ .title, .body, .error_copy, .confirm,
-.cancel, .busy })` as the second member of cursor.zig's idiom family
-(the first being `loadGate`), settling the Cancel-while-busy question
-once. Narrow `openSheet`'s error from `anyerror` while the file is
-open: today a failed *four-eyes deletion* confirm sheet vanishes into
-`catch {}` ×7. (Not the killed presentSheet assert: nothing here
-asserts at the primitive; it types the door above it.)
-
-### A4 DONE (nokre `28ba1fc`, revision 24) — the harness's missing half: asserting what was sent
-Round 2 gave the *answering* side suffix verbs (`fulfillHttpPath`,
-`failHttpPath`, `httpIndexOf`). The *observing* side never landed, so
-tests reach four levels deep: **72 `pendingAt(` + 31 `headerValue(` +
-123 `indexOfPath`/`httpIndexOf`** sites across both apps' tests, 51
-bare `fixture.harness.app.services.http.pendingCount()` reaches, and
-both fixtures carrying identical sugar (`hasPath`/`countPath`, user
-fixture.zig:470-487; `fulfillPath`/`tap` twins byte-identical in both
-apps, comments included). A failed count today prints two integers;
-the harness's own miss path already knows how to print what's parked
-(harness.zig:465-483).
-
-Change (harness.zig, beside the fulfill family):
-```zig
-pub fn httpPending(h: *const Harness, suffix: ?[]const u8) usize
-pub fn expectNoPendingHttp(h: *Harness) !void      // loud: lists every parked URL
-pub fn expectRequest(h: *Harness, suffix: []const u8, expect: struct {
-    method: ?http.Method = null, body: ?[]const u8 = null,
-    body_contains: ?[]const u8 = null, header: ?[2][]const u8 = null,
-}) !void
-pub fn takeRequest(h: *Harness, suffix: []const u8) !PendingRequest  // free-form cases
-```
-Riders while the file is open, each with a consumer receipt:
-`expectEnabled` (its twin exists; forced raw-tree assert at org
-create_organization_test.zig:168), and value expectations covering
-`tile.detail`/`qr.value`/`copyable.value` (9 raw tree reads). Deletes
-the largest remaining per-test block; fixture boot is already 3 lines.
-
-### A5 DONE (nokre `1fa47ca` + `9bea42a`, revisions 25–26) — the driver tier never got its round: two ~570-line Devices re-implemented the harness
-`e2e/device.zig` is 563 (org) / 581 (user) lines with a shared
-23-verb surface: five `waitFor*` wrappers hand-plumbing anyopaque
-predicates over `wait.waitUntil` (byte-same in both apps, ~140 lines
-each), plus re-implementations of `Harness.press`'s
-folded/keyboard/More-sheet ladder and `goTab`'s nav walk — under
-**gratuitously divergent names** (`fill` vs `typeInto`, `expect` vs
-`expectPresent`, `choose` vs `selectOption`). Root cause is
-structural: `Harness` is welded to mocks (`Service = if (is_test)
-Mock else Platform`), so its verbs are unreachable against a live
-`App`; `wait.zig` ships only the raw loop; testing.md:844 blesses the
-tier without populating it.
-
-Change: promote the wait predicates nokre can already evaluate —
-```zig
-// testing/wait.zig
-pub fn untilLabel(app: *App, pacer: Pacer, label: []const u8) error{WaitTimeout}!NodeId
-pub fn untilRole(app: *App, pacer: Pacer, role: Role, name: []const u8) error{WaitTimeout}!NodeId
-pub fn untilRoute(app: *App, pacer: Pacer, ref: []const u8) error{WaitTimeout}!void
-```
-— and a mock-free driver verb set sharing the Harness's *names and
-algorithms* (the ladders already live in `testing/driver.zig`/
-`queries.zig`; what's missing is the wait-composed layer). Each app
-keeps `idle()` (PoW-specific) and its domain verbs. Also:
-`waitUntil`'s predicate sees only `*App`, which forced three more
-hand loops for app-state conditions — either a ctx-carrying overload
-or `bindAs` (A2) covers it. Deletes ~700+ duplicated driver lines and
-ends the two-name-per-verb split; a third edition's driver would have
-been a third copy.
-
-### A6 DONE (nokre `8efaba4`, revision 27) — one-shot in-flight gate, the mutation twin of `Load`
-*(A4's migration found the matching harness gap — six reads, four on
-buttons and two on toggles, so the verb must read across element kinds
-the way `expectValue` does rather than being buttons-only like
-`expectDisabled`. Nothing spells "this control is busy":
-`expectEnabled`/`expectDisabled` read `disabled` and `expectValue`
-reads the a11y node's value, so those six tests reach into the raw
-tree for `in_progress`. The verb belongs beside
-`Gate`, which is the thing that produces the state — fold it into this
-pass rather than leaving app-local sugar `Gate` would orphan.)*
-`Load` is deliberately display-only; `Button.in_progress` renders
-busy; nothing *produces* busy. So every mutation hand-rolls
-`if (self.x) return; self.x = true; ... self.x = false;` — **22 flags
-across 12 org files** under one name, **10 user flags under seven
-names** (`busy`, `gift_busy`, `redeem_busy`, `refreshing`,
-`exporting`, `sharing`, `submitting`), ~38 guard/assign sites, and
-user manage.zig resets at **8 distinct return paths** — one missed
-path wedges the screen forever. 92 build sites feed these into
-`in_progress`.
-
-Change: the smallest honest primitive, pure data like `Load`:
-```zig
-pub const Gate = struct {
-    up: bool = false,
-    pub fn begin(g: *Gate) bool { if (g.up) return false; g.up = true; return true; }
-    pub fn end(g: *Gate) void { g.up = false; }
+// Not a design. The shape of the question.
+const site: nok.render.dom.Site = .{
+    .origin = "https://rokovski.com",     // config, app's
+    .locales = &.{ "en", "fa", "tr" },    // app's
+    .default_locale = "en",
+    .path = .prefix_all,                  // /en/… /fa/… /tr/… vs. bare-default
 };
-// if (!self.op.begin()) return;  defer-friendly, one name, one polarity
 ```
-Doesn't reopen load.zig's non-goal (no phases, no staleness — a
-latch, not a machine). The vocabulary win is half the point: seven
-names collapse into one.
 
-### A7 DONE (nokre `8efaba4`, revision 27) — `loadGate` had no ready-but-empty branch
-30 empty-state sites across the apps render **six visual variants**
-of "nothing here" (org: plain `b.text`; user: four screens styled
-small+dark, three plain). Strongest convergent evidence in the
-survey: both apps independently invented a private section struct
-with the same fields (org organization.zig:88-101
-`{heading, empty, failed, route, icon, create}`; user home.zig:249-261
-the same idea, one field more). `loadGate` returns `true` on `.ready`
-and says nothing about zero rows — exactly the missing branch.
+The interesting design question is **whether nokre should own the loop at all**,
+or only the per-page derivations (B2, B3) with the driver keeping the loop. The
+loop is four lines; the derivations are where a second driver will diverge from
+the first. A library that owns only the derivations is a much smaller ask and may
+get most of the value.
 
-Change: `LoadGate.empty: ?[]const u8 = null` plus a count (or a
-sibling `emptyGate(phase, count, opts)`) rendering the one blessed
-empty line when ready-and-zero; pairs with `Rows.truncated` (A1) for
-the disclosure line. The full section idiom (heading + gate + list +
-create link) is a candidate second step — log, owner decides.
+### B2. hreflang and `x-default`
 
-### A8 PARTLY DONE (nokre `9327d27`, revision 29) — the stale-reply surface: shipped verbs, unreachable pit of success
-Filed as one item because the fixes are small but the *decision* is
-one posture question. Receipts, all verified today:
-- `refresh(.{ .route })` — the option built for "a reply landed after
-  the user walked away" — has **0 route-scoped adoptions in the org
-  app's 70 calls** (user app similar). The polite verb exists; nothing
-  steers a callback author toward scoping it.
-- Callbacks bind the controller, never the request: org detail.zig
-  fires 4 concurrent loads with `.ctx = self`; re-opening org B while
-  org A replies are in flight lets A's callbacks overwrite B and mark
-  it `.ready`. The `organization_id` guard exists at all 8 `open()`
-  sites and **zero** callback sites. No walk-away race has a test.
-- Late-reply navigation: `navigate`/`navigateBack` from callbacks
-  (org invites.zig:236-260, user state.zig:910-944) can yank the user
-  off an unrelated screen; `refresh` got a route guard, navigation
-  didn't.
-- `bindAt` carries a position, not an identity: org security.zig:80
-  bakes an index consumed after arbitrary refetches — bounds-checked,
-  so the failure is *removing the wrong admin*, not a crash. The same
-  app keys the same shape by code elsewhere (invites.zig:68): two
-  policies in one app because the API offers only position.
-- `http.Handle.cancel` is discarded at every call site — the port
-  `Callback` chains have nowhere to carry it.
+**Receipt.** Zero `hreflang`, zero `x-default` anywhere in either repo.
 
-Menu (owner picks the posture; none of this proposes `Remote(T)` —
-the load.zig stance predates these receipts and deserves to see
-them): (a) a route-scoped `navigate` twin for callback use; (b) make
-`.route` the default-visible field in `refresh`'s doc example and add
-an audit note when a controller calls routeless `refresh` from an
-http callback (harness-detectable); (c) `bindAt` gaining a second
-comptime form that carries a small stable identity (`bindKey`) so
-position-vs-identity is a choice made in vocabulary, not re-derived
-per controller.
+Given a route, a locale set and an origin, the alternate set is
+`{origin}/{locale}{suffix}` for every locale plus `x-default` — fully derivable,
+no app input beyond what B1 already declares. The consumer's existing test
+asserts the alternate href set matches *exactly*, both directions, which is
+precisely the kind of invariant that is easy to half-implement by hand.
 
-### A9 DONE (nokre `408d77b`, revision 28) — `L.of` was one hop short, twice
-- `Bound` carries only tr/trAny/fmt/fmtIn (l10n.zig:405-423);
-  everything else re-unwraps: **24 × `L.of(app).locale`** feeding
-  `L.chrome(...)`/`L.tag(...)`/`L.dir(...)` in both apps' state.zig.
-  Add `tag()`, `dir()`, `chrome()` to `Bound` (three inline
-  one-liners; `.locale` stays pub for the comparison sites).
-- The most-copied line in the consumer codebase is still a wrapper:
-  **13 identical `tr` shims** (`return L.of(self.app).tr(key)`), and
-  formatted keys read `try L.of(state.app).fmtIn(&app.tree, .key,
-  args)` — the tree re-passed though `of()` had the app in hand.
-  Either `L.in(app)` (a second binder keeping `{locale, tree}`, so
-  `.fmt(.key, args)` lands in the arena) or an exported mixin
-  (`pub const tr = L.mixinTr;`) — one line per controller instead of
-  three, or zero.
+This is the strongest single candidate in the file: mechanical, derivable, no
+content dependency, and wrong-by-hand in ways that are invisible until an
+international search console complains months later.
 
-### A10 DONE (nokre `9327d27`, revision 29) — mid-flight patches: the last `tree.get` ritual
-Nine clusters across the user app (transfer.zig:310, write.zig:711,
-state.zig:744-983) hand-roll recorded-NodeId → `tree.get` → field
-poke → `invalidate()` for progress/status that must not rebuild under
-the user's fingers, carried by **12 `NodeId = .invalid` fields**; six
-`tree.appendId` escapes exist in the org app only because no `Cursor`
-leaf returns its id. Two small moves close it: leaf cursor methods
-gain an `...Id` twin where a receipt is real (or `Cursor.appendId`
-generally), and a sanctioned patch pair —
-`app.patchText(id, copy)` / `app.patchProgress(id, pct)` — that
-composes get+set+invalidate and *no-ops on a stale id*, the same
-polite-decline shape `refresh` established. Residue rider: org
-`refreshConsent` (state.zig:554) still node-pokes a screen with no
-editable — plain `refresh` residue, delete consumer-side.
+### B3. Sitemap alternates
 
-### A11 DONE (nokre `976fb62`, revision 30) — the field-error slot: semantics the element set was missing
-Org declares `Notice = enum` **11 times**, user `Trouble` 5 more —
-per-controller enums mapping server codes to copy rendered as an
-anonymous `text()` *beside* the form control, with no structural
-association to the field: no `aria-describedby`, no `aria-invalid`,
-nothing the a11y tree can hand an AT. In a framework whose first
-guarantee is a11y-derived-from-the-tree, field errors are the one
-form concept with no semantic home. This is an element-set argument
-(semantics, not styling — same lane as the flagged
-`TextInput.disabled` candidate, for which this round adds a receipt:
-user create.zig:119 *restructures its layout* around the missing
-field). Proposal to argue on the set's own terms:
-`TextInput.trouble: []const u8 = ""` (name open) rendered in both
-editions with the ARIA association, plus the same on `TextArea`.
-Rider: the consumer word `Notice` colliding with nokre's notices ring
-dissolves the day the slot exists.
+**Receipt.** `main.zig:692-702` emits a flat `<urlset>` of `<loc>` only — no
+`lastmod`, no `changefreq`, no `<xhtml:link>` alternates. `robots.txt` at
+`:707-708`.
 
-### A12. Smaller, each with one receipt
-- **Chrome at boot**: `OptionsRelease` has `locale` and `direction`
-  but not `chrome`, so a restored-RTL boot ships English chrome until
-  a separate `setChrome` — the correct path is longer than the wrong
-  one; one field closes it (app.zig:215-231).
-- **Route args format-into-tree**: 17 non-test `routeRef(&buf...)`
-  sites with 19 hand `[N]u8` buffers, org inventing its own
-  `max_route_len = 96` twice while its third file uses
-  `router.max_ref_bytes`. A `(route, args)` overload on
-  `Tile`/`Link` cursor methods formatting into the arena —
-  `Tree.fmt`'s precedent, applied to refs.
-- **Single-flight adapter doctrine, written once**: 17 `pending: ?`
-  single-flight copies + the DevClock two-step POST machine
-  byte-identical in both apps. Not the killed array collapse —
-  one-transport-per-call stands; the ask is one documented (or typed)
-  chaining idiom so 17 adapters stop re-deriving the discipline.
-  Doctrine home: PORTING equivalent in docs/services.md.
-- **Worker codec and the error string round-trip**: the codec refuses
-  error sets, so both apps' identical pow_worker.zig re-derives
-  errors by string table. Encoding an error set as its tag is
-  mechanical and typed. *Adjacency flag*: the killed B5 was an error
-  **rename**; this is codec capability — kill on sight if the owner
-  reads it as the same item.
-- **`Queue.done` double-call**: mis-delivers the *next* submitter's
-  callback instead of failing loudly (queue.zig:66-79). A
-  debug-assert `started` flag; zero release cost.
-- **Golden-test recipe** (build surface): both consumer build.zigs
-  hand-copy the same ~20 lines nokre's own build writes (the
-  `"build_options"` name contract, `update_goldens`, `linkSkia`,
-  `setCwd`). **DECIDED 2026-08-05: ship `nokre.addGoldenTests(dep, .{...})`.**
-  Not a convenience wrapper in the sense the owner has killed before —
-  the `build_options` name is a real contract between nokre and a
-  consumer's build, and a hand-copy that drifts fails in a confusing
-  place. Two consumers copy it today; a third would copy it again.
+For a multi-locale site the sitemap should carry `<xhtml:link rel="alternate">`
+per locale per URL. Same derivation as B2 from the same inputs. If B2 lands in
+the library, this is nearly free; if B2 stays in the driver, this should too —
+they should not end up on opposite sides of the boundary.
+
+### B4. The output-path scheme
+
+The reference driver maps home → `index.html`, 404 → `404.html`, else
+`<route>/index.html` (`main.zig:345-357`). A locale axis multiplies that, and
+the default-locale question (`/en/…` versus bare) is a real fork the consumer has
+already answered one way (Astro's `prefixDefaultLocale: true`).
+
+Worth deciding alongside B1 rather than after: it determines whether the
+canonical for the home page is `/` or `/en/`, which determines what the redirect
+stub at `/` must say, which the consumer already has two of.
 
 ---
 
-## Part B — vocabulary and consistency
+## Part C — the scope question, which is the actual round
 
-Renames and consistency fixes judged worth their churn. Nothing here
-touches an owner-killed rename.
+Parts A and B are individually defensible and collectively amount to something
+larger: **nokre shipping a static-site driver.** That is the killed item.
 
-| Now | Proposed | Why |
-| --- | --- | --- |
-| `secure_store.Fake` | `MockState` | eleven services spell the pair `Mock`+`MockState`; the twelfth says `Fake`. Zero consumer references to the type name (grep: both apps touch only `harness.store.*`); one internals doc updates. **Owner-confirmed 2026-08-05, after considering `Mock` instead: `secure_store.Mock` already exists at :291 — it is the injected service, and its `state` field is typed `?*Fake` exactly where the other eleven say `?*MockState`. So `Fake` *is* the state half and `Mock` is taken by the type that should hold it. Nesting the convention as `Mock` + `Mock.State` across all twelve was offered and declined: eleven-to-one consistency is its own argument, and the blast radius (52 internal references) buys nothing a consumer can see. Fix the outlier, leave the convention.** |
-| `element.Glyph` | `ChromeGlyph` | it is the chrome-behavior enum (`activateIcon` switches on it); `Button.Form.glyph` holds an `IconName`, and `IconButton.glyph` reads identically but holds the other type. Consumers never name it (grep: 0). Rider: tighten root `icon_button` in validateAppend to framework construction — today a consumer can smuggle a working `dismiss_all` control through a "chrome only" element. |
-| `http.request` inferred error set | named `RequestError` | the one service verb with an open set; every sibling closes and names its sets (`secure_store.GetError`, `iap.Error`, …). Wire failures already ride `Result.failure`; this closes the issue-time set so the roster reads uniformly. Member list needs a transport audit first. |
-| `iap.available(*App)` etc. | `*const App` on all read-only verbs | `share`/`notification` probes take const, `iap.available` and `secure_store.get/list` don't — same cached-bool read, so a const-holding helper can call one and not another. Trivial, mechanical. |
-| journal views `[]const []u8` | `[]const []const u8` | `shares()`, `copies()`, `opens()`, `received()`, `seen()` and four harness twins hand out mutable bytes into mock-owned memory. The honest borrow; mechanical. |
-| `Router.replace` | alias `App.replaceWith` — or a doc line saying why not | the one navigation verb without an App alias, zero uses anywhere; a consumer needing it rediscovers the condemned `app.router.X(app)` shape. Either resolution is fine; today it is silently neither. |
-| shell.h haptic "kind 0/kind 1" | `NOKRE_HAPTIC_ARMED/DISARMED` enum | the only unnamed wire values left in the header; the Zig side is wire-pinned and named, ios/shell.m compares raw `0`. |
-| `hsk_` ABI prefix | *log only* — candidate `nokre_skia_` | the one non-`nokre_` symbol family in every consumer link, exported by a file named nokre_skia. Mechanical but leaks into getting-started.md's literal linker transcript; owner weighs doc churn. |
-| `ImeEvent.update.cursor` | **DECIDED: store it and draw it** | plumbed through all five shells and live.js, then dropped by `handleIme` (editing.zig:124 reads only `u.composition`); the caret always draws at the *end* of the composition run (renderer.zig:1693). **Owner picked (a), 2026-08-05**: the caret moves within the pre-edit string during CJK composition, so pinning it to the end is wrong the moment a user moves back, and elements.md already claims IME is live on every platform. Costs a field on the editables, a draw change, and golden churn. |
-| journal `clear` roster | add the five or write the rule down | services.zig:109 names per-phase `clear` a convention; five services answer it, five don't (oauth, iap, notification, deep_link, locale). Consumer pressure today is 3 sites — the cheap fix is a sentence saying boot-scoped journals deliberately don't reset. |
+The honest case for reopening is not any single item. It is the pattern in the
+last round's own commits, every one of which moved something from the driver into
+the library, and every one of which was justified by the driver having gotten it
+wrong:
 
-Consumer-side vocabulary the apps invented that A-items would retire:
-`Signal` (→ `Action`/bind, A2), `Trouble`/`Notice` (→ field slot,
-A11), seven busy-flag names (→ `Gate`, A6), `rows.zig`'s misnomer
-(→ `Str` in nokre, A1). The site's `describe(payload)` improvement in
-org expect.zig:224 (absent from the user copy) is drift *proving* the
-duplication cost — it rides whichever pass touches the driver tier.
+- `4044e66` — `dom.driver_files` became the library's statement of the file set,
+  because *"this site once re-typed two of the four and shipped a service-worker
+  registration that 404ed on every page load."*
+- `dom.driver_sources` — the driver JS `@embedFile`d, so a generator stops
+  joining a checkout path to find bytes a stale copy could outlive.
+- `Refs.write` → `Refs.resolve` returning `Dest` — because *"closing `href="` by
+  hand to smuggle attributes in was the sharpest bypass any consumer had."*
+- `86e73e6` — `Router.ref` replaced ~20 hand-rolled reference formatters.
+- `92ef0ba` — `testing.shell` shipped because *a generator is a platform shell
+  and gets its shell from nokre.*
+- `9762b8b` — the vendoring pin became a library constant.
 
-## Part C — one-home consolidations (new evidence; not the killed dedups)
+Six moves in one round, all one direction. The previous handoff's own Part C
+carries two more that point the same way and remain open (Part E below): the site
+re-implementing `Router.current()`, and `build.zig:764` re-typing the pkg-web
+quartet that `addPkgTree` writes.
 
-1. **Focus vetting** — one home in `deliver(.focus)`, two partial
-   copies deleted (Part 0.7). The rare dedup that shortens the seams.
-2. **Site: `links.zig` re-implements `Router.current()`**
-   (links.zig:134-138 splits on `arg_separator` by hand;
-   router.zig:296 exports exactly the answer). Adopting it also
-   retires the `Resolver.page` side-band — one resolution mechanism
-   for both site drivers instead of one and a half.
-3. **Site build: the pkg-web quartet** — build.zig:764's
-   `inline for (.{ "index.html", "page.css", "boot.js",
-   "manifest.webmanifest" })` re-types what `addPkgTree` writes;
-   icons and drivers already dodged this via data. A
-   `packaging.web_page_files` const consumed by both, matching the
-   `driver_files` pattern — the manifest's whole purpose is deploy
-   verification, so the double truth is the one place it shouldn't
-   live.
-4. **Emitter anchors** — the site keeps `em.ids.items` past the
-   emitter with a two-step deep dupe to run its cross-page anchor
-   audit; `ids` is documented as suffix-dedup bookkeeping, appears in
-   no doc. For a documents-mode edition, "which anchors does this
-   page export" deserves a sanctioned answer:
-   `Emitter.takeAnchors(gpa)`, documented in dom-edition.md. (Short
-   of the killed static-site driver; this is one getter.)
-5. **Driver bytes, not just names** — `dom.driver_files` made the
-   set the library's statement; the site still hardcodes
-   `"src/render/dom"` to find them. `@embedFile` the four in dom.zig
-   (`driver_sources: name+bytes`) and the site writes bytes it never
-   locates.
-6. **Docs one-home gaps**: the heading-slug rule (GitHub's) lives
-   only in a serialize.zig comment while nokre's own docs use
-   fragment links — zero doc homes; `audit.Options.skip` (rev 13) is
-   documented nowhere; site README still says the driver set is two
-   files (README.md:57,121) and omits the two newest build-failure
-   modes; the "No color" refusal card omits introduction.md's Google-G
-   asterisk. Each is one short paragraph in its one home.
-7. **Site guards worth one test each** (site-side, no nokre ask):
-   CSS `var(--x)` coverage check at generation (the footer already
-   shipped unpadded once from exactly this — main.zig:569's own
-   comment); an icon-scan round-trip through a real Emitter (pins the
-   PUA-entity spelling the check silently depends on); derive the
-   `\e04d` arrow and the `external_attrs` pair instead of re-typing
-   them.
+**The counter-argument deserves equal weight**, and it is the one that killed
+this before: a GUI library that emits sitemaps and structured data has stopped
+being a GUI library. `docs/localization.md:400` already refuses a smaller thing
+on exactly this ground. The document a browser needs around a screen is a
+publishing concern, and publishing concerns have opinions — about origins,
+redirects, canonicalisation, indexing policy — that a framework should not hold.
 
-## Part D — performance
+**A middle position exists and may be the right one:** nokre owns the
+*derivations* (alternate sets, canonical construction, escaping, `lang`/`dir`
+from a locale it already knows) and refuses the *policy* (which routes exist,
+what the origin is, whether the default locale is prefixed, what goes in the
+sitemap). That splits Parts A and B roughly down the middle, ships the pieces
+that are wrong-by-hand, and keeps the framework out of the publishing business.
 
-The frame model stays cheap and the prior verdicts stand (linear
-route find, reclaim re-copy, 140-byte Element, at-rest zero CPU).
-Four real items, none touching design:
+The round's real deliverable is a decision on that line, written down.
 
-1. **Full-frame `readPixels` copy per frame** — `hsk_surface_pixels`
-   (nokre_skia.cpp:269-278) allocates a persistent buffer and copies
-   the whole surface every frame; the shell then blits again. A CPU
-   raster surface hands out its pixels directly (`peekPixels`) —
-   same bytes, satisfying shell.h's "valid until the next callback"
-   contract, with a rowBytes assert and the copy as fallback. At
-   1200×800@2× that is ~15 MB/frame of pure copy removed. Goldens
-   byte-identical by construction.
-2. **`services.js` measure cache is unbounded** (:351-368) — keyed
-   `font\0text`, cleared only on font-load; a long editing session
-   grows it monotonically (every wrap prefix, every keystroke's
-   value). It is a pure memo: `if (widths.size > 65536)
-   widths.clear();` is always correct.
-3. **The DOM edition ignores the dirty flag** — the one shell of six
-   that never consults `needs_frame`; live.js then UTF-8-decodes and
-   string-compares the whole document per event. A frame generation
-   counter exported beside `markup` (bumped at the single swap site,
-   live.zig:290-296) lets the glue skip decode-and-compare when
-   nothing moved, and `render` may early-return. Modest, honest win;
-   closes the six-shells-five-behaviors asymmetry.
-4. **`hsk_dither` builds a 2×2 bitmap + shader per scrim call**
-   (nokre_skia.cpp:396-414), up to three per frame, for what is
-   always `.paper`'s two bytes — a two-entry cache. Ride-along if
-   0.4/D1 opens the file.
+---
 
-Recorded so nobody re-litigates blind: wasm 232 KB ReleaseSmall;
-desktop 15–18 MB (static Skia + AccessKit + 2.9 MB faces — the link
-model's price); lucide.ttf is 843 KB of the site payload and
-per-app subsetting is refused (would break "every glyph placeable");
-`IconName` comptime verdict unchanged.
+## Part D — already yours; do not rebuild
 
-## Part E — evidence filed, not proposed
+Verified present. An item proposing any of these is a survey miss.
 
-- **Staleness/`Remote(T)`**: load.zig's "nothing further" stance
-  predates A8's receipts; A8 presents the evidence and three fixes
-  *short of* generation stamps. If the owner holds the line, A8(b)'s
-  doc-and-audit steer still applies.
-- **ApiClient arrays and `= undefined` wiring**: one-transport-per-
-  call stands (doctrine, PORTING/services docs); the 179 `= undefined`
-  decls and 35 `wire/unwire` pairs trace to App construction order
-  (ctx pointer needed before `App.init` returns). A late
-  `app.setBuildCtx` / two-phase init would delete the ritual
-  everywhere — logged as a design question, not queued: it reshapes
-  every consumer's boot.
-- **Number formatting**: org money.zig hand-maintains a per-locale
-  decimal-separator table under the comment "nokre formats no
-  numbers" — while nokre now ships `dateFromMillis`. The date half of
-  that refusal was walked back on evidence; the number half now has
-  the same shape of evidence. Policy decision, one owner argument.
-- **`.table()` asymmetry**: user app 4 uses, org (admin!) app 0 —
-  worth one conversation about whether tables are wrong-shaped or
-  undiscoverable for admin lists before any list-idiom work (A7).
-- **Notification mock journals only the outbound half** — a tap
-  delivered pre-registration leaves no trace, where deep_link
-  journals deliberately. No consumer uses notifications yet; add the
-  `delivered()` twin or a sentence saying the asymmetry is meant.
-- **Consumer placement debt (rokovski's, not nokre's)**: ~1.3k lines
-  byte-identical across the two apps with zero nokre imports
-  (rules_authz 207, scenario/audit 162, scenario/email 134, more) —
-  shared-package moves; plus `fixture.headerValue` vestige, the org
-  `open_url` swallow inconsistency (billing loses "portal didn't
-  open" while detail.zig handles it), and the dead `refreshConsent`
-  node-poke. One rokovski errand pass.
+- **The static+hydrate pair is real, documented, and shipping.**
+  `nokreWebRefs` exists precisely for pages pre-published as files
+  (`live.zig:50-54`, wired `:226`); the site declares all three decls
+  (`web.zig:66,73,94`). The hydration contract is explicit —
+  `dom-edition.md:580-592`: match is tag + `data-n`, *"the ids are a hydration
+  contract, not decoration"*, and it carries scroll, focus and caret through the
+  handover. `dom-edition.md:78` calls a static page *"the useful degenerate case
+  of the pair."* The consumer's two interactive surfaces need exactly this; no
+  new mechanism is required for them.
+- **One route→href mapping spent by both drivers** — `links.zig` (417 LOC),
+  `Resolver` (`:71`) for the generator, `Live` (`:118`) for wasm. This is the
+  pattern the second driver should copy, not a gap.
+- **Build-time gates**: a11y audit per screen (`main.zig:141-152`, now with
+  `audit.collect` `Options{skip}`), broken-reference check including `#anchor`
+  targets (`:184-216`, anchors via `em.takeAnchors` at `:179`), icon-subset/tofu
+  (`:244-253`), stale-output (`failOnStale` `:348-380`). These are stronger than
+  the Astro site's equivalents and are a reason to migrate, not a gap to fill.
+- **Colour is refused, permanently.** Thirteen grays (`core/color.zig:23-36`),
+  `docs/elements.md:792`. The consumer has been told; it is a brand decision on
+  their side, not a request on yours.
+- **No image element.** Settled. A4 is a `<meta>` URL and nothing more.
+- **Locale-aware route titles, App-owned locale, `L.of`/`L.in`/`Bound`.** See
+  Part B's opening.
 
-## Part F — migration order
+---
 
-Ordered so nothing lands twice and no compatibility layer exists at
-any point. One item per pass, owner review between; contract-visible
-passes bump `revision` and move all three pins.
+## Part E — carried forward from the ergonomics round, still open
 
-0. **Already applied this pass (uncommitted)**: 0.1 site identity
-   line (rebuild deferred to publish order), 0.2 caret clamp + test,
-   0.3 emit_css comment. Gates green.
-1. ~~**0.4 DOM chrome a11y from the catalog**~~ — DONE, revision 16
-   (nokre `d7073e3`, rokovski `599b9b2f`, site `6f76a07`). All four
-   arms read the element's own field; no new `Chrome` field and no new
-   catalog key — the colon stays markup punctuation. Tests re-pinned
-   against `app.chrome.*` plus a Turkish pass over all four arms. The
-   predicted published-page churn did not happen: this site runs the
-   default chrome, so every one of those strings is byte-identical and
-   only `data-n` moved.
-2. ~~**0.5 routeless-notice gate**~~ — DONE, revision 17 (nokre
-   `65e4ac6`, rokovski `ea7a2c69`, site `cfa2eac`). Owner picked the
-   empty string as the one spelling: `Span.route` is `[]const u8 = ""`
-   and `Notice.route` gained the default, so `error.EmptySpanRoute` is
-   gone — an empty span route *is* how a run says it is prose. No
-   golden regeneration was needed anywhere: every existing notice
-   golden in all three trees passes a route, so one new golden
-   (`notice-banner-routeless`) was minted to give the change a picture.
-   Two invariants made literally true on the way: `dupeSpans` no longer
-   retains a zero-length consumer pointer, and `tree.zig`'s header
-   names the `App.Chrome` strings it borrows by contract instead of
-   claiming it never borrows.
-3. ~~**0.6 + 0.7 admission sweep**~~ — DONE, revision 18 (nokre
-   `aebe154`, rokovski `da58593d`, site `fffd8ed`). Owner picked 0.6's
-   stronger form, so there is no family *refusal*: `Style.family` is a
-   two-member `BodyFamily` widened at one seam in `Style.face()`, and
-   the misuse is a compile error. The wasm clamp is pinned in the node
-   harness (the one gate those exports run in); the focus vet lives in
-   `deliver(.focus)` and both seams shrank, with assistive-tech focus
-   now routed through core instead of writing `focused` directly.
-4. ~~**A1 containers**~~ — DONE, revisions 19 and 20 (nokre `9ec8836`
-   + `120bed8`, rokovski `e1e8c160`, site `eb5c51e` + `64921a7`).
-   −583 consumer lines. The counts were low: 3 named `Str` copies plus
-   **22** inline `x_len`/`x_buf` pairs of the same shape, and **46**
-   row lists rather than 25 — the handoff counted only the ones with an
-   `items()` method. `phase` stayed app-side per the owner steer, which
-   costs a second field at each of the 11 lists that embedded it
-   (`<field>_phase`). Three parallel-array sites were zipped into row
-   structs; `billing`'s `query_ids` deliberately was not (scratch
-   derived from the rows, and folding it in would store a pointer into
-   a row's own `Str` for `fill`/`removeAt` to invalidate).
+Not re-surveyed. Full receipts at `git show 3855adf:HANDOFF.md`.
 
-   Revision 20 exists because the migration found a defect in the
-   container shipped in 19: `Str.set`/`Rows.fill` used `@memcpy` and so
-   panicked on a self-aliasing source, which is the natural way to trim
-   a field in place — and is what both apps were already doing, using
-   `copyForwards` for exactly that reason. The container had quietly
-   taken away a safety its hand-rolled predecessor had.
+- **A8 — the stale-reply surface.** *Owner decision still pending.* A three-way
+  posture menu: (a) a route-scoped `navigate` twin for callback use; (b) make
+  `.route` the default-visible field in `refresh`'s doc example plus a
+  harness-detectable audit note; (c) `bindKey` so position-vs-identity is a
+  vocabulary choice. Receipts: 0 route-scoped `refresh` adoptions in 70 org
+  calls, callbacks binding controller-not-request, `bindAt` carrying position
+  where a sibling screen keys by code, `http.Handle.cancel` discarded at every
+  call site.
+- **Part B — the rename table.** `secure_store.Fake` → `MockState`
+  (owner-confirmed), `element.Glyph` → `ChromeGlyph`, `http.request`'s inferred
+  error set → named, `*const App` on read-only service verbs, journal views'
+  mutable-bytes borrow, `Router.replace` alias-or-doc-line, shell.h haptic enum,
+  `hsk_` prefix (log only).
+- **Part C — consolidations. Two are directly relevant to this round:**
+  item 2, the site's `links.zig:134-138` re-implementing `router.zig:296`
+  `Router.current()`; and item 3, `build.zig:764`'s pkg-web quartet re-typing
+  what `addPkgTree` writes, wanting a `packaging.web_page_files` const in the
+  `driver_files` pattern. Both are the same driver-re-derives-the-library shape
+  Part C above argues from. Items 4–7 (Emitter anchors — since shipped as
+  `takeAnchors`; driver bytes — since shipped as `driver_sources`; docs one-home
+  gaps; site-side guards) should be re-checked against current HEAD before
+  being carried again.
+- **Part D — performance.** Full-frame `readPixels` copy per frame
+  (~15 MB/frame at 1200×800@2×), unbounded `services.js` measure cache, plus two
+  more.
+- **Part E — evidence filed, not proposed.** `Remote(T)`/staleness, ApiClient
+  `= undefined` wiring and two-phase init, number formatting. *"Part E items move
+  only on their own owner-level arguments."*
 
-   **Left open, and each needs its own decision:**
-   - `truncated` is wired to no user-facing surface. Neither app owns a
-     string that could say it, and inventing English inline breaks the
-     ARB rule, so ~30 sites are listed in the migration commit for a
-     copy pass. Two of them are **not display truncation**: a member's
-     fifth permission (`channels.zig`, cap 4) silently loses the
-     control it grants, and a dropped `tags.Library` entry (cap 128)
-     makes a real tag fail `knows()` and vanish from every channel
-     carrying it. Those two are defects, not ceilings.
-   - Two caps are unexploded: `family_cap = 4` holds every shipped
-     three-letter family, but `compile-tags.go` accepts any non-empty
-     family and the testdata already carries `industry` — the fix
-     belongs in that Go package's validation. `id_cap = 8` is exact for
-     `cat-0001`, so a five-digit id would truncate into a **collision**
-     with an existing tag rather than merely losing bytes.
-   - `adapters/api_client.zig:371` `keep()` is the same silent-`@min`
-     class in the transport, untouched.
-5. ~~**A2.1 `bindAs` export**~~ and ~~**A2.2 typed route table**~~ —
-   DONE, revision 21 (nokre `c858cb6`, rokovski `93eb6f15`, site
-   `1653c39`). Owner scoped both pieces into one pass. The survey said
-   30 port callbacks; there are **202**, and all 202 spell the pair the
-   same way — which is the argument for hardcoding the field names
-   rather than parameterizing them. `bind`/`bindAt` now route through
-   `bindAs`, so there is one generator and four hand-written
-   trampolines left `element.zig`.
+---
 
-   A2.2 turned out additive and `RouteDef` never moved: `def.build` has
-   exactly one call site (`router.zig:596`) passing a single app-wide
-   `app.ctx`, and all 91 builders across the three trees cast to their
-   tree's one state type — the erasure was never carrying polymorphism.
-   `Routes(State).Def` is *reified* from `RouteDef`'s own fields rather
-   than mirroring them, so a field added later arrives carrying its
-   default instead of being silently dropped. `app.ctx` stays erased:
-   typing it means `App` generic over consumer state, and `*App` is in
-   the signature of every element call, every service, all six shells
-   and the harness.
+## Part F — questions only the owner can answer
 
-   **Decided, not deferred**: `dom.Refs` keeps its `{ctx, resolve}`
-   spelling and the site keeps its two casts — renaming a contract
-   field to fit a helper, or widening the public surface with
-   `bindField` for two call sites in one tree, are both worse. The
-   reasoning is recorded in `bind.zig`'s module doc so it is not
-   re-opened.
+1. **Does the original static-site-driver kill still stand?** If yes, Parts A
+   and B collapse to "write the rule down and close them." Recover the rationale
+   from history before anything else.
+2. **Where is the line** — full driver, derivations-only (Part C's middle
+   position), or nothing?
+3. **Is `lang`/`dir` on a generated document the same refusal as `data-direction`
+   on an embedded app,** or a different question that the embedded-app refusal
+   was never about?
+4. **Default-locale path scheme** — `/en/…` or bare? It cascades into canonical,
+   redirects and the sitemap.
+5. **Does the framework-vs-app boundary get a doc this round?** The consumer-side
+   brief that triggered this round asserted the opposite of the code and was
+   believed, because three instances and an analogy are not a rule.
 
-   **Left open**: `setHandler(app, ctx, fn)` on five services and
-   `workers.Asker.ask(msg, ctx, fn)` take the context and the function
-   as two positional arguments, so no pair exists for `bindAs` to fill.
-   That is now the largest remaining `?*anyopaque` surface in nokre's
-   own API — 9 sites on the published services page, 4 in the tutorial,
-   and 6 live casts in the two apps. It wants its own item. Separately,
-   `Action`, `Role` and `Span` are reached as `h.element.X` because
-   nokre's root re-export roster omits them; the Part B sweep should
-   judge that roster as a set rather than promoting one name.
-6. ~~**A3 sheet completion**~~ — DONE, revision 22 (nokre `3a5a6c6`,
-   rokovski `09fb750a`, site `63f6b18`). Owner decision encoded:
-   **Cancel stays enabled while busy** — a disabled Cancel prevented
-   nothing, since the × stays live and Esc and the scrim still dismiss,
-   so it was a control that lied about what the sheet permits. 21
-   confirm sheets converted (not 17); 10 stay hand-written because
-   `confirmSheet` requires both a primary and a secondary and a receipt
-   or an explainer has only one — converting them would invent a
-   control. `closeSheet` needed no new binding: the App is the only
-   state the verb takes.
+---
 
-   Three consumer defects fixed in the same pass: a gift code created
-   and charged but shown only if a sheet happened to still be up (now
-   in the notices ring, code in the title because notices dedup by
-   title; regression test pins it), five org failure paths invisible
-   after a gesture dismissal, and two `in_progress` flags that could
-   never draw because the handler dismissed before raising them.
-
-   **The migration disproved part of its own brief**, which is the
-   valuable part: the org failure notices *were* rendered by the screen
-   behind. The real mechanism is nokre's — see 6b.
-6b. ~~**The three framework dismissals do not rebuild**~~ — DONE,
-   revision 23 (nokre `f20e961`, site `c5b7a4c`). Found by A3's
-   migration. `App.refresh` declines to rebuild behind a live sheet on
-   the stated assumption that "whatever closes the sheet rebuilds"
-   (app.zig:438-444), but only `closeSheet` does: the scrim
-   (input.zig:264), the pinned × (:387) and Esc (:592) all call
-   `dismissSheet`, which does not reload. State written while a sheet
-   was up therefore surfaces at a later unrelated reload, detached from
-   the action that caused it. An invariant stated in nokre's own
-   comment and not enforced anywhere. The three doors now close rather
-   than dismiss, and the invariant moved to `closeSheet`, where it is
-   enforced. `dismissSheet` stays public and unchanged — it is the
-   honest verb for "take the sheet down, I am about to build the screen
-   myself", which is how eight consumer sites use it.
-
-   Consumer follow-through (rokovski `a17edcf5`): with the screen
-   rebuilding, all seven org failure arms moved back off the notices
-   ring — a refusal leaves no residue to carry away, so the surface it
-   was refused on is the one that reports it, while the gift code stays
-   on the ring because something did happen. `danger.zig` lost its
-   notify outright: the two states thought to need it cannot reach it.
-   Pre-existing defect found there and left for a decision — `Invites`
-   serves two routes and resets its notice only on organization change,
-   so a failure leaks across navigation and the org section reports it
-   out of context. That is about notice *lifetime*, not channel.
-
-   **A fourth door of the same class, reported and left**:
-   `overflow.closeTailSheet` (overflow.zig:283) dismisses without
-   rebuilding, so pressing a folded action in the More sheet writes
-   state the screen never shows. Its fix is structurally different —
-   `closePicker` avoids the bug by removing the layer *before* invoking
-   `on_select`, while `activate` must read the element out of the sheet
-   it is about to remove — and routing it through `closeSheet` would
-   make a folded button behave differently from the same button
-   standing. It wants its own item.
-
-   **Also noted, not guarded**: a route builder that unconditionally
-   calls `presentSheet` now has an unescapable sheet — Esc closes it,
-   the rebuild runs the builder, the builder puts it back. Not new
-   (`closeSheet` on a Cancel already had this property, and the
-   framework already says a bare `presentSheet` dies on reload), so no
-   refusal was added. Owner's call whether it wants one.
-
-7. ~~**A4 harness expect verbs**~~ — nokre DONE, revision 24 (nokre
-   `28ba1fc`, site `0b753bb`); consumer test migration in the same
-   pass. `takeRequest` became `httpRequest` and *peeks*: none of the
-   104 read sites wants removal and 45 answer the request two lines
-   later, so taking it out unanswered would strand the app's one-shot
-   slot with its busy flag up — the bug the harness exists to catch.
-   `body_contains` is a list with an `excludes` twin, and headers are
-   three fields, because twelve sites assert an `Authorization` is
-   absent and six assert a PoW nonce rode along without asserting its
-   random value.
-
-   The value riders needed **no new verb**: `expectValue` already read
-   `tile.detail`, `copyable.value` and `qr.value`, and nobody found it
-   because its own doc and testing.md both said it only read text
-   inputs and segmented controls. Ten raw tree reads existed to work
-   around a wrong sentence. Two failure headings that printed
-   themselves over silence when nothing was parked now say so.
-8. ~~**A5 driver tier**~~ — DONE, revisions 25–26 (nokre `1fa47ca` +
-   `9bea42a`, rokovski `825a7ead`, site `6f2031b` + `1ebf6bc`). The
-   structural blocker dissolved on inspection: `Harness` is welded to
-   mocks, but the *ladders* never were — `press`/`typeInto`/`goTab`
-   only ever used `driver.tap`/`focusVia`/`pressKey` and the queries,
-   all mock-free already. They were in the wrong file, not the wrong
-   shape. So they moved down into `driver.zig` and both tiers call
-   them: one ladder, two synchronizations, because waiting is the only
-   real difference. Seven `until*` verbs, not three — three more were
-   hand-written in both apps too. The predicate became a `{ctx, call}`
-   pair so `bindAs` fills it, and nokre builds its own seven that way
-   rather than only documenting the mechanism.
-
-   Both Devices: 563/581 → 296/293 lines (~180 of real code each).
-   `fill` lost to `typeInto` and hid a second difference — it cleared
-   while `typeInto` appends — so the clearing became `clearField`.
-   `expect` lost to `untilLabel`, which admits those 94 sites were
-   always waits, not assertions.
-
-   **Revision 26 fixed what 25 shipped.** The migration caught `goTab`
-   walking the nav after a bare pump while every sibling waited; the
-   audit found six more in two classes — three that located too weakly
-   (waited for *a label*, acted on a *control family*, so prose with
-   the same words ended the wait) and three that waited for the control
-   instead of the condition (a button exists for the whole time the
-   reply arming it is in flight). Worth recording: one of the six was
-   visible in a stage-1 test that had been reordered so the fake clock
-   would advance — which is exactly what a verb that does not wait
-   looks like.
-
-   Found in both apps and fixed by deletion: `press` caught
-   `error.InProgress` and fell back to focus-and-Enter, but Enter on a
-   busy control is refused — so the fallback pressed nothing and the
-   scenario passed anyway.
-9. ~~**A6 Gate + A7 empty branch**~~ — DONE, revision 27 (nokre
-   `8efaba4`, rokovski `2b40331d`, site `edbe752`). The survey said 22
-   flags under one name plus 10 under seven; it is **42 latches under
-   27 distinct names**, with 48 raises against 90 lowerings — nearly
-   two exits per entry, which is the wedged-screen shape itself.
-
-   Two things the call sites settled. **No defer-friendly form**: one
-   raise in fifty-two has its lowering in the same function, because
-   the work is dispatched rather than performed, so `defer` composes
-   with the wrong lifetime — the eight-return-path receipt is eight
-   *callback arms*, not eight scope exits. And **`begin` goes last in
-   a compound guard**, or the `or` short-circuits past the other
-   condition and leaves the gate up forever; doc'd and test-pinned,
-   and the migration found two more sites where a precondition had to
-   move above the gate entirely.
-
-   A7 shipped as a sibling `emptyGate`, not a `LoadGate.empty` field,
-   decided by measuring the distance from each gate to its empty
-   check: of 27 sites only 17 are adjacent, six are detached by a
-   heading and a whole tile group, and four have no gate at all. It
-   takes the phase again on purpose — the empty line stands past the
-   gate that admitted it. The blessed line is plain `text`; the apps
-   split 14 plain against 13 small-and-dark, so it was argued rather
-   than discovered, and 10 user sites changed visually.
-
-   `Harness.expectBusy` reads across buttons, toggles and checkboxes
-   through the driver's one progress switch. No `Device` twin: the
-   harness owns the clock so busy is a state a unit test *holds*, while
-   against a live server it is a transient — the flake A5's audit just
-   ended. Cheap to overrule if wanted (`wait.untilBusy` + a mirror).
-
-   **Left as evidence for the section-idiom decision**: `emptyGate`
-   returns one bool folding "not ready" into "ready and empty", so the
-   four sites that append a hint or a control *only* in the empty case
-   cannot use it. A three-state answer would serve them — but each
-   composes something different afterwards, so it saves the phase check
-   and not the composition. That belongs with the owner's call on the
-   full section idiom below, not ahead of it.
-
-   Also left: `Gate` has `end` but no bare `raise`, so the two paths
-   that legitimately re-raise a gate they know is down discard
-   `begin`'s answer (`user/manage.zig` — a 428 replay, and a
-   raise-then-delegate). Two sites is not obviously a verb.
-10. ~~**A9 L completion**~~ — DONE, revision 28 (nokre `408d77b`,
-    rokovski `22f4cc8e`, site `8a21bc3`). Counts again off: 16 unwraps
-    not 24 (and **zero** for `L.dir` — both apps take a local locale
-    for `setDirection`, so `Bound.dir()` ships unused), 30 `tr` shims
-    not 13, and 116 `fmtIn` tree re-passes the survey never quantified.
-
-    **`L.in(app)` won; the mixin lost on doctrine, not arithmetic.**
-    `L.mixinTr` must read `self.app`, which makes nokre assert a
-    *field name* in a consumer's struct — while `of` asserts only a
-    method contract, which is why l10n binds no App and why nokre's
-    own test can stand a two-field fake where an App goes. The 30
-    shims stay for the same reason they exist: `x.tr(.key)` has 1440
-    callers, so the shim is a real abbreviation and what is copied
-    thirty times is a declaration, not a mistake.
-
-    Six consumer helpers shed a `tree` parameter that went dead once
-    the tree stopped being re-passed. `Bound.fmtIn` now has zero
-    consumer callers but was kept — it still answers a locale source
-    with no tree of its own, which nokre's own test uses; retiring it
-    is a separate argument.
-11. ~~**A8 posture pass** and **A10 patch verbs**~~ — DONE, revision 29
-    (nokre `9327d27`, rokovski `9fdae713`, site `8f3e0d1`).
-
-    **Owner took only `bindKey` from A8's menu**; the route-scoped
-    `navigate` twin and the refresh doc/audit steer were declined. Also
-    corrected: the survey's headline "0 route-scoped `refresh`
-    adoptions" is org-only — the user app uses it **66 of 204 times**,
-    so the verb is discoverable and one app simply never learned the
-    habit. **Owner picked per-leaf `...Id` twins** over a generic
-    `Cursor.appendId`.
-
-    A key is copied by the tree at append, and that is load-bearing:
-    the natural key is a field of the row, so a borrowed one would
-    still point into that row's buffer after a refill and the pressed
-    row's key would become its successor's. Copied verbatim, not
-    validated — U+FFFD substitution maps two identities onto one, which
-    is a collision. A missing key is a decline; a stale in-range index
-    is a live wrong row.
-
-    **The wrong-admin bug is latent, not live**, and the trace is the
-    point: on that route a listing cannot be in flight while the
-    buttons show, the handler clears rows before refreshing, and
-    `refresh` never declines there because the screen has no editable,
-    no picker and no notice — three accidents of one screen, not rules.
-    One text field or the org app's first `notify` away from live. The
-    same class **was** live in shape elsewhere: `publications.zig`
-    converted an id to a position and returned **0** on a miss —
-    somebody else's first row — then converted it back to an id.
-
-    Left open: six sites still hand-roll `in_progress` as a boolean
-    that must also turn *off*, which `patchProgress(id, pct)` cannot
-    express. A `patchBusy` would be a third verb; not taken.
-12. **A11 field-error slot** — DONE, revision 30 (and the A12 / Part B
-    / Part C sweep closing the round, revision 31: nokre `e1e9f43`,
-    rokovski `f6acc32d`, site `8db26a7`) (nokre `976fb62`,
-    rokovski `3aba0643`, site `74a87ef`). Shipped as
-    `TextInput.problem` / `TextArea.problem`; `trouble` lost because it
-    names a mood the user is in rather than the thing wrong with the
-    value, and every other slot in the set is a plain noun for what it
-    holds. `invalid` is **derived** from `problem.len`, never stored,
-    so the flag and the reason cannot disagree. A refused field is
-    neither disabled nor busy — it takes every keystroke, or the user
-    is stranded in the value just refused.
-
-    In the DOM the message is a `<p>` **outside** the `<label>`: an
-    implicit label's subtree text is the input's accessible name, so
-    words left inside are announced as part of it. One audit rule —
-    a problem present but wordless, which marks the field refused to
-    every AT and then says nothing.
-
-    Counts again off, and the correction matters: **17** failure enums,
-    not 11+5, and only **8** ever had this defect — the other nine
-    already feed `confirmSheet.error_copy` or `loadGate.failed` and
-    were never this item's business.
-
-    **The handoff's own receipt was misfiled.** `create.zig:119` is
-    not an A11 receipt; read in place it is the `TextInput.disabled`
-    receipt, and the comment two lines above says so. That is now a
-    hard, countable one: **ten** refusals could not move onto their
-    field because by the time they arrive the address input is gone,
-    having given way to settled text and an Edit button — because
-    nokre has no disabled field.
-
-    **The sweep** took A12's six, Part B's ten and Part C's seven, plus
-    the root re-export roster judged as a set (`Role`, `Action`, `Span`
-    promoted — all three are names a consumer *declares with*, the rule
-    every existing member already satisfied). Three owner decisions
-    landed as decided: `secure_store`'s `MockState`, the IME caret
-    stored and drawn, `nokre.addGoldenTests`.
-
-    Two findings bigger than their items. **`http.request`'s inferred
-    error set differed per target** — only the native transport could
-    return a spawn error — so an exhaustive switch over it compiled on
-    one platform and broke on another; it is `RequestError` now, closed
-    at each transport. And **`element.Glyph`'s rider was not just a
-    rename**: `validateAppend` gated chrome glyphs by *place*, so a
-    consumer could smuggle a working `dismiss_all` through anywhere the
-    place allowed. Per glyph now, with the test that never existed.
-
-    **One coordinator decision the code overturned, correctly.** I
-    asked for the journal `clear` roster to be settled with a sentence
-    saying boot-scoped journals deliberately do not reset. False for
-    three of the five: oauth, iap and notification journal *outbound
-    app calls* — the same thing the six services with `clearJournal`
-    record — and accumulate per action, not per boot. They got the
-    method; only `deep_link` and `locale`, which journal what a test
-    itself injected, keep the argument. The rule is written down and
-    now true.
-
-    Receipts that were stale, checked rather than assumed: Part C.7's
-    `external_attrs` half was already one home (skipped); `routeRef`
-    sites were 19 not 17, with three `[96]u8` literals the survey never
-    saw and one file contradicting itself; single-flight copies were 12
-    not 17; six services answered `clearJournal`, not five.
-
-13. ~~**`TextInput.disabled`**~~ — DONE, revision 32 (nokre `1769de2`,
-    rokovski `5e445074`, site `b93a2d4`). Owner-requested 2026-08-05.
-    **19** screens and **39** field builders, not the 18 the grep
-    guessed: `settings_sheets` (an address still editable while the
-    deletion it unlocked runs) and a fourth org create screen were
-    missed. **11** candidate pairings were false — all the same
-    already-obeyed rule — and four comments in the apps that called
-    that rule a workaround for a missing field were corrected.
-
-    The value keeps full `ink` while the label, outline and placeholder
-    take the disabled button's two steps. A button's words *are* the
-    offer, so dimming them dims the offer; a field's value is the
-    user's own text and this state exists precisely while that text is
-    on the wire, so dimming the one thing worth checking would make the
-    pattern hardest to read when it matters most.
-
-    Two things found by building it. `focusedEditable` returning null
-    is the single funnel for typed bytes, the IME protocol *and*
-    `wants_text_input`, so refusal there also stops a disabled field
-    asking for an on-screen keyboard — which a per-road check would
-    have missed. And **a dangling pre-edit was real**: `composition` is
-    the one piece of field state an app does not own, so a field
-    disabled mid-IME kept an abandoned reading forever, drawn beside a
-    value nobody could correct; `append` now clears both halves at the
-    door.
-
-    `unfixable_problem` (disabled + problem) shipped: the pair has no
-    honest producer, so what reaches it is a controller that set the
-    reason and forgot to lower the flag — invisible to the app, loud to
-    every screen reader. Widening `expectDisabled` past buttons also
-    surfaced an ambiguity the narrow lookup hid — on nearly every
-    create screen the heading and the submit share their words, so a
-    plain label lookup answered with the `h1`.
-
-    Left flagged, not fixed: org `organizations_sheets.zig:13`'s join
-    code sheet carries `.error_copy` but no `.busy`, so its submit has
-    no in-flight representation at all, where its sibling in
-    `settings_sheets.zig` does. A behavioural change outside this item.
-
-13a. **Why it is `disabled` and not `readonly`** — the reasoning behind
-    item 13, kept because the same evidence will otherwise be
-    re-derived into the same mistake. It was never an item in this
-    file: it appears only as prose in A11 as "the flagged candidate",
-    carried over from an earlier round with no design attached.
-
-    **The owner set the presentation rule that decides its shape, and
-    it corrects how A11's evidence was read.** A value that is not
-    editable *and never becomes editable in that layout* must be drawn
-    as ordinary text with an Edit button opening a real editing flow —
-    that is the right pattern, not a workaround for a missing field.
-    So A11's ten unmovable refusals are **not** receipts for a new
-    element field at all; they are receipts for that rule, already
-    obeyed, and their copy belongs on the form where it is. An earlier
-    draft of this entry proposed `readonly` to "close" them, which was
-    wrong twice over: it solved a problem that is already solved, and
-    shipping it would have invited apps to replace the correct
-    text-plus-Edit pattern with a permanently readonly input.
-
-    What has no way to be expressed is the **other** case: a control
-    that toggles between editable and not *within one layout*, driven
-    by state. The receipt is direct — `user/screens/otp.zig:37-46`
-    puts a `textInput` for the code beside a button carrying
-    `.in_progress = alias_phase == .verifying`, so while the code is
-    in flight the button says busy and the field stays fully editable
-    and the user can keep typing into a value already on the wire.
-    Candidate sites: 18 screens where a text field shares a layout
-    with an in-flight control (both `create` flows, both `sign_in`s,
-    `otp`, `join`, `connect_email`, `emergency_redeem`,
-    `redeem_org_invite`, the three org create screens, `transfer`,
-    `channel_tags`, `manage_sheets`). Each needs per-site confirmation
-    that the two are genuinely simultaneous — the list is grep-derived
-    and this handoff's grep-derived counts have been wrong every time.
-
-    Shape: `disabled`, symmetric with `Button.disabled` — out of the
-    focus order, inert, announced disabled. It does **not** need to
-    carry `problem`, and the two never collide in practice: a form
-    disables on submit, the server refuses, and the field is re-enabled
-    *and* given its problem in the same frame. A disabled control
-    carrying an error message would be a contradiction, and an audit
-    rule refusing that pairing is worth considering.
-
-    Element-set argument on the set's own terms, same lane as A11, and
-    it owes the full `contributing.md` checklist: element, layout, DOM
-    markup, a11y across AccessKit/Android/iOS, validate/audit, input
-    (keystrokes and focus both refused), tests, golden, docs.
-
-Part E items move only on their own owner-level arguments.
+*Written from the consuming side. Everything above is checkable; check it.*
