@@ -500,6 +500,71 @@ test "the bound calls are the unbound calls to the byte" {
         try L.fmt(&buf1, .fa, .greeting, .{ .name = "دریوش" }),
         try b.fmtIn(&tree, .greeting, .{ .name = "دریوش" }),
     );
+
+    // The locale-shaped answers too: the point of binding them is that
+    // `L.tag(L.of(app).locale)` stops being the way to reach a value the
+    // bound view already holds.
+    try std.testing.expectEqualStrings(L.tag(.fa), b.tag());
+    try std.testing.expectEqual(L.dir(.fa), b.dir());
+    try std.testing.expectEqual(l10n.Direction.rtl, b.dir());
+
+    // …and `.locale` is still there, because comparing is not unwrapping.
+    try std.testing.expectEqual(L.Locale.fa, b.locale);
+}
+
+test "the bound chrome is the unbound chrome" {
+    // A separate bundle because `chrome` needs the reserved keys.
+    const FakeApp = struct {
+        tag: []const u8,
+        pub fn locale(self: *const @This()) []const u8 {
+            return self.tag;
+        }
+    };
+    const element = @import("../core/element.zig");
+    var app: FakeApp = .{ .tag = "tr" };
+    const bound = C.of(&app).chrome();
+    const direct = C.chrome(.tr);
+    inline for (@typeInfo(element.Chrome).@"struct".fields) |f| {
+        try std.testing.expectEqualStrings(@field(direct, f.name), @field(bound, f.name));
+    }
+}
+
+test "in binds the arena as well as the locale" {
+    const Tree = @import("../core/tree.zig").Tree;
+    // `in` wants what `of` does not: a tree of its own. The App has one;
+    // so does this stand-in, which is the whole difference between the
+    // two binders.
+    const FakeApp = struct {
+        tag: []const u8,
+        tree: Tree,
+        pub fn locale(self: *const @This()) []const u8 {
+            return self.tag;
+        }
+    };
+    var app: FakeApp = .{ .tag = "fa-IR", .tree = try Tree.init(std.testing.allocator) };
+    defer app.tree.deinit();
+
+    const bound = L.in(&app);
+    try std.testing.expectEqual(L.Locale.fa, bound.locale);
+    try std.testing.expectEqual(&app.tree, bound.tree);
+
+    // The same bytes as the form that named the tree, and in the same
+    // place: a slice of the tree's own string arena, not the caller's.
+    var buf: [64]u8 = undefined;
+    const written = try bound.fmt(.greeting, .{ .name = "دریوش" });
+    try std.testing.expectEqualStrings(
+        try L.fmt(&buf, .fa, .greeting, .{ .name = "دریوش" }),
+        written,
+    );
+    try std.testing.expectEqualStrings(
+        try L.fmtIn(&app.tree, .fa, .greeting, .{ .name = "دریوش" }),
+        written,
+    );
+    // Plural selection travels with the locale, not with the arena.
+    try std.testing.expectEqualStrings(
+        try L.fmt(&buf, .fa, .nItems, .{ .count = 3 }),
+        try bound.fmt(.nItems, .{ .count = 3 }),
+    );
 }
 
 // --- trAny ------------------------------------------------------------------

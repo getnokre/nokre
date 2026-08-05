@@ -13,6 +13,8 @@
 //!     try L.fmt(&buf, loc, .nItems, .{ .count = 3 })
 //!     L.resolve("fa-IR")                           // → .fa (or the default)
 //!     L.of(app).tr(.refresh)                       // locale resolved once
+//!     L.of(app).tag() / .dir() / .chrome()         // the same, unwrapped
+//!     try L.in(app).fmt(.greeting, .{ .name = u }) // into the tree arena
 //!     app.setChrome(L.chrome(loc))                 // reserved chrome keys
 //!
 //! What Flutter checks at generation time — and much it never checks —
@@ -420,6 +422,24 @@ pub fn Bundle(comptime arb_sources: []const []const u8) type {
             pub inline fn fmtIn(self: Bound, tree: *tree_mod.Tree, comptime key: Key, args: anytype) error{OutOfMemory}![]const u8 {
                 return Self.fmtIn(tree, self.locale, key, args);
             }
+
+            /// The rest of the bundle's locale-shaped answers, bound the
+            /// same way — so a controller that already resolved once
+            /// never spells `L.tag(L.of(app).locale)` to get back to the
+            /// value it started from. `.locale` stays public for the
+            /// comparison sites (`b.locale != chosen`) and for helpers
+            /// that take a `Locale` of their own.
+            pub inline fn tag(self: Bound) []const u8 {
+                return Self.tag(self.locale);
+            }
+
+            pub inline fn dir(self: Bound) Direction {
+                return Self.dir(self.locale);
+            }
+
+            pub inline fn chrome(self: Bound) element_mod.Chrome {
+                return Self.chrome(self.locale);
+            }
         };
 
         /// `L.of(app).tr(.key)` — the app's chosen locale
@@ -429,6 +449,38 @@ pub fn Bundle(comptime arb_sources: []const []const u8) type {
         /// with a tag — the App, a test harness — can stand here.
         pub fn of(app: anytype) Bound {
             return .{ .locale = resolve(app.locale()) };
+        }
+
+        /// `of`'s twin for the formatting that allocates: the locale
+        /// *and* the arena the bytes land in, both taken from the app
+        /// that held both all along. `L.in(app).fmt(.key, args)` is
+        /// `fmtIn` with nothing re-passed — the tree at a build site is
+        /// always `&app.tree` (a `Cursor`'s `tree` is that pointer), so
+        /// naming it beside the app was a chance to name the wrong one.
+        ///
+        /// A second binder rather than a wider `of`, because the two ask
+        /// for different things: `of` needs only `locale()`, which is
+        /// why a bare stand-in can stand where an App does, while this
+        /// needs a real tree. Nothing that only knows its locale loses a
+        /// call it had.
+        ///
+        /// `fmt` here means the arena — there is no buffer to name — and
+        /// the lifetime is `fmtIn`'s unchanged: valid until the tree's
+        /// next `reclaim`. Bytes that must outlive the tree still go
+        /// through `L.of(app).fmt(&buf, ...)`.
+        pub const BoundIn = struct {
+            locale: Locale,
+            tree: *tree_mod.Tree,
+
+            pub inline fn fmt(self: BoundIn, comptime key: Key, args: anytype) error{OutOfMemory}![]const u8 {
+                return Self.fmtIn(self.tree, self.locale, key, args);
+            }
+        };
+
+        /// See `BoundIn`. Takes anything that answers `locale()` *and*
+        /// carries a `tree` — the App, and the test doubles that own one.
+        pub fn in(app: anytype) BoundIn {
+            return .{ .locale = resolve(app.locale()), .tree = &app.tree };
         }
 
         /// nokre's own words (`App.Chrome`) out of this catalog: one
