@@ -309,7 +309,7 @@ create_organization_test.zig:168), and value expectations covering
 `tile.detail`/`qr.value`/`copyable.value` (9 raw tree reads). Deletes
 the largest remaining per-test block; fixture boot is already 3 lines.
 
-### A5. The driver tier never got its round: two ~570-line Devices re-implement the harness
+### A5 DONE (nokre `1fa47ca` + `9bea42a`, revisions 25–26) — the driver tier never got its round: two ~570-line Devices re-implemented the harness
 `e2e/device.zig` is 563 (org) / 581 (user) lines with a shared
 23-verb surface: five `waitFor*` wrappers hand-plumbing anyopaque
 predicates over `wait.waitUntil` (byte-same in both apps, ~140 lines
@@ -833,8 +833,40 @@ passes bump `revision` and move all three pins.
    inputs and segmented controls. Ten raw tree reads existed to work
    around a wrong sentence. Two failure headings that printed
    themselves over silence when nothing was parked now say so.
-8. **A5 driver tier** (wait.until* + shared verb names; both Devices
-   collapse; org's `describe` improvement lands in the shared home).
+8. ~~**A5 driver tier**~~ — DONE, revisions 25–26 (nokre `1fa47ca` +
+   `9bea42a`, rokovski `825a7ead`, site `6f2031b` + `1ebf6bc`). The
+   structural blocker dissolved on inspection: `Harness` is welded to
+   mocks, but the *ladders* never were — `press`/`typeInto`/`goTab`
+   only ever used `driver.tap`/`focusVia`/`pressKey` and the queries,
+   all mock-free already. They were in the wrong file, not the wrong
+   shape. So they moved down into `driver.zig` and both tiers call
+   them: one ladder, two synchronizations, because waiting is the only
+   real difference. Seven `until*` verbs, not three — three more were
+   hand-written in both apps too. The predicate became a `{ctx, call}`
+   pair so `bindAs` fills it, and nokre builds its own seven that way
+   rather than only documenting the mechanism.
+
+   Both Devices: 563/581 → 296/293 lines (~180 of real code each).
+   `fill` lost to `typeInto` and hid a second difference — it cleared
+   while `typeInto` appends — so the clearing became `clearField`.
+   `expect` lost to `untilLabel`, which admits those 94 sites were
+   always waits, not assertions.
+
+   **Revision 26 fixed what 25 shipped.** The migration caught `goTab`
+   walking the nav after a bare pump while every sibling waited; the
+   audit found six more in two classes — three that located too weakly
+   (waited for *a label*, acted on a *control family*, so prose with
+   the same words ended the wait) and three that waited for the control
+   instead of the condition (a button exists for the whole time the
+   reply arming it is in flight). Worth recording: one of the six was
+   visible in a stage-1 test that had been reordered so the fake clock
+   would advance — which is exactly what a verb that does not wait
+   looks like.
+
+   Found in both apps and fixed by deletion: `press` caught
+   `error.InProgress` and fell back to focus-and-Enter, but Enter on a
+   busy control is refused — so the fallback pressed nothing and the
+   scenario passed anyway.
 9. **A6 Gate + A7 empty branch** (one pass — both are loadGate-family
    vocabulary).
 10. **A9 L completion** (Bound.tag/dir/chrome + the fmt binder or
