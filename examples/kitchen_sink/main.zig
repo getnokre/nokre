@@ -554,8 +554,7 @@ fn onHttpResult(ctx: ?*anyopaque, _: u64, result: h.services.http.Result) void {
     }
 }
 
-fn buildHome(ctx: ?*anyopaque, app: *h.App) !void {
-    const state: *State = @ptrCast(@alignCast(ctx.?));
+fn buildHome(state: *State, app: *h.App) !void {
     const tree = &app.tree;
     const b = app.root();
 
@@ -856,7 +855,7 @@ fn buildHome(ctx: ?*anyopaque, app: *h.App) !void {
     }
 }
 
-fn buildDetails(_: ?*anyopaque, app: *h.App) !void {
+fn buildDetails(_: *State, app: *h.App) !void {
     const b = app.root();
     try b.heading(.h1, "Details");
     try b.text("A second screen. Navigation is a stack; there are no transitions. The nav below is app chrome: it survives every route change.");
@@ -877,7 +876,7 @@ fn buildDetails(_: ?*anyopaque, app: *h.App) !void {
 
 /// Reads its own identity rather than app state — which is what lets the
 /// entry underneath stay a *different* ticket when this one is popped.
-fn buildTicket(_: ?*anyopaque, app: *h.App) !void {
+fn buildTicket(_: *State, app: *h.App) !void {
     const b = app.root();
     const id = app.routeArg(0) orelse "?";
     try b.heading(.h1, try app.tree.fmt("Ticket {s}", .{id}));
@@ -929,19 +928,22 @@ const terms_markdown =
     \\bytes nobody reviewed.
 ;
 
-fn buildTerms(_: ?*anyopaque, app: *h.App) !void {
+fn buildTerms(_: *State, app: *h.App) !void {
     try app.root().document(.{
         .label = "Terms of Service",
         .source = terms_markdown,
     });
 }
 
-const routes = [_]h.RouteDef{
+// The state type is said once, here, and every builder below is written
+// against it — including the three that read none of it, which say so
+// with `_: *State` instead of an erased pointer.
+const routes = h.Routes(State).table(&.{
     .{ .name = "home", .title = .{ .fixed = "Home" }, .build = buildHome },
     .{ .name = "details", .title = .{ .fixed = "Details" }, .build = buildDetails },
     .{ .name = "ticket", .title = .{ .fixed = "Ticket" }, .args = 1, .build = buildTicket },
     .{ .name = "terms", .title = .{ .fixed = "Terms of Service" }, .build = buildTerms },
-};
+});
 
 // A destination is a route and a glyph: what it is called comes from
 // the route table above, so the nav and the screen cannot disagree.

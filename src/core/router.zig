@@ -78,8 +78,124 @@ pub const RouteDef = struct {
     /// reference carrying the wrong number fails loudly instead of
     /// building a screen with nothing to show.
     args: u8 = 0,
-    build: *const fn (ctx: ?*anyopaque, app: *App) anyerror!void,
+    build: Build,
+
+    /// What a screen builder is, erased. The context is the *app's* —
+    /// `App.ctx`, one for the whole table, handed back at every rebuild —
+    /// which is why a `RouteDef` carries no context of its own and why
+    /// this is not a bindable `{ ctx, call }` pair (core/bind.zig): the
+    /// state arrives at call time from the app, not at wiring time from
+    /// the site that named the function. `Routes(State)` types it.
+    pub const Build = *const fn (ctx: ?*anyopaque, app: *App) anyerror!void;
 };
+
+/// The route table with its `App.ctx` typed once, for the app that has
+/// one state type — which is every app there has ever been. A survey of
+/// the three consumer trees found 91 routed builders (42 + 17 + 32), and
+/// every one of them opened by casting the context to that tree's single
+/// state type, first statement, no exceptions. The erasure was never
+/// carrying polymorphism; it was carrying a cast.
+///
+/// ```zig
+/// const R = nokre.Routes(State);
+/// const routes = R.table(&.{
+///     .{ .name = "notes", .title = .{ .fixed = "Notes" }, .build = buildNotes },
+///     .{ .name = "note", .title = .{ .fixed = "Note" }, .args = 1, .build = buildNote },
+/// });
+///
+/// fn buildNotes(state: *State, app: *nokre.App) !void { ... }
+/// ```
+///
+/// The entries are what they always were, so a table that grows to fifty
+/// reads exactly as it does today; what changed is that the state type is
+/// said once, at the top, instead of once per screen. What comes back is
+/// an ordinary `[N]RouteDef`, which is the point: this is sugar over the
+/// substrate the way `Cursor` is sugar over `Tree.append`, and a table
+/// that mixes both — a stateless screen written raw beside typed ones —
+/// is a table of the same values.
+///
+/// The one assertion left is the one no local type could have made
+/// anyway: that `App.init`'s `ctx` really is a `*State`. It is now made
+/// once, at that line, instead of at every builder (see `App.ctx`).
+pub fn Routes(comptime State: type) type {
+    return struct {
+        /// A screen builder with its state restored: everything
+        /// `RouteDef.build` is, minus the cast.
+        pub const Build = *const fn (state: *State, app: *App) anyerror!void;
+
+        /// A route as it is written — `RouteDef` with the typed builder.
+        /// A handler that does not fit is a coercion error naming both
+        /// signatures at the table entry, which is where the mistake is.
+        ///
+        /// **Reified from `RouteDef`, never re-listed.** A hand-written
+        /// twin would be a second home for a route's shape: add a field
+        /// to `RouteDef` and every typed table would silently drop it,
+        /// with nothing failing anywhere. Here there is no twin to drift
+        /// — a new field arrives with its own default and `table` carries
+        /// it without a line changing. The price is that a reified struct
+        /// carries no doc comments, so `RouteDef` stays where each field
+        /// is explained; read it there.
+        pub const Def = TypedDef(Build);
+
+        /// The table, lowered. Call it at container scope and hand
+        /// `App.init` the result's address, as with any route table.
+        pub fn table(comptime defs: []const Def) [defs.len]RouteDef {
+            var out: [defs.len]RouteDef = undefined;
+            inline for (defs, &out) |d, *o| {
+                // Field by field over `RouteDef`'s own list, so what a
+                // route carries is asked of `RouteDef` at every build
+                // rather than remembered here. `build` is the one field
+                // this type exists to change; everything else moves
+                // across untouched and unnamed.
+                inline for (@typeInfo(RouteDef).@"struct".fields) |fld| {
+                    if (comptime std.mem.eql(u8, fld.name, "build")) {
+                        o.build = builder(d.build);
+                    } else {
+                        @field(o, fld.name) = @field(d, fld.name);
+                    }
+                }
+            }
+            return out;
+        }
+
+        /// One lowered builder, for a table an app assembles itself —
+        /// both consumer apps lower their own entry type (a catalog key
+        /// for a title, not a `Title`), and the site generates one
+        /// builder per page. They need the trampoline, not the table.
+        /// It is also what a test fixture hands the harness's `build`.
+        pub fn builder(comptime f: Build) RouteDef.Build {
+            return struct {
+                fn build(ctx: ?*anyopaque, app: *App) anyerror!void {
+                    return f(@ptrCast(@alignCast(ctx.?)), app);
+                }
+            }.build;
+        }
+    };
+}
+
+/// `RouteDef` with `build` swapped for a typed one, reified from
+/// `RouteDef`'s own field list. The same mechanism `App.Options` uses to
+/// drop a default (`app.zig`, `WithoutDefault`), and for the same reason:
+/// a struct that differs from another by one field is *derived* from it,
+/// so the two cannot disagree about the rest.
+fn TypedDef(comptime Build: type) type {
+    const src = @typeInfo(RouteDef).@"struct".fields;
+    var names: [src.len][]const u8 = undefined;
+    var types: [src.len]type = undefined;
+    var attrs: [src.len]std.builtin.Type.StructField.Attributes = undefined;
+    for (src, &names, &types, &attrs) |f, *name, *Ty, *attr| {
+        const typed = std.mem.eql(u8, f.name, "build");
+        name.* = f.name;
+        Ty.* = if (typed) Build else f.type;
+        attr.* = .{
+            // A builder is required on a route and required here: a
+            // default would let a table entry name no screen.
+            .default_value_ptr = if (typed) null else f.default_value_ptr,
+            .@"align" = if (typed) @alignOf(Build) else f.alignment,
+        };
+    }
+    return @Struct(.auto, null, &names, &types, &attrs);
+}
 
 /// What a `RouteDef.title` is: the words themselves, or the words as a
 /// function of the app's chosen locale (`App.setLocale`).

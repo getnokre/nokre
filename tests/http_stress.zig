@@ -189,8 +189,7 @@ fn onResult(ctx: ?*anyopaque, tag: u64, result: http.Result) void {
     }
 }
 
-fn onFetch(ctx: ?*anyopaque) void {
-    const state: *State = @ptrCast(@alignCast(ctx.?));
+fn onFetch(state: *State) void {
     _ = http.request(.{
         .app = state.app,
         .url = state.url,
@@ -210,15 +209,14 @@ fn onFetch(ctx: ?*anyopaque) void {
     state.next_tag += 1;
 }
 
-fn buildHome(ctx: ?*anyopaque, app: *nok.App) !void {
-    const state: *State = @ptrCast(@alignCast(ctx.?));
+fn buildHome(state: *State, app: *nok.App) !void {
     state.app = app;
     const root = app.tree.rootId();
     try app.tree.append(root, .{ .heading = .{ .content = "Stress", .level = .h1 } });
     state.status = try app.tree.appendId(root, .{ .text = .{ .content = "Idle" } });
     try app.tree.append(root, .{ .button = .{
         .label = "Fetch",
-        .on_press = .{ .ctx = state, .call = onFetch },
+        .on_press = .bind(onFetch, state),
     } });
 }
 

@@ -14,7 +14,7 @@ const std = @import("std");
 /// Hand-bumped on every consumer-visible contract change, never by
 /// machinery — the no-CI stance is deliberate
 /// (docs/getting-started.md).
-pub const revision: u32 = 20;
+pub const revision: u32 = 21;
 
 pub const geometry = @import("core/geometry.zig");
 pub const color = @import("core/color.zig");
@@ -167,6 +167,15 @@ pub const IconName = element.IconName;
 pub const Destination = @import("core/nav.zig").Destination;
 pub const Event = event.Event;
 pub const RouteDef = router.RouteDef;
+/// The route table with its state typed once instead of at every screen:
+/// `Routes(State).table` lowers builders written `fn (state: *State, app:
+/// *App) !void` into ordinary `RouteDef`s (core/router.zig).
+pub const Routes = router.Routes;
+/// Builds any `{ ctx: ?*anyopaque, call: *const fn (?*anyopaque, …) R }`
+/// pair from a typed handler — `Action.bind`'s generator, open to the
+/// callback types a consumer or a nokre-free domain package declares for
+/// itself (core/bind.zig).
+pub const bindAs = @import("core/bind.zig").bindAs;
 /// A sheet declared as data: what `App.openSheet` takes, and the
 /// framework re-runs on reload. Its `tag` is the consumer's name for
 /// the sheet, answered back by `App.openSheetTag` while it is up
@@ -188,6 +197,7 @@ test {
     _ = bidi;
     _ = text;
     _ = element;
+    _ = @import("core/bind.zig");
     _ = load;
     _ = bounded;
     _ = tree;

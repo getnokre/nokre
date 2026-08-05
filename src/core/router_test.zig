@@ -973,3 +973,106 @@ test "reloadSafe: an overlay or an edit in flight says wait" {
     app.dismissSheet();
     try testing.expect(app.reloadSafe());
 }
+
+// ---- the typed route table (docs/routing.md, "The state is typed
+// once") ----
+
+const TypedState = struct {
+    built: u32 = 0,
+    last_arg: [8]u8 = @splat(0),
+    last_len: usize = 0,
+
+    fn buildHome(self: *TypedState, app: *App) !void {
+        self.built += 1;
+        try app.tree.append(app.tree.rootId(), .{ .link = .{ .label = "Ticket 7", .route = "ticket~7" } });
+    }
+
+    /// A screen that reads its reference and not the state — which under
+    /// the typed door still says *which* state it is not reading.
+    fn buildTicket(self: *TypedState, app: *App) !void {
+        const arg = app.routeArg(0) orelse "";
+        self.last_len = @min(arg.len, self.last_arg.len);
+        @memcpy(self.last_arg[0..self.last_len], arg[0..self.last_len]);
+        try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Ticket" } });
+    }
+};
+
+/// A screen with no state at all, written raw: the substrate a typed
+/// table lowers *to*, so both forms stand in one table.
+fn buildRawTerms(_: ?*anyopaque, app: *App) anyerror!void {
+    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Terms" } });
+}
+
+const TypedRoutes = router_mod.Routes(TypedState);
+
+const typed_routes = TypedRoutes.table(&.{
+    .{ .name = "home", .title = .{ .fixed = "Home" }, .build = TypedState.buildHome },
+    .{ .name = "ticket", .title = .{ .fixed = "Ticket" }, .args = 1, .build = TypedState.buildTicket },
+}) ++ [_]router_mod.RouteDef{
+    .{ .name = "terms", .title = .{ .fixed = "Terms" }, .build = buildRawTerms },
+};
+
+test "a typed table lowers to RouteDefs the router cannot tell apart" {
+    var state: TypedState = .{};
+    var app = try App.init(testing.allocator, .{
+        .viewport = .{ .w = 400, .h = 400 },
+        .routes = &typed_routes,
+        .ctx = &state,
+        .services = .mocks(),
+    });
+    defer app.deinit();
+
+    try app.navigate("home");
+    try testing.expectEqual(@as(u32, 1), state.built);
+    // The app's single ctx reaches a typed builder as the typed pointer,
+    // through the same `def.build(app.ctx, app)` every route uses.
+    try app.navigate("ticket~7");
+    try testing.expectEqualStrings("7", state.last_arg[0..state.last_len]);
+    // Declared arity still belongs to the entry, not to the builder.
+    try app.navigate("ticket");
+    try testing.expectEqual(router_mod.Refusal.Reason.arg_count, app.router.refused.?.reason);
+    // A raw entry in the same table is the same kind of value.
+    try app.navigate("terms");
+    try testing.expectEqualStrings("Terms", pushedTitle(&app));
+}
+
+test "a lowered builder is what a fixture or a consumer's own table hands over" {
+    // What both consumer apps need: their entry type carries a catalog
+    // key rather than a `Title`, so they lower one builder at a time.
+    const build = TypedRoutes.builder(TypedState.buildHome);
+    const defs = [_]router_mod.RouteDef{
+        .{ .name = "home", .title = .{ .fixed = "Home" }, .build = build },
+    };
+    var state: TypedState = .{};
+    var app = try App.init(testing.allocator, .{
+        .viewport = .{ .w = 400, .h = 400 },
+        .routes = &defs,
+        .ctx = &state,
+        .services = .mocks(),
+    });
+    defer app.deinit();
+    try app.navigate("home");
+    try testing.expectEqual(@as(u32, 1), state.built);
+    try testing.expectEqual(router_mod.RouteDef.Build, @TypeOf(build));
+}
+
+test "the typed Def is derived from RouteDef, so it cannot fall behind it" {
+    // The pin against someone re-writing `Def` by hand: a twin would
+    // compile, and a field added to `RouteDef` would then be dropped by
+    // every typed table with nothing failing. Same field names, same
+    // order, same types and defaults — `build` excepted, which is the
+    // one field the type exists to change.
+    const def = @typeInfo(router_mod.RouteDef).@"struct".fields;
+    const typed = @typeInfo(TypedRoutes.Def).@"struct".fields;
+    try testing.expectEqual(def.len, typed.len);
+    inline for (def, typed) |d, t| {
+        try testing.expectEqualStrings(d.name, t.name);
+        if (comptime std.mem.eql(u8, d.name, "build")) {
+            try testing.expectEqual(router_mod.RouteDef.Build, d.type);
+            try testing.expectEqual(TypedRoutes.Build, t.type);
+        } else {
+            try testing.expectEqual(d.type, t.type);
+            try testing.expectEqual(d.default_value_ptr == null, t.default_value_ptr == null);
+        }
+    }
+}

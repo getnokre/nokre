@@ -214,11 +214,11 @@ translated app declares each title as a **function of the chosen
 locale** and the one table serves every language:
 
 ```zig
-const routes = [_]nok.RouteDef{
+const routes = nok.Routes(State).table(&.{
     .{ .name = "notes", .title = .{ .of_locale = notesTitle }, .build = buildNotes },
     .{ .name = "note", .title = .{ .of_locale = noteTitle }, .args = 1, .build = buildNote },
     .{ .name = "settings", .title = .{ .of_locale = settingsTitle }, .build = buildSettings },
-};
+});
 
 fn notesTitle(tag: []const u8) []const u8 {
     return L.tr(L.resolve(tag), .notesTitle);

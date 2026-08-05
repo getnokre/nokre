@@ -94,8 +94,10 @@ pub const Billing = struct {
     invoices: nokre.Rows(InvoiceRow, max_invoices) = .{},
 };
 
-fn onDashboard(ctx: ?*anyopaque, result: Port.DashboardResult) void {
-    const self: *Billing = @ptrCast(@alignCast(ctx.?));
+// Bound into the port's own callback type — see "Binding callbacks
+// nokre never sees" below; the port need not know nokre exists.
+// port.dashboard(id, nokre.bindAs(Port.DashboardCallback, onDashboard, self));
+fn onDashboard(self: *Billing, result: Port.DashboardResult) void {
     switch (result) {
         .ok => |dashboard| {
             self.name.set(dashboard.name);        // copied out of the reply
@@ -1604,6 +1606,48 @@ calls) owns the list, so it alone can tell a live index from a stale
 one — check it against the list's current length once, where the list
 lives, and treat a miss as a no-op. nokre cannot do this for you; it
 knows the tree, not your data.
+
+### Binding callbacks nokre never sees
+
+The four `bind` methods are one generator with four faces, and it is
+exported: `nokre.bindAs(CallbackT, handler, state)` fills **any**
+`{ ctx, call }` pair the same way.
+
+```zig
+port.loadRows(.{ .id = id }, nokre.bindAs(Port.RowsCallback, Screen.onRows, screen));
+
+// in Screen — no cast, no null unwrap, no forwarding shim:
+fn onRows(self: *Screen, result: Port.RowsResult) void { ... }
+```
+
+`CallbackT` is duck-typed at comptime: a struct with `ctx: ?*anyopaque`
+and a `call` that is a (possibly optional) pointer to a function taking
+`?*anyopaque` first. Everything past the context is forwarded by
+position and by value — whatever it is, however many — and the return
+value comes back the same way, so a callback that answers a `bool` or a
+struct binds like one that answers nothing. Fields beside the pair keep
+their declared defaults; a pair with a field that has none is not a pair,
+and says so.
+
+The point is what `CallbackT` may be. **A callback type does not have to
+come from nokre**: a domain package that models its ports as
+`{ ctx, call }` pairs stays framework-free, and the app — which does
+import nokre — binds handlers into them. That asymmetry is why this is a
+free function over a type rather than a method on one.
+
+A handler whose signature does not fit fails *at the bind*, with the
+signature it should have had and the one it has:
+
+```
+bind.zig: bindAs: this handler does not fit `Port.RowsCallback.call`.
+  expected: fn (*app.Screen, port.RowsResult) void
+  found:    fn (*app.Screen, u32) void
+```
+
+What `bindAs` is not is a way to reach a callback field riding on a
+larger struct — an http `Request` carrying a URL and a tag, a
+`SheetBuilder` carrying its tag. Binding fills a whole value; a struct
+with more in it is built by the code that has the rest.
 
 ## Proposing an element
 

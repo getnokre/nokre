@@ -59,7 +59,10 @@ pub const shell = @import("shell.zig");
 const App = app_mod.App;
 const NodeId = tree_mod.NodeId;
 
-pub const BuildFn = *const fn (ctx: ?*anyopaque, app: *App) anyerror!void;
+/// A fixture's screen is a route's screen, so it is the same type — one
+/// home (`RouteDef.Build`), and `Routes(State).builder` types a fixture's
+/// exactly as it types a table's.
+pub const BuildFn = router_mod.RouteDef.Build;
 
 /// The http mock's own types, re-exported so harness users read one
 /// import: a handler decides respond/fail/null per parked request —

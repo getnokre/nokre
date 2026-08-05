@@ -86,6 +86,17 @@ pub const App = struct {
     /// only the renderer's drawn indicator reads it. Starts true so
     /// programmatic focus (tests, assistive-tech actions) shows itself.
     focus_visible: bool = true,
+    /// The app's own state, handed back to every screen builder
+    /// (`RouteDef.build`). One for the whole table, not one per route —
+    /// which is what lets `Routes(State)` type it at the table and leaves
+    /// this the single place a consumer's type is asserted rather than
+    /// the fifty-nine builders it used to be asserted at.
+    ///
+    /// It stays erased because the alternative is an `App` generic over
+    /// consumer state, and `*App` is in the signature of every element
+    /// call, every service, the renderer, the shells and the harness — a
+    /// framework-wide type parameter to name a field that, past the typed
+    /// door, no consumer reads.
     ctx: ?*anyopaque = null,
     scheme: color.Scheme = .auto,
     system_appearance: color.Appearance = .light,

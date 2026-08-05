@@ -46,8 +46,7 @@ const State = struct {
 /// A boot read, inside build, synchronous — the shape docs/services.md
 /// promises and the reason the store is not async. Absence and an
 /// unavailable store both read as signed out.
-fn buildHome(ctx: ?*anyopaque, app: *nok.App) !void {
-    const state: *State = @ptrCast(@alignCast(ctx.?));
+fn buildHome(state: *State, app: *nok.App) !void {
     state.app = app;
     const root = app.tree.rootId();
     try app.tree.append(root, .{ .heading = .{ .content = "Dev store", .level = .h1 } });
@@ -57,19 +56,17 @@ fn buildHome(ctx: ?*anyopaque, app: *nok.App) !void {
     state.status = try app.tree.appendId(root, .{
         .text = .{ .content = if (stored != null) "Signed in" else "Signed out" },
     });
-    try app.tree.append(root, .{ .button = .{ .label = "Sign in", .on_press = .{ .ctx = state, .call = onSignIn } } });
-    try app.tree.append(root, .{ .button = .{ .label = "Sign out", .on_press = .{ .ctx = state, .call = onSignOut } } });
+    try app.tree.append(root, .{ .button = .{ .label = "Sign in", .on_press = .bind(onSignIn, state) } });
+    try app.tree.append(root, .{ .button = .{ .label = "Sign out", .on_press = .bind(onSignOut, state) } });
 }
 
-fn onSignIn(ctx: ?*anyopaque) void {
-    const state: *State = @ptrCast(@alignCast(ctx.?));
+fn onSignIn(state: *State) void {
     ss.set(state.app, key, token) catch |err| return fail("set", err);
     state.app.tree.setContent(state.status, "Signed in") catch {};
     state.app.invalidate();
 }
 
-fn onSignOut(ctx: ?*anyopaque) void {
-    const state: *State = @ptrCast(@alignCast(ctx.?));
+fn onSignOut(state: *State) void {
     ss.delete(state.app, key) catch |err| return fail("delete", err);
     state.app.tree.setContent(state.status, "Signed out") catch {};
     state.app.invalidate();

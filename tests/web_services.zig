@@ -109,8 +109,7 @@ fn onAuth(ctx: ?*anyopaque, result: oauth.Result) void {
 /// user-activation API, so the popup a browser will actually allow is
 /// one opened inside the press — and driving it from the DOM makes
 /// click → live.js → core → service one path rather than two.
-fn onSignIn(ctx: ?*anyopaque) void {
-    const state: *State = @ptrCast(@alignCast(ctx.?));
+fn onSignIn(state: *State) void {
     state.redirect_len = -1;
     state.err_len = 0;
     const redirect = oauth.redirectUri(state.app, scheme, &state.redirect) catch |err| return note(state, err);
@@ -138,8 +137,7 @@ fn note(state: *State, err: anyerror) void {
     @memcpy(state.err[0..state.err_len], name[0..state.err_len]);
 }
 
-fn buildHome(ctx: ?*anyopaque, app: *h.App) !void {
-    const state: *State = @ptrCast(@alignCast(ctx.?));
+fn buildHome(state: *State, app: *h.App) !void {
     state.app = app;
     deep_link.setHandler(app, state, onLink);
     // Inside the first build and nowhere else: a boot read is
@@ -158,11 +156,13 @@ fn buildHome(ctx: ?*anyopaque, app: *h.App) !void {
     try app.tree.append(root, .{ .text = .{ .content = "The harness drives this app through the shipped live.js." } });
     try app.tree.append(root, .{ .button = .{
         .label = "Sign in",
-        .on_press = .{ .ctx = state, .call = onSignIn },
+        .on_press = .bind(onSignIn, state),
     } });
 }
 
-const routes = [_]h.RouteDef{.{ .name = "home", .title = .{ .fixed = "Home" }, .build = buildHome }};
+const routes = h.Routes(State).table(&.{
+    .{ .name = "home", .title = .{ .fixed = "Home" }, .build = buildHome },
+});
 
 comptime {
     // `main` never runs on the web; without this nothing pulls the

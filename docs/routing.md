@@ -6,15 +6,61 @@ pointing into it, and a rebuild on every change. There are no path
 patterns, no wildcards, and no transitions.
 
 ```zig
-const routes = [_]h.RouteDef{
+const routes = h.Routes(State).table(&.{
     .{ .name = "notes", .title = .{ .fixed = "Notes" }, .build = buildNotes },
     .{ .name = "note", .title = .{ .fixed = "Note" }, .args = 1, .build = buildNote },
     .{ .name = "settings", .title = .{ .fixed = "Settings" }, .build = buildSettings },
-};
+});
 
 var app = try h.App.init(gpa, .{ .viewport = ..., .routes = &routes, .ctx = &state });
 try app.navigate("notes");
+
+// A screen is a function of your state and the app:
+fn buildNotes(state: *State, app: *h.App) !void { ... }
 ```
+
+### The state is typed once
+
+`App.ctx` is one pointer for the whole table — the app's state, handed
+back at every rebuild — so `Routes(State)` names the type once, at the
+table, and every builder under it is written against that type instead of
+against `?*anyopaque`. A screen that reads no state says `_: *State`,
+which is more than an erased pointer ever said.
+
+What `table` returns is an ordinary `[N]RouteDef`, and that is the point:
+this is sugar over the substrate, the way the builder cursor is sugar
+over `Tree.append`. The raw form stays public and stays correct — a
+stateless screen written `fn build(_: ?*anyopaque, app: *App)` is a
+legal entry in the same table — and `RouteDef` itself did not change to
+make this possible.
+
+An app that builds its table from something of its own — a catalog key
+for a title, one entry per page from a page list — lowers builders one at
+a time instead:
+
+```zig
+const R = h.Routes(State);
+// `R.builder(f)` is a `RouteDef.build`: the trampoline, without the table.
+defs[i] = .{ .name = e.name, .title = .{ .of_locale = titler(e.title) }, .build = R.builder(e.build) };
+```
+
+The same call types a test fixture's screen, which the harness takes at
+`build` ([testing.md](testing.md)).
+
+The one thing the types cannot check is that `App.init`'s `ctx` really is
+a `*State` — no local type could, since the table and the pointer meet at
+run time. What changed is that the assertion is made **once, at that
+line**, instead of once at the top of every screen. `App` stays
+non-generic on purpose: `*App` is in the signature of every element call,
+every service, the renderer, the shells and the harness, and a
+framework-wide type parameter to name a field no consumer reads past this
+door is a bad trade.
+
+A route builder is *not* a bindable `{ ctx, call }` pair
+([elements.md](elements.md#binding-callbacks-nokre-never-sees)), which is
+why `RouteDef` carries no context of its own: an action captures its
+state when the element is appended, while a screen is handed the app's
+state when the router calls it.
 
 **Every route declares a `title`.** The field has no default, so a screen
 that cannot be named is a compile error at the table rather than a blank
@@ -216,7 +262,7 @@ state the depth is remembered and the identity is not.
 Read them back inside the builder:
 
 ```zig
-fn buildNote(_: ?*anyopaque, app: *h.App) !void {
+fn buildNote(state: *State, app: *h.App) !void {
     const id = app.routeArg(0) orelse return;   // "42"
     // ...
 }

@@ -92,8 +92,11 @@ fn note(state: *State, text: []const u8) void {
     state.app.tree.setContent(state.note_id, text) catch {};
 }
 
-fn buildHome(ctx: ?*anyopaque, app: *h.App) !void {
-    const state: *State = @ptrCast(@alignCast(ctx.?));
+const routes = h.Routes(State).table(&.{
+    .{ .name = "home", .title = .{ .fixed = "Home" }, .build = buildHome },
+});
+
+fn buildHome(state: *State, app: *h.App) !void {
     const b = app.root();
     try b.heading(.h1, "Hello, nokre");
     try b.text("Two bundled text fonts. One proportional, one mono. Press Tab, then Enter.");
@@ -165,7 +168,7 @@ pub fn main() !void {
     var state = State{};
     var app = try h.App.init(gpa, .{
         .viewport = .{ .w = 480, .h = 520 },
-        .routes = &.{.{ .name = "home", .title = .{ .fixed = "Home" }, .build = buildHome }},
+        .routes = &routes,
         .ctx = &state,
     });
     defer app.deinit();

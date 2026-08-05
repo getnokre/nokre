@@ -2,6 +2,7 @@
 //! states are intrinsic, so accessibility derives automatically from the
 //! tree — consumers cannot forget it.
 
+const bind_mod = @import("bind.zig");
 const text = @import("text.zig");
 const color = @import("color.zig");
 
@@ -67,24 +68,25 @@ pub const Action = struct {
     /// trampoline a consumer would otherwise write by hand — the cast
     /// (with its loud null unwrap) and the forward, minus the lines.
     /// `f` takes the state pointer and nothing else.
+    ///
+    /// The generator itself is `nokre.bindAs` (core/bind.zig), which is
+    /// the same door open to any `{ ctx, call }` pair — including ones
+    /// declared in packages that never import nokre. These four methods
+    /// are its callers, not copies of it.
     pub fn bind(comptime f: anytype, state: anytype) Action {
-        const T = @typeInfo(@TypeOf(state)).pointer.child;
-        return .{ .ctx = state, .call = struct {
-            fn call(c: ?*anyopaque) void {
-                f(@as(*T, @ptrCast(@alignCast(c.?))));
-            }
-        }.call };
+        return bind_mod.bindAs(Action, f, state);
     }
 
     /// `bind` for the `call_indexed` shape: `f(state, index)`, the row
     /// arriving as data per the `index` contract above.
+    ///
+    /// The one pair in reach with two functions in it, so it is the one
+    /// that has to name which — `bindAs` binds `call`, this binds
+    /// `call_indexed` and sets the datum that rides with it.
     pub fn bindAt(comptime f: anytype, state: anytype, index: usize) Action {
-        const T = @typeInfo(@TypeOf(state)).pointer.child;
-        return .{ .ctx = state, .index = index, .call_indexed = struct {
-            fn call(c: ?*anyopaque, i: usize) void {
-                f(@as(*T, @ptrCast(@alignCast(c.?))), i);
-            }
-        }.call };
+        var out = bind_mod.bindField(Action, "call_indexed", f, state);
+        out.index = index;
+        return out;
     }
 };
 
@@ -103,23 +105,15 @@ pub const ToggleAction = struct {
 
     /// Same contract as `Action.bind`; `f(state, checked)`.
     pub fn bind(comptime f: anytype, state: anytype) ToggleAction {
-        const T = @typeInfo(@TypeOf(state)).pointer.child;
-        return .{ .ctx = state, .call = struct {
-            fn call(c: ?*anyopaque, checked: bool) void {
-                f(@as(*T, @ptrCast(@alignCast(c.?))), checked);
-            }
-        }.call };
+        return bind_mod.bindAs(ToggleAction, f, state);
     }
 
     /// Same contract as `Action.bindAt`; `f(state, index, checked)` —
     /// the payload keeps its dispatch position, after the index.
     pub fn bindAt(comptime f: anytype, state: anytype, index: usize) ToggleAction {
-        const T = @typeInfo(@TypeOf(state)).pointer.child;
-        return .{ .ctx = state, .index = index, .call_indexed = struct {
-            fn call(c: ?*anyopaque, i: usize, checked: bool) void {
-                f(@as(*T, @ptrCast(@alignCast(c.?))), i, checked);
-            }
-        }.call };
+        var out = bind_mod.bindField(ToggleAction, "call_indexed", f, state);
+        out.index = index;
+        return out;
     }
 };
 
@@ -133,12 +127,7 @@ pub const ChangeAction = struct {
 
     /// Same contract as `Action.bind`; `f(state, value)`.
     pub fn bind(comptime f: anytype, state: anytype) ChangeAction {
-        const T = @typeInfo(@TypeOf(state)).pointer.child;
-        return .{ .ctx = state, .call = struct {
-            fn call(c: ?*anyopaque, value: []const u8) void {
-                f(@as(*T, @ptrCast(@alignCast(c.?))), value);
-            }
-        }.call };
+        return bind_mod.bindAs(ChangeAction, f, state);
     }
 };
 
@@ -152,12 +141,7 @@ pub const SelectAction = struct {
 
     /// Same contract as `Action.bind`; `f(state, selected)`.
     pub fn bind(comptime f: anytype, state: anytype) SelectAction {
-        const T = @typeInfo(@TypeOf(state)).pointer.child;
-        return .{ .ctx = state, .call = struct {
-            fn call(c: ?*anyopaque, selected: usize) void {
-                f(@as(*T, @ptrCast(@alignCast(c.?))), selected);
-            }
-        }.call };
+        return bind_mod.bindAs(SelectAction, f, state);
     }
 };
 

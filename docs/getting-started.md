@@ -209,8 +209,11 @@ pub const State = struct {
     }
 };
 
-pub fn buildHome(ctx: ?*anyopaque, app: *h.App) !void {
-    const state: *State = @ptrCast(@alignCast(ctx.?));
+pub const routes = h.Routes(State).table(&.{
+    .{ .name = "home", .title = .{ .fixed = "Home" }, .build = buildHome },
+});
+
+pub fn buildHome(state: *State, app: *h.App) !void {
     const b = app.root();
     try b.heading(.h1, "Notes");
     state.label_id = try app.tree.appendId(b.at, .{ .text = .{ .content = "Pressed 0 times" } });
@@ -228,7 +231,7 @@ pub fn main() !void {
     var state = State{};
     var app = try h.App.init(gpa, .{
         .viewport = .{ .w = 480, .h = 640 },
-        .routes = &.{.{ .name = "home", .title = .{ .fixed = "Home" }, .build = buildHome }},
+        .routes = &routes,
         .ctx = &state,
     });
     defer app.deinit();
@@ -311,7 +314,12 @@ const app = @import("main.zig");
 
 test "pressing Increment updates the label" {
     var state: app.State = .{};
-    var t = try nok.testing.Harness.init(std.testing.allocator, .{ .w = 480, .h = 640 }, .{ .ctx = &state, .build = app.buildHome });
+    var t = try nok.testing.Harness.init(std.testing.allocator, .{ .w = 480, .h = 640 }, .{
+        .ctx = &state,
+        // The screen is typed against your state, so the fixture lowers
+        // it the same way the route table does.
+        .build = nok.Routes(app.State).builder(app.buildHome),
+    });
     defer t.deinit();
     state.app = &t.app;
     // The a11y audit already ran, and re-runs after every action below.
@@ -339,11 +347,11 @@ Notes has two sections and one pushed screen. Screens are named routes,
 each a builder; navigation is a stack. Replace the single-route setup:
 
 ```zig
-pub const routes = [_]h.RouteDef{
+pub const routes = h.Routes(State).table(&.{
     .{ .name = "notes", .title = .{ .fixed = "Notes" }, .build = buildNotes },
     .{ .name = "note", .title = .{ .fixed = "Note" }, .args = 1, .build = buildNote }, // pushed detail — Part 9
     .{ .name = "settings", .title = .{ .fixed = "Settings" }, .build = buildSettings }, // Part 10
-};
+});
 
 pub const nav_items = [_]h.Destination{
     .{ .route = "notes", .icon = .notebook_pen },
@@ -531,8 +539,7 @@ fn buildSignIn(state: *State, app: *h.App) !void {
     }
 }
 
-pub fn buildNotes(ctx: ?*anyopaque, app: *h.App) !void {
-    const state: *State = @ptrCast(@alignCast(ctx.?));
+pub fn buildNotes(state: *State, app: *h.App) !void {
     if (!state.signed_in) return buildSignIn(state, app);
     // …the signed-in screen, from Part 6 on.
 }
@@ -1211,8 +1218,7 @@ state, which would remember the depth and forget which note it was
 ([routing.md](routing.md#references) is the argument):
 
 ```zig
-pub fn buildNote(ctx: ?*anyopaque, app: *h.App) !void {
-    const state: *State = @ptrCast(@alignCast(ctx.?));
+pub fn buildNote(state: *State, app: *h.App) !void {
     const arg = app.routeArg(0) orelse return; // arity is declared, so it is there
     const index = std.fmt.parseInt(usize, arg, 10) catch return;
     // `at` is bounds-checked: a reference can outlive the note it names
@@ -1297,8 +1303,7 @@ arrow keys, immediately — and a `toggle`, the switch that applies now
 (contrast with Part 4's checkbox, which waited for Sign in):
 
 ```zig
-pub fn buildSettings(ctx: ?*anyopaque, app: *h.App) !void {
-    const state: *State = @ptrCast(@alignCast(ctx.?));
+pub fn buildSettings(state: *State, app: *h.App) !void {
     const b = app.root();
     try b.heading(.h1, "Settings");
 
@@ -1522,11 +1527,11 @@ language forever; `.of_locale` is read wherever the title is shown, in
 whatever locale is chosen by then:
 
 ```zig
-const routes = [_]h.RouteDef{
+const routes = h.Routes(State).table(&.{
     .{ .name = "notes", .title = .{ .of_locale = notesTitle }, .build = buildNotes },
     .{ .name = "note", .title = .{ .of_locale = noteTitle }, .args = 1, .build = buildNote },
     .{ .name = "settings", .title = .{ .of_locale = settingsTitle }, .build = buildSettings },
-};
+});
 
 fn notesTitle(tag: []const u8) []const u8 {
     return L.tr(L.resolve(tag), .notesTitle);

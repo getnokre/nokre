@@ -21,7 +21,12 @@ Everything below runs headless. Only golden tests need Skia.
 const nok = @import("nokre");
 
 test "checkout flow" {
-    var t = try nok.testing.Harness.init(gpa, .{ .w = 480, .h = 640 }, .{ .ctx = &state, .build = buildCheckout });
+    // A screen is written against your state (routing.md), so a fixture
+    // lowers it exactly as a route table does.
+    var t = try nok.testing.Harness.init(gpa, .{ .w = 480, .h = 640 }, .{
+        .ctx = &state,
+        .build = nok.Routes(State).builder(buildCheckout),
+    });
     // or routed: .{ .routes = &routes, .ctx = &state, .initial_route = "home" }
     defer t.deinit();
     // The a11y audit already ran; a screen that fails it never builds.
@@ -236,7 +241,7 @@ fn serve(_: ?*anyopaque, req: nok.services.http.PendingRequest) ?nok.testing.Htt
 }
 
 test "sync round-trip" {
-    var t = try nok.testing.Harness.init(gpa, .{ .w = 480, .h = 640 }, .{ .ctx = &state, .build = buildNotes });
+    var t = try nok.testing.Harness.init(gpa, .{ .w = 480, .h = 640 }, .{ .ctx = &state, .build = nok.Routes(State).builder(buildNotes) });
     defer t.deinit();
     t.onHttp(null, serve);
 
@@ -314,7 +319,7 @@ that degrades gracefully under it is ready everywhere.
 ```zig
 test "stored token skips sign-in; sign-out deletes it; locked keychain degrades" {
     var state: State = .{};
-    var t = try nok.testing.Harness.init(std.testing.allocator, .{ .w = 480, .h = 640 }, .{ .store = .{ .seeds = &.{.{ .key = "auth.token", .value = "tk_123" }} }, .ctx = &state, .build = State.build });
+    var t = try nok.testing.Harness.init(std.testing.allocator, .{ .w = 480, .h = 640 }, .{ .store = .{ .seeds = &.{.{ .key = "auth.token", .value = "tk_123" }} }, .ctx = &state, .build = nok.Routes(State).builder(State.build) });
     defer t.deinit(); // the fake dies here — nothing leaks to the next test
 
     _ = try t.getByLabel("Inbox");             // boot read is sync: no settle, no loading frame
@@ -359,7 +364,7 @@ to rehearse.
 ```zig
 var t = try nok.testing.Harness.init(gpa, .{ .w = 480, .h = 640 }, .{
     .ctx = &state,
-    .build = State.build,
+    .build = nok.Routes(State).builder(State.build),
     .locale = .{ .tag = "fa-IR" },       // the device at boot; the default
 });                                      // "" is "the platform said nothing"
 _ = try t.getByLabel("صندوق ورودی");      // resolve picked .fa in the first build
@@ -405,7 +410,7 @@ and nowhere else — there is no ticker to move it behind your back.
 ```zig
 var t = try nok.testing.Harness.init(gpa, .{ .w = 320, .h = 480 }, .{
     .ctx = &state,
-    .build = State.build,
+    .build = nok.Routes(State).builder(State.build),
     // The device's clock at boot; the default is a fixed, fake instant.
     .clock = .{ .millis = 1_700_000_000_000 },
 });
@@ -504,7 +509,7 @@ const shelf = [_]nokre.services.iap.Product{.{
 
 var t = try Harness.init(gpa, .{ .w = 320, .h = 480 }, .{
     .ctx = &state,
-    .build = buildPaywall,
+    .build = nok.Routes(State).builder(buildPaywall),
     .iap = .{ .catalog = &shelf },    // a seeded catalog answers queries
 });
 

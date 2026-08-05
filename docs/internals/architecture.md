@@ -35,6 +35,7 @@ nokre is a strict layer cake. Each layer knows only the layer below it.
 | [src/core/bidi_tables.zig](../../src/core/bidi_tables.zig) | its generated UCD bidi-class tables (`tools/gen-bidi-tables.py`) — regenerated, never edited |
 | [src/core/icon_names.zig](../../src/core/icon_names.zig) | the generated icon-name table from lucide-static (`tools/gen-icon-names.py`), regenerated only with the face itself |
 | [src/core/element.zig](../../src/core/element.zig) | the closed element set (`Element` union) |
+| [src/core/bind.zig](../../src/core/bind.zig) | the one trampoline generator: `bindAs` fills any `{ ctx, call }` pair from a typed handler, and the four action `bind` methods are its callers |
 | [src/core/tree.zig](../../src/core/tree.zig) | retained tree, generational `NodeId`s |
 | [src/core/cursor.zig](../../src/core/cursor.zig) | the builder cursor — one method per element over `Tree.append`, closed with the set |
 | [src/core/layout.zig](../../src/core/layout.zig) | block-flow layout, row wrap (`rowOverflow`), metrics |
