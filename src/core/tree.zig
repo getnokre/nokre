@@ -981,6 +981,7 @@ pub const Tree = struct {
                 // setContent's rule, or the first keystroke after a Tab
                 // focus would splice from a position the value never had.
                 i.cursor = codepointFloor(i.value, i.cursor);
+                endComposition(&i.composition, &i.composition_cursor, i.disabled);
             },
             .text_area => |*ta| {
                 ta.label = try dupeValid(a, ta.label);
@@ -989,6 +990,7 @@ pub const Tree = struct {
                 ta.composition = try dupeValid(a, ta.composition);
                 ta.problem = try dupeValid(a, ta.problem);
                 ta.cursor = codepointFloor(ta.value, ta.cursor);
+                endComposition(&ta.composition, &ta.composition_cursor, ta.disabled);
             },
             .segmented => |*s| {
                 s.label = try dupeValid(a, s.label);
@@ -1125,6 +1127,21 @@ pub const Tree = struct {
         var i = @min(pos, bytes.len);
         while (i > 0 and i < bytes.len and bytes[i] & 0xC0 == 0x80) i -= 1;
         return i;
+    }
+
+    /// A disabled field holds no pre-edit. The composition is the one
+    /// piece of a field's state the app does not own — a shell writes
+    /// it, `editing.zig` clears it, and nothing in a rebuild reads it
+    /// back — so a field that goes disabled with an IME session open
+    /// would otherwise carry the abandoned reading forever, drawn
+    /// beside a value nobody can now correct and measured into the
+    /// field's own width. Cleared at the door, both halves together,
+    /// exactly as `Editable.endComposition` clears them: the offset can
+    /// never outlive the string it indexes.
+    fn endComposition(composition: *[]const u8, cursor: *usize, disabled: bool) void {
+        if (!disabled) return;
+        composition.* = "";
+        cursor.* = 0;
     }
 };
 

@@ -172,6 +172,22 @@ test "an in-progress button keeps its stop; a disabled one still loses it" {
     try std.testing.expect(nextFocusable(&tree, tree.rootId(), .of(next)).?.eql(.of(running))); // wraps past it
 }
 
+test "a disabled field is skipped, and Tab runs straight past the form" {
+    var tree = try Tree.init(std.testing.allocator);
+    defer tree.deinit();
+    // The submit-in-flight shape: the fields are standing down and the
+    // button beside them is busy, which keeps its stop the way a busy
+    // button always does. Tab must land on the button and nowhere else.
+    try tree.append(tree.rootId(), .{ .text_input = .{ .label = "Verification code", .disabled = true } });
+    try tree.append(tree.rootId(), .{ .text_area = .{ .label = "Why you are joining", .disabled = true } });
+    const verify = try tree.appendId(tree.rootId(), .{ .button = .{ .label = "Verify", .in_progress = true } });
+
+    const root = tree.rootId();
+    try std.testing.expect(firstFocusable(&tree, root).?.eql(.of(verify)));
+    try std.testing.expect(nextFocusable(&tree, root, .of(verify)).?.eql(.of(verify))); // wraps to itself
+    try std.testing.expect(lastFocusable(&tree, root).?.eql(.of(verify)));
+}
+
 test "a scope confines traversal to its subtree, wrapping inside it" {
     var tree = try Tree.init(std.testing.allocator);
     defer tree.deinit();

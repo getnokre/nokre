@@ -313,13 +313,17 @@ pub const Device = struct {
     }
 
     /// A control that declines rather than acts. Read off the node
-    /// instead of pressed: pressing a disabled control refuses loudly
-    /// and proves nothing either way. Waits for the **state** — a
-    /// button is on screen for the whole time the reply that disarms it
-    /// is in flight.
+    /// instead of pressed: acting on a disabled control refuses loudly
+    /// and proves nothing either way. Waits for the **state** — the
+    /// control is on screen for the whole time the reply that disarms
+    /// it is in flight.
+    ///
+    /// Across the kinds that carry `disabled` (`driver.disabledOf`), so
+    /// a form that stands its fields down while the submission is on
+    /// the wire can be asserted on the fields and not only the button.
     pub fn expectDisabled(self: *Device, label: []const u8) !void {
         wait.untilDisabled(self.app, self.pacer, label) catch |e|
-            return self.armMismatch(e, label, "expected \"{s}\" disabled, but it takes presses\n");
+            return self.armMismatch(e, label, true);
     }
 
     /// `expectDisabled`'s twin: a control that has become live. Not the
@@ -328,16 +332,30 @@ pub const Device = struct {
     /// Waits, because arming is exactly what a reply does.
     pub fn expectEnabled(self: *Device, label: []const u8) !void {
         wait.untilEnabled(self.app, self.pacer, label) catch |e|
-            return self.armMismatch(e, label, "expected \"{s}\" to take presses, but it is disabled\n");
+            return self.armMismatch(e, label, false);
     }
 
-    /// The half the screen dump cannot say: whether the button was
-    /// there at all, and if so which way round it was.
-    fn armMismatch(self: *Device, e: anyerror, label: []const u8, comptime fmt: []const u8) anyerror {
-        if (queries.queryByRole(&self.app.tree, .button, label) == null) {
-            diag.print("expected the button \"{s}\", but no button on screen carries that name\n", .{label});
+    /// The half the screen dump cannot say: whether the control was
+    /// there at all, whether it was a kind that can be disabled, and if
+    /// so which way round it was.
+    fn armMismatch(self: *Device, e: anyerror, label: []const u8, want_disabled: bool) anyerror {
+        const id = driver.controlWithLabel(&self.app.tree, label) orelse {
+            // The plain lookup runs only for the diagnostic: naming the
+            // heading above a control is a different mistake from
+            // naming nothing at all.
+            if (queries.queryByLabel(&self.app.tree, label)) |other| {
+                const el = self.app.tree.getConst(other).?;
+                diag.print("expected \"{s}\" disabled or not, but it is a {s} — only buttons and the two text fields can be\n", .{ label, @tagName(el.role()) });
+            } else {
+                diag.print("expected the control \"{s}\", but nothing on screen carries that name\n", .{label});
+            }
+            return self.noted(e);
+        };
+        const el = self.app.tree.getConst(id).?;
+        if (want_disabled) {
+            diag.print("expected \"{s}\" disabled, but it takes {s}\n", .{ label, driver.takes(el.*) });
         } else {
-            diag.print(fmt, .{label});
+            diag.print("expected \"{s}\" to take {s}, but it is disabled\n", .{ label, driver.takes(el.*) });
         }
         return self.noted(e);
     }

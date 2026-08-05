@@ -89,6 +89,53 @@ pub fn inProgress(el: element_mod.Element) bool {
     return progressOf(el) orelse false;
 }
 
+/// `progressOf`'s twin for the other state an app drives: the three
+/// kinds that carry `disabled` — a button its app disarmed, and the two
+/// fields whose submission is in flight (`TextInput.disabled`).
+///
+/// `null` is again "this element cannot be disabled at all", and it is
+/// the answer the assertions need: `expectDisabled` reading a paragraph
+/// that happens to wear a control's words is a query that went wrong,
+/// not a control that is enabled. One switch, so a fourth element that
+/// gains `disabled` cannot arrive in the harness's half and be missing
+/// from the waiting tier's.
+///
+/// This is the fix for a verb that was buttons-only while the state was
+/// not: `expectDisabled` reached for `getByRole(.button, …)` and so
+/// could not see a disabled field at all.
+pub fn disabledOf(el: element_mod.Element) ?bool {
+    return switch (el) {
+        .button => |b| b.disabled,
+        .text_input => |i| i.disabled,
+        .text_area => |a| a.disabled,
+        else => null,
+    };
+}
+
+/// The control on screen with this name, among the kinds that carry
+/// `disabled`. A *set of roles* rather than a bare label lookup, for
+/// `wait.Named`'s reason: a heading and the button it names share their
+/// words on nearly every screen ("Create Circle" over a Create Circle
+/// button), and a label-first lookup would resolve to the heading and
+/// report that a heading cannot be disabled. Null when no control wears
+/// the name — the caller then looks the label up plainly, but only to
+/// say what it found.
+pub fn controlWithLabel(tree: *const tree_mod.Tree, label: []const u8) ?NodeId {
+    return queries.queryByRole(tree, .button, label) orelse
+        queries.queryByRole(tree, .text_input, label) orelse
+        queries.queryByRole(tree, .text_area, label);
+}
+
+/// What `disabled` takes away from this element, as the word a
+/// diagnostic needs. "It takes presses" is nonsense about a text field,
+/// and a message that reads as nonsense is one a reader stops trusting.
+pub fn takes(el: element_mod.Element) []const u8 {
+    return switch (el) {
+        .text_input, .text_area => "keystrokes",
+        else => "presses",
+    };
+}
+
 /// Taps an inline link at the middle of its first rect — the same
 /// checks `tap` makes, against the geometry the renderer underlined.
 /// A link that wraps is tapped on its first line, where a reader's
@@ -442,9 +489,18 @@ pub fn clearField(app: *App, label: []const u8) !void {
 /// The text-entry control with this label, among the two text-entry
 /// roles only. A miss is the queries' loud one, listing what is there.
 fn fieldWithLabel(app: *App, label: []const u8) !NodeId {
-    return queries.queryByRole(&app.tree, .text_input, label) orelse
+    const id = queries.queryByRole(&app.tree, .text_input, label) orelse
         queries.queryByRole(&app.tree, .text_area, label) orelse
-        queries.noMatch(&app.tree, "text field label", label);
+        return queries.noMatch(&app.tree, "text field label", label);
+    // Said here rather than left to `focusVia`, which would time out
+    // and report the field merely unreachable: a disabled field is not
+    // missing from the tab order by accident, and a test that meant to
+    // fill it is asserting against a screen whose form is in flight.
+    if (disabledOf(app.tree.getConst(id).?.*).?) {
+        diag.print("\"{s}\" is disabled — it takes no keystrokes until whatever the form sent comes back; settle that first, like a user would\n", .{label});
+        return error.Disabled;
+    }
+    return id;
 }
 
 /// What that field holds right now, or "" if it is not on screen — the

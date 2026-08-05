@@ -129,6 +129,10 @@ fn dumpNode(gpa: std.mem.Allocator, out: *std.ArrayList(u8), app: *App, id: Node
                 // update moves.
                 try out.print(gpa, " composition_cursor={d}", .{inp.composition_cursor});
             }
+            // Not taking edits (`TextInput.disabled`), which a tree
+            // snapshot must say: a field the driver could not type into
+            // looks identical to one that swallowed the keystrokes.
+            if (inp.disabled) try out.appendSlice(gpa, " disabled");
             // The reason is never a secret, even on an obscured field:
             // the secret is what was typed.
             if (inp.problem.len > 0) {
@@ -146,6 +150,7 @@ fn dumpNode(gpa: std.mem.Allocator, out: *std.ArrayList(u8), app: *App, id: Node
                 try appendQuoted(gpa, out, area.composition);
                 try out.print(gpa, " composition_cursor={d}", .{area.composition_cursor});
             }
+            if (area.disabled) try out.appendSlice(gpa, " disabled");
             if (area.problem.len > 0) {
                 try out.appendSlice(gpa, " problem=");
                 try appendQuoted(gpa, out, area.problem);

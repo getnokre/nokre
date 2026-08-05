@@ -21,6 +21,7 @@
 const std = @import("std");
 const bind = @import("../core/bind.zig");
 const diag = @import("diag.zig");
+const driver = @import("driver.zig");
 const queries = @import("queries.zig");
 const semantics = @import("../a11y/semantics.zig");
 const trace = @import("trace.zig");
@@ -206,10 +207,15 @@ const Destination = struct {
     }
 };
 
-/// A button's *state*, not its presence. Waiting for the control and
+/// A control's *state*, not its presence. Waiting for the control and
 /// then reading `disabled` off it asserts a state the screen may not
 /// have reached yet — "the last field armed Save" is a reply landing,
-/// and the button is on screen the whole time it is in flight.
+/// and the control is on screen the whole time it is in flight.
+///
+/// By label across the kinds that carry `disabled` (`driver.disabledOf`),
+/// not by the button role: a form that disables its fields while the
+/// submission is on the wire is exactly the screen these waits are for,
+/// and the field comes back before the button does.
 const Armed = struct {
     name: []const u8,
 
@@ -222,8 +228,8 @@ const Armed = struct {
     }
 
     fn disabledIs(self: *const Armed, app: *App, want: bool) bool {
-        const id = queries.queryByRole(&app.tree, .button, self.name) orelse return false;
-        return app.tree.getConst(id).?.button.disabled == want;
+        const id = driver.controlWithLabel(&app.tree, self.name) orelse return false;
+        return driver.disabledOf(app.tree.getConst(id).?.*).? == want;
     }
 };
 
@@ -383,20 +389,21 @@ pub fn untilDestination(app: *App, pacer: Pacer, title: []const u8) error{WaitTi
     try waitUntil(app, pacer, what, bind.bindAs(Ready, Destination.present, &target));
 }
 
-/// Pumps until the button with this name takes presses — the reply
-/// that arms a form landing, not merely the form being on screen.
+/// Pumps until the control with this name is taking input again — the
+/// reply that arms a form landing, not merely the form being on screen.
+/// The button it re-arms and the fields it hands back are one question.
 pub fn untilEnabled(app: *App, pacer: Pacer, label: []const u8) error{WaitTimeout}!void {
     var target: Armed = .{ .name = label };
     var buf: [what_cap]u8 = undefined;
-    const what = describe(&buf, "\"{s}\" to take presses", .{label}, label);
+    const what = describe(&buf, "\"{s}\" to stop declining", .{label}, label);
     try waitUntil(app, pacer, what, bind.bindAs(Ready, Armed.enabled, &target));
 }
 
-/// `untilEnabled`'s twin: the button has gone back to declining.
+/// `untilEnabled`'s twin: the control has gone back to declining.
 pub fn untilDisabled(app: *App, pacer: Pacer, label: []const u8) error{WaitTimeout}!void {
     var target: Armed = .{ .name = label };
     var buf: [what_cap]u8 = undefined;
-    const what = describe(&buf, "\"{s}\" to stop taking presses", .{label}, label);
+    const what = describe(&buf, "\"{s}\" to start declining", .{label}, label);
     try waitUntil(app, pacer, what, bind.bindAs(Ready, Armed.disabled, &target));
 }
 
@@ -449,6 +456,11 @@ pub fn writeScreen(gpa: std.mem.Allocator, out: *std.ArrayList(u8), app: *App) !
         if (el.label().len == 0) continue;
         const state: []const u8 = switch (el.*) {
             .button => |b| if (b.in_progress) " (working)" else if (b.disabled) " (disabled)" else if (b.folded) " (folded)" else "",
+            // The two fields say the same word for the same reason: a
+            // failure dump whose form is mid-submission reads as a
+            // screen full of fields that simply ignored the driver.
+            .text_input => |i| if (i.disabled) " (disabled)" else "",
+            .text_area => |a| if (a.disabled) " (disabled)" else "",
             else => if (el.isFolded()) " (folded)" else "",
         };
         try out.print(gpa, "  {s} \"{s}\"{s}\n", .{ @tagName(el.role()), el.label(), state });

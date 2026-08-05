@@ -1057,6 +1057,55 @@ the framework never writes these words: an empty-looking problem (only
 spaces) marks the field invalid with nothing to say, which the
 [audit](testing.md) fails as `wordless_problem`.
 
+#### `disabled`: not yours to type into right now
+
+`disabled` is `Button.disabled` for the element that holds a value: the
+field leaves the focus order, takes no keystroke and no tap, and every
+backend announces it not operable. It is for the field that toggles
+between editable and not **within one layout**, driven by state — the
+submit-in-flight case, where the form has sent what the field holds and
+the field must stop taking edits until the answer lands.
+
+```zig
+try b.textInput(.{
+    .label = state.tr(.verificationCode),
+    .value = form.code.get(),
+    .disabled = form.phase == .verifying,
+    .on_change = .bind(onCode, state),
+});
+try b.button(.{
+    .label = state.tr(.verify),
+    .in_progress = form.phase == .verifying,
+    .on_press = .bind(onVerify, state),
+});
+```
+
+Without it the only honest thing an app can do is leave the value fully
+editable while it is already on the wire: the user goes on typing into
+bytes the server has, and what they end up looking at is a value
+nothing will ever act on.
+
+It draws as the disabled *secondary button* does — its two steps, the
+label at `.g6` and the outline at `.g10` — applied to the two parts of a
+field that are affordance: the box that says "type here" and the label
+naming what would be typed. The placeholder goes with them. The
+**value does not**: it stays at full ink, because this state exists
+precisely while that text is on the wire, and dimming the one thing
+worth checking would make the pattern hardest to read at the moment it
+matters.
+
+**Not for a value that is settled.** A value that is not editable and
+never becomes editable in that layout is ordinary [text](#text) with an
+Edit button opening a real editing flow. A permanently disabled input
+offers an affordance it will never honor; this field's whole shape is
+that it is temporary and it ends. There is deliberately no `readonly`.
+
+`disabled` and `problem` never meet. The honest sequence is one frame
+wide: the form disables on submit, the server refuses, and the field is
+re-enabled *and* given its problem together. A field that says what is
+wrong and refuses the correction is a dead end no keystroke leaves, and
+the [audit](testing.md) fails the pair as `unfixable_problem`.
+
 ### `text_area`
 Multi-line `text_input`: same fields minus `on_submit`, because Enter
 inserts a newline — a field that swallows Enter to submit loses the one
@@ -1069,9 +1118,10 @@ there is no inner scrollbar to fight the page's own scrolling. ↑/↓ move
 the caret between visual lines preserving its horizontal position;
 Home/End go to the bounds of the caret's line (the whole value is a ↑/↓
 walk away). Everything else — codepoint-aware editing, placeholder, IME
-composition — matches `text_input`, `problem` included: the words hang
-under the field the same way and the field is announced invalid the
-same way. Semantics: a multiline text field carrying the value.
+composition — matches `text_input`, `problem` and `disabled` included:
+the words hang under the field the same way, the field is announced
+invalid the same way, and a multi-line value goes on the wire the same
+way. Semantics: a multiline text field carrying the value.
 
 ### `select`
 An exclusive choice among many options, in `text_input`'s clothing: the

@@ -6,6 +6,7 @@
 
 const std = @import("std");
 const app_mod = @import("app.zig");
+const editing = @import("editing.zig");
 const element_mod = @import("element.zig");
 const focus = @import("focus.zig");
 const geometry = @import("geometry.zig");
@@ -348,6 +349,49 @@ test "space is text in a field and a key everywhere else" {
     try app.dispatch(.{ .text = .{ .bytes = " " } });
     try testing.expectEqual(@as(u32, 1), counter.count);
     try testing.expectEqualStrings("a b", app.tree.getConst(input).?.text_input.value);
+}
+
+test "a disabled field refuses every road text reaches it by" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    const input = try app.tree.appendId(app.tree.rootId(), .{ .text_input = .{
+        .label = "Verification code",
+        .value = "481923",
+        .cursor = 6,
+        .disabled = true,
+    } });
+    // Focus cannot arrive here honestly — the field is not a stop — so
+    // the test plants it, which is the only way to prove the refusals
+    // rather than the unreachability.
+    app.focused = .of(input);
+
+    // Typed bytes, keys that edit, keys that move the caret, and the
+    // submit key. One gate (`editing.focusedEditable`) answers all four.
+    try app.dispatch(.{ .text = .{ .bytes = "7" } });
+    try app.dispatch(.{ .key_down = .{ .key = .backspace } });
+    try app.dispatch(.{ .key_down = .{ .key = .home } });
+    try app.dispatch(.{ .key_down = .{ .key = .left } });
+    try app.dispatch(.{ .ime = .start });
+    try app.dispatch(.{ .ime = .{ .update = .{ .composition = "にほ", .cursor = 2 } } });
+    const el = app.tree.getConst(input).?.text_input;
+    try testing.expectEqualStrings("481923", el.value);
+    try testing.expectEqualStrings("", el.composition);
+    try testing.expectEqual(@as(usize, 6), el.cursor);
+
+    // And activation — a tap, or an assistive technology's default
+    // action — does not place the caret either.
+    try app.activate(input);
+    try testing.expectEqual(@as(usize, 6), app.tree.getConst(input).?.text_input.cursor);
+
+    // The same question every shell asks to raise or dismiss the
+    // on-screen keyboard: a field that stopped taking edits stops
+    // asking for one.
+    try testing.expect(editing.focusedEditable(&app) == null);
+
+    // A tap cannot reach it at all: it is out of the hit test with the
+    // focus order, so the press lands on nothing.
+    app.performLayout();
+    try testing.expect(app.hitTest(app.tree.rectOf(input).center()) == null);
 }
 
 test "ime composition updates then commits" {

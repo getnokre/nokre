@@ -143,6 +143,43 @@ test "golden: a refused field carries its reason under the outline" {
     try renderGolden(&harness, "field-problem");
 }
 
+fn buildFieldDisabled(_: ?*anyopaque, app: *h.App) !void {
+    const tree = &app.tree;
+    const root = tree.rootId();
+    try tree.append(root, .{ .heading = .{ .content = "Verify", .level = .h1 } });
+    // The submit-in-flight form, whole: the fields are standing down
+    // and the button that sent them says so. What the picture has to
+    // settle is the split — the label and the outline take the disabled
+    // secondary button's two steps, and the *value* does not move.
+    try tree.append(root, .{ .text_input = .{
+        .label = "Verification code",
+        .value = "481923",
+        .disabled = true,
+    } });
+    // A live field between them, so the difference is a difference and
+    // not an absolute: same geometry, darker outline, ink label.
+    try tree.append(root, .{ .text_input = .{ .label = "City", .value = "Berlin", .cursor = 6 } });
+    // Empty and disabled, which is where the placeholder's own step
+    // shows: it goes with the label, being prose about typing.
+    try tree.append(root, .{ .text_area = .{
+        .label = "Why you are joining",
+        .placeholder = "A sentence is plenty",
+        .disabled = true,
+    } });
+    try tree.append(root, .{ .button = .{ .label = "Verify", .in_progress = true } });
+}
+
+test "golden: a field whose submission is in flight stands its affordance down" {
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 420 }, .{ .build = buildFieldDisabled });
+    defer harness.deinit();
+    // Tab once. The first field is out of the order, so focus jumps
+    // past it to the live one — which the picture then shows beside its
+    // disabled neighbour: same geometry, darker outline, ink label, and
+    // a caret. The proof of the focus rule is in the image.
+    try harness.pressKey(.tab, .{});
+    try renderGolden(&harness, "field-disabled");
+}
+
 fn buildPassword(_: ?*anyopaque, app: *h.App) !void {
     const tree = &app.tree;
     const root = tree.rootId();

@@ -420,10 +420,14 @@ pub fn activate(app: *App, id: NodeId) !void {
                 break :blk null;
             } else null;
         },
-        .text_input => |*i| {
+        // Placing the caret is what activating a field means, so a
+        // disabled one declines it — the same shape the button arm
+        // above has, and the reason an assistive technology's default
+        // action on a disabled field moves nothing.
+        .text_input => |*i| if (!i.disabled) {
             i.cursor = i.value.len;
         },
-        .text_area => |*a| {
+        .text_area => |*a| if (!a.disabled) {
             a.cursor = a.value.len;
         },
         .more => try overflow_mod.presentMoreSheet(app, id),
@@ -611,8 +615,7 @@ pub fn handleKey(app: *App, key: event_mod.Key, mods: event_mod.Modifiers) !void
     };
 
     switch (el.*) {
-        .text_input => |*inp| try editing.handleInputKey(app, inp, key),
-        .text_area => |*area| try editing.handleAreaKey(app, focused_id, area, key),
+        .text_input, .text_area => try editing.handleEditableKey(app, focused_id, key),
         // ←/→ move the selection the way it looks: toward the pressed
         // arrow. Mirrored chrome lays options right-to-left, so the
         // arrows swap roles with it (↑/↓ in radio groups do not — the

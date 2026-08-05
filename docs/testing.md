@@ -687,17 +687,24 @@ expectation can't be met there, a screen reader user can't meet it either.
 - `expectPresent(role, name)` — absence's positive twin, by semantic
   identity: presence claimed by role plus accessible name, and a miss
   lists every labeled node on screen.
-- `expectDisabled(label)` — a button that declines rather than acts,
-  read off the node instead of pressed: `tap` refuses a disabled
-  control loudly, and a diagnostic from a passing test reads as a
-  failure to whoever is watching the build.
+- `expectDisabled(label)` — a control that declines rather than acts,
+  read off the node instead of pressed or typed into: the driver
+  refuses a disabled control loudly, and a diagnostic from a passing
+  test reads as a failure to whoever is watching the build. Located
+  **by label across element kinds**, the way `expectBusy` is: a button
+  is not the only thing that can be disabled — the two text fields
+  carry `TextInput.disabled` — and a form that stands its fields down
+  while the submission is on the wire had no assertion to make about
+  them while this verb was buttons-only. An element that cannot be
+  disabled at all says so rather than reporting a placid "enabled".
 - `expectEnabled(label)` — its twin, for the assertion that a form
   armed: proving "the last field enabled Save" by pressing Save would
-  submit the form to prove it.
+  submit the form to prove it. Also the assertion that a reply came
+  back and handed the fields to the user again.
 - `expectBusy(label, expected)` — a control with work in flight: the
   state `in_progress` draws and a `nokre.Gate` produces. Located **by
-  label across element kinds**, the way `expectValue` is and unlike
-  `expectDisabled`, because buttons are not the only things that work —
+  label across element kinds**, the way `expectValue` and
+  `expectDisabled` are, because buttons are not the only things that work —
   a toggle and a checkbox carry `in_progress` too, and half the tests
   that used to reach into the raw tree for it were reading toggles. The
   polarity is an argument, like `expectChecked`'s, because both answers
@@ -1087,15 +1094,19 @@ Three rules the set follows, each of them a decision:
   against**, not for something weaker nearby. `typeInto` and
   `clearField` wait for a `text_input` or `text_area` with that label,
   never for the label — prose carrying the same words would end the
-  wait and strand the verb. `selectOption` waits for a choice control
+  wait and strand the verb. Both then refuse a field that is
+  `disabled` by name rather than letting the tab walk time out: a field
+  out of the focus order is not unreachable by accident, and a test
+  that meant to fill it is asserting against a form still in flight. `selectOption` waits for a choice control
   the same way. `goTab` waits for the bar to be able to answer for the
   destination in any of its three shapes. `expectValue` waits for the
   **value**, `expectProblem` for the **reason**, and
   `expectEnabled`/`expectDisabled` for the **state**: a
   screen revisited against a real server stands there with the last
   answer in it, a field is unmarked and plausible for the whole time
-  the submission that will refuse it is in flight, and a button is on
-  screen for the whole time the reply that arms it is in flight. `settled` and `quiesce` are the two that
+  the submission that will refuse it is in flight, and the control —
+  button or field — is on screen for the whole time the reply that
+  hands it back is in flight. `settled` and `quiesce` are the two that
   deliberately do not wait — one audits the frame an action produced,
   the other is a bare deadline.
 

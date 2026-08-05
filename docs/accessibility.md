@@ -30,9 +30,9 @@ and produces a flat, parent-linked `Snapshot` in document order. Roles map
 | `toggle` | `switch` | on (carried as checked), focused; `in_progress`: disabled *and* busy, the value still carried, still a focus stop |
 | `checkbox` | `checkbox` | checked, focused; `in_progress` as `toggle` |
 | `copyable` | `button` | copied value carried, focused; a `status` child while acknowledged |
-| `text_input` | `text_field` | value, composition, focused; `problem` as the description, with `invalid` set |
+| `text_input` | `text_field` | value, composition, focused; `problem` as the description, with `invalid` set; `disabled` alone, never with `busy` |
 | `text_input` (obscured) | `password_field` | value withheld — the `problem` is not |
-| `text_area` | `multiline_text_field` | value, composition, focused; `problem` as `text_input`'s |
+| `text_area` | `multiline_text_field` | value, composition, focused; `problem` and `disabled` as `text_input`'s |
 | `list` / `list_item` | `list` / `listitem` | —; the derived marker is presentation and is never announced |
 | `code_block` | `code` | content announced whole, focused |
 | `blockquote` | `blockquote` | —; the attribution is words inside it |
@@ -294,6 +294,14 @@ fails on:
   because no other string field in nokre looks past its UTF-8 check,
   and one field inventing a stricter door would be a rule the rest of
   the set does not keep
+- `unfixable_problem` — a text field carrying both `problem` and
+  `disabled`: it states what is wrong with the value and refuses the
+  correction, which is a dead end no keystroke leaves. The pair has no
+  honest producer — the form disables on submit, the server refuses,
+  and the field is re-enabled *and* given its problem in the same frame
+  — so what reaches it is a controller that set the reason and forgot
+  to lower the flag, a bug the app cannot see and every screen reader
+  can
 - `empty_list` — a `list` with no items. This one is not about
   mutation: a list is appended before its items exist, so `append` has
   nothing to check and the whole-tree pass is the only place the rule

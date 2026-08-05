@@ -1211,17 +1211,19 @@ pub const Harness = struct {
     }
 
     /// A control that declines rather than acts. Read off the node
-    /// instead of pressed: `tap` refuses a disabled control loudly,
-    /// and a diagnostic from a passing test reads as a failure to
-    /// whoever is watching the build. Buttons only — the one element
-    /// that carries `disabled` (element.zig); everything else declines
-    /// by not being built.
+    /// instead of pressed or typed into: the driver refuses a disabled
+    /// control loudly, and a diagnostic from a passing test reads as a
+    /// failure to whoever is watching the build.
+    ///
+    /// Located **by label across element kinds** (`driver.disabledOf`),
+    /// the way `expectBusy` is: this verb was buttons-only while the
+    /// state was not, so a form that disables its fields on submit had
+    /// no assertion to make about them. An element that cannot be
+    /// disabled at all says so rather than reporting a placid "not
+    /// disabled" — the wrong words are how a test ends up asserting
+    /// against a paragraph that happens to share the control's name.
     pub fn expectDisabled(self: *Harness, label: []const u8) !void {
-        const id = try self.getByRole(.button, label);
-        const el = self.app.tree.getConst(id).?;
-        if (el.button.disabled) return;
-        diag.print("expected \"{s}\" disabled, but it takes presses\n", .{label});
-        return error.DisabledMismatch;
+        return self.expectArmed(label, true);
     }
 
     /// `expectDisabled`'s twin: a control that has become live. Not
@@ -1229,10 +1231,32 @@ pub const Harness = struct {
     /// is an assertion about the form, and a test that proved it by
     /// pressing would have submitted the form to prove it.
     pub fn expectEnabled(self: *Harness, label: []const u8) !void {
-        const id = try self.getByRole(.button, label);
+        return self.expectArmed(label, false);
+    }
+
+    /// Both halves, so the lookup and the "cannot be disabled" wording
+    /// have one home. The two verbs stay separate rather than taking a
+    /// polarity argument like `expectBusy`: they read as English at
+    /// hundreds of call sites, and both spellings already shipped.
+    fn expectArmed(self: *Harness, label: []const u8, want: bool) !void {
+        const id = driver.controlWithLabel(&self.app.tree, label) orelse {
+            // Nothing that can be disabled wears the name. The plain
+            // lookup runs only to say what *does*, which is the
+            // difference between "you mistyped it" and "you named the
+            // heading above the button".
+            const other = try self.getByLabel(label);
+            const el = self.app.tree.getConst(other).?;
+            diag.print("expected \"{s}\" disabled or not, but it is a {s} — only buttons and the two text fields can be\n", .{ label, @tagName(el.role()) });
+            return error.NotAControl;
+        };
         const el = self.app.tree.getConst(id).?;
-        if (!el.button.disabled) return;
-        diag.print("expected \"{s}\" to take presses, but it is disabled\n", .{label});
+        const disabled = driver.disabledOf(el.*).?;
+        if (disabled == want) return;
+        if (want) {
+            diag.print("expected \"{s}\" disabled, but it takes {s}\n", .{ label, driver.takes(el.*) });
+            return error.DisabledMismatch;
+        }
+        diag.print("expected \"{s}\" to take {s}, but it is disabled\n", .{ label, driver.takes(el.*) });
         return error.EnabledMismatch;
     }
 

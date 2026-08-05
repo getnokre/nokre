@@ -669,6 +669,15 @@ fn buildHome(state: *State, app: *h.App) !void {
         .value = "not-an-address",
         .problem = "That is not an email address.",
     });
+    // A field whose submission is in flight: it holds its value, keeps
+    // its name, and takes no edits until the answer lands. Tab runs
+    // straight past it — it is out of the focus order, which is what
+    // makes it different from the refused field above.
+    try b.textInput(.{
+        .label = "Verification code",
+        .value = "481923",
+        .disabled = true,
+    });
     state.notify_toggle_id = try tree.appendId(b.at, .{ .toggle = .{
         .label = "Notify me",
         .on_toggle = .bind(toggleNotify, state),

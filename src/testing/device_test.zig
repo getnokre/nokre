@@ -706,11 +706,40 @@ test "driver tier: the state waits say what they wanted and what they found" {
         defer said.stop();
         try testing.expectError(error.WaitTimeout, d.expectEnabled("Save"));
         said.stop();
-        try testing.expect(std.mem.startsWith(u8, said.text(), "waited 20ms for \"Save\" to take presses; the screen stands at:\n"));
+        try testing.expect(std.mem.startsWith(u8, said.text(), "waited 20ms for \"Save\" to stop declining; the screen stands at:\n"));
         try testing.expect(std.mem.indexOf(u8, said.text(), "button \"Save\" (disabled)") != null);
         // The screen dump carries no values, so the precise mismatch is
         // spelled out under it rather than left to a tree diff.
         try testing.expect(std.mem.endsWith(u8, said.text(), "expected \"Save\" to take presses, but it is disabled\n"));
+    }
+    {
+        // The same pair over a field, which the verb could not see at
+        // all before it read across kinds: the form is mid-submission,
+        // so both its button and its fields are standing down.
+        var said: diag.Capture = .{};
+        said.start();
+        defer said.stop();
+        try app.tree.append(app.tree.rootId(), .{ .text_input = .{
+            .label = "Verification code",
+            .value = "481923",
+            .disabled = true,
+        } });
+        try testing.expectError(error.WaitTimeout, d.expectEnabled("Verification code"));
+        said.stop();
+        try testing.expect(std.mem.indexOf(u8, said.text(), "text_input \"Verification code\" (disabled)") != null);
+        // "Presses" would be nonsense about a field, and a diagnostic
+        // that reads as nonsense is one a reader stops trusting.
+        try testing.expect(std.mem.endsWith(u8, said.text(), "expected \"Verification code\" to take keystrokes, but it is disabled\n"));
+    }
+    {
+        // A name that is on screen but belongs to something that cannot
+        // be disabled at all: the wrong words, not a placid "enabled".
+        var said: diag.Capture = .{};
+        said.start();
+        defer said.stop();
+        try testing.expectError(error.WaitTimeout, d.expectDisabled("Invite code"));
+        said.stop();
+        try testing.expect(std.mem.endsWith(u8, said.text(), "expected \"Invite code\" disabled or not, but it is a copyable — only buttons and the two text fields can be\n"));
     }
     {
         var said: diag.Capture = .{};

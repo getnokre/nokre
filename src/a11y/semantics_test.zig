@@ -8,11 +8,13 @@ const element_mod = @import("../core/element.zig");
 const layout = @import("../core/layout.zig");
 const semantics = @import("semantics.zig");
 const test_app = @import("../core/test_app.zig");
+const tree_mod = @import("../core/tree.zig");
 
 const testing = std.testing;
 const App = app_mod.App;
 const A11yNode = semantics.A11yNode;
 const A11yRole = semantics.A11yRole;
+const NodeId = tree_mod.NodeId;
 const snapshot = semantics.snapshot;
 
 fn noopPress(_: ?*anyopaque) void {}
@@ -433,6 +435,47 @@ test "a field's problem is its description, and lights invalid on both fields" {
     const c = snap.find(ok).?;
     try testing.expect(!c.invalid);
     try testing.expectEqualStrings("", c.description);
+}
+
+test "a disabled field is announced not operable, still named and still holding its value" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    const code = try app.tree.appendId(app.tree.rootId(), .{ .text_input = .{
+        .label = "Verification code",
+        .value = "481923",
+        .disabled = true,
+    } });
+    const why = try app.tree.appendId(app.tree.rootId(), .{ .text_area = .{
+        .label = "Why you are joining",
+        .value = "Because",
+        .disabled = true,
+    } });
+    const live = try app.tree.appendId(app.tree.rootId(), .{ .text_input = .{ .label = "City" } });
+
+    var snap = try snapshot(testing.allocator, &app);
+    defer snap.deinit();
+
+    for ([_]NodeId{ code, why }) |id| {
+        const n = snap.find(id).?;
+        try testing.expect(n.disabled);
+        // Not busy: the pair a button makes says "working", and the
+        // work here is the form's, not the field's. The field's only
+        // statement is that it is not taking edits.
+        try testing.expect(!n.busy);
+        // Out of the focus order with it — the one thing that makes
+        // this different from the button's busy state.
+        try testing.expect(!n.focusable);
+        try testing.expect(!n.activatable);
+        // Everything a reader needs is still announced: a reader who
+        // cannot see the dimmed outline is owed what the field is and
+        // what it holds.
+        try testing.expect(n.label.len > 0);
+        try testing.expect(n.value.len > 0);
+    }
+
+    const c = snap.find(live).?;
+    try testing.expect(!c.disabled);
+    try testing.expect(c.focusable);
 }
 
 test "an obscured field withholds its value and not its reason" {

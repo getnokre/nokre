@@ -117,8 +117,8 @@ fn drawLeading(app: *App, canvas: Painter, x: i32, avail_w: i32, baseline: i32, 
 /// A labeled element's caption: small text on the leading edge of the
 /// rect's first line. The labeled fields, the radio group, the meter,
 /// and the QR tile all open with one.
-fn drawSmallLabel(app: *App, canvas: Painter, r: Rect, label: []const u8) void {
-    drawLeading(app, canvas, r.x, r.w, r.y + text.Scale.small.baseline(), .prose, text.Scale.small.px(), label, .ink);
+fn drawSmallLabel(app: *App, canvas: Painter, r: Rect, label: []const u8, ink: color.Gray) void {
+    drawLeading(app, canvas, r.x, r.w, r.y + text.Scale.small.baseline(), .prose, text.Scale.small.px(), label, ink);
 }
 
 /// The baseline that centers a glyph's em box in `r`. Icon ink hangs
@@ -603,8 +603,33 @@ fn drawFieldProblem(app: *App, canvas: Painter, r: Rect, problem: []const u8) Re
     return body;
 }
 
-fn drawFieldChrome(app: *App, canvas: Painter, r: Rect, label: []const u8, focused: bool) Rect {
-    drawSmallLabel(app, canvas, r, label);
+/// How a field draws when it is not taking edits (`TextInput.disabled`).
+///
+/// There is no colour to spend, so the vocabulary is the one the
+/// disabled *secondary button* already established — its words at `.g6`
+/// and its outline at `.g10` — applied to the two parts of a field that
+/// are affordance rather than content: the box that says "type here"
+/// and the label that names what would be typed. Same two steps, so a
+/// disabled field and a disabled button beside it read as one state.
+///
+/// The **value stays at full `ink`**, and that is the whole of what
+/// makes this different from a disabled button. A button's words *are*
+/// the affordance — they say what the press will do — so dimming them
+/// dims the offer. A field's value is not an offer, it is the user's
+/// own text, and this state exists precisely while that text is on the
+/// wire: dimming the one thing the user wants to check would make the
+/// pattern's purpose harder to read at the moment it matters. It also
+/// keeps the field inside the contrast gate rather than exempting it
+/// (`Element.ambientTextInk` still answers `.ink`), where a disabled
+/// button is exempt.
+///
+/// The placeholder goes with the label: it is prose about typing, and
+/// there is no typing.
+const disabled_field_ink: color.Gray = .g6;
+const disabled_field_edge: color.Gray = .g10;
+
+fn drawFieldChrome(app: *App, canvas: Painter, r: Rect, label: []const u8, focused: bool, disabled: bool) Rect {
+    drawSmallLabel(app, canvas, r, label, if (disabled) disabled_field_ink else .ink);
     const label_h = text.Scale.small.lineHeight();
     const field: Rect = .{
         .x = r.x,
@@ -612,10 +637,13 @@ fn drawFieldChrome(app: *App, canvas: Painter, r: Rect, label: []const u8, focus
         .w = r.w,
         .h = r.h - label_h - metrics.input_label_gap,
     };
+    // A disabled field is out of the focus order, so `focused` cannot be
+    // true beside it; the branch is written in the order the states are
+    // reached, not defensively.
     if (focused)
         drawFocusEdge(canvas, field, metrics.radius)
     else
-        canvas.strokeRect(field, metrics.radius, metrics.border, .g7);
+        canvas.strokeRect(field, metrics.radius, metrics.border, if (disabled) disabled_field_edge else .g7);
     return field;
 }
 
@@ -838,7 +866,7 @@ fn drawPickerSeparators(app: *App, canvas: Painter, picker: NodeId) void {
 /// hairline between them. The border groups; the circle glyphs — filled
 /// in `ink` against the state edge's ring — carry the selection.
 fn drawRadioGroup(app: *App, canvas: Painter, r: Rect, rg: element_mod.RadioGroup, focused: bool) void {
-    drawSmallLabel(app, canvas, r, rg.label);
+    drawSmallLabel(app, canvas, r, rg.label, .ink);
     const group_top = r.y + text.Scale.small.lineHeight() + metrics.input_label_gap;
     const group: Rect = .{ .x = r.x, .y = group_top, .w = r.w, .h = r.bottom() - group_top };
     // Like the labeled fields, focus takes the group box, not the label
@@ -1470,7 +1498,7 @@ fn inkCenterBaseline(r: Rect, size: i32, top: i32, bottom: i32) i32 {
 /// A gauge under the words that state it: a dim track carrying the
 /// state edge, filled from the leading edge like reading.
 fn drawMeter(app: *App, canvas: Painter, r: Rect, m: element_mod.Meter) void {
-    drawSmallLabel(app, canvas, r, m.label);
+    drawSmallLabel(app, canvas, r, m.label, .ink);
     const track: Rect = .{ .x = r.x, .y = r.bottom() - metrics.meter_h, .w = r.w, .h = metrics.meter_h };
     const round = @divTrunc(metrics.meter_h, 2);
     canvas.fillRect(track, round, .g11);
@@ -1497,7 +1525,7 @@ fn drawMeter(app: *App, canvas: Painter, r: Rect, m: element_mod.Meter) void {
 /// edge; the modules inside never mirror, because a mirrored QR code
 /// doesn't scan. The quiet zone is the paper margin inside the tile.
 fn drawQr(app: *App, canvas: Painter, r: Rect, q: element_mod.Qr) void {
-    drawSmallLabel(app, canvas, r, q.label);
+    drawSmallLabel(app, canvas, r, q.label, .ink);
     const side = layout.qrSide(q.size, r.w);
     const px = @divTrunc(side, q.size + 2 * metrics.qr_quiet);
     const tile: Rect = .{ .x = startX(app, r.x, r.w, side), .y = r.bottom() - side, .w = side, .h = side };
@@ -1663,24 +1691,28 @@ fn drawSpanWrapped(app: *App, canvas: Painter, r: Rect, base: text.Face, scale: 
 /// An empty field's stand-in words, dim like the punctuation they are.
 /// A complex RTL placeholder starts from the right edge, like the value
 /// it stands in for will.
-fn drawPlaceholder(app: *App, canvas: Painter, x: i32, baseline: i32, avail_w: i32, placeholder: []const u8) void {
+///
+/// On a disabled field it goes to the disabled ink with the label: a
+/// placeholder is prose about typing, and there is no typing. The
+/// *value* does not follow it there — see `drawFieldChrome`.
+fn drawPlaceholder(app: *App, canvas: Painter, x: i32, baseline: i32, avail_w: i32, placeholder: []const u8, disabled: bool) void {
     const size = text.Scale.body.px();
     const px = if (bidi.isComplex(placeholder) and bidi.paragraphDirection(placeholder) == .rtl)
         x + avail_w - app.measurer.measure(.prose, size, placeholder)
     else
         x;
-    canvas.drawText(px, baseline, .prose, size, placeholder, .mid);
+    canvas.drawText(px, baseline, .prose, size, placeholder, if (disabled) disabled_field_ink else .mid);
 }
 
 fn drawTextInput(app: *App, canvas: Painter, r: Rect, inp: element_mod.TextInput, focused: bool) void {
-    const field = drawFieldChrome(app, canvas, drawFieldProblem(app, canvas, r, inp.problem), inp.label, focused);
+    const field = drawFieldChrome(app, canvas, drawFieldProblem(app, canvas, r, inp.problem), inp.label, focused, inp.disabled);
     const tx = field.x + field_pad;
     const ty = field.y + field_pad + text.Scale.body.baseline();
     const size = text.Scale.body.px();
     const inner_w = field.w - 2 * field_pad;
 
     if (inp.value.len == 0 and inp.composition.len == 0) {
-        drawPlaceholder(app, canvas, tx, ty, inner_w, inp.placeholder);
+        drawPlaceholder(app, canvas, tx, ty, inner_w, inp.placeholder, inp.disabled);
     } else if (bidi.isComplex(inp.value) and !inp.obscured and inp.composition.len == 0) {
         // Complex text draws whole — splitting at the caret would snap
         // joined letters into their standalone forms as the caret moves
@@ -1783,14 +1815,14 @@ fn drawAreaLine(app: *App, canvas: Painter, x: i32, baseline: i32, size: i32, va
 }
 
 fn drawTextArea(app: *App, canvas: Painter, r: Rect, area: element_mod.TextArea, focused: bool) void {
-    const field = drawFieldChrome(app, canvas, drawFieldProblem(app, canvas, r, area.problem), area.label, focused);
+    const field = drawFieldChrome(app, canvas, drawFieldProblem(app, canvas, r, area.problem), area.label, focused, area.disabled);
     const size = text.Scale.body.px();
     const line_h = text.Scale.body.lineHeight();
     const tx = field.x + field_pad;
     const inner_w = field.w - 2 * field_pad;
 
     if (area.value.len == 0 and area.composition.len == 0) {
-        drawPlaceholder(app, canvas, tx, field.y + field_pad + text.Scale.body.baseline(), inner_w, area.placeholder);
+        drawPlaceholder(app, canvas, tx, field.y + field_pad + text.Scale.body.baseline(), inner_w, area.placeholder, area.disabled);
         return;
     }
 
@@ -1870,7 +1902,7 @@ fn drawTextArea(app: *App, canvas: Painter, r: Rect, area: element_mod.TextArea,
 }
 
 fn drawSelect(app: *App, canvas: Painter, r: Rect, sel: element_mod.Select, focused: bool) void {
-    const field = drawFieldChrome(app, canvas, r, sel.label, focused);
+    const field = drawFieldChrome(app, canvas, r, sel.label, focused, false);
     const size = text.Scale.body.px();
     const ty = field.y + field_pad + text.Scale.body.baseline();
     if (sel.selected < sel.options.len) {
@@ -1885,7 +1917,7 @@ fn drawSelect(app: *App, canvas: Painter, r: Rect, sel: element_mod.Select, focu
 }
 
 fn drawCopyable(app: *App, canvas: Painter, r: Rect, id: NodeId, c: element_mod.Copyable, focused: bool) void {
-    const field = drawFieldChrome(app, canvas, r, c.label, focused);
+    const field = drawFieldChrome(app, canvas, r, c.label, focused, false);
     const size = text.Scale.body.px();
     const ty = field.y + field_pad + text.Scale.body.baseline();
     // The acknowledgement: this field's activation was the last thing

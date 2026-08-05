@@ -710,6 +710,37 @@ pub const TextInput = struct {
     /// Password mode: renders one bullet per codepoint and never exposes
     /// the value to assistive tech or traces. Editing is unchanged.
     obscured: bool = false,
+    /// Not yours to type into right now. `Button.disabled`, for the
+    /// element that holds a value instead of an action: out of the focus
+    /// order, inert to keystrokes and to the pointer, announced disabled
+    /// by every backend.
+    ///
+    /// It is for a field that toggles between editable and not *within
+    /// one layout*, driven by state — the submit-in-flight case, where a
+    /// form sends what the field holds and the field must stop taking
+    /// edits until the answer lands. Without it the only honest thing an
+    /// app can do is leave the value fully editable while it is already
+    /// on the wire, so the user types into bytes the server has, and
+    /// what they end up looking at is a value nothing will ever act on.
+    ///
+    /// It is **not** for a value that is settled and never becomes
+    /// editable in this layout. That is ordinary text with an Edit
+    /// button opening a real editing flow — a permanently disabled input
+    /// is a control that offers an affordance it will never honor, and
+    /// the pattern this field exists for is the opposite one: temporary,
+    /// and it ends.
+    ///
+    /// It does not carry `problem`, and the two never meet: a form
+    /// disables on submit, the server refuses, and the field is
+    /// re-enabled *and* given its problem in the same frame. A field
+    /// that says what is wrong and refuses the correction is a dead end
+    /// — the audit refuses the pair (`unfixable_problem`).
+    ///
+    /// A disabled field holds no pre-edit either: `Tree.append` clears
+    /// the composition at the door, so a field disabled mid-IME cannot
+    /// leave a dangling pre-edit for the renderer to draw over a value
+    /// nobody can correct.
+    disabled: bool = false,
     /// What is wrong with the value, in the app's own words. Empty is
     /// the ordinary state; any words at all make the field *invalid* —
     /// the flag is derived from these bytes rather than stored beside
@@ -752,6 +783,10 @@ pub const TextArea = struct {
     /// one IME protocol (editing.zig), so they carry one pre-edit state
     /// between them.
     composition_cursor: usize = 0,
+    /// `TextInput.disabled`, unchanged: out of the focus order, inert,
+    /// announced disabled, and carrying no pre-edit. A multi-line field
+    /// goes on the wire the same way a single-line one does.
+    disabled: bool = false,
     /// `TextInput.problem`, unchanged: the words hang under the field at
     /// the labeled-field gap and the field is announced invalid. A
     /// multi-line field is refused for the same reasons a single-line
@@ -1615,7 +1650,14 @@ pub const Element = union(Role) {
             // press.
             .toggle => |t| !t.in_progress,
             .checkbox => |c| !c.in_progress,
-            .text_input, .text_area, .segmented, .tile, .radio_group, .select, .copyable, .nav_item, .nav_current, .sheet_close, .back, .icon_button, .picker_item, .more => true,
+            // The button's other rule, for the two elements that hold a
+            // value: a field whose submission is in flight takes no
+            // edit, and unlike busy it does not keep its stop — there is
+            // nothing on a field to press a second time, so `disabled`
+            // is the whole of what it can say (`TextInput.disabled`).
+            .text_input => |i| !i.disabled,
+            .text_area => |a| !a.disabled,
+            .segmented, .tile, .radio_group, .select, .copyable, .nav_item, .nav_current, .sheet_close, .back, .icon_button, .picker_item, .more => true,
             // Static content and containers. Enumerated rather than
             // defaulted: a new element must declare its answer here, or
             // it silently takes no press, no focus stop, and no place
@@ -1643,6 +1685,10 @@ pub const Element = union(Role) {
             // so busy is the only thing that stops them activating and
             // the stop always survives it.
             .toggle, .checkbox => true,
+            // Everything else, the two fields included: a disabled field
+            // has no press to preserve a stop for, so it falls out of
+            // the order with `isInteractive` and Tab walks past it —
+            // the button's `disabled` arm, arrived at by the default.
             else => self.isInteractive(),
         };
     }
@@ -1804,6 +1850,28 @@ test "an in-progress button stops activating but keeps its focus stop" {
     try std.testing.expectEqual(@as(?@import("color.zig").Gray, .ink), outlined.ambientTextInk());
     const glyph: Element = .{ .button = .{ .label = "Next cycle", .form = .{ .glyph = .chevron_right }, .in_progress = true } };
     try std.testing.expectEqual(@as(?@import("color.zig").Gray, .ink), glyph.ambientTextInk());
+}
+
+test "a disabled field leaves the focus order, keeping its name and its value" {
+    for ([_]Element{
+        .{ .text_input = .{ .label = "Verification code", .value = "481923", .disabled = true } },
+        .{ .text_area = .{ .label = "Why you are joining", .value = "Because", .disabled = true } },
+    }) |off| {
+        try std.testing.expect(!off.isInteractive());
+        // Unlike a busy button, there is no stop to preserve: nothing on
+        // a field is pressed, so nothing was pressed a moment ago.
+        try std.testing.expect(!off.isFocusable());
+        // The name is still owed — the field is announced, not removed.
+        try std.testing.expect(off.label().len > 0);
+        // The value stays at full ink and stays inside the contrast
+        // gate: what stands down is the affordance, never the content
+        // the user is being asked to wait on (renderer.zig).
+        try std.testing.expectEqual(@as(?@import("color.zig").Gray, .ink), off.ambientTextInk());
+    }
+
+    const live: Element = .{ .text_input = .{ .label = "Verification code" } };
+    try std.testing.expect(live.isInteractive());
+    try std.testing.expect(live.isFocusable());
 }
 
 test "a busy switch stops flipping but keeps its focus stop" {

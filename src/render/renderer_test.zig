@@ -457,6 +457,76 @@ test "disabled glyph-form button dims its glyph" {
     try testing.expect(found);
 }
 
+test "a disabled field stands its affordance down and leaves its value alone" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    try app.tree.append(app.tree.rootId(), .{ .text_input = .{
+        .label = "Verification code",
+        .value = "481923",
+        .disabled = true,
+    } });
+    // A live field below it, so every assertion is a difference rather
+    // than an absolute.
+    try app.tree.append(app.tree.rootId(), .{ .text_input = .{ .label = "City", .value = "Berlin" } });
+
+    var rec = frameOf(&app);
+    defer rec.deinit();
+
+    var label_ink: ?Gray = null;
+    var live_label_ink: ?Gray = null;
+    var value_ink: ?Gray = null;
+    for (rec.ops.items) |op| {
+        if (op != .draw_text) continue;
+        const t = op.draw_text;
+        if (std.mem.eql(u8, t.bytes, "Verification code")) label_ink = t.gray;
+        if (std.mem.eql(u8, t.bytes, "City")) live_label_ink = t.gray;
+        if (std.mem.eql(u8, t.bytes, "481923")) value_ink = t.gray;
+    }
+    // The label is affordance — it names what would be typed — so it
+    // takes the disabled secondary button's step.
+    try testing.expectEqual(@as(?Gray, .g6), label_ink);
+    try testing.expectEqual(@as(?Gray, .ink), live_label_ink);
+    // The value is not. This state exists precisely while these bytes
+    // are on the wire, and dimming the one thing worth checking would
+    // make the pattern hardest to read at the moment it matters.
+    try testing.expectEqual(@as(?Gray, .ink), value_ink);
+
+    // The outline goes quiet with the label — the disabled secondary
+    // button's border, so a disabled field and a disabled button beside
+    // it read as one state.
+    var edges: [2]Gray = @splat(.ink);
+    var n: usize = 0;
+    var strokes = rec.opsOf(.stroke_rect);
+    while (strokes.next()) |s| : (n += 1) {
+        if (n < edges.len) edges[n] = s.gray;
+    }
+    try testing.expectEqual(@as(usize, 2), n);
+    try testing.expectEqual(Gray.g10, edges[0]);
+    try testing.expectEqual(Gray.g7, edges[1]);
+}
+
+test "a disabled field's placeholder goes with the label, not with the value" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    try app.tree.append(app.tree.rootId(), .{ .text_input = .{
+        .label = "Verification code",
+        .placeholder = "6 digits",
+        .disabled = true,
+    } });
+
+    var rec = frameOf(&app);
+    defer rec.deinit();
+    var found = false;
+    for (rec.ops.items) |op| {
+        if (op == .draw_text and std.mem.eql(u8, op.draw_text.bytes, "6 digits")) {
+            // Prose about typing, and there is no typing.
+            try testing.expectEqual(Gray.g6, op.draw_text.gray);
+            found = true;
+        }
+    }
+    try testing.expect(found);
+}
+
 test "an in-progress button swaps its words for a centered ellipsis, at the size the words asked for" {
     var app = try test_app.init(400, 400);
     defer app.deinit();

@@ -139,6 +139,28 @@ pub const Violation = struct {
         /// after every driver action, which is exactly when a problem
         /// formatted from an empty catalog entry first appears.
         wordless_problem,
+        /// The same defect from the third side: a field that states what
+        /// is wrong with its value and refuses the correction. The user
+        /// is told the address is already in use and cannot touch the
+        /// address — a dead end no keystroke leaves, which is what
+        /// `problem`'s own contract says it will never be ("it is not
+        /// `disabled` … saying otherwise would trap the user in the
+        /// value that was refused", element.zig).
+        ///
+        /// The pair has no honest producer. A form disables on submit,
+        /// the server refuses, and the field is re-enabled *and* given
+        /// its problem in the same frame — the two states are adjacent
+        /// in time and never overlap. What does produce it is a
+        /// controller that sets the reason but forgets to lower the
+        /// flag, which is a bug the app cannot see and every screen
+        /// reader can.
+        ///
+        /// A rule rather than an append refusal, for `wordless_problem`'s
+        /// reason: both fields are legal on their own and it is the
+        /// *combination* that is wrong, so the door is the wrong place —
+        /// the audit runs after every driver action, which is exactly
+        /// when a reply lands.
+        unfixable_problem,
         /// An overflowing scroll region must visibly cut an element at
         /// its offset-0 viewport edge. The resting indicator is
         /// deliberately quiet (see the renderer), so the mid-element
@@ -375,16 +397,8 @@ pub fn collect(app: *App, out: *std.ArrayList(Violation), options: Options) !voi
                     try out.append(app.gpa, .{ .id = id, .rule = .malformed_meter });
                 }
             },
-            .text_input => |t| {
-                if (wordless(t.problem)) {
-                    try out.append(app.gpa, .{ .id = id, .rule = .wordless_problem });
-                }
-            },
-            .text_area => |t| {
-                if (wordless(t.problem)) {
-                    try out.append(app.gpa, .{ .id = id, .rule = .wordless_problem });
-                }
-            },
+            .text_input => |t| try fieldRules(app, out, id, t.problem, t.disabled),
+            .text_area => |t| try fieldRules(app, out, id, t.problem, t.disabled),
             .copyable => |c| {
                 if (c.value.len == 0) {
                     try out.append(app.gpa, .{ .id = id, .rule = .empty_copyable });
@@ -479,6 +493,25 @@ pub fn collect(app: *App, out: *std.ArrayList(Violation), options: Options) !voi
 /// reason: whitespace is not ink.
 fn wordless(problem: []const u8) bool {
     return problem.len > 0 and std.mem.trim(u8, problem, " \t\n\r").len == 0;
+}
+
+/// Both field rules, asked once for the two elements that carry the
+/// pair. One function rather than two copies of the same two `if`s: the
+/// single-line and multi-line fields are refused for identical reasons
+/// (`TextArea.problem`, `TextArea.disabled`), and a rule that grew a
+/// third clause on one of them only would be the drift this shape
+/// exists to prevent.
+fn fieldRules(app: *App, out: *std.ArrayList(Violation), id: NodeId, problem: []const u8, disabled: bool) !void {
+    if (wordless(problem)) {
+        try out.append(app.gpa, .{ .id = id, .rule = .wordless_problem });
+    }
+    // Order matters only for reading a failure list: a wordless problem
+    // on a disabled field is two separate mistakes, and reporting both
+    // is what tells the author the second one is not a consequence of
+    // the first.
+    if (disabled and problem.len > 0) {
+        try out.append(app.gpa, .{ .id = id, .rule = .unfixable_problem });
+    }
 }
 
 /// The route a control's activation navigates to, or null when pressing

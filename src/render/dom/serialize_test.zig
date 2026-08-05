@@ -557,6 +557,41 @@ test "a field with no problem carries no invalid state and no wrapper" {
     try testing.expect(std.mem.indexOf(u8, html, "field-group") == null);
 }
 
+test "a disabled field says so in the platform's own word, on both fields" {
+    // What a pixel golden cannot check for this edition: the *focus
+    // order*. The reference drops a disabled field's stop; the markup
+    // has to drop it too, and only the native attribute does that —
+    // `aria-disabled` would announce the state and leave the field
+    // Tab-reachable, so the two editions would disagree about where Tab
+    // goes, which is the one thing a second edition may never do.
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    try app.tree.append(app.tree.rootId(), .{ .text_input = .{
+        .label = "Verification code",
+        .value = "481923",
+        .disabled = true,
+    } });
+    try app.tree.append(app.tree.rootId(), .{ .text_area = .{
+        .label = "Why you are joining",
+        .disabled = true,
+    } });
+    try app.tree.append(app.tree.rootId(), .{ .text_input = .{ .label = "City" } });
+
+    const html = try render(&app);
+    defer testing.allocator.free(html);
+    try expectContains(html, "<input type=\"text\" value=\"481923\" placeholder=\"\" disabled");
+    try expectContains(html, "<textarea rows=\"3\" placeholder=\"\" disabled");
+    // The name and the value stay in the markup: a disabled field is
+    // announced, not removed.
+    try expectContains(html, "<span class=\"field-label\">Verification code</span>");
+    // `aria-disabled` is deliberately absent — the native attribute is
+    // the whole statement, and a second spelling could disagree with it.
+    try testing.expect(std.mem.indexOf(u8, html, "aria-disabled") == null);
+    // The live field beside them takes no attribute at all.
+    try expectContains(html, "<span class=\"field-label\">City</span><span class=\"field-box\">" ++
+        "<input type=\"text\" value=\"\" placeholder=\"\"></span>");
+}
+
 test "a text area value that starts with a newline keeps it" {
     // The HTML parser drops one newline immediately after the
     // <textarea> tag, so the serializer emits a sacrificial extra — a

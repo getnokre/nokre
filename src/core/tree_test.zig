@@ -1079,6 +1079,45 @@ test "setContent clamps the caret to a codepoint boundary, not only to length" {
     try std.testing.expectEqual(@as(usize, 3), tree.getConst(input).?.text_input.cursor);
 }
 
+test "a disabled field carries no pre-edit past the door" {
+    var tree = try Tree.init(std.testing.allocator);
+    defer tree.deinit();
+    // The mid-composition disable: the user is converting a reading and
+    // the form goes on the wire, so the field arrives disabled with a
+    // pre-edit nobody can now commit or cancel. Both halves are cleared
+    // together, so the offset can never outlive the string it indexes.
+    const input = try tree.appendId(tree.rootId(), .{ .text_input = .{
+        .label = "Name",
+        .value = "hello",
+        .composition = "にほん",
+        .composition_cursor = 3,
+        .disabled = true,
+    } });
+    const area = try tree.appendId(tree.rootId(), .{ .text_area = .{
+        .label = "Notes",
+        .composition = "にほん",
+        .composition_cursor = 3,
+        .disabled = true,
+    } });
+    try std.testing.expectEqualStrings("", tree.getConst(input).?.text_input.composition);
+    try std.testing.expectEqual(@as(usize, 0), tree.getConst(input).?.text_input.composition_cursor);
+    try std.testing.expectEqualStrings("", tree.getConst(area).?.text_area.composition);
+    try std.testing.expectEqual(@as(usize, 0), tree.getConst(area).?.text_area.composition_cursor);
+    // The value and its caret are untouched: what stands down is the
+    // uncommitted reading, never the text the user already has.
+    try std.testing.expectEqualStrings("hello", tree.getConst(input).?.text_input.value);
+
+    // A live field keeps its pre-edit, which is the whole of the IME
+    // protocol working.
+    const live = try tree.appendId(tree.rootId(), .{ .text_input = .{
+        .label = "Search",
+        .composition = "にほん",
+        .composition_cursor = 3,
+    } });
+    try std.testing.expectEqualStrings("にほん", tree.getConst(live).?.text_input.composition);
+    try std.testing.expectEqual(@as(usize, 3), tree.getConst(live).?.text_input.composition_cursor);
+}
+
 test "append clamps the caret the way setContent does" {
     var tree = try Tree.init(std.testing.allocator);
     defer tree.deinit();

@@ -33,14 +33,38 @@ pub const Editable = struct {
     }
 };
 
+/// The editable holding focus, or null when nothing editable does. The
+/// one door every text road passes: the keystrokes (`handleEditableKey`),
+/// the platform's committed bytes (`insertText`), the IME protocol
+/// (`handleIme`), and the question every shell asks to raise or dismiss
+/// the on-screen keyboard (`wants_text_input` in c_shell.zig).
+///
+/// A disabled field is not an editable. Saying it here rather than at
+/// each road is what makes "inert to keystrokes" one fact instead of
+/// four: a field that stops taking edits also stops asking for a
+/// keyboard, which is the half a per-road check would have missed.
 pub fn focusedEditable(app: *App) ?Editable {
     const stop = app.focused orelse return null;
     const el = app.tree.get(stop.node) orelse return null;
     return switch (el.*) {
-        .text_input => |*i| inputEditable(i),
-        .text_area => |*a| areaEditable(a),
+        .text_input => |*i| if (i.disabled) null else inputEditable(i),
+        .text_area => |*a| if (a.disabled) null else areaEditable(a),
         else => null,
     };
+}
+
+/// The focused field's key handling, gated at `focusedEditable`'s door
+/// so a disabled field refuses arrows, Backspace and Enter the same way
+/// it refuses typed bytes. The element is re-read by id because the two
+/// handlers need the concrete arm — the shared `Editable` view has no
+/// Home/End/Enter and no line geometry.
+pub fn handleEditableKey(app: *App, id: NodeId, key: event_mod.Key) !void {
+    if (focusedEditable(app) == null) return;
+    switch (app.tree.get(id).?.*) {
+        .text_input => |*inp| try handleInputKey(app, inp, key),
+        .text_area => |*area| try handleAreaKey(app, id, area, key),
+        else => {},
+    }
 }
 
 fn inputEditable(input: *element_mod.TextInput) Editable {

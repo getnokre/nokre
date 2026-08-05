@@ -104,6 +104,12 @@ pub const A11yNode = struct {
     checked: ?bool = null,
     /// aria-current: set on nav items when their route is the current one.
     selected: ?bool = null,
+    /// aria-disabled / AccessKit `disabled`: not operable. Written by
+    /// three kinds for two different reasons — a button or switch whose
+    /// work is running (with `busy`, below), a button its app disarmed,
+    /// and a field whose submission is in flight — and the reason never
+    /// travels: every backend has one flag, and an app that wants the
+    /// user told *why* has `problem` or the words on the control.
     disabled: bool = false,
     /// aria-busy / AccessKit `busy`: the action this node started is
     /// still running. It rides *with* `disabled` — a busy control is
@@ -120,7 +126,9 @@ pub const A11yNode = struct {
     ///
     /// It is not `disabled`: the field still takes every keystroke, and
     /// saying otherwise would strand the user in the value that was
-    /// refused. That is the whole difference from the busy pair above.
+    /// refused. That is the whole difference from the busy pair above,
+    /// and the audit holds the two apart (`unfixable_problem`) rather
+    /// than leaving it to each app to notice.
     invalid: bool = false,
     heading_level: u8 = 0,
     /// True for the open sheet: adapters expose it as a modal dialog and
@@ -245,15 +253,25 @@ fn appendNode(snap: *Snapshot, app: *App, id: NodeId, parent: ?usize) !void {
         // one pair for both fields. An obscured field withholds its
         // value and not its reason: the secret is what was typed, never
         // why it was refused.
+        //
+        // `disabled` rides alone here, never with `busy`: the pair the
+        // button makes says "named, present, working", and a field is
+        // none of those — the work is the form's, and the field's own
+        // statement is only that it is not taking edits. Nothing else
+        // stands down with it: the name and the value are still
+        // announced, because a reader who cannot see the dimmed outline
+        // is owed what the field is and what it holds.
         .text_input => |i| {
             if (!i.obscured) node.value = i.value;
             node.description = i.problem;
             node.invalid = i.problem.len > 0;
+            node.disabled = i.disabled;
         },
         .text_area => |a| {
             node.value = a.value;
             node.description = a.problem;
             node.invalid = a.problem.len > 0;
+            node.disabled = a.disabled;
         },
         .segmented => |s| {
             if (s.selected < s.options.len) node.value = s.options[s.selected];

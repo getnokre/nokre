@@ -760,6 +760,56 @@ test "e2e: expectPresent and expectDisabled assert what a user meets" {
     try testing.expectError(error.NoSuchElement, h.expectDisabled("Publish"));
     try testing.expectError(error.EnabledMismatch, h.expectEnabled("Send"));
     try testing.expectError(error.NoSuchElement, h.expectEnabled("Publish"));
+    // A name on screen that belongs to something that cannot be
+    // disabled at all: the wrong words, not a placid "enabled".
+    try testing.expectError(error.NotAControl, h.expectDisabled("Show done"));
+
+    // And the lookup is scoped to the kinds that carry the state, not
+    // label-first: a heading names the control under it on nearly every
+    // screen, and the verb must find the control (`controlWithLabel`).
+    try h.app.tree.append(h.app.tree.rootId(), .{ .heading = .{ .content = "Send", .level = .h2 } });
+    h.app.invalidate();
+    try h.expectDisabled("Send");
+}
+
+test "e2e: expectDisabled reads across the kinds that can be disabled" {
+    // The verb was buttons-only while the state was not, so a form that
+    // stands its fields down on submit had no assertion to make about
+    // them (`driver.disabledOf`).
+    const Form = struct {
+        fn build(_: ?*anyopaque, app: *App) anyerror!void {
+            const root = app.tree.rootId();
+            try app.tree.append(root, .{ .text_input = .{
+                .label = "Verification code",
+                .value = "481923",
+                .disabled = true,
+            } });
+            try app.tree.append(root, .{ .text_area = .{ .label = "Why you are joining", .disabled = true } });
+            try app.tree.append(root, .{ .text_input = .{ .label = "City", .value = "Berlin" } });
+            try app.tree.append(root, .{ .button = .{ .label = "Verify", .in_progress = true } });
+        }
+    };
+    var h = try Harness.init(testing.allocator, .{ .w = 480, .h = 640 }, .{ .build = Form.build });
+    defer h.deinit();
+
+    try h.expectDisabled("Verification code");
+    try h.expectDisabled("Why you are joining");
+    try h.expectEnabled("City");
+    // Busy is not disabled, and the two verbs stay different questions:
+    // the button beside the fields keeps its focus stop and its arm.
+    try h.expectEnabled("Verify");
+    try h.expectBusy("Verify", true);
+
+    diag.quiet = true;
+    defer diag.quiet = false;
+    // Every road text reaches a field by is shut, and the driver says
+    // so instead of timing out on an unreachable tab stop.
+    try testing.expectError(error.Disabled, h.typeInto("Verification code", "7"));
+    try testing.expectError(error.Disabled, h.clearField("Why you are joining"));
+    // And the tap road, which refuses on `isFocusable` like any
+    // non-interactive target.
+    const id = try h.getByLabel("Verification code");
+    try testing.expectError(error.NotInteractive, h.tap(id));
 }
 
 test "e2e: expectValue reads whatever the a11y node calls its value" {

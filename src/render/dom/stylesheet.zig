@@ -1322,6 +1322,30 @@ const sheet =
     \\   box's, so the control inside it is exactly the rows. */
     \\.field-box textarea { resize: vertical; height: calc(var(--text-area-rows) * var(--lh-body)); }
     \\.field-box input::placeholder, .field-box textarea::placeholder { color: var(--mid); }
+    \\/* A field that is not taking edits (`TextInput.disabled`). The
+    \\   reference draws the disabled *secondary button's* two steps —
+    \\   its words at `--g6`, its outline at `--g10` — on the two parts
+    \\   of a field that are affordance: the box and the label naming
+    \\   what would be typed. The placeholder goes with the label; it is
+    \\   prose about typing, and there is no typing. */
+    \\.field:has(:disabled) .field-label { color: var(--g6); }
+    \\.field-box:has(:disabled) { border-color: var(--g10); }
+    \\.field-box input:disabled::placeholder, .field-box textarea:disabled::placeholder { color: var(--g6); }
+    \\/* And the value does *not* go with them — the one place this
+    \\   edition has to argue with its own engine. Every browser greys a
+    \\   disabled control's text by default (WebKit through
+    \\   `-webkit-text-fill-color`, which `color` alone does not beat,
+    \\   and iOS through an opacity of its own), because on a button the
+    \\   words are the offer. Here they are the user's own text, and this
+    \\   state exists precisely while that text is on the wire: dimming
+    \\   the one thing worth checking would make the pattern's purpose
+    \\   hardest to read at the moment it matters. Same rule as the
+    \\   reference (`drawFieldChrome`), so the two editions agree. */
+    \\.field-box input:disabled, .field-box textarea:disabled {
+    \\  color: var(--ink);
+    \\  -webkit-text-fill-color: var(--ink);
+    \\  opacity: 1;
+    \\}
     \\/* A field's problem hangs below its outline at the labeled-field
     \\   gap, not the page's flow — `fieldProblemHeight` spends
     \\   `input_label_gap` on it — so the field and the words about it

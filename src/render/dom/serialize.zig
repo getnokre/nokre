@@ -497,6 +497,7 @@ pub fn node(em: *Emitter, id: NodeId) anyerror!void {
             try em.raw("\" placeholder=\"");
             try em.text(t.placeholder);
             try em.raw("\"");
+            try fieldDisabled(em, t.disabled);
             try fieldProblemRef(em, id, t.problem);
             try em.stop(id);
             try em.raw("></span></label>");
@@ -511,6 +512,7 @@ pub fn node(em: *Emitter, id: NodeId) anyerror!void {
             });
             try em.text(t.placeholder);
             try em.raw("\"");
+            try fieldDisabled(em, t.disabled);
             try fieldProblemRef(em, id, t.problem);
             try em.stop(id);
             try em.raw(">");
@@ -983,6 +985,22 @@ fn noticeControls(em: *Emitter, notice: NodeId, flank: enum { lead, trail }) !vo
 fn fieldOpen(em: *Emitter, problem: []const u8) !void {
     if (problem.len == 0) return;
     try em.raw("<div class=\"field-group\">");
+}
+
+/// A field that is not taking edits, in the platform's own word.
+///
+/// The native `disabled` attribute rather than `aria-disabled`, and the
+/// same choice `button` makes for the same reason: this control really
+/// is inert — out of the tab order, deaf to keys and to the pointer —
+/// and `aria-disabled` would announce a state the markup then failed to
+/// keep, leaving a keyboard user able to Tab into a field core says has
+/// no stop. The two editions would disagree about the focus order,
+/// which is the one thing a second edition may never do.
+///
+/// No `readonly` twin: `readonly` keeps the focus stop and the caret,
+/// which is a different state from this one and not a state nokre has.
+fn fieldDisabled(em: *Emitter, disabled: bool) !void {
+    if (disabled) try em.raw(" disabled");
 }
 
 fn fieldProblemRef(em: *Emitter, id: NodeId, problem: []const u8) !void {

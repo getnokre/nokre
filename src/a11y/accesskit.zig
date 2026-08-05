@@ -379,6 +379,38 @@ test "a refused field crosses the bridge invalid, described, and still operable"
     try testing.expectEqual(@as(u8, 1), f.focusable);
 }
 
+test "a disabled field crosses the bridge not operable, not busy, and off the tab order" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    try app.tree.append(app.tree.rootId(), .{ .text_input = .{
+        .label = "Verification code",
+        .value = "481923",
+        .disabled = true,
+    } });
+
+    var snap = try semantics.snapshot(testing.allocator, &app);
+    defer snap.deinit();
+    var nodes: std.ArrayList(CNode) = .empty;
+    defer nodes.deinit(testing.allocator);
+    _ = try flatten(&snap, testing.allocator, &nodes);
+
+    const f = nodes.items[1];
+    try testing.expectEqual(@as(u8, 1), f.disabled);
+    // The pair `busy` makes is disabled+busy, and this is not it: the
+    // work belongs to the form, not to the field. Nor is it the
+    // invalid pair — a field cannot be refused and unfixable at once
+    // (the audit's `unfixable_problem`).
+    try testing.expectEqual(@as(u8, 0), f.busy);
+    try testing.expectEqual(@as(u8, 0), f.invalid);
+    try testing.expectEqual(@as(u8, 0), f.focusable);
+    try testing.expectEqual(@as(u8, 0), f.clickable);
+    // Still named and still holding its value, which is the whole
+    // reason the state exists: the user is being asked to wait while
+    // exactly these bytes are checked.
+    try testing.expectEqualStrings("Verification code", f.label.?[0..f.label_len]);
+    try testing.expectEqualStrings("481923", f.value.?[0..f.value_len]);
+}
+
 test "node ids round-trip through the u64 bridge encoding" {
     const id: tree_mod.NodeId = .{ .index = 42, .gen = 7 };
     try testing.expectEqual(id, nodeIdFromU64(nodeIdU64(id)));

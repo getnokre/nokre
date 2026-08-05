@@ -103,6 +103,49 @@ test "audit leaves a field with no problem, and one with real words, alone" {
     try testing.expectEqual(@as(usize, 0), violations.items.len);
 }
 
+test "audit flags a field that states a problem and refuses the correction" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    // The controller that set the reason and forgot to lower the flag.
+    // The honest sequence re-enables the field and gives it the problem
+    // in the *same* frame, so these two never overlap.
+    try app.tree.append(app.tree.rootId(), .{ .text_input = .{
+        .label = "Email",
+        .value = "ada@example.com",
+        .problem = "That address is already in use.",
+        .disabled = true,
+    } });
+
+    var violations: std.ArrayList(Violation) = .empty;
+    defer violations.deinit(testing.allocator);
+    try collect(&app, &violations, .{});
+    try testing.expectEqual(@as(usize, 1), violations.items.len);
+    try testing.expectEqual(Violation.Rule.unfixable_problem, violations.items[0].rule);
+}
+
+test "audit leaves each half of the unfixable pair alone, and reports both mistakes when both are made" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    // Disabled with nothing wrong: the ordinary submit-in-flight field.
+    try app.tree.append(app.tree.rootId(), .{ .text_input = .{ .label = "Email", .disabled = true } });
+    // Refused and still editable: the ordinary refusal.
+    try app.tree.append(app.tree.rootId(), .{ .text_area = .{ .label = "Notes", .problem = "Too short." } });
+
+    var violations: std.ArrayList(Violation) = .empty;
+    defer violations.deinit(testing.allocator);
+    try collect(&app, &violations, .{});
+    try testing.expectEqual(@as(usize, 0), violations.items.len);
+
+    // A wordless problem on a disabled field is two separate mistakes,
+    // and the second is not a consequence of the first.
+    try app.tree.append(app.tree.rootId(), .{ .text_input = .{ .label = "City", .problem = "  ", .disabled = true } });
+    violations.clearRetainingCapacity();
+    try collect(&app, &violations, .{});
+    try testing.expectEqual(@as(usize, 2), violations.items.len);
+    try testing.expectEqual(Violation.Rule.wordless_problem, violations.items[0].rule);
+    try testing.expectEqual(Violation.Rule.unfixable_problem, violations.items[1].rule);
+}
+
 test "audit flags a qr label emptied after construction" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
