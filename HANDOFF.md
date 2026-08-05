@@ -764,7 +764,8 @@ passes bump `revision` and move all three pins.
    **The migration disproved part of its own brief**, which is the
    valuable part: the org failure notices *were* rendered by the screen
    behind. The real mechanism is nokre's — see 6b.
-6b. **The three framework dismissals do not rebuild** — found by A3's
+6b. ~~**The three framework dismissals do not rebuild**~~ — DONE,
+   revision 23 (nokre `f20e961`, site `c5b7a4c`). Found by A3's
    migration. `App.refresh` declines to rebuild behind a live sheet on
    the stated assumption that "whatever closes the sheet rebuilds"
    (app.zig:438-444), but only `closeSheet` does: the scrim
@@ -772,7 +773,28 @@ passes bump `revision` and move all three pins.
    `dismissSheet`, which does not reload. State written while a sheet
    was up therefore surfaces at a later unrelated reload, detached from
    the action that caused it. An invariant stated in nokre's own
-   comment and not enforced anywhere.
+   comment and not enforced anywhere. The three doors now close rather
+   than dismiss, and the invariant moved to `closeSheet`, where it is
+   enforced. `dismissSheet` stays public and unchanged — it is the
+   honest verb for "take the sheet down, I am about to build the screen
+   myself", which is how eight consumer sites use it.
+
+   **A fourth door of the same class, reported and left**:
+   `overflow.closeTailSheet` (overflow.zig:283) dismisses without
+   rebuilding, so pressing a folded action in the More sheet writes
+   state the screen never shows. Its fix is structurally different —
+   `closePicker` avoids the bug by removing the layer *before* invoking
+   `on_select`, while `activate` must read the element out of the sheet
+   it is about to remove — and routing it through `closeSheet` would
+   make a folded button behave differently from the same button
+   standing. It wants its own item.
+
+   **Also noted, not guarded**: a route builder that unconditionally
+   calls `presentSheet` now has an unescapable sheet — Esc closes it,
+   the rebuild runs the builder, the builder puts it back. Not new
+   (`closeSheet` on a Cancel already had this property, and the
+   framework already says a bare `presentSheet` dies on reload), so no
+   refusal was added. Owner's call whether it wants one.
 
 7. **A4 harness expect verbs** (+ riders); fixtures shrink again.
 8. **A5 driver tier** (wait.until* + shared verb names; both Devices
