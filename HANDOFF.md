@@ -167,7 +167,7 @@ unrepresentable at comptime; more churn, same guarantee. Owner picks.)
 
 ## Part A — ranked redesigns
 
-### A1. The borrow model's missing containers: `Str(cap)` and `Rows(T, cap)`
+### A1 DONE (nokre `9ec8836` + `120bed8`, revisions 19–20) — the borrow model's missing containers: `Str(cap)` and `Rows(T, cap)`
 The single largest remaining consumer cost. nokre's callback-borrow
 discipline ("copy a borrowed slice into a bounded field", nokre's own
 queue.zig:12) forces every surviving string and list into fixed-cap
@@ -671,8 +671,42 @@ passes bump `revision` and move all three pins.
    harness (the one gate those exports run in); the focus vet lives in
    `deliver(.focus)` and both seams shrank, with assistive-tech focus
    now routed through core instead of writing `focused` directly.
-4. **A1 containers** (additive; consumers migrate the 25 structs and
-   3 Str copies mechanically — fork-parallelizable).
+4. ~~**A1 containers**~~ — DONE, revisions 19 and 20 (nokre `9ec8836`
+   + `120bed8`, rokovski `e1e8c160`, site `eb5c51e` + `64921a7`).
+   −583 consumer lines. The counts were low: 3 named `Str` copies plus
+   **22** inline `x_len`/`x_buf` pairs of the same shape, and **46**
+   row lists rather than 25 — the handoff counted only the ones with an
+   `items()` method. `phase` stayed app-side per the owner steer, which
+   costs a second field at each of the 11 lists that embedded it
+   (`<field>_phase`). Three parallel-array sites were zipped into row
+   structs; `billing`'s `query_ids` deliberately was not (scratch
+   derived from the rows, and folding it in would store a pointer into
+   a row's own `Str` for `fill`/`removeAt` to invalidate).
+
+   Revision 20 exists because the migration found a defect in the
+   container shipped in 19: `Str.set`/`Rows.fill` used `@memcpy` and so
+   panicked on a self-aliasing source, which is the natural way to trim
+   a field in place — and is what both apps were already doing, using
+   `copyForwards` for exactly that reason. The container had quietly
+   taken away a safety its hand-rolled predecessor had.
+
+   **Left open, and each needs its own decision:**
+   - `truncated` is wired to no user-facing surface. Neither app owns a
+     string that could say it, and inventing English inline breaks the
+     ARB rule, so ~30 sites are listed in the migration commit for a
+     copy pass. Two of them are **not display truncation**: a member's
+     fifth permission (`channels.zig`, cap 4) silently loses the
+     control it grants, and a dropped `tags.Library` entry (cap 128)
+     makes a real tag fail `knows()` and vanish from every channel
+     carrying it. Those two are defects, not ceilings.
+   - Two caps are unexploded: `family_cap = 4` holds every shipped
+     three-letter family, but `compile-tags.go` accepts any non-empty
+     family and the testdata already carries `industry` — the fix
+     belongs in that Go package's validation. `id_cap = 8` is exact for
+     `cat-0001`, so a five-digit id would truncate into a **collision**
+     with an existing tag rather than merely losing bytes.
+   - `adapters/api_client.zig:371` `keep()` is the same silent-`@min`
+     class in the transport, untouched.
 5. **A2.1 `bindAs` export** (additive; Signals and port Callbacks
    migrate; A2.2 route table only if owner scopes it in).
 6. **A3 sheet completion** (openSheetAs/sheetTagAs/closeSheet +
