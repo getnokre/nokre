@@ -1027,7 +1027,48 @@ passes bump `revision` and move all three pins.
     saw and one file contradicting itself; single-flight copies were 12
     not 17; six services answered `clearJournal`, not five.
 
-13. **`TextInput.disabled`** — QUEUED, owner-requested 2026-08-05.
+13. ~~**`TextInput.disabled`**~~ — DONE, revision 32 (nokre `1769de2`,
+    rokovski `5e445074`, site `b93a2d4`). Owner-requested 2026-08-05.
+    **19** screens and **39** field builders, not the 18 the grep
+    guessed: `settings_sheets` (an address still editable while the
+    deletion it unlocked runs) and a fourth org create screen were
+    missed. **11** candidate pairings were false — all the same
+    already-obeyed rule — and four comments in the apps that called
+    that rule a workaround for a missing field were corrected.
+
+    The value keeps full `ink` while the label, outline and placeholder
+    take the disabled button's two steps. A button's words *are* the
+    offer, so dimming them dims the offer; a field's value is the
+    user's own text and this state exists precisely while that text is
+    on the wire, so dimming the one thing worth checking would make the
+    pattern hardest to read when it matters most.
+
+    Two things found by building it. `focusedEditable` returning null
+    is the single funnel for typed bytes, the IME protocol *and*
+    `wants_text_input`, so refusal there also stops a disabled field
+    asking for an on-screen keyboard — which a per-road check would
+    have missed. And **a dangling pre-edit was real**: `composition` is
+    the one piece of field state an app does not own, so a field
+    disabled mid-IME kept an abandoned reading forever, drawn beside a
+    value nobody could correct; `append` now clears both halves at the
+    door.
+
+    `unfixable_problem` (disabled + problem) shipped: the pair has no
+    honest producer, so what reaches it is a controller that set the
+    reason and forgot to lower the flag — invisible to the app, loud to
+    every screen reader. Widening `expectDisabled` past buttons also
+    surfaced an ambiguity the narrow lookup hid — on nearly every
+    create screen the heading and the submit share their words, so a
+    plain label lookup answered with the `h1`.
+
+    Left flagged, not fixed: org `organizations_sheets.zig:13`'s join
+    code sheet carries `.error_copy` but no `.busy`, so its submit has
+    no in-flight representation at all, where its sibling in
+    `settings_sheets.zig` does. A behavioural change outside this item.
+
+*(superseded entry retained below for the reasoning)*
+
+13a. **`TextInput.readonly`** — QUEUED, owner-requested 2026-08-05.
     Not an item in this file: it appears only as prose in A11 as "the
     flagged candidate", carried over from an earlier round with no
     design attached.
