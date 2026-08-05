@@ -22,6 +22,7 @@ const std = @import("std");
 const bind = @import("../core/bind.zig");
 const diag = @import("diag.zig");
 const queries = @import("queries.zig");
+const semantics = @import("../a11y/semantics.zig");
 const trace = @import("trace.zig");
 const app_mod = @import("../core/app.zig");
 const element_mod = @import("../core/element.zig");
@@ -160,12 +161,87 @@ const Label = struct {
     }
 };
 
+/// A name under any of a set of roles. A set, not one role, because
+/// the acting verbs address control *families*: a field is a
+/// `text_input` or a `text_area`, a choice is a `segmented`, a
+/// `radio_group` or a `select`, and a wait that named only one of them
+/// would return the moment a *label* element with the same words
+/// arrived — leaving the verb to fail loudly on a control that was
+/// still on its way.
 const Named = struct {
-    role: Role,
+    roles: []const Role,
     name: []const u8,
 
+    fn found(self: *const Named, app: *App) ?NodeId {
+        for (self.roles) |role| {
+            if (queries.queryByRole(&app.tree, role, self.name)) |id| return id;
+        }
+        return null;
+    }
+
     fn present(self: *Named, app: *App) bool {
-        return queries.queryByRole(&app.tree, self.role, self.name) != null;
+        return self.found(app) != null;
+    }
+};
+
+/// The nav bar wearing any of its three shapes. Which one a screen is
+/// wearing is layout's decision, not the caller's: the row of
+/// destinations where the labels fit, the `nav_here` marker when the
+/// title is the screen already under foot (its accessible name is the
+/// chrome's, so it is matched on the element's *value*), and the
+/// collapsed chip that stands in for the whole roster when nothing
+/// fit. A wait that knew only the first would time out on a phone.
+const Destination = struct {
+    title: []const u8,
+
+    fn present(self: *Destination, app: *App) bool {
+        if (queries.queryByRole(&app.tree, .nav_item, self.title) != null) return true;
+        if (queries.queryByRole(&app.tree, .nav_current, app.chrome.section) != null) return true;
+        var it = app.tree.dfs();
+        while (it.next()) |id| {
+            const el = app.tree.getConst(id).?;
+            if (el.* == .nav_here and std.mem.eql(u8, el.nav_here.value, self.title)) return true;
+        }
+        return false;
+    }
+};
+
+/// A button's *state*, not its presence. Waiting for the control and
+/// then reading `disabled` off it asserts a state the screen may not
+/// have reached yet — "the last field armed Save" is a reply landing,
+/// and the button is on screen the whole time it is in flight.
+const Armed = struct {
+    name: []const u8,
+
+    fn enabled(self: *Armed, app: *App) bool {
+        return self.disabledIs(app, false);
+    }
+
+    fn disabled(self: *Armed, app: *App) bool {
+        return self.disabledIs(app, true);
+    }
+
+    fn disabledIs(self: *const Armed, app: *App, want: bool) bool {
+        const id = queries.queryByRole(&app.tree, .button, self.name) orelse return false;
+        return app.tree.getConst(id).?.button.disabled == want;
+    }
+};
+
+/// A control reading a particular value. Reads the a11y snapshot, like
+/// every value assertion in this repository, so a wait can only settle
+/// on something a screen reader could perceive. The snapshot is rebuilt
+/// per poll, which costs nothing on the happy path (the value is
+/// usually right within a poll or two) and is confined to a failure
+/// that was already going to spend its whole deadline.
+const Valued = struct {
+    label: []const u8,
+    expected: []const u8,
+
+    fn reads(self: *Valued, app: *App) bool {
+        var snap = semantics.snapshot(app.gpa, app) catch return false;
+        defer snap.deinit();
+        const node = snap.findByLabel(self.label) orelse return false;
+        return std.mem.eql(u8, node.value, self.expected);
     }
 };
 
@@ -194,11 +270,32 @@ pub fn untilLabel(app: *App, pacer: Pacer, label: []const u8) error{WaitTimeout}
 /// name, the shape every acting verb locates through, and the wait
 /// `press` synchronizes on.
 pub fn untilRole(app: *App, pacer: Pacer, role: Role, name: []const u8) error{WaitTimeout}!NodeId {
-    var target: Named = .{ .role = role, .name = name };
+    return untilAnyRole(app, pacer, &.{role}, name);
+}
+
+/// `untilRole` for a control *family* — a text field is a `text_input`
+/// or a `text_area`, a choice control is one of three — so a verb that
+/// acts on a family waits for the family it acts on rather than for a
+/// bare label that anything on screen could satisfy.
+pub fn untilAnyRole(app: *App, pacer: Pacer, roles: []const Role, name: []const u8) error{WaitTimeout}!NodeId {
+    var target: Named = .{ .roles = roles, .name = name };
     var buf: [what_cap]u8 = undefined;
-    const what = describe(&buf, "a {s} named \"{s}\"", .{ @tagName(role), name }, name);
-    try waitUntil(app, pacer, what, bind.bindAs(Ready, Named.present, &target));
-    return queries.queryByRole(&app.tree, role, name).?;
+    try waitUntil(app, pacer, describeRoles(&buf, roles, name), bind.bindAs(Ready, Named.present, &target));
+    return target.found(app).?;
+}
+
+/// "a button named …", "a text_input or text_area named …" — the role
+/// list read out, so a timeout names the family it was looking for
+/// rather than the first member of it.
+fn describeRoles(buf: []u8, roles: []const Role, name: []const u8) []const u8 {
+    var w = std.Io.Writer.fixed(buf);
+    w.writeAll("a ") catch return name;
+    for (roles, 0..) |role, i| {
+        if (i != 0) w.writeAll(" or ") catch return name;
+        w.writeAll(@tagName(role)) catch return name;
+    }
+    w.print(" named \"{s}\"", .{name}) catch return name;
+    return w.buffered();
 }
 
 /// Pumps until some element's label *contains* `needle` — the wait for
@@ -256,6 +353,45 @@ pub fn untilNotice(app: *App, pacer: Pacer, title: []const u8) error{WaitTimeout
     var buf: [what_cap]u8 = undefined;
     const what = describe(&buf, "a notice titled \"{s}\"", .{title}, title);
     try waitUntil(app, pacer, what, bind.bindAs(Ready, Label.notified, &target));
+}
+
+/// Pumps until the nav can answer for this destination in whichever
+/// shape it is wearing — `Destination` has the three. The wait `goTab`
+/// synchronizes on: a bar whose roster has not arrived yet is the
+/// ordinary state of a screen one route into a session.
+pub fn untilDestination(app: *App, pacer: Pacer, title: []const u8) error{WaitTimeout}!void {
+    var target: Destination = .{ .title = title };
+    var buf: [what_cap]u8 = undefined;
+    const what = describe(&buf, "a nav destination named \"{s}\"", .{title}, title);
+    try waitUntil(app, pacer, what, bind.bindAs(Ready, Destination.present, &target));
+}
+
+/// Pumps until the button with this name takes presses — the reply
+/// that arms a form landing, not merely the form being on screen.
+pub fn untilEnabled(app: *App, pacer: Pacer, label: []const u8) error{WaitTimeout}!void {
+    var target: Armed = .{ .name = label };
+    var buf: [what_cap]u8 = undefined;
+    const what = describe(&buf, "\"{s}\" to take presses", .{label}, label);
+    try waitUntil(app, pacer, what, bind.bindAs(Ready, Armed.enabled, &target));
+}
+
+/// `untilEnabled`'s twin: the button has gone back to declining.
+pub fn untilDisabled(app: *App, pacer: Pacer, label: []const u8) error{WaitTimeout}!void {
+    var target: Armed = .{ .name = label };
+    var buf: [what_cap]u8 = undefined;
+    const what = describe(&buf, "\"{s}\" to stop taking presses", .{label}, label);
+    try waitUntil(app, pacer, what, bind.bindAs(Ready, Armed.disabled, &target));
+}
+
+/// Pumps until the control with this label *reads* this value on the
+/// a11y snapshot. The value, not the label: a field that is on screen
+/// with last screen's contents in it satisfies a wait for the label and
+/// fails the assertion the caller actually wrote.
+pub fn untilValue(app: *App, pacer: Pacer, label: []const u8, expected: []const u8) error{WaitTimeout}!void {
+    var target: Valued = .{ .label = label, .expected = expected };
+    var buf: [what_cap]u8 = undefined;
+    const what = describe(&buf, "\"{s}\" to read \"{s}\"", .{ label, expected }, label);
+    try waitUntil(app, pacer, what, bind.bindAs(Ready, Valued.reads, &target));
 }
 
 /// The failure dump, printed through the diag gate: route, every

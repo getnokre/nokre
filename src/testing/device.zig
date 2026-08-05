@@ -54,6 +54,12 @@ const App = app_mod.App;
 const NodeId = tree_mod.NodeId;
 const Role = element_mod.Role;
 
+/// The two text-entry roles and the three choice roles, named once:
+/// these are the families `typeInto`/`clearField` and `selectOption`
+/// act on, so they are the families those verbs wait for.
+const text_field_roles: []const Role = &.{ .text_input, .text_area };
+const choice_roles: []const Role = &.{ .segmented, .radio_group, .select };
+
 /// Extra context printed after any refusal this device raises — the
 /// app-side state only the driver can name: the proofs still queued,
 /// the load phases behind a screen that never filled in. nokre's own
@@ -86,6 +92,15 @@ pub const Device = struct {
     // Each answers what it found, so the wait and the lookup are one
     // call. `wait.zig` holds the predicates; this is the pacer, bound
     // once, so a driver's verbs stop repeating it.
+    //
+    // What they hand back, and for how long. A `NodeId` is a tree
+    // position with a generation on it, so one that outlives a rebuild
+    // reads back as absent rather than as the wrong node — use it in
+    // the statement that follows, not across another verb.
+    // `untilEither` answers one of the two slices the *caller* passed
+    // in, so it is as long-lived as the caller's own strings and needs
+    // no copy. The one verb that hands back tree-owned bytes is
+    // `labelContaining`, and it says so at itself.
 
     /// Pumps until an element with exactly this accessible label is on
     /// screen, and answers it.
@@ -97,6 +112,12 @@ pub const Device = struct {
     /// name, the shape every acting verb locates through.
     pub fn untilRole(self: *Device, role: Role, name: []const u8) !NodeId {
         return self.note(wait.untilRole(self.app, self.pacer, role, name));
+    }
+
+    /// `untilRole` for a control family — what the verbs that act on a
+    /// family wait for.
+    pub fn untilAnyRole(self: *Device, roles: []const Role, name: []const u8) !NodeId {
+        return self.note(wait.untilAnyRole(self.app, self.pacer, roles, name));
     }
 
     /// Pumps until some element's label *contains* `needle`.
@@ -150,33 +171,42 @@ pub const Device = struct {
 
     /// Puts the caret in a named field and types, appending like
     /// typing does. `clearField` first is "leave it holding exactly
-    /// this".
+    /// this". Waits for a *field* with that label, not for the label:
+    /// a heading carrying the same words would otherwise end the wait
+    /// and leave the verb to refuse a control still on its way.
     pub fn typeInto(self: *Device, label: []const u8, bytes: []const u8) !void {
-        _ = try self.untilLabel(label);
+        _ = try self.untilAnyRole(text_field_roles, label);
         try self.note(driver.typeInto(self.app, label, bytes));
         return self.settled();
     }
 
     /// Empties a named field the way a user empties one.
     pub fn clearField(self: *Device, label: []const u8) !void {
-        _ = try self.untilLabel(label);
+        _ = try self.untilAnyRole(text_field_roles, label);
         try self.note(driver.clearField(self.app, label));
         return self.settled();
     }
 
     /// Chooses an option in a `segmented`, `radio_group` or `select` by
     /// the words on it, both ends named. The keyboard route, through
-    /// real dispatch — see `driver.selectOption`.
+    /// real dispatch — see `driver.selectOption`. Waits for a *choice
+    /// control*, for `typeInto`'s reason.
     pub fn selectOption(self: *Device, group_label: []const u8, option: []const u8) !void {
-        const id = try self.untilLabel(group_label);
+        const id = try self.untilAnyRole(choice_roles, group_label);
         try self.note(driver.selectOption(self.app, id, option));
         return self.settled();
     }
 
     /// Crosses the nav to the destination with this title, whichever
-    /// shape the bar is in — see `driver.goTab`.
+    /// shape the bar is in — see `driver.goTab`. Waits for the bar to
+    /// be able to answer for that destination at all: the row's
+    /// `nav_item`, the `nav_here` marker when it is the screen already
+    /// under foot, or the collapsed chip that stands in for the whole
+    /// roster. All three, because which one a screen wears is layout's
+    /// decision, and a bar whose roster has not arrived is the ordinary
+    /// state of a screen one route into a session.
     pub fn goTab(self: *Device, title: []const u8) !void {
-        _ = self.app.runtime.pump();
+        try self.note(wait.untilDestination(self.app, self.pacer, title));
         try self.note(driver.goTab(self.app, title));
         return self.settled();
     }
@@ -239,46 +269,56 @@ pub const Device = struct {
 
     /// Whatever this control's a11y node reports as its *value* — a
     /// field's text, a choice's selection, a tile's detail line, a
-    /// `copyable`'s payload, the URL a `qr` encodes. Waits for the
-    /// label, then compares: a value that has not arrived yet is the
-    /// commonest thing a driver is waiting on.
+    /// `copyable`'s payload, the URL a `qr` encodes.
+    ///
+    /// Waits for the **value**, not for the label. A screen revisited
+    /// against a real server stands there with the last answer's
+    /// contents in it while the new one is in flight, and a wait that
+    /// stopped at the label would assert the stale one every time.
     pub fn expectValue(self: *Device, label: []const u8, expected: []const u8) !void {
-        _ = try self.untilLabel(label);
-        var snap = try self.note(semantics.snapshot(self.app.gpa, self.app));
-        defer snap.deinit();
-        const node = snap.findByLabel(label) orelse
-            return self.noted(queries.noMatch(&self.app.tree, "label", label));
-        if (std.mem.eql(u8, node.value, expected)) return;
-        diag.print("expected \"{s}\" value \"{s}\", got \"{s}\"\n", .{ label, expected, node.value });
-        return self.noted(error.ValueMismatch);
+        wait.untilValue(self.app, self.pacer, label, expected) catch |e| {
+            // The generic dump above named the screen; this names the
+            // one thing it does not print — what the control actually
+            // reads — so the reader is not left diffing a tree.
+            var snap = semantics.snapshot(self.app.gpa, self.app) catch return self.noted(e);
+            defer snap.deinit();
+            if (snap.findByLabel(label)) |node| {
+                diag.print("expected \"{s}\" value \"{s}\", got \"{s}\"\n", .{ label, expected, node.value });
+            } else {
+                diag.print("expected \"{s}\" value \"{s}\", but nothing on screen carries that label\n", .{ label, expected });
+            }
+            return self.noted(e);
+        };
     }
 
     /// A control that declines rather than acts. Read off the node
     /// instead of pressed: pressing a disabled control refuses loudly
-    /// and proves nothing either way.
+    /// and proves nothing either way. Waits for the **state** — a
+    /// button is on screen for the whole time the reply that disarms it
+    /// is in flight.
     pub fn expectDisabled(self: *Device, label: []const u8) !void {
-        const el = try self.buttonNamed(label);
-        if (el.button.disabled) return;
-        diag.print("expected \"{s}\" disabled, but it takes presses\n", .{label});
-        return self.noted(error.DisabledMismatch);
+        wait.untilDisabled(self.app, self.pacer, label) catch |e|
+            return self.armMismatch(e, label, "expected \"{s}\" disabled, but it takes presses\n");
     }
 
     /// `expectDisabled`'s twin: a control that has become live. Not the
     /// same as pressing it — a test that proved "the last field armed
     /// Save" by pressing would have submitted the form to prove it.
+    /// Waits, because arming is exactly what a reply does.
     pub fn expectEnabled(self: *Device, label: []const u8) !void {
-        const el = try self.buttonNamed(label);
-        if (!el.button.disabled) return;
-        diag.print("expected \"{s}\" to take presses, but it is disabled\n", .{label});
-        return self.noted(error.EnabledMismatch);
+        wait.untilEnabled(self.app, self.pacer, label) catch |e|
+            return self.armMismatch(e, label, "expected \"{s}\" to take presses, but it is disabled\n");
     }
 
-    /// The button with this name, waited for. Buttons only — the one
-    /// element that carries `disabled` (element.zig); everything else
-    /// declines by not being built.
-    fn buttonNamed(self: *Device, label: []const u8) !*const element_mod.Element {
-        const id = try self.untilRole(.button, label);
-        return self.app.tree.getConst(id) orelse self.noted(error.InvalidNode);
+    /// The half the screen dump cannot say: whether the button was
+    /// there at all, and if so which way round it was.
+    fn armMismatch(self: *Device, e: anyerror, label: []const u8, comptime fmt: []const u8) anyerror {
+        if (queries.queryByRole(&self.app.tree, .button, label) == null) {
+            diag.print("expected the button \"{s}\", but no button on screen carries that name\n", .{label});
+        } else {
+            diag.print(fmt, .{label});
+        }
+        return self.noted(e);
     }
 
     // ---- reading ----
@@ -298,8 +338,16 @@ pub const Device = struct {
 
     /// The whole label of the first element whose label contains
     /// `needle` — how a scenario reads a value the screen prints into a
-    /// sentence rather than into a control. Borrowed from the tree, so
-    /// it lives until the next rebuild; copy it if it must outlive one.
+    /// sentence rather than into a control.
+    ///
+    /// **Copy the result before calling anything else on this device.**
+    /// The bytes are borrowed from the tree, and *every* verb here
+    /// pumps — a pump delivers a reply, a reply rebuilds the screen,
+    /// and the rebuild frees what this pointed at. It is not "until the
+    /// next rebuild" in some distant sense: the very next `valueOf` or
+    /// `expectPresent` is enough. `valueOf` is the verb that hands back
+    /// memory the caller owns; this one trades that for not allocating,
+    /// and the trade is the caller's to honour.
     pub fn labelContaining(self: *Device, needle: []const u8) ![]const u8 {
         const id = try self.untilLabelContaining(needle);
         const el = self.app.tree.getConst(id) orelse return self.noted(error.InvalidNode);

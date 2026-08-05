@@ -557,9 +557,11 @@ test "driver tier: the expect verbs assert what a user meets, and wait where wai
     try d.expectDisabled("Save");
     try d.expectAbsent("Publish");
 
-    // The arming reply lands three naps out, so the wait for the toggle
-    // to leave is what carries the clock to it — and `expectEnabled`
-    // then reads the screen that arrived.
+    // The arming reply lands three naps out and `expectEnabled` waits
+    // it out by itself: the button is on screen, disabled, for the
+    // whole time the reply is in flight, so a verb that waited only for
+    // the *control* would have failed here on a form that arms
+    // perfectly well.
     const Arm = struct {
         fn arrive(a: *App) anyerror!void {
             try a.tree.clearChildren(a.tree.rootId());
@@ -567,8 +569,176 @@ test "driver tier: the expect verbs assert what a user meets, and wait where wai
         }
     };
     fake.lands(&app, Arm.arrive);
-    try d.expectGone("Show done");
     try d.expectEnabled("Save");
+    try testing.expectEqual(@as(usize, 3), fake.naps);
+    try d.expectGone("Show done");
+}
+
+test "driver tier: goTab waits for a bar whose roster has not arrived" {
+    var app = try App.init(testing.allocator, .{
+        .viewport = .{ .w = 1000, .h = 300 },
+        .routes = &tab_routes,
+        .services = .mocks(),
+    });
+    defer app.deinit();
+    try app.navigate("explore");
+
+    // The roster is what a session's first reply installs; until then
+    // the bar is not there to walk. The old drivers waited for this and
+    // the framework's first cut did not — a `pump()` and straight into
+    // the walk, which is strictly less patient than the code it
+    // replaced.
+    const Roster = struct {
+        fn arrive(a: *App) anyerror!void {
+            try a.setNav(&tab_items);
+            try a.navigate("explore");
+        }
+    };
+    var fake: Fake = .{};
+    fake.lands(&app, Roster.arrive);
+    var d = deviceOn(&app, &fake, 60_000);
+
+    try d.goTab("Library");
+    try d.expectRoute("library");
+    try testing.expectEqual(@as(usize, 3), fake.naps);
+}
+
+test "driver tier: goTab's wait knows all three shapes the bar wears" {
+    // The collapsed chip is the shape a phone gets, and it carries no
+    // `nav_item` at all — a wait that knew only the row would time out
+    // on every narrow viewport.
+    var narrow = try App.init(testing.allocator, .{
+        .viewport = .{ .w = 375, .h = 300 },
+        .routes = &tab_routes,
+        .services = .mocks(),
+    });
+    defer narrow.deinit();
+    try narrow.navigate("explore");
+
+    const Roster = struct {
+        fn arrive(a: *App) anyerror!void {
+            try a.setNav(&tab_items);
+            try a.navigate("explore");
+        }
+    };
+    var fake: Fake = .{};
+    fake.lands(&narrow, Roster.arrive);
+    var d = deviceOn(&narrow, &fake, 60_000);
+
+    try d.goTab("Downloads");
+    try d.expectRoute("downloads");
+    try testing.expectEqual(@as(usize, 3), fake.naps);
+
+    // And the third shape: the marker under foot, which is not a
+    // control, so crossing to where you stand ends the wait and does
+    // nothing.
+    try d.goTab("Downloads");
+    try d.expectRoute("downloads");
+}
+
+test "driver tier: the field verbs wait for a field, not for the words" {
+    var app = try plainApp(480, 640);
+    defer app.deinit();
+    // The screen says "Email" from the start — as prose. A wait on the
+    // bare label would end here and hand `typeInto` a control that has
+    // not been built yet.
+    try app.tree.append(app.tree.rootId(), .{ .text = .{ .content = "Email" } });
+
+    const Field = struct {
+        fn arrive(a: *App) anyerror!void {
+            try a.tree.append(a.tree.rootId(), .{ .text_input = .{ .label = "Email" } });
+        }
+    };
+    var fake: Fake = .{};
+    fake.lands(&app, Field.arrive);
+    var d = deviceOn(&app, &fake, 60_000);
+
+    try d.typeInto("Email", "ada@example.com");
+    try testing.expectEqual(@as(usize, 3), fake.naps);
+    // Read off the element rather than through `expectValue`: this
+    // fixture deliberately puts the same words on two nodes, and the
+    // a11y snapshot answers a label in document order — so the prose
+    // would answer first. That ambiguity is exactly what naming the
+    // *family* protects the acting verbs from.
+    const field = queries.queryByRole(&app.tree, .text_input, "Email").?;
+    try testing.expectEqualStrings("ada@example.com", app.tree.getConst(field).?.text_input.value);
+}
+
+test "driver tier: expectValue waits for the value, not for the label" {
+    var app = try plainApp(480, 640);
+    defer app.deinit();
+    const Stale = struct {
+        var text: []const u8 = "ACME01";
+        fn build(_: ?*anyopaque, a: *App) anyerror!void {
+            try a.tree.append(a.tree.rootId(), .{ .copyable = .{ .label = "Invite code", .value = text } });
+        }
+        fn arrive(a: *App) anyerror!void {
+            text = "ACME02";
+            try a.tree.clearChildren(a.tree.rootId());
+            try build(null, a);
+        }
+    };
+    Stale.text = "ACME01";
+    try Stale.build(null, &app);
+
+    // The label is on screen the whole time, carrying the *previous*
+    // answer. A wait that stopped at the label would assert the stale
+    // value every run.
+    var fake: Fake = .{};
+    fake.lands(&app, Stale.arrive);
+    var d = deviceOn(&app, &fake, 60_000);
+
+    try d.expectValue("Invite code", "ACME02");
+    try testing.expectEqual(@as(usize, 3), fake.naps);
+}
+
+test "driver tier: the state waits say what they wanted and what they found" {
+    var app = try plainApp(480, 640);
+    defer app.deinit();
+    try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Save", .disabled = true } });
+    try app.tree.append(app.tree.rootId(), .{ .copyable = .{ .label = "Invite code", .value = "ACME01" } });
+    var fake: Fake = .{};
+    var d = deviceOn(&app, &fake, 20);
+
+    {
+        var said: diag.Capture = .{};
+        said.start();
+        defer said.stop();
+        try testing.expectError(error.WaitTimeout, d.expectEnabled("Save"));
+        said.stop();
+        try testing.expect(std.mem.startsWith(u8, said.text(), "waited 20ms for \"Save\" to take presses; the screen stands at:\n"));
+        try testing.expect(std.mem.indexOf(u8, said.text(), "button \"Save\" (disabled)") != null);
+        // The screen dump carries no values, so the precise mismatch is
+        // spelled out under it rather than left to a tree diff.
+        try testing.expect(std.mem.endsWith(u8, said.text(), "expected \"Save\" to take presses, but it is disabled\n"));
+    }
+    {
+        var said: diag.Capture = .{};
+        said.start();
+        defer said.stop();
+        try testing.expectError(error.WaitTimeout, d.expectValue("Invite code", "ACME02"));
+        said.stop();
+        try testing.expect(std.mem.startsWith(u8, said.text(), "waited 20ms for \"Invite code\" to read \"ACME02\"; the screen stands at:\n"));
+        try testing.expect(std.mem.endsWith(u8, said.text(), "expected \"Invite code\" value \"ACME02\", got \"ACME01\"\n"));
+    }
+    {
+        var said: diag.Capture = .{};
+        said.start();
+        defer said.stop();
+        try testing.expectError(error.WaitTimeout, d.goTab("Library"));
+        said.stop();
+        try testing.expect(std.mem.startsWith(u8, said.text(), "waited 20ms for a nav destination named \"Library\"; the screen stands at:\n"));
+    }
+    {
+        var said: diag.Capture = .{};
+        said.start();
+        defer said.stop();
+        try testing.expectError(error.WaitTimeout, d.typeInto("Save", "x"));
+        said.stop();
+        // The family it was looking for, read out — not the first
+        // member of it.
+        try testing.expect(std.mem.startsWith(u8, said.text(), "waited 20ms for a text_input or text_area named \"Save\"; the screen stands at:\n"));
+    }
 }
 
 test "driver tier: expectAbsent never waits, because a wait would assert the opposite" {

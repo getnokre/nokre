@@ -966,9 +966,13 @@ the wait and the lookup are one call:
 | `untilRole(app, pacer, role, name) !NodeId` | a control of that role carries that name — the wait `press` synchronizes on |
 | `untilLabelContaining(app, pacer, needle) !NodeId` | some label contains the needle |
 | `untilEither(app, pacer, a, b) ![]const u8` | either label is there; answers which, so a fork can branch |
+| `untilAnyRole(app, pacer, roles, name) !NodeId` | any of those roles carries that name — a control *family*, which is what the acting verbs address |
 | `untilGone(app, pacer, label)` | that label has left the screen |
 | `untilRoute(app, pacer, ref)` | the router stands on that route |
 | `untilNotice(app, pacer, title)` | a notice with that title is pending |
+| `untilDestination(app, pacer, title)` | the nav can answer for that destination — `nav_item`, `nav_here`, or the collapsed chip |
+| `untilEnabled` / `untilDisabled(app, pacer, label)` | that button takes presses, or has stopped |
+| `untilValue(app, pacer, label, expected)` | the control with that label *reads* that value on the a11y snapshot |
 
 Everything else is a condition about **your** state — a work queue
 draining, a prefetch sweep finishing — and reaches the same loop
@@ -1043,6 +1047,30 @@ Three rules the set follows, each of them a decision:
   *going* to appear would satisfy a waiting absence check for as long
   as it took to arrive; the only absence it is honest to wait for is
   one that was on screen when the action was taken.
+- **Every other verb waits for the thing it acts on or asserts
+  against**, not for something weaker nearby. `typeInto` and
+  `clearField` wait for a `text_input` or `text_area` with that label,
+  never for the label — prose carrying the same words would end the
+  wait and strand the verb. `selectOption` waits for a choice control
+  the same way. `goTab` waits for the bar to be able to answer for the
+  destination in any of its three shapes. `expectValue` waits for the
+  **value**, `expectEnabled`/`expectDisabled` for the **state**: a
+  screen revisited against a real server stands there with the last
+  answer in it, and a button is on screen for the whole time the reply
+  that arms it is in flight. `settled` and `quiesce` are the two that
+  deliberately do not wait — one audits the frame an action produced,
+  the other is a bare deadline.
+
+One lifetime rule, because it has already caught a caller.
+`labelContaining` hands back bytes **borrowed from the tree**, and
+every verb on this type pumps — a pump delivers a reply, a reply
+rebuilds the screen, and the rebuild frees them. Copy the slice before
+the next call, not "eventually". `valueOf` is the verb that allocates
+into an allocator you name and hands you memory you own; `untilEither`
+answers one of the two slices you passed it, so it is yours already;
+and a `NodeId` from a `until*` verb is a tree position with a
+generation on it, so one used after a rebuild reads back as absent
+rather than as the wrong control.
 
 `Device.notes` is the seam for what nokre cannot know. Bind it to a
 method of your own and it prints under the framework's screen dump on
