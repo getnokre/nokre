@@ -142,12 +142,29 @@ pub const Handle = struct {
     }
 };
 
+/// What issuing a request can refuse with — the *issue-time* set, and
+/// the only one: everything that goes wrong on the wire rides
+/// `Result.failure` to `on_result` instead, because by then a callback
+/// is owed (docs/internals/http.md).
+///
+/// Named and closed like every sibling service's set
+/// (`secure_store.GetError`, `iap.Error`), which for this verb also
+/// makes it the *same* set on all three transports. The inferred one
+/// was not: under `zig test` and on the web only the allocator can
+/// fail, while the native transport spawns two threads and could hand
+/// back `std.Thread.SpawnError`'s five members — so a consumer
+/// switching exhaustively on this compiled against one target and
+/// broke on another. `Unavailable` is where those land: the transport
+/// could not be started, which is the only thing a caller can act on
+/// and the same word four sibling services already use for it.
+pub const RequestError = error{ OutOfMemory, Unavailable };
+
 /// Issue a request. Everything in `opts` is copied at the call; the
 /// result arrives on the UI thread, between events, exactly once.
 /// Under `zig test` the request parks in the app's mock and the test
 /// supplies the response — the network becomes a test input
 /// (docs/testing.md).
-pub fn request(opts: RequestOptions) !Handle {
+pub fn request(opts: RequestOptions) RequestError!Handle {
     // A body a verb cannot carry is a caller's mistake with no honest
     // outcome — native would drop it, fetch would throw — so it is
     // refused here, once, where the mock catches it in a harness run
@@ -262,7 +279,7 @@ pub const MockState = struct {
     handler: ?Handler = null,
     handler_ctx: ?*anyopaque = null,
 
-    fn park(self: *MockState, ticket: workers.Ticket, opts: RequestOptions) !void {
+    fn park(self: *MockState, ticket: workers.Ticket, opts: RequestOptions) RequestError!void {
         const g = self.gpa;
         // The journal entry and the parked request commit together:
         // capacity is reserved up front so a request the app saw fail

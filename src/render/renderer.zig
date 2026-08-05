@@ -346,7 +346,7 @@ fn drawNode(app: *App, canvas: Painter, id: NodeId) void {
             canvas.popClip();
         },
         .sheet_close => {
-            drawGlyph(app, canvas, r, element_mod.Glyph.dismiss.utf8(), .ink);
+            drawGlyph(app, canvas, r, element_mod.ChromeGlyph.dismiss.utf8(), .ink);
             if (ring) drawFocusRing(canvas, r, metrics.radius);
         },
         .back => drawBack(app, canvas, r, ring),
@@ -1707,15 +1707,24 @@ fn drawTextInput(app: *App, canvas: Painter, r: Rect, inp: element_mod.TextInput
         const post = inp.value[inp.cursor..];
         var x = tx;
         x = drawRun(app, canvas, x, ty, size, pre, .ink, inp.obscured);
+        // Where the caret goes. Without a composition it is simply the
+        // seam between the two halves of the value; with one it is
+        // wherever the IME put its own caret inside the pre-edit
+        // (`TextInput.composition_cursor`), which during a CJK
+        // conversion moves back through the reading as the user fixes a
+        // syllable. Drawn after the run either way, so the underline
+        // and the caret cannot disagree about where the pre-edit is.
+        var caret_x = x;
         if (inp.composition.len > 0) {
             const cx = drawRun(app, canvas, x, ty, size, inp.composition, .dark, inp.obscured);
             canvas.line(.{ .x = x, .y = ty + 3 }, .{ .x = cx, .y = ty + 3 }, 1, .dark);
+            caret_x = x + runWidth(app, size, inp.composition[0..inp.composition_cursor], inp.obscured);
             x = cx;
         }
         if (focused) {
             canvas.line(
-                .{ .x = x, .y = field.y + field_pad },
-                .{ .x = x, .y = field.bottom() - field_pad },
+                .{ .x = caret_x, .y = field.y + field_pad },
+                .{ .x = caret_x, .y = field.bottom() - field_pad },
                 1,
                 .ink,
             );
@@ -1742,6 +1751,20 @@ fn drawRun(app: *App, canvas: Painter, x: i32, ty: i32, size: i32, bytes: []cons
         bx += bw;
     }
     return bx;
+}
+
+/// What `drawRun` would advance by, without drawing — for a caret that
+/// lands *inside* a run rather than after it. One bullet per codepoint
+/// is a fixed advance, which is what keeps the obscured arm exact.
+fn runWidth(app: *App, size: i32, bytes: []const u8, obscured: bool) i32 {
+    if (!obscured) return app.measurer.measure(.prose, size, bytes);
+    const bw = app.measurer.measure(.prose, size, obscure_bullet);
+    var w: i32 = 0;
+    for (bytes) |b| {
+        if (b & 0xC0 == 0x80) continue;
+        w += bw;
+    }
+    return w;
 }
 
 /// One wrapped line of a text area, resolved against its hard paragraph
@@ -1820,13 +1843,17 @@ fn drawTextArea(app: *App, canvas: Painter, r: Rect, area: element_mod.TextArea,
             const pre = area.value[start..area.cursor];
             canvas.drawText(tx, ty, .prose, size, pre, .ink);
             var cx = tx + app.measurer.measure(.prose, size, pre);
+            // `drawTextInput`'s rule, unchanged: the caret follows the
+            // IME's own offset inside the pre-edit, not its end.
+            var caret_x = cx;
             if (area.composition.len > 0) {
                 canvas.drawText(cx, ty, .prose, size, area.composition, .dark);
                 const cw = app.measurer.measure(.prose, size, area.composition);
                 canvas.line(.{ .x = cx, .y = ty + 3 }, .{ .x = cx + cw, .y = ty + 3 }, 1, .dark);
+                caret_x = cx + app.measurer.measure(.prose, size, area.composition[0..area.composition_cursor]);
                 cx += cw;
             }
-            canvas.line(.{ .x = cx, .y = y }, .{ .x = cx, .y = y + line_h }, 1, .ink);
+            canvas.line(.{ .x = caret_x, .y = y }, .{ .x = caret_x, .y = y + line_h }, 1, .ink);
             canvas.drawText(cx, ty, .prose, size, area.value[area.cursor..end], .ink);
             caret_drawn = true;
         } else {

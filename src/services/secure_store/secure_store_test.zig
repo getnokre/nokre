@@ -1,5 +1,5 @@
 //! secure_store service tests: the contract driven through the
-//! per-app Fake — the only store that exists under `zig test`, on
+//! per-app MockState — the only store that exists under `zig test`, on
 //! every platform, so what holds here is the whole consumer surface.
 //! docs/internals/secure_store.md is the contract held here.
 
@@ -9,7 +9,7 @@ const app_mod = @import("../../core/app.zig");
 const harness_mod = @import("../../testing/harness.zig");
 
 const App = app_mod.App;
-const Fake = secure_store.Fake;
+const MockState = secure_store.MockState;
 const Harness = harness_mod.Harness;
 const diag = harness_mod.diag;
 
@@ -23,7 +23,7 @@ fn testApp(gpa: std.mem.Allocator) !App {
 /// by-value move out of init).
 const Bare = struct {
     app: App,
-    fake: *Fake,
+    fake: *MockState,
 
     fn init(gpa: std.mem.Allocator) !Bare {
         const app = try testApp(gpa);

@@ -33,6 +33,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const options = @import("nokre_deep_link_options");
 const app_mod = @import("../../core/app.zig");
+const services = @import("../services.zig");
 
 const App = app_mod.App;
 const is_wasm = builtin.cpu.arch == .wasm32;
@@ -223,8 +224,8 @@ pub const Mock = struct {
     /// Every URL delivered, in order — borrowed views. For asserting what
     /// arrived, including a URL that landed before the app registered a
     /// handler.
-    pub fn received(self: Mock) []const []u8 {
-        return self.state.?.received.items;
+    pub fn received(self: Mock) []const []const u8 {
+        return services.borrowed(self.state.?.received.items);
     }
 
     /// Whether the app has registered a handler yet — a launch URL

@@ -120,7 +120,7 @@ What it writes:
 | in the site | where it comes from |
 | --- | --- |
 | the app's module, under `web_wasm` | the consumer's own compile |
-| `live.js`, `live-worker.js`, `services.js`, `sw.js` | `src/render/dom`, copied by the build graph; the set is also exported as data (`dom.driver_files`) for a generator that publishes the driver itself |
+| `live.js`, `live-worker.js`, `services.js`, `sw.js` | `src/render/dom`, copied by the build graph; the set is also exported as data for a generator that publishes the driver itself — `dom.driver_files` for the names, `dom.driver_sources` for the names *and* the embedded bytes, so such a generator writes files it never had to locate |
 | `style.css` | *generated*, by running `emit_css.zig` on the host |
 | `fonts/*.ttf` | `src/assets/fonts` |
 | `index.html`, `page.css`, `boot.js`, `manifest.webmanifest`, `icon-*.png` | the packaging tree's `web/` corner (packaging.zig) |
@@ -512,6 +512,36 @@ same tag, same `data-n`, same node. So the write is proportional to
 what changed, and everything the browser keeps beside the document —
 scroll offsets, text selection, an open IME session — survives the
 frames that did not touch it.
+
+### A heading is an address, and the address is GitHub's
+
+`Options.heading_ids` (on by default) gives every heading an `id`
+derived from its own words, so a section can be linked to. **The rule is
+GitHub's slug**, and deliberately so: the Markdown a `document` element
+carries was written against GitHub's anchors — nokre's own docs link
+`elements.md#text_input` and are read on GitHub as often as here — so
+any other rule would break the links in the very documents this edition
+exists to render. Lowercase; spaces to hyphens; Unicode word characters
+kept whole (dropping them would slug every Persian heading to
+`section`); punctuation dropped, ASCII and the General Punctuation block
+alike, so an em dash leaves the two hyphens GitHub leaves; repeats
+numbered `-1`, `-2`. It is a pure function of the words, so the same
+heading is the same address on every run — which is what makes a
+cross-document `#fragment` checkable at build time rather than at 404
+time.
+
+Ids only, never an anchor control beside the heading: a control the tree
+does not have is a control assistive tech would announce that the app
+never wrote, and the element set is closed here too.
+
+What a document *exports* — the anchors another page may name — is
+`Emitter.takeAnchors(gpa)`. The emitter keeps the same list internally
+as the suffix bookkeeping above, but "which anchors does this page
+publish" is a question about the document, and a generator that answers
+it by reaching into an emitter's field and deep-copying it before
+`deinit` is holding bookkeeping and calling it an answer. Ownership
+transfers on the call, and it is called once, when the document is
+finished.
 
 ### IME
 

@@ -40,7 +40,11 @@ const App = app_mod.App;
 /// because they mean opposite things — arming promises a navigation,
 /// disarming takes the promise back — and both platforms have distinct
 /// constants for exactly that (Android names them ACTIVATE and
-/// DEACTIVATE). Explicitly numbered: these cross the C boundary.
+/// DEACTIVATE). Explicitly numbered: these cross the C boundary as
+/// `nokre_shell_haptic`'s argument, where shell.h names the same two
+/// values `NOKRE_HAPTIC_ARMED` / `NOKRE_HAPTIC_DISARMED` — the header
+/// cannot be read by this compile, so the numbers are the contract and
+/// the pinning is that both sides spell them.
 pub const Knock = enum(i32) {
     armed = 0,
     disarmed = 1,

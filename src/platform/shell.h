@@ -79,6 +79,15 @@ enum {
     NOKRE_PAN_CANCEL = 3,
 };
 
+// The two ends of the back gesture's commit threshold; mirrors
+// src/core/haptic.zig's `Knock`, which pins the same two values. The
+// only argument nokre passes a shell that used to travel as a bare
+// number.
+enum {
+    NOKRE_HAPTIC_ARMED = 0,
+    NOKRE_HAPTIC_DISARMED = 1,
+};
+
 typedef struct nokre_shell_config {
     int32_t logical_w;
     int32_t logical_h;
@@ -195,10 +204,10 @@ void nokre_shell_request_frame(void *view);
 void nokre_shell_write_clipboard(const char *utf8, size_t len);
 
 // One haptic knock: the back gesture crossing its commit threshold
-// (kind 0) or crossing back out of it (kind 1). Implemented by the one
-// shell that has the gesture — iOS — and named by no other, so the
-// symbol does not exist elsewhere (docs/internals/haptics.md). Main
-// thread only.
+// (NOKRE_HAPTIC_ARMED) or crossing back out of it
+// (NOKRE_HAPTIC_DISARMED). Implemented by the one shell that has the
+// gesture — iOS — and named by no other, so the symbol does not exist
+// elsewhere (docs/internals/haptics.md). Main thread only.
 void nokre_shell_haptic(int32_t kind);
 
 // Runs `work(ctx)` on the UI thread soon. Safe from any thread — this is

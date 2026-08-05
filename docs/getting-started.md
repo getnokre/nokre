@@ -1680,43 +1680,43 @@ perceptual diffing — the pixel model makes exactness cheap, so any
 variance is a bug by definition.
 
 Goldens render through the production renderer, which needs the Skia
-prebuilt — and that is a **link**. A test binary is not the app binary,
-so `addApp`'s wiring never reaches it and `nok.render.skia.Surface` comes
-back as `undefined symbol: _hsk_text_width`.
-`nokre.linkSkia(nokre_dep, golden_tests)` is the line that fixes it: the
-same wiring nokre's own goldens take, so the two cannot drift. There is
-nothing to enable on the dependency — `.skia = true` in `b.dependency`
-configures nokre's *own* steps and has never meant anything to yours.
+prebuilt — and that is a **link** a test binary does not inherit from
+the app's. Without it `nok.render.skia.Surface` comes back as
+`undefined symbol: _hsk_text_width`. `nokre.addGoldenTests` is the whole
+wiring: the module, the Skia link on the *test* artifact, and the run,
+built the same way nokre builds its own, so the two cannot drift. There is nothing to enable on
+the dependency — `.skia = true` in `b.dependency` configures nokre's
+*own* steps and has never meant anything to yours.
 
-The other two flags are yours, because it is your test suite. `-Dgolden`
-decides whether the golden tests join the `test` step at all — they need
-the prebuilt fetched, so they are opt-in — and `-Dupdate-goldens`
-reaches the assertion as its `.update` argument through an options
-module, the only road it has, which is what keeps CI from minting
-baselines. In `build.zig`, beside the `addApp` call from Part 1:
+Two pieces of it are a contract rather than a convenience, which is why
+they are not left to you to retype: the options module must be imported
+under the name **`build_options`** (that is what the test root reads
+`update_goldens` from), and the run's cwd must be the package root (or
+every golden path resolves into the build cache and a "missing" baseline
+is minted somewhere nobody looks). Both fail far from the mistake.
+
+`-Dgolden` stays yours, because it is your test suite: it decides
+whether the goldens join the `test` step at all — they need the prebuilt
+fetched, so they are opt-in. `-Dupdate-goldens` is yours to declare and
+nokre's to route: it reaches the assertion as its `.update` argument
+through that options module, the only road it has, which is what keeps
+CI from minting baselines. In `build.zig`, beside the `addApp` call from
+Part 1:
 
 ```zig
     const golden = b.option(bool, "golden", "Run golden screenshot tests (needs the Skia prebuilt)") orelse false;
     const update_goldens = b.option(bool, "update-goldens", "Create missing goldens and rewrite mismatched ones (requires -Dgolden)") orelse false;
-    if (golden) {
-        const golden_mod = b.createModule(.{
-            .root_source_file = b.path("src/golden_test.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "nokre", .module = app.nokre },
-                .{ .name = "app", .module = app.module },
-            },
-        });
-        const golden_opts = b.addOptions();
-        golden_opts.addOption(bool, "update_goldens", update_goldens);
-        golden_mod.addOptions("build_options", golden_opts);
-        const golden_tests = b.addTest(.{ .root_module = golden_mod });
-        nokre.linkSkia(nokre_dep, golden_tests); // the Skia link, on the test binary
-        const run_golden = b.addRunArtifact(golden_tests);
-        run_golden.setCwd(b.path(".")); // goldens resolve against the project root
-        test_step.dependOn(&run_golden.step);
-    }
+    const goldens = nokre.addGoldenTests(nokre_dep, .{
+        .root_source_file = b.path("src/golden_test.zig"),
+        .target = target,
+        .optimize = optimize,
+        .nokre = app.nokre, // the configured instance the app links
+        .imports = &.{.{ .name = "app", .module = app.module }},
+        .update_goldens = update_goldens,
+        .cwd = b.path("."), // goldens resolve against the project root
+    });
+    b.step("golden", "Run the golden screenshot tests").dependOn(&goldens.run.step);
+    if (golden) test_step.dependOn(&goldens.run.step);
 ```
 
 Run `tools/fetch-deps.sh` once inside the dependency before the first

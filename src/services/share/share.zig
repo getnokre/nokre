@@ -167,8 +167,8 @@ pub const Mock = struct {
     /// Every text the app handed to the sheet, in order. Borrowed
     /// views. A refused share never journals — empty, over-cap, and
     /// unavailable all return before the OS would have been asked.
-    pub fn shares(self: Mock) []const []u8 {
-        return self.state.?.journal.view();
+    pub fn shares(self: Mock) []const []const u8 {
+        return services.borrowed(self.state.?.journal.view());
     }
 
     /// The per-phase reset (http's rule).

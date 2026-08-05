@@ -14,7 +14,7 @@ const std = @import("std");
 /// Hand-bumped on every consumer-visible contract change, never by
 /// machinery — the no-CI stance is deliberate
 /// (docs/getting-started.md).
-pub const revision: u32 = 30;
+pub const revision: u32 = 31;
 
 pub const geometry = @import("core/geometry.zig");
 pub const color = @import("core/color.zig");
@@ -138,6 +138,22 @@ pub const App = app.App;
 pub const Tree = tree.Tree;
 pub const NodeId = tree.NodeId;
 pub const Element = element.Element;
+/// What an element *is*, as the a11y tree and every query see it —
+/// `Element`'s tag. Beside `Element` because it is the same fact read
+/// from the other side, and because a driver's own `press(role, label)`
+/// wrapper has to name it.
+pub const Role = element.Role;
+/// The callback pair every control's `on_press`-shaped field holds, and
+/// the type a consumer's own controller writes when it carries one
+/// forward (`on_created: h.Action = .{}` — nineteen such fields across
+/// the two real apps). Fill it with `.bind`; `bindAs` below is the same
+/// generator for a pair nokre did not declare.
+pub const Action = element.Action;
+/// One run of inline text: words plus what they are — emphasis, code, a
+/// route, an external destination. Written by anything that composes
+/// rich text, which is why it is the element type most often aliased at
+/// the top of a consumer's module (`IconName`'s argument, span-shaped).
+pub const Span = element.Span;
 /// The builder cursor: one method per element, standing where children
 /// go. Sugar over `Tree.append` — the raw API stays the substrate
 /// (core/cursor.zig). Builders start from `App.root()`; a sheet's

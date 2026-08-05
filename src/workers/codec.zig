@@ -67,6 +67,14 @@ fn assertField(comptime T: type, comptime path: []const u8) void {
         .int => |i| if (i.bits > 64) @compileError(path ++ ": integers wider than 64 bits cannot cross a worker boundary (docs/internals/workers.md)"),
         .float => |f| if (f.bits != 32 and f.bits != 64) @compileError(path ++ ": only f32 and f64 cross a worker boundary"),
         .@"enum" => |e| assertField(e.tag_type, path),
+        // An error set travels as its own index in the set's roster,
+        // never as `@intFromError`'s global number: both ends compile
+        // the same declaration, so the roster is the same list in the
+        // same order, while the global numbering is a whole-program
+        // fact this codec has no business depending on. `anyerror` has
+        // no roster to index, which is the honest reason to refuse it
+        // rather than a limit of the encoding.
+        .error_set => |set| if (set == null) @compileError(path ++ ": anyerror cannot cross a worker boundary — declare the error set (docs/internals/workers.md)"),
         .optional => |o| assertField(o.child, path ++ ".?"),
         .array => |a| assertField(a.child, path ++ "[]"),
         .@"struct" => |s| {
@@ -90,6 +98,27 @@ fn assertField(comptime T: type, comptime path: []const u8) void {
         },
         else => @compileError(path ++ ": " ++ @typeName(T) ++ " cannot cross a worker boundary (docs/internals/workers.md)"),
     }
+}
+
+/// An error's position in its own set's roster — the wire form of an
+/// error set (`assertField` says why it is the position and not the
+/// global number). A set is a closed list here, so the linear walk is
+/// over a handful of names and runs at comptime for every arm but the
+/// matching one.
+fn errorIndex(comptime T: type, value: T) u32 {
+    inline for (@typeInfo(T).error_set.?, 0..) |e, i| {
+        if (value == @field(T, e.name)) return @intCast(i);
+    }
+    unreachable; // a value of T is one of T's own members
+}
+
+/// The inverse, bounds-checked: a frame naming an index past the roster
+/// is corrupt like any other out-of-range tag.
+fn errorAt(comptime T: type, index: u32) ?T {
+    inline for (@typeInfo(T).error_set.?, 0..) |e, i| {
+        if (index == i) return @field(T, e.name);
+    }
+    return null;
 }
 
 /// Bit width rounded up to whole bytes, so `u7` travels as one byte and
@@ -124,6 +153,7 @@ pub fn encode(comptime T: type, gpa: std.mem.Allocator, out: *std.ArrayList(u8),
         },
         .float => |f| try encode(std.meta.Int(.unsigned, f.bits), gpa, out, attachments, @bitCast(value)),
         .@"enum" => |e| try encode(e.tag_type, gpa, out, attachments, @intFromEnum(value)),
+        .error_set => try encode(u32, gpa, out, attachments, errorIndex(T, value)),
         .optional => |o| {
             try out.append(gpa, @intFromBool(value != null));
             if (value) |v| try encode(o.child, gpa, out, attachments, v);
@@ -180,7 +210,19 @@ const Reader = struct {
     }
 };
 
+/// The scalar door, for the types this file itself reads (lengths,
+/// tags, the integer under a float). Values a *message* carries go
+/// through `decodeInto`: Zig forbids an error union whose payload is an
+/// error set, so `DecodeError!T` is not a shape a decoder that must
+/// also answer with an error set can have. Writing through a pointer is
+/// the one form that works for every T at once.
 fn decodeValue(comptime T: type, arena: std.mem.Allocator, r: *Reader) DecodeError!T {
+    var out: T = undefined;
+    try decodeInto(T, arena, r, &out);
+    return out;
+}
+
+fn decodeInto(comptime T: type, arena: std.mem.Allocator, r: *Reader, out: *T) DecodeError!void {
     if (T == Bytes) {
         const len = try decodeValue(u32, arena, r);
         const idx = try decodeValue(u32, arena, r);
@@ -189,47 +231,51 @@ fn decodeValue(comptime T: type, arena: std.mem.Allocator, r: *Reader) DecodeErr
         const buf = slot.* orelse return error.Corrupt;
         if (buf.len != len) return error.Corrupt;
         r.attachments_used += 1;
-        return .{ .data = buf, .slot = slot };
+        out.* = .{ .data = buf, .slot = slot };
+        return;
     }
     switch (@typeInfo(T)) {
-        .void => return {},
-        .bool => return switch ((try r.take(1))[0]) {
+        .void => {},
+        .bool => out.* = switch ((try r.take(1))[0]) {
             0 => false,
             1 => true,
-            else => error.Corrupt,
+            else => return error.Corrupt,
         },
         .int => |i| {
-            if (i.bits == 0) return 0;
+            if (i.bits == 0) return;
             const C = Container(T);
             const raw = std.mem.readInt(C, (try r.take(@divExact(@typeInfo(C).int.bits, 8)))[0..@divExact(@typeInfo(C).int.bits, 8)], .little);
-            return std.math.cast(T, raw) orelse error.Corrupt;
+            out.* = std.math.cast(T, raw) orelse return error.Corrupt;
         },
-        .float => |f| return @bitCast(try decodeValue(std.meta.Int(.unsigned, f.bits), arena, r)),
-        .@"enum" => |e| return std.enums.fromInt(T, try decodeValue(e.tag_type, arena, r)) orelse error.Corrupt,
-        .optional => |o| {
-            return switch ((try r.take(1))[0]) {
-                0 => null,
-                1 => try decodeValue(o.child, arena, r),
-                else => error.Corrupt,
-            };
+        .float => |f| out.* = @bitCast(try decodeValue(std.meta.Int(.unsigned, f.bits), arena, r)),
+        .@"enum" => |e| out.* = std.enums.fromInt(T, try decodeValue(e.tag_type, arena, r)) orelse return error.Corrupt,
+        .error_set => out.* = errorAt(T, try decodeValue(u32, arena, r)) orelse return error.Corrupt,
+        .optional => |o| switch ((try r.take(1))[0]) {
+            0 => out.* = null,
+            1 => {
+                var child: o.child = undefined;
+                try decodeInto(o.child, arena, r, &child);
+                out.* = child;
+            },
+            else => return error.Corrupt,
         },
-        .array => |a| {
-            var out: T = undefined;
-            for (&out) |*elem| elem.* = try decodeValue(a.child, arena, r);
-            return out;
-        },
+        .array => |a| for (out) |*elem| try decodeInto(a.child, arena, r, elem),
         .@"struct" => |s| {
             if (s.layout == .@"packed") {
-                return @bitCast(try decodeValue(s.backing_integer.?, arena, r));
+                out.* = @bitCast(try decodeValue(s.backing_integer.?, arena, r));
+                return;
             }
-            var out: T = undefined;
-            inline for (s.fields) |f| @field(out, f.name) = try decodeValue(f.type, arena, r);
-            return out;
+            inline for (s.fields) |f| try decodeInto(f.type, arena, r, &@field(out, f.name));
         },
         .@"union" => |u| {
             const tag = try decodeValue(u.tag_type.?, arena, r);
             switch (tag) {
-                inline else => |t| return @unionInit(T, @tagName(t), try decodeValue(@FieldType(T, @tagName(t)), arena, r)),
+                inline else => |t| {
+                    const F = @FieldType(T, @tagName(t));
+                    var payload: F = undefined;
+                    try decodeInto(F, arena, r, &payload);
+                    out.* = @unionInit(T, @tagName(t), payload);
+                },
             }
         },
         .pointer => |p| {
@@ -239,12 +285,12 @@ fn decodeValue(comptime T: type, arena: std.mem.Allocator, r: *Reader) DecodeErr
                 // Every frame outlives the handler call it is decoded
                 // for, so a const byte slice is a view, not a copy; a
                 // mutable []u8 must not alias the frame and still dupes.
-                if (p.is_const) return raw;
-                return try arena.dupe(u8, raw);
+                out.* = if (p.is_const) raw else try arena.dupe(u8, raw);
+                return;
             }
-            const out = try arena.alloc(p.child, len);
-            for (out) |*elem| elem.* = try decodeValue(p.child, arena, r);
-            return out;
+            const items = try arena.alloc(p.child, len);
+            for (items) |*elem| try decodeInto(p.child, arena, r, elem);
+            out.* = items;
         },
         else => comptime unreachable,
     }

@@ -42,6 +42,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const app_mod = @import("../../core/app.zig");
+const services = @import("../services.zig");
 
 const App = app_mod.App;
 const is_wasm = builtin.cpu.arch == .wasm32;
@@ -282,8 +283,8 @@ pub const Mock = struct {
     /// tag — borrowed views. The boot entry is always present, so "the
     /// app never saw a locale" and "the app saw the empty tag" stay
     /// distinguishable.
-    pub fn seen(self: Mock) []const []u8 {
-        return self.state.?.seen.items;
+    pub fn seen(self: Mock) []const []const u8 {
+        return services.borrowed(self.state.?.seen.items);
     }
 
     /// Whether the app registered a change handler — a `change` before

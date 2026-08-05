@@ -46,6 +46,28 @@ pub const Dest = serialize.Dest;
 /// actually needs (driver_files.zig says why it lives in a leaf file).
 pub const driver_files = @import("driver_files.zig").driver_files;
 
+pub const DriverSource = struct { name: []const u8, bytes: []const u8 };
+
+/// The same set, with the files themselves. `driver_files` made *which
+/// files* the library's statement; this makes *where they live* one too
+/// — a consumer's generator no longer joins `"src/render/dom"` onto a
+/// checkout path to find bytes the library could simply hand it, and a
+/// file moved inside this directory stops being a runtime read that
+/// fails at generation time.
+///
+/// Embedded, not read: `@embedFile` puts the bytes in the same compile
+/// as the list, so a stale copy cannot outlive the binary that publishes
+/// it — the argument icons.zig makes for embedding the subset script.
+/// It costs nothing where it is not named: a `pub const` nothing
+/// references is never analyzed, so the six shells and every app carry
+/// none of this.
+pub const driver_sources: []const DriverSource = blk: {
+    var list: [driver_files.len]DriverSource = undefined;
+    for (driver_files, 0..) |f, i| list[i] = .{ .name = f, .bytes = @embedFile(f) };
+    const frozen = list;
+    break :blk &frozen;
+};
+
 /// The screen: every root child that is not framework chrome.
 pub const content = serialize.content;
 /// The layers the framework installs: notice banner, nav, sheet, picker.

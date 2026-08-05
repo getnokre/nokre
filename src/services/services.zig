@@ -70,6 +70,17 @@ pub const every_shell_hooks = builtin.cpu.arch == .wasm32 or switch (builtin.os.
     else => false,
 };
 
+/// How a mock hands out a ledger of owned buffers. The ledger must hold
+/// `[]u8` — it allocated those bytes and frees them at teardown — but a
+/// *view* of it is a borrow into mock memory, and `[]const []u8` says
+/// the opposite: mutable bytes a test may write through, aliased by the
+/// mock that will free them. Adding const to the inner pointee changes
+/// nothing about the layout, which is why the cast is the whole
+/// conversion; what it changes is what the signature promises.
+pub fn borrowed(entries: []const []u8) []const []const u8 {
+    return @ptrCast(entries);
+}
+
 // Mock conventions, stated once for the roster: every mock answers
 // `mock(Config)` even where Config is empty (clipboard, haptic,
 // open_url, deep_link) — the construction site reads uniformly, and a
@@ -106,6 +117,18 @@ pub fn Journal(comptime Entry: type, comptime name: []const u8) type {
         /// Drop the ledger — the per-phase reset (http's `clearJournal`
         /// rule), so a test can assert "and *that* action asked exactly
         /// these" without arithmetic over everything before it.
+        ///
+        /// **Which mocks answer it, and which deliberately do not.**
+        /// Every journal of things the *app asked the OS to do* has a
+        /// `clearJournal`: http, secure_store, clipboard, open_url,
+        /// share, haptic, oauth, iap, notification. The two that record
+        /// the other direction — deep_link's delivered URLs and locale's
+        /// reported tags — have none, and that is the rule rather than
+        /// an omission: those entries exist because the *test* injected
+        /// them, so a phase reset would be a test forgetting what it
+        /// itself just did. Where a journal mixes the two, only the
+        /// outbound half clears (`notification.clearJournal` keeps
+        /// `askedForAuthorization`).
         pub fn clear(self: *Self) void {
             if (comptime owns_bytes) for (self.entries.items) |e| self.gpa.free(e);
             self.entries.clearRetainingCapacity();

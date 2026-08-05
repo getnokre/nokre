@@ -109,8 +109,8 @@ pub const Mock = struct {
 
     /// Every URL the app asked to open, in order. Borrowed views.
     /// Rejected schemes never journal — the OS was never asked.
-    pub fn opens(self: Mock) []const []u8 {
-        return self.state.?.view();
+    pub fn opens(self: Mock) []const []const u8 {
+        return services.borrowed(self.state.?.view());
     }
 
     /// The per-phase reset (http's rule).

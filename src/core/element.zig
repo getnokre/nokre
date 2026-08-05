@@ -693,6 +693,20 @@ pub const TextInput = struct {
     placeholder: []const u8 = "",
     cursor: usize = 0,
     composition: []const u8 = "",
+    /// Where the IME's own caret sits *inside* `composition`, as a byte
+    /// offset (`ImeEvent.update.cursor`, clamped to a codepoint
+    /// boundary by `editing.handleIme`). Zero whenever there is no
+    /// composition.
+    ///
+    /// A separate offset from `cursor` because it measures a different
+    /// string: `cursor` is the caret in the committed value, and the
+    /// pre-edit is spliced *at* it. During CJK composition the user
+    /// moves back through the reading to fix a syllable, and every
+    /// shell reports where — the Wayland preedit's `cursor_begin`,
+    /// IMM's `GCS_CURSORPOS`, the selected range on Apple. Drawing the
+    /// caret at the end of the run regardless was wrong the moment
+    /// they moved.
+    composition_cursor: usize = 0,
     /// Password mode: renders one bullet per codepoint and never exposes
     /// the value to assistive tech or traces. Editing is unchanged.
     obscured: bool = false,
@@ -734,6 +748,10 @@ pub const TextArea = struct {
     placeholder: []const u8 = "",
     cursor: usize = 0,
     composition: []const u8 = "",
+    /// `TextInput.composition_cursor`, unchanged: the two editables run
+    /// one IME protocol (editing.zig), so they carry one pre-edit state
+    /// between them.
+    composition_cursor: usize = 0,
     /// `TextInput.problem`, unchanged: the words hang under the field at
     /// the labeled-field gap and the field is announced invalid. A
     /// multi-line field is refused for the same reasons a single-line
@@ -1131,7 +1149,14 @@ pub const Back = struct {
 
 /// The Lucide glyphs framework chrome draws. Icons are text: the bundled
 /// icon font keeps them grayscale and deterministic like everything else.
-pub const Glyph = enum {
+///
+/// Named for the chrome and not for the glyph because it is a *behavior*
+/// enum, not a picture: `input.activateIcon` switches on it to decide
+/// what pressing the control does. `Button.Form.glyph` and
+/// `IconButton.glyph` read identically at a call site and hold different
+/// types — an `IconName` there, one of these here — and the field name
+/// alone never said which.
+pub const ChromeGlyph = enum {
     /// square-arrow-out-up-right: navigate to a notice's route.
     open,
     /// square-arrow-up: expand pending notices into the notices pane.
@@ -1145,7 +1170,7 @@ pub const Glyph = enum {
     /// not one more way to file it, and the bin says so.
     dismiss_all,
 
-    pub fn utf8(self: Glyph) []const u8 {
+    pub fn utf8(self: ChromeGlyph) []const u8 {
         return switch (self) {
             .open => "\u{e5a4}",
             .expand => "\u{e42a}",
@@ -1157,7 +1182,7 @@ pub const Glyph = enum {
 };
 
 /// chevron-down: the select field's affordance. Drawn directly by the
-/// renderer — it is not a control, so it is not a `Glyph`.
+/// renderer — it is not a control, so it is not a `ChromeGlyph`.
 pub const select_chevron = "\u{e06d}";
 
 /// chevron-up: the collapsed nav chip's affordance, same footing as
@@ -1235,7 +1260,7 @@ pub const Icon = struct {
 /// `button`s. Activation is intrinsic to the glyph and its position
 /// (see `App.activate`), so there is no action to wire.
 pub const IconButton = struct {
-    glyph: Glyph,
+    glyph: ChromeGlyph,
     label: []const u8,
 };
 

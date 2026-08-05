@@ -6,6 +6,7 @@
 
 const std = @import("std");
 const app_mod = @import("app.zig");
+const cursor_mod = @import("cursor.zig");
 const element_mod = @import("element.zig");
 const event_mod = @import("event.zig");
 const haptic = @import("../services/haptic/haptic.zig");
@@ -85,8 +86,8 @@ test "every change announces the screen on top, with the motion that made it" {
     try app.navigate("home"); // push
     try app.navigate("details"); // push
     try app.navigateBack(); // pop
-    try app.router.replace(&app, "leaf"); // replace
-    try app.router.switchTo(&app, "home"); // switch_to
+    try app.replaceWith("leaf"); // replace
+    try app.switchTo("home"); // switch_to
 
     try testing.expectEqual(@as(usize, 5), rec.count);
     const want_names = [_][]const u8{ "home", "details", "home", "leaf", "home" };
@@ -328,10 +329,10 @@ test "only pop and reload restore; replace and switchTo start at the top" {
 
     // A replace is a different screen at the same depth, and switchTo is
     // a different section: neither inherits a position it never had.
-    try app.router.replace(&app, "list");
+    try app.replaceWith("list");
     try testing.expectEqual(@as(i32, 0), app.root_scroll);
     try app.dispatch(.{ .scroll = .{ .at = .{ .x = 200, .y = 100 }, .delta_y = 90 } });
-    try app.router.switchTo(&app, "list");
+    try app.switchTo("list");
     try testing.expectEqual(@as(i32, 0), app.root_scroll);
 }
 
@@ -703,6 +704,31 @@ test "routeRef is resolve's writing mirror" {
     var tiny: [4]u8 = .{ 'x', 'x', 'x', 'x' };
     try testing.expectError(error.RouteRefTooLong, app.routeRef(&tiny, "ticket", &.{"12345"}));
     try testing.expectEqualStrings("xxxx", &tiny);
+}
+
+test "refTo is routeRef into the tree's arena, refusing the same references" {
+    var data: CtxData = .{};
+    var app = try argApp(&data);
+    defer app.deinit();
+    try app.navigate("home");
+
+    // Same bytes as the buffer form, and no buffer at the call site.
+    var buf: [router_mod.max_ref_bytes]u8 = undefined;
+    const written = try app.routeRef(&buf, "ticket", &.{"1.2.3-rc1"});
+    const owned = try app.refTo("ticket", &.{"1.2.3-rc1"});
+    try testing.expectEqualStrings(written, owned);
+    // Arena-owned, not a view of the scratch the router wrote through:
+    // the reference outlives the call, which is what lets it be handed
+    // to an append two lines later.
+    try testing.expect(owned.ptr != written.ptr);
+    const group = try cursor_mod.root(&app).tileGroup(.{});
+    try group.tile(.{ .label = "Ticket", .route = owned });
+
+    // Every refusal `routeRef` makes, made here too — the table is
+    // consulted before a byte reaches the arena.
+    try testing.expectError(error.UnknownRoute, app.refTo("nope", &.{}));
+    try testing.expectError(error.RouteArgCount, app.refTo("ticket", &.{}));
+    try testing.expectError(error.RouteArgCharset, app.refTo("ticket", &.{"1~2"}));
 }
 
 test "the route table is validated at init, not at first navigation" {

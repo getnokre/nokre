@@ -1330,7 +1330,8 @@ void nokre_shell_haptic(int32_t kind) {
     // without inventing a second vocabulary for the finger to learn —
     // and iOS honours the system haptics setting for both, which is the
     // whole opt-out (nokre adds none of its own).
-    [nokreKnockGenerator() impactOccurredWithIntensity:(kind == 0 ? 1.0 : 0.6)];
+    [nokreKnockGenerator()
+        impactOccurredWithIntensity:(kind == NOKRE_HAPTIC_ARMED ? 1.0 : 0.6)];
 }
 
 void nokre_shell_request_frame(void *view) {

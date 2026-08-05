@@ -227,7 +227,7 @@ pub const Error = error{
 /// other verb answers `error.Unavailable` when this is false, so the
 /// check is a courtesy to the user rather than a guard the app must not
 /// forget.
-pub fn available(app: *App) bool {
+pub fn available(app: *const App) bool {
     checkLinked();
     return app.services.iap.state.?.can_buy;
 }
@@ -897,6 +897,30 @@ pub const Mock = struct {
     /// visible control, so zero is a finding.
     pub fn restores(self: Mock) usize {
         return self.state.?.restores;
+    }
+
+    /// The per-phase reset (http's `clearJournal` rule) across all four
+    /// ledgers this mock keeps, so a test can assert what one press
+    /// asked the store without counting everything before it. `minted`
+    /// is deliberately *not* cleared: those ids are not a record of what
+    /// the app did, they are the transaction identities live
+    /// `Update`s still name.
+    pub fn clearJournal(self: Mock) void {
+        const state = self.state.?;
+        const g = state.gpa;
+        for (state.queries.items) |q| {
+            for (q.ids) |id| g.free(id);
+            g.free(q.ids);
+        }
+        state.queries.clearRetainingCapacity();
+        for (state.attempts.items) |a| {
+            g.free(a.product);
+            g.free(a.offer);
+        }
+        state.attempts.clearRetainingCapacity();
+        for (state.completions.items) |c| g.free(c.transaction);
+        state.completions.clearRetainingCapacity();
+        state.restores = 0;
     }
 
     /// Whether a catalog query is parked.

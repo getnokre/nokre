@@ -320,6 +320,23 @@ fails on:
 Because the audit inspects the same tree that renders, a passing audit is a
 real guarantee, not a lint heuristic.
 
+**Skipping a rule, and the one reason to.** `audit.collect` takes
+`Options.skip` — rules whose findings are dropped from its list, with
+everything else still fatal-grade. It is not a severity dial and it is
+not a suppression list for findings somebody has not got to: the only
+sanctioned use is a caller that has *replaced a rule's authority with a
+stricter one of its own*. The known case is a static-site generator
+skipping `unresolvable_route`: on that edition a document's destination
+belongs to the site's own resolver rather than to any route table, and
+that resolver already fails the build on a reference it cannot honor,
+which is harder than this rule's answer. Skipping a rule nothing else
+checks is turning the guarantee off.
+
+The default skips nothing, and `audit.audit` — the one the harness runs
+at init and after every driver action — has no way to pass anything
+else. So an app's own test suite cannot skip a rule at all: the knob
+exists for a generator holding the whole tree, not for a screen.
+
 ## Reaching assistive tech
 
 The `Snapshot` is produced and tested platform-independently; each

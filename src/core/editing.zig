@@ -22,7 +22,15 @@ pub const Editable = struct {
     value: *[]const u8,
     cursor: *usize,
     composition: *[]const u8,
+    composition_cursor: *usize,
     on_change: element_mod.ChangeAction,
+
+    /// Ends the pre-edit — the one place the pair is cleared, so the
+    /// offset can never outlive the string it indexes.
+    fn endComposition(self: Editable) void {
+        self.composition.* = "";
+        self.composition_cursor.* = 0;
+    }
 };
 
 pub fn focusedEditable(app: *App) ?Editable {
@@ -36,11 +44,23 @@ pub fn focusedEditable(app: *App) ?Editable {
 }
 
 fn inputEditable(input: *element_mod.TextInput) Editable {
-    return .{ .value = &input.value, .cursor = &input.cursor, .composition = &input.composition, .on_change = input.on_change };
+    return .{
+        .value = &input.value,
+        .cursor = &input.cursor,
+        .composition = &input.composition,
+        .composition_cursor = &input.composition_cursor,
+        .on_change = input.on_change,
+    };
 }
 
 fn areaEditable(area: *element_mod.TextArea) Editable {
-    return .{ .value = &area.value, .cursor = &area.cursor, .composition = &area.composition, .on_change = area.on_change };
+    return .{
+        .value = &area.value,
+        .cursor = &area.cursor,
+        .composition = &area.composition,
+        .composition_cursor = &area.composition_cursor,
+        .on_change = area.on_change,
+    };
 }
 
 pub fn handleInputKey(app: *App, input: *element_mod.TextInput, key: event_mod.Key) !void {
@@ -90,7 +110,7 @@ fn editKey(app: *App, e: Editable, key: event_mod.Key) !void {
         .right => {
             if (e.cursor.* < e.value.len) e.cursor.* = nextCodepointBoundary(e.value.*, e.cursor.*);
         },
-        .escape => e.composition.* = "",
+        .escape => e.endComposition(),
         // Space is deliberately not an insert arm. A field's space
         // arrives as text, never as a key — `on_key` in
         // src/platform/shell.h — and a shell that sends both legs would
@@ -110,7 +130,7 @@ pub fn insertText(app: *App, bytes: []const u8) !void {
     const clean = if (std.unicode.utf8ValidateSlice(bytes)) bytes else try app.tree.ownString(bytes);
     try splice(app, e, e.cursor.*, e.cursor.*, clean);
     e.cursor.* += clean.len;
-    e.composition.* = "";
+    e.endComposition();
     app.needs_frame = true;
     app.layout_dirty = true;
     e.on_change.invoke(e.value.*);
@@ -120,10 +140,22 @@ pub fn handleIme(app: *App, ime: event_mod.ImeEvent) !void {
     const e = focusedEditable(app) orelse return;
     app.needs_frame = true;
     switch (ime) {
-        .start => e.composition.* = "",
-        .update => |u| e.composition.* = try app.tree.ownString(u.composition),
+        .start => e.endComposition(),
+        .update => |u| {
+            const owned = try app.tree.ownString(u.composition);
+            e.composition.* = owned;
+            // Where the shell says the IME's caret is, vetted the way
+            // every other platform byte is: clamped to the pre-edit it
+            // indexes, then snapped back to a codepoint boundary. A
+            // shell converting UTF-16 units by hand (Windows, Apple) or
+            // an engine reporting -1 for "hidden" (Wayland, which maps
+            // it to the end) must not be able to hand the renderer a
+            // slice that splits a codepoint — the measurer would read
+            // invalid UTF-8 out of a field the user is holding.
+            e.composition_cursor.* = boundaryAtOrBefore(owned, u.cursor);
+        },
         .commit => |c| try insertText(app, c.text),
-        .cancel => e.composition.* = "",
+        .cancel => e.endComposition(),
     }
 }
 
@@ -265,6 +297,18 @@ fn paragraphBounds(value: []const u8, span: LineSpan) ParagraphBounds {
     const start = if (std.mem.lastIndexOfScalar(u8, value[0..span.start], '\n')) |i| i + 1 else 0;
     const end = std.mem.indexOfScalarPos(u8, value, span.end, '\n') orelse value.len;
     return .{ .start = start, .end = end };
+}
+
+/// The largest codepoint boundary of `bytes` at or before `pos`, with
+/// past-the-end reading as the end. The vetting `handleIme` puts on a
+/// shell's pre-edit caret: unlike `prevCodepointBoundary` it takes an
+/// offset that may be out of range or mid-codepoint and answers with
+/// one that is neither.
+pub fn boundaryAtOrBefore(bytes: []const u8, pos: usize) usize {
+    if (pos >= bytes.len) return bytes.len;
+    var i = pos;
+    while (i > 0 and bytes[i] & 0xC0 == 0x80) i -= 1;
+    return i;
 }
 
 fn prevCodepointBoundary(bytes: []const u8, pos: usize) usize {

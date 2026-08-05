@@ -1168,3 +1168,19 @@ test "the faces are the bundled ones, and the font block is optional" {
     try stylesheet.write(testing.allocator, &without, .{ .font_faces = false });
     try expectLacks(without.items, "@font-face");
 }
+
+test "the driver set carries its own bytes, and the two statements agree" {
+    // `driver_files` says which files; `driver_sources` says what is in
+    // them, so a generator publishing the driver never has to know that
+    // this directory is where they live. Nothing else in the library
+    // names `driver_sources` — a `pub const` nobody references is never
+    // analyzed — so this test is also the only thing that compiles it.
+    const dom = @import("dom.zig");
+    try std.testing.expectEqual(dom.driver_files.len, dom.driver_sources.len);
+    for (dom.driver_files, dom.driver_sources) |name, src| {
+        try std.testing.expectEqualStrings(name, src.name);
+        // Every one of the four is a real module, not an empty
+        // placeholder: an empty live.js is a blank page at run time.
+        try std.testing.expect(src.bytes.len > 0);
+    }
+}

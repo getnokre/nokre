@@ -234,6 +234,16 @@ pub const App = struct {
         /// yet" — the common boot, refined by `setLocale` once the
         /// device has said or the session has restored.
         locale: []const u8 = "",
+        /// The framework's own words at boot, beside the locale and the
+        /// direction that restore with them (`App.Chrome`,
+        /// `setChrome`). Without it a boot that already knows its
+        /// language — a restored Arabic preference — stands its whole
+        /// nav bar up in English and needs a second call to say what
+        /// `.locale` and `.direction` said here: the correct path was
+        /// longer than the wrong one, which is the shape of every
+        /// half-translated chrome bug. Defaults to English, as the
+        /// field it fills does.
+        chrome: element_mod.Chrome = .{},
         ctx: ?*anyopaque = null,
         scheme: color.Scheme = .auto,
         /// The platform set. (Keep Options decl-free: the test-build
@@ -317,6 +327,7 @@ pub const App = struct {
             .measurer = options.measurer,
             .viewport = options.viewport,
             .direction = options.direction,
+            .chrome = options.chrome,
             .safe_bottom = options.safe_bottom,
             .ctx = options.ctx,
             .scheme = options.scheme,
@@ -456,6 +467,22 @@ pub const App = struct {
         try self.router.switchTo(self, ref);
     }
 
+    /// Swap the screen on top for `ref` — same depth, so whatever is
+    /// behind it stays behind it. The redirect for a screen that is
+    /// *not* the first: `switchTo` would take the trail with it, and
+    /// `navigate` would leave the screen that redirected sitting under
+    /// a Back control that returns to it.
+    ///
+    /// Aliased for the same reason as `reload`, and by the same
+    /// argument the other four motions already carry: `replace` was the
+    /// last one reachable only as `app.router.replace(app, ref)` — the
+    /// shape this file condemns two screens up, threading the app
+    /// through its own member to say something about the app. A verb
+    /// with no consumers is exactly the verb a consumer never found.
+    pub fn replaceWith(self: *App, ref: []const u8) !void {
+        try self.router.replace(self, ref);
+    }
+
     /// The `i`th positional argument of the current screen — `"42"` on
     /// `note~42` (docs/routing.md). Null past the declared arity, so a
     /// builder that reads what its `RouteDef` declares always gets a
@@ -472,6 +499,33 @@ pub const App = struct {
     /// buffer size. `[Router.max_ref_bytes]u8` always fits.
     pub fn routeRef(self: *const App, buf: []u8, name: []const u8, args: []const []const u8) ![]u8 {
         return self.router.writeRef(buf, name, args);
+    }
+
+    /// The same reference, formatted into the tree's arena instead of a
+    /// buffer you declared — `Tree.fmt`'s bargain applied to references,
+    /// for the one place references are overwhelmingly built: a `route`
+    /// field on an element about to be appended.
+    ///
+    /// ```zig
+    /// try group.tile(.{ .label = row.name, .route = try app.refTo("circle", &.{row.id}) });
+    /// ```
+    ///
+    /// What it removes is not a line but a *declaration*: every such
+    /// site had a `[Router.max_ref_bytes]u8` beside it, often inside the
+    /// row loop, and two of them across the real consumers had invented
+    /// a shorter cap of their own — a buffer whose size is a guess about
+    /// a rule the router already owns. The slice lives as long as any
+    /// other string a builder hands the tree (`Tree.fmt`: until the next
+    /// rebuild frees the arena), which is past the `append` that copies
+    /// it.
+    ///
+    /// `routeRef` stays for the reference that is *not* going into the
+    /// tree — one built to navigate with, where a stack buffer is the
+    /// honest lifetime and the arena would be litter.
+    pub fn refTo(self: *App, name: []const u8, args: []const []const u8) ![]const u8 {
+        var buf: [router_mod.max_ref_bytes]u8 = undefined;
+        const written = try self.router.writeRef(&buf, name, args);
+        return self.tree.ownString(written);
     }
 
     /// Writes `utf8` to the platform clipboard (the clipboard service —

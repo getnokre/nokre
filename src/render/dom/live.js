@@ -513,8 +513,12 @@ export async function mount({ wasm, into, worker, content, route, seed, addressi
 
   listen("compositionupdate", (e) => {
     if (!composing) return;
-    // The cursor rides at the preedit's end: no engine says where the
-    // IME's own caret sits, and the end is where every one shows it.
+    // The cursor rides at the preedit's end. Core draws the caret
+    // wherever this says (platform-shells.md, "IME"), and every native
+    // shell reports its engine's own offset — but `compositionupdate`
+    // carries no caret, and the field composing the preedit is the
+    // browser's own, so the end is both the only answer available here
+    // and the right one for a caret nobody moved.
     const len = put(e.data || "");
     nk.nokre_dom_ime_update(len, len);
     // The frame is nearly free — the markup carries the value without

@@ -784,6 +784,22 @@ pub const Mock = struct {
         return self.state.?.journal.items;
     }
 
+    /// The per-phase reset (http's `clearJournal` rule): drop what has
+    /// been asked so far so a test can assert "and *that* press started
+    /// exactly this flow" without arithmetic over the sign-ins before
+    /// it. A flow in flight is untouched — this forgets the record, not
+    /// the state.
+    pub fn clearJournal(self: Mock) void {
+        const state = self.state.?;
+        for (state.journal.items) |a| {
+            state.gpa.free(a.url);
+            state.gpa.free(a.redirect);
+            state.gpa.free(a.nonce);
+            state.gpa.free(a.state);
+        }
+        state.journal.clearRetainingCapacity();
+    }
+
     /// Whether a flow is parked, waiting for the test to answer.
     pub fn inFlight(self: Mock) bool {
         return self.state.?.ticket != null;

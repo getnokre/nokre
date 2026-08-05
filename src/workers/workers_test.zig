@@ -39,6 +39,42 @@ test "codec round-trips the message grammar" {
     }
 }
 
+test "codec round-trips a declared error set as its own index" {
+    const gpa = std.testing.allocator;
+    const Fail = error{ Exhausted, Interrupted, ChallengeTooLong };
+    const Reply = union(enum) {
+        solved: struct { nonce: []const u8 },
+        failed: Fail,
+    };
+    const cases = [_]Reply{
+        .{ .solved = .{ .nonce = "0007" } },
+        .{ .failed = error.Exhausted },
+        .{ .failed = error.Interrupted },
+        .{ .failed = error.ChallengeTooLong },
+    };
+    for (cases) |case| {
+        var buf: std.ArrayList(u8) = .empty;
+        defer buf.deinit(gpa);
+        var atts: std.ArrayList([]u8) = .empty;
+        defer atts.deinit(gpa);
+        try codec.encode(Reply, gpa, &buf, &atts, case);
+        var arena = std.heap.ArenaAllocator.init(gpa);
+        defer arena.deinit();
+        try std.testing.expectEqualDeep(case, try codec.decode(Reply, arena.allocator(), buf.items, &.{}));
+    }
+    // The roster is the range: an index past its end is corrupt, the
+    // same answer an out-of-range enum tag gets.
+    const Boxed = struct { why: Fail };
+    var buf: std.ArrayList(u8) = .empty;
+    defer buf.deinit(gpa);
+    var atts: std.ArrayList([]u8) = .empty;
+    defer atts.deinit(gpa);
+    try codec.encode(u32, gpa, &buf, &atts, 3);
+    var arena = std.heap.ArenaAllocator.init(gpa);
+    defer arena.deinit();
+    try std.testing.expectError(error.Corrupt, codec.decode(Boxed, arena.allocator(), buf.items, &.{}));
+}
+
 test "codec rejects trailing and truncated bytes" {
     const gpa = std.testing.allocator;
     var arena = std.heap.ArenaAllocator.init(gpa);

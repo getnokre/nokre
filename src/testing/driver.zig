@@ -259,11 +259,29 @@ pub fn typeText(app: *App, bytes: []const u8) !void {
     try app.dispatch(.{ .text = .{ .bytes = bytes } });
 }
 
-/// Drives a full IME composition sequence ending in a commit.
+/// Drives a full IME composition sequence ending in a commit. The
+/// pre-edit caret rides at the end, which is where an engine leaves it
+/// when nothing moved it; a test about the caret itself opens the
+/// pre-edit with `composing` and leaves it standing.
 pub fn composeText(app: *App, composition: []const u8, committed: []const u8) !void {
     try app.dispatch(.{ .ime = .start });
     try app.dispatch(.{ .ime = .{ .update = .{ .composition = composition, .cursor = composition.len } } });
     try app.dispatch(.{ .ime = .{ .commit = .{ .text = committed } } });
+}
+
+/// Opens a pre-edit and leaves it standing — the state a commit or a
+/// cancel ends, and the only state in which the IME's own caret is
+/// visible. `cursor` is that caret as a byte offset into `composition`,
+/// exactly as a shell reports it (`ImeEvent.update.cursor`): out of
+/// range or mid-codepoint is vetted, not asserted, because a real shell
+/// can send both.
+///
+/// Sends start+update, which is what every shell sends for the first
+/// update of a composition; calling it again to move the caret leaves
+/// the same net state as the bare update a shell would send.
+pub fn composing(app: *App, composition: []const u8, cursor: usize) !void {
+    try app.dispatch(.{ .ime = .start });
+    try app.dispatch(.{ .ime = .{ .update = .{ .composition = composition, .cursor = cursor } } });
 }
 
 pub fn scroll(app: *App, id: NodeId, delta_y: i32) !void {

@@ -804,6 +804,41 @@ test "golden: copyable fields with mono value, copy glyph, and focus ring" {
     try renderGolden(&harness, "copyable-acknowledged");
 }
 
+fn buildComposing(_: ?*anyopaque, app: *h.App) !void {
+    const tree = &app.tree;
+    const root = tree.rootId();
+    try tree.append(root, .{ .heading = .{ .content = "Compose", .level = .h1 } });
+    // A committed prefix and suffix around the caret, so the pre-edit is
+    // visibly spliced into the value rather than appended to it.
+    try tree.append(root, .{ .text_input = .{
+        .label = "Message",
+        .value = "ab cd",
+        .cursor = 3,
+    } });
+}
+
+test "golden: the IME caret sits where the IME put it inside the pre-edit" {
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 200 }, .{ .build = buildComposing });
+    defer harness.deinit();
+    try harness.pressKey(.tab, .{});
+    // Romaji rather than kana, and not for want of an IME: the bundled
+    // faces are Latin, mono and Arabic (no system fallback, ever — see
+    // introduction.md), so kana would draw as tofu and pin nothing. It
+    // is also the honest first phase of a Japanese composition, before
+    // conversion.
+    //
+    // The caret at the end of the run: where an engine leaves it until
+    // the user moves, and what nokre drew unconditionally before.
+    try harness.composing("nihongo", 7);
+    try renderGolden(&harness, "ime-caret-end");
+    // The same pre-edit, the user having moved back to fix the reading.
+    // The underline is unchanged — it spans the whole pre-edit — and the
+    // committed halves do not move either: only the caret does, which is
+    // the whole picture this pins.
+    try harness.composing("nihongo", 3);
+    try renderGolden(&harness, "ime-caret-inside");
+}
+
 fn buildTextArea(_: ?*anyopaque, app: *h.App) !void {
     const tree = &app.tree;
     const root = tree.rootId();

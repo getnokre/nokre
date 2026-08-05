@@ -529,9 +529,8 @@ and one backend per platform is the charter. Its twists:
   makes it a character like any other. The compositor delegates
   key repeat, so the shell drives one `timerfd` for the held key.
 - **IME.** `zwp_text_input_v3`: `preedit_string` streams `on_ime_update`
-  (the caret is a UTF-8 byte offset by contract — core currently draws
-  the caret at the composition's end and holds the offset for the day
-  it renders it), `commit_string` lands
+  (the caret is a UTF-8 byte offset by contract, and `cursor_begin`'s
+  -1 "hide it" maps to the end), `commit_string` lands
   as `on_ime_commit`, and the batch applies on `done` — the enable/disable
   follows `wants_text_input` after every event, which is what raises an
   on-screen keyboard where the compositor offers one.
@@ -628,7 +627,19 @@ outside `zig test`".
 
 The IME protocol (start/update/commit/cancel) is part of core
 ([src/core/event.zig](../../src/core/event.zig)) and the composition string
-renders identically everywhere. Shell-side IME is implemented on macOS
+renders identically everywhere.
+
+`update` carries the caret with the pre-edit — a **UTF-8 byte offset
+into the composition** — and core draws it there. Every shell already
+converts into that unit from whatever its engine reports: `cursor_begin`
+on Wayland is already bytes, IMM32's `GCS_CURSORPOS` and Apple's marked
+range are UTF-16 units the shell converts, and Android's
+`InputConnection` hands over the selection within the composing region.
+Core clamps and snaps to a codepoint boundary on the way in
+(`editing.handleIme`), so a shell that converts wrong loses the caret's
+position and nothing else. A shell whose engine will not say — the web,
+where `compositionupdate` carries no caret — sends the end, which is
+where a caret that never moved sits anyway. Shell-side IME is implemented on macOS
 (NSTextInputClient), iOS (UITextInput), Windows (IMM32), Android
 (InputConnection), and Linux (text-input-v3) — every shell. The web's
 fields are real DOM inputs, so the preedit is composed *in the field*

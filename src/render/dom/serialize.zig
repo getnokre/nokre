@@ -132,6 +132,37 @@ pub const Emitter = struct {
         self.ref_buf.deinit(self.gpa);
     }
 
+    /// The heading ids this document exported, in the order they were
+    /// minted — the sanctioned answer to "what can another page's
+    /// `#anchor` name". `ids` above is bookkeeping for the numeric
+    /// suffix a repeated heading takes; this is the same list read as a
+    /// *fact about the document*, which is a question a documents-mode
+    /// edition has (docs/internals/dom-edition.md) and an app-in-a-page
+    /// does not.
+    ///
+    /// Ownership transfers: the strings are copied into `gpa` and the
+    /// emitter's own roster comes back empty, so `deinit` frees nothing
+    /// here and the caller frees everything. Copied rather than handed
+    /// over because a caller keeping anchors past the emitter is by
+    /// definition a caller whose allocator outlives the emitter's.
+    ///
+    /// Call it once, when the document is finished: the roster is also
+    /// the dedup bookkeeping, so an emitter that keeps writing past this
+    /// can mint an id it already used.
+    pub fn takeAnchors(self: *Emitter, gpa: std.mem.Allocator) ![]const []const u8 {
+        const out = try gpa.alloc([]const u8, self.ids.items.len);
+        errdefer gpa.free(out);
+        var copied: usize = 0;
+        errdefer for (out[0..copied]) |s| gpa.free(s);
+        for (self.ids.items) |id| {
+            out[copied] = try gpa.dupe(u8, id);
+            copied += 1;
+        }
+        for (self.ids.items) |id| self.gpa.free(id);
+        self.ids.clearAndFree(self.gpa);
+        return out;
+    }
+
     pub fn raw(self: *Emitter, s: []const u8) !void {
         try self.out.appendSlice(self.gpa, s);
     }
@@ -903,7 +934,7 @@ fn modalSurface(em: *Emitter, id: NodeId, class: []const u8, title: []const u8) 
 /// decides the side it stands on — so the column the words get and the
 /// order they are written in cannot disagree.
 fn noticeControls(em: *Emitter, notice: NodeId, flank: enum { lead, trail }) !void {
-    const glyphs: []const element_mod.Glyph = switch (flank) {
+    const glyphs: []const element_mod.ChromeGlyph = switch (flank) {
         .lead => &.{ .open, .expand },
         .trail => &.{ .minimize, .dismiss },
     };
@@ -1125,7 +1156,7 @@ fn icon(em: *Emitter, name: IconName, label: []const u8, ink: Gray, scale: Scale
 
 /// The framework's own glyphs, which are codepoints in the same icon
 /// face rather than names in `IconName`.
-fn glyph(em: *Emitter, g: element_mod.Glyph) !void {
+fn glyph(em: *Emitter, g: element_mod.ChromeGlyph) !void {
     // The same numeric-entity form `icon` uses: these are private-use
     // codepoints, and a raw one in the byte stream is at the mercy of
     // whatever decides the document's encoding.
@@ -1212,7 +1243,8 @@ fn textClass(em: *Emitter, style: text_mod.Style, extra: []const u8) !void {
 /// word characters kept, punctuation — ASCII and the General
 /// Punctuation block both — dropped, repeats numbered. Deterministic
 /// from the words alone, so the same heading is the same anchor on
-/// every run.
+/// every run. Why it is GitHub's and not nokre's is
+/// docs/internals/dom-edition.md, "A heading is an address".
 fn headingId(em: *Emitter, words: []const u8) ![]const u8 {
     var buf: std.ArrayList(u8) = .empty;
     errdefer buf.deinit(em.gpa);

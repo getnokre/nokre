@@ -104,8 +104,8 @@ screen's subtree from scratch:
 |---|---|
 | `App.navigate(ref)` / `router.push` | a screen deeper — gains a Back control |
 | `App.navigateBack()` / `router.pop` | up one; a no-op at the root |
-| `router.replace(app, ref)` | the same depth, a different screen |
-| `router.switchTo(app, ref)` | arriving with no trail: **the stack resets to depth 1** |
+| `App.replaceWith(ref)` / `router.replace` | the same depth, a different screen |
+| `App.switchTo(ref)` / `router.switchTo` | arriving with no trail: **the stack resets to depth 1** |
 | `App.reload()` / `router.reload` | this screen, rebuilt from its own reference — the *deliberate* answer to changed state |
 | `App.refresh(opts)` | the *polite* one: the open sheet rebuilt if one owns the screen, else a reload unless the user holds something a rebuild would take |
 
@@ -356,7 +356,7 @@ name to surface as a mystery at first navigation:
 | `error.DuplicateRouteName` | two routes sharing a name — otherwise every reference would quietly resolve to the first |
 
 A reference is validated at resolution — but a bad one is a **refusal,
-not an error**. `navigate`, `switchTo`, `router.replace` — and
+not an error**. `navigate`, `switchTo`, `replaceWith` — and
 `reload`, for the one thing it can refuse — leave the stack exactly as
 it was, return normally, and record what they refused in
 `router.refused`: the reference (bounded to `max_ref_bytes`) and a

@@ -202,13 +202,9 @@ pub fn addApp(nokre_dep: *std.Build.Dependency, options: AppOptions) App {
 /// a choice no app makes, and setting `.skia = true` on the dependency
 /// only ever configured nokre's *own* steps.
 ///
-/// Everything else about goldens is the consumer's own build option,
-/// because it is their test suite: `-Dgolden` deciding whether the
-/// golden tests are in the `test` step at all, and `-Dupdate-goldens`
-/// reaching `expectGolden`'s `.update` argument through an options
-/// module they pass to their test module. nokre's own build does
-/// exactly that (`tests/golden.zig`), and the recipe is in
-/// getting-started.md.
+/// `-Dgolden` — whether the golden tests are in the `test` step at all
+/// — stays the consumer's own build option, because it is their test
+/// suite; everything below the flag is `addGoldenTests`.
 ///
 /// Needs the Skia prebuilt in the nokre checkout's deps/ —
 /// tools/fetch-deps.sh, run once inside the dependency — and fails the
@@ -216,6 +212,98 @@ pub fn addApp(nokre_dep: *std.Build.Dependency, options: AppOptions) App {
 /// exactly as `addApp` does.
 pub fn linkSkia(nokre_dep: *std.Build.Dependency, tests: *std.Build.Step.Compile) void {
     linkSkiaTo(nokre_dep.builder, tests);
+}
+
+/// What `addGoldenTests` builds a consumer's screenshot suite from.
+pub const GoldenTestOptions = struct {
+    /// The test root — the file holding the golden tests.
+    root_source_file: std.Build.LazyPath,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+    /// The nokre module the tests import: `App.nokre` off `addApp`, so
+    /// the goldens are rendered by the same library instance the app
+    /// links. (`Dependency.module("nokre")` is the unconfigured one and
+    /// would render through a different set of linked services.)
+    nokre: *std.Build.Module,
+    /// Everything else the test root imports. `"nokre"` and
+    /// `"build_options"` are added by this call and must not appear
+    /// here — a duplicate import name is a build error, which is the
+    /// honest answer to naming one twice.
+    imports: []const std.Build.Module.Import = &.{},
+    /// Whether this run may mint a missing baseline or rewrite a
+    /// mismatched one. Wire it to a build option that defaults to
+    /// false: it reaches `expectGolden`'s `.update` and nothing else,
+    /// so a run that does not pass it cannot heal a golden.
+    update_goldens: bool = false,
+    /// What golden paths in the test root are relative to. Defaults to
+    /// the package root (`b.path(".")` on the *consumer's* builder is
+    /// what you want here) because that is where committed PPMs live;
+    /// without it the run's cwd is the cache directory.
+    cwd: std.Build.LazyPath,
+};
+
+/// The pieces, so the consumer wires the steps: a `golden` step, the
+/// `test` step under their own `-Dgolden`, or both.
+pub const GoldenTests = struct {
+    module: *std.Build.Module,
+    artifact: *std.Build.Step.Compile,
+    /// Already `setCwd`-ed to `GoldenTestOptions.cwd`.
+    run: *std.Build.Step.Run,
+};
+
+/// The third consumer entry point: a golden screenshot suite, wired.
+///
+/// It exists because two of the four lines it replaces are a *contract*
+/// with nokre rather than a consumer's own arrangement — the options
+/// module must be imported under the name `"build_options"`, which is
+/// what `tests/golden.zig`-shaped roots read `update_goldens` from, and
+/// the run must have its cwd set to the package root or every golden
+/// path resolves into the cache. Both real consumers had hand-copied
+/// the same twenty lines, and a hand copy that drifts on either fails
+/// somewhere far from the mistake: a wrong import name is a missing-decl
+/// error inside the test root, and a missing `setCwd` mints a fresh
+/// baseline tree in a directory nobody looks at.
+///
+/// ```zig
+/// const golden = nokre.addGoldenTests(nokre_dep, .{
+///     .root_source_file = b.path("src/golden_test.zig"),
+///     .target = target,
+///     .optimize = optimize,
+///     .nokre = app.nokre,
+///     .imports = &.{.{ .name = "shared", .module = shared }},
+///     .update_goldens = b.option(bool, "update-goldens", "…") orelse false,
+///     .cwd = b.path("."),
+/// });
+/// b.step("golden", "Run the golden screenshot tests").dependOn(&golden.run.step);
+/// ```
+pub fn addGoldenTests(nokre_dep: *std.Build.Dependency, options: GoldenTestOptions) GoldenTests {
+    return addGoldenTestsTo(nokre_dep.builder, options);
+}
+
+fn addGoldenTestsTo(hb: *std.Build, options: GoldenTestOptions) GoldenTests {
+    const gpa = hb.allocator;
+    var imports = std.ArrayList(std.Build.Module.Import).initCapacity(gpa, options.imports.len + 2) catch @panic("OOM");
+    imports.appendAssumeCapacity(.{ .name = "nokre", .module = options.nokre });
+    // The name is the contract, which is the whole reason this call
+    // exists: a golden root reads `@import("build_options").update_goldens`.
+    const opts = hb.addOptions();
+    opts.addOption(bool, "update_goldens", options.update_goldens);
+    imports.appendAssumeCapacity(.{ .name = "build_options", .module = opts.createModule() });
+    imports.appendSlice(gpa, options.imports) catch @panic("OOM");
+
+    const module = hb.createModule(.{
+        .root_source_file = options.root_source_file,
+        .target = options.target,
+        .optimize = options.optimize,
+        .imports = imports.items,
+    });
+    const artifact = hb.addTest(.{ .root_module = module });
+    // Goldens render through the production renderer, so the *test*
+    // binary needs the link `addApp` never makes.
+    linkSkiaTo(hb, artifact);
+    const run = hb.addRunArtifact(artifact);
+    run.setCwd(options.cwd);
+    return .{ .module = module, .artifact = artifact, .run = run };
 }
 
 /// The web target: bare wasm32. There is no C++ archive to match
@@ -759,9 +847,9 @@ fn addWebSite(
         // expects the module and the stylesheet beside it.
         _ = wf.addCopyDirectory(tree.path(hb, "web"), "", .{});
         // The corner's contents, as addPkgTree writes them: the page in
-        // its three CSP-mandated pieces, the webmanifest, and the web
-        // icons out of packaging's own table.
-        inline for (.{ "index.html", "page.css", "boot.js", "manifest.webmanifest" }) |f| {
+        // its three CSP-mandated pieces and the webmanifest, out of
+        // packaging's own list, and the web icons out of its table.
+        for (packaging.web_page_files) |f| {
             files.append(gpa, f) catch @panic("OOM");
         }
         for (packaging.icon_files) |f| {
@@ -1391,27 +1479,22 @@ pub fn build(b: *std.Build) void {
 
     // ---- Golden screenshot tests (headless, need Skia for text). ----
     if (enable_golden) {
-        const golden_mod = b.createModule(.{
+        // Through the consumer path, like the examples above: nokre's
+        // own goldens are the exercise for the recipe `addGoldenTests`
+        // hands a consumer, so the two cannot drift. Baseline
+        // maintenance stays explicit — -Dupdate-goldens reaches
+        // `expectGolden`'s `.update` only through the options module
+        // that call builds, so CI, which never passes the flag, can
+        // neither mint nor heal a golden.
+        const goldens = addGoldenTestsTo(b, .{
             .root_source_file = b.path("tests/golden.zig"),
             .target = target,
             .optimize = optimize,
-            .imports = &.{.{ .name = "nokre", .module = nokre }},
+            .nokre = nokre,
+            .update_goldens = update_goldens,
+            .cwd = b.path("."),
         });
-        // Baseline maintenance is explicit: -Dupdate-goldens reaches
-        // expectGolden's `.update` only through this options module, so
-        // CI — which never passes the flag — can neither mint nor heal
-        // a golden.
-        const golden_opts = b.addOptions();
-        golden_opts.addOption(bool, "update_goldens", update_goldens);
-        golden_mod.addOptions("build_options", golden_opts);
-        const golden_tests = b.addTest(.{ .root_module = golden_mod });
-        // Through the consumer path, like the examples above: nokre's
-        // own goldens are the exercise for the wiring `linkSkia` hands a
-        // consumer, so the two cannot drift.
-        linkSkiaTo(b, golden_tests);
-        const run_golden = b.addRunArtifact(golden_tests);
-        run_golden.setCwd(b.path("."));
-        test_step.dependOn(&run_golden.step);
+        test_step.dependOn(&goldens.run.step);
     }
 }
 
@@ -1514,14 +1597,27 @@ fn addPkgTree(
     // renames the artifact into place under it.
     _ = wf.add("macos/Info.plist", packaging.macosInfoPlist(gpa, decl, services, macos_executable) catch @panic("OOM"));
     _ = wf.add("macos/AppIcon.icns", packaging.icon.icns(gpa, decl.id) catch @panic("OOM"));
-    _ = wf.add("web/manifest.webmanifest", packaging.webManifest(gpa, decl) catch @panic("OOM"));
-    // The page and the two files it names. They are one artifact in
-    // three pieces — the split is the page's policy, which admits no
-    // inline script and no inline `<style>` block (packaging.zig's
-    // webIndexHtml states it directive by directive).
-    _ = wf.add("web/index.html", packaging.webIndexHtml(gpa, decl, web) catch @panic("OOM"));
-    _ = wf.add("web/page.css", packaging.web_page_css);
-    _ = wf.add("web/boot.js", packaging.webBootJs(gpa, web) catch @panic("OOM"));
+    // The manifest, the page, and the two files it names. Page and
+    // scripts are one artifact in three pieces — the split is the page's
+    // policy, which admits no inline script and no inline `<style>`
+    // block (packaging.zig's webIndexHtml states it directive by
+    // directive). The four names are `packaging.web_page_files`, which
+    // is what `addWebSite` lists in `site.manifest`; the switch below is
+    // exhaustive over that list, so a file added there without a writer
+    // here is a compile error rather than a manifest line pointing at
+    // nothing.
+    inline for (packaging.web_page_files) |f| {
+        _ = wf.add("web/" ++ f, if (comptime std.mem.eql(u8, f, "manifest.webmanifest"))
+            packaging.webManifest(gpa, decl) catch @panic("OOM")
+        else if (comptime std.mem.eql(u8, f, "index.html"))
+            packaging.webIndexHtml(gpa, decl, web) catch @panic("OOM")
+        else if (comptime std.mem.eql(u8, f, "page.css"))
+            packaging.web_page_css
+        else if (comptime std.mem.eql(u8, f, "boot.js"))
+            packaging.webBootJs(gpa, web) catch @panic("OOM")
+        else
+            @compileError("packaging.web_page_files names \"" ++ f ++ "\", which addPkgTree does not write"));
+    }
     // The app icon set, derived from the id (src/packaging/icon.zig):
     // the asset-catalog scaffolding Xcode compiles, the adaptive-icon
     // resources Gradle merges, and the PNGs themselves. A declared Icon

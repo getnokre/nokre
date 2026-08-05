@@ -777,6 +777,54 @@ test "append rejects malformed picker structure" {
     try std.testing.expectError(error.MultiplePickers, tree.append(root, .{ .picker = .{ .title = "Another" } }));
 }
 
+test "a chrome glyph may only be appended where chrome puts it" {
+    var tree = try Tree.init(std.testing.allocator);
+    defer tree.deinit();
+    const root = tree.rootId();
+
+    // The one root chrome control: the collapsed chip that reopens a
+    // parked ring.
+    try tree.append(root, .{ .icon_button = .{ .glyph = .expand, .label = "Show notices" } });
+    // Every other glyph at the root is a consumer smuggling a framework
+    // control — a working "dismiss every notice" among them — into an
+    // element documented as chrome-only.
+    for ([_]element_mod.ChromeGlyph{ .open, .minimize, .dismiss, .dismiss_all }) |g| {
+        try std.testing.expectError(
+            error.IconButtonOutsideChrome,
+            tree.append(root, .{ .icon_button = .{ .glyph = g, .label = "Smuggled" } }),
+        );
+    }
+
+    // Under a notice — the banner, and a row in the pane, which is a
+    // notice too — the notice's own four are legal and the pane's is not.
+    const notice = try tree.appendId(root, .{ .notice = .{ .title = "Saved" } });
+    for ([_]element_mod.ChromeGlyph{ .open, .expand, .minimize, .dismiss }) |g| {
+        try tree.append(notice, .{ .icon_button = .{ .glyph = g, .label = "Chrome" } });
+    }
+    try std.testing.expectError(
+        error.IconButtonOutsideChrome,
+        tree.append(notice, .{ .icon_button = .{ .glyph = .dismiss_all, .label = "Dismiss all" } }),
+    );
+
+    // And under the pane, only its two header controls.
+    const pane = try tree.appendId(root, .{ .notices_pane = .{ .title = "Notices" } });
+    try tree.append(pane, .{ .icon_button = .{ .glyph = .dismiss_all, .label = "Dismiss all" } });
+    try tree.append(pane, .{ .icon_button = .{ .glyph = .minimize, .label = "Minimize" } });
+    for ([_]element_mod.ChromeGlyph{ .open, .expand, .dismiss }) |g| {
+        try std.testing.expectError(
+            error.IconButtonOutsideChrome,
+            tree.append(pane, .{ .icon_button = .{ .glyph = g, .label = "Chrome" } }),
+        );
+    }
+
+    // Anywhere else is out of chrome entirely, as it always was.
+    const box = try tree.appendId(root, .{ .box = .{} });
+    try std.testing.expectError(
+        error.IconButtonOutsideChrome,
+        tree.append(box, .{ .icon_button = .{ .glyph = .expand, .label = "Expand" } }),
+    );
+}
+
 test "append rejects wordless and out-of-range meters" {
     var tree = try Tree.init(std.testing.allocator);
     defer tree.deinit();

@@ -561,10 +561,40 @@ The contract, each line load-bearing:
 - **`pending()`** is the questions still open — an e2e driver's idle
   probe: settled when zero.
 
+#### Single-flight adapters: the discipline, once
+
 A port that is single-flight *without* a worker behind it — an adapter
 that can hold only one caller's callback — queues the same way with
 `h.Queue`, the bounded FIFO this surface grew from
 (src/core/queue.zig owns its contract).
+
+Reach for it rather than a `pending: ?Callback` field. That field is
+where every adapter starts, and it is where four rules get re-derived
+one adapter at a time — a dozen of them across the two real consumers,
+each having settled the same four questions again:
+
+- **A second ask while one is out is queued, not dropped and not
+  raced.** Dropping loses a caller's callback silently; overwriting
+  `pending` loses it *and* delivers the first ask's answer to the second
+  ask's caller. Contention is allowed to cost latency, never
+  correctness.
+- **A refusal is at the call.** `submit` returns `error.Full` having
+  queued nothing, so a caller learns at the site it can act on rather
+  than by waiting forever. The bound is the contract, not a hidden
+  drop.
+- **Exactly one answer per accepted ask.** The completion shim calls
+  `done` once per started request — this is the rule an adapter breaks
+  by answering a cancelled ask, and the queue debug-asserts it, because
+  a second `done` would otherwise deliver to the *next* submitter.
+- **Delivery comes before the next start**, so a callback that submits
+  again joins the back of the line instead of jumping it, and a
+  synchronous completion (a cached answer) drains in order rather than
+  reentering the middle of one.
+
+Those are the same four the worker ask surface above answers; `h.Queue`
+is that answer with the thread taken out. An adapter whose port is
+genuinely one-at-a-time and whose callers never overlap can still hold a
+bare optional — but it is holding the decision, not avoiding it.
 
 Like `http` — and unlike `package_info` — nothing links: the service is
 always available, and an app that spawns no worker pays nothing.
@@ -644,6 +674,15 @@ request carries a body: POST, PUT and PATCH always do, empty or not
 (`content-length: 0` is a body a server can read as one), and passing
 `body` on any other verb is a programmer error nokre asserts on rather
 than a request one platform would send and the other would refuse.
+`request` itself refuses with `http.RequestError` — `OutOfMemory` or
+`Unavailable`, and nothing else. It is a *named* set for the reason
+every other service's is, plus one this verb has to itself: it is the
+same set on all three transports, where the inferred one was not (only
+the native leg spawns threads, so only the native leg could hand back
+`std.Thread.SpawnError`). A refusal here means no callback will run;
+everything that goes wrong afterwards arrives at `on_result` as
+`Result.failure`, because by then one is owed.
+
 There is no streaming, no timeout knob, and
 no per-request configuration surface. Like `worker` — and unlike
 `package_info` — nothing links: the service is always available, and

@@ -138,7 +138,7 @@ pub const Harness = struct {
     /// This app's whole secure store — the app-owned fake, aliased for
     /// assertion ergonomics (t.store.journal()); dead with the app at
     /// deinit so nothing leaks to the next test.
-    store: *secure_store.Fake,
+    store: *secure_store.MockState,
     step_observer: ?trace.StepObserver = null,
     step_index: u32 = 0,
 
@@ -306,6 +306,14 @@ pub const Harness = struct {
     pub fn composeText(self: *Harness, composition: []const u8, committed: []const u8) !void {
         try driver.composeText(&self.app, composition, committed);
         try self.afterStep("compose {s}", .{committed});
+    }
+
+    /// Leaves a pre-edit standing with the IME's caret at `cursor`
+    /// (driver.zig) — the state a screenshot of a composition is taken
+    /// in, and the one `composeText` passes straight through.
+    pub fn composing(self: *Harness, composition: []const u8, cursor: usize) !void {
+        try driver.composing(&self.app, composition, cursor);
+        try self.afterStep("composing {s} at {d}", .{ composition, cursor });
     }
 
     pub fn scroll(self: *Harness, id: NodeId, delta_y: i32) !void {
@@ -704,7 +712,7 @@ pub const Harness = struct {
     /// the journaling mock directly, like `knocks()`: the handoff is
     /// fire-and-forget, so there is nothing to settle and no result to
     /// deliver — the journal is the whole observable effect.
-    pub fn urlsOpened(self: *const Harness) []const []u8 {
+    pub fn urlsOpened(self: *const Harness) []const []const u8 {
         return self.app.services.open_url.opens();
     }
 
@@ -713,7 +721,7 @@ pub const Harness = struct {
     /// directly, like `urlsOpened()`: the handoff is fire-and-forget
     /// and the destination is deliberately unobservable, so the
     /// journal is the whole observable effect.
-    pub fn sharesShown(self: *const Harness) []const []u8 {
+    pub fn sharesShown(self: *const Harness) []const []const u8 {
         return self.app.services.share.shares();
     }
 
@@ -735,7 +743,7 @@ pub const Harness = struct {
     /// Every URL delivered to this app, in order — including one that
     /// arrived before the app registered a handler (a launch URL nothing
     /// was wired to route yet).
-    pub fn deepLinksReceived(self: *const Harness) []const []u8 {
+    pub fn deepLinksReceived(self: *const Harness) []const []const u8 {
         return self.app.services.deep_link.received();
     }
 
@@ -827,7 +835,7 @@ pub const Harness = struct {
     /// Every tag the device reported, in order; `[0]` is always the boot
     /// tag, so "the app never read a locale" and "the app read the empty
     /// one" stay distinguishable.
-    pub fn localesSeen(self: *const Harness) []const []u8 {
+    pub fn localesSeen(self: *const Harness) []const []const u8 {
         return self.app.services.locale.seen();
     }
 

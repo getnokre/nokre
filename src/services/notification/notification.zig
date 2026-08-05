@@ -787,6 +787,18 @@ pub const Mock = struct {
         return self.state.?.journal.items;
     }
 
+    /// The per-phase reset (http's `clearJournal` rule), so a test can
+    /// assert what one action posted without counting the ones before
+    /// it. `askedForAuthorization` survives it: "this app ever raised
+    /// the prompt" is a fact about the session, not an entry in the
+    /// ledger, and a phase reset must not make an app look like it
+    /// posted without asking.
+    pub fn clearJournal(self: Mock) void {
+        const state = self.state.?;
+        for (state.journal.items) |e| state.free(e);
+        state.journal.clearRetainingCapacity();
+    }
+
     /// Whether the app ever raised the permission prompt — the assertion
     /// behind "this screen posted without asking".
     pub fn askedForAuthorization(self: Mock) bool {

@@ -45,6 +45,15 @@ pub fn Queue(comptime Request: type, comptime Result: type, comptime capacity: u
         head: usize = 0,
         len: usize = 0,
         waiting: [capacity]Entry = undefined,
+        /// Whether the started request is still unanswered — the flag
+        /// `busy` cannot be. `busy` deliberately spans the callback and
+        /// the next start, so it is still true when a completion shim
+        /// calls `done` twice, and the second call would deliver the
+        /// *next* submitter's result to the next submitter's callback:
+        /// a wrong answer, in order, with nothing to see. Debug only —
+        /// the field is `void` where safety is off, so a release build
+        /// carries neither the byte nor the branch.
+        started: if (std.debug.runtime_safety) bool else void = if (std.debug.runtime_safety) false else {},
 
         /// Start now if idle, otherwise wait in line. `error.Full`
         /// refuses — nothing was queued and no callback will fire.
@@ -52,6 +61,10 @@ pub fn Queue(comptime Request: type, comptime Result: type, comptime capacity: u
             if (!self.busy) {
                 self.busy = true;
                 self.current = callback;
+                // Marked before the start, not after: a starter that
+                // answers synchronously calls `done` before this
+                // returns.
+                self.mark(true);
                 self.starter.call(self.starter.ctx, request);
                 return;
             }
@@ -64,6 +77,8 @@ pub fn Queue(comptime Request: type, comptime Result: type, comptime capacity: u
         /// consumer's completion shim, exactly once per started
         /// request. Delivers, then starts the next in line.
         pub fn done(self: *@This(), result: Result) void {
+            if (comptime std.debug.runtime_safety) std.debug.assert(self.started); // done called twice for one request
+            self.mark(false);
             const callback = self.current orelse return;
             self.current = null;
             callback.call(callback.ctx, result);
@@ -72,10 +87,15 @@ pub fn Queue(comptime Request: type, comptime Result: type, comptime capacity: u
                 self.head = (self.head + 1) % capacity;
                 self.len -= 1;
                 self.current = next.callback;
+                self.mark(true);
                 self.starter.call(self.starter.ctx, next.request);
             } else {
                 self.busy = false;
             }
+        }
+
+        fn mark(self: *@This(), in_flight: bool) void {
+            if (comptime std.debug.runtime_safety) self.started = in_flight;
         }
 
         /// Requests not yet answered, counting the one in flight.
@@ -188,6 +208,33 @@ test "a synchronous completion drains the whole line in order" {
     flight.finish();
     try std.testing.expectEqualSlices(u32, &.{ 10, 20, 30 }, taker.got.items);
     try std.testing.expectEqual(@as(usize, 0), q.pending());
+}
+
+test "a second done for one request trips the assert instead of answering the next" {
+    // The bug the flag exists for: with a request already waiting,
+    // `busy` is still true and `current` holds the *next* submitter's
+    // callback by the time a stray second `done` arrives — so without
+    // the flag that call delivers a duplicate result to somebody else's
+    // question, in order, with nothing to see. An assert cannot be
+    // caught in-process, so what is pinned here is the flag's own truth
+    // at each point: it is exactly the predicate the assert reads.
+    if (!std.debug.runtime_safety) return error.SkipZigTest;
+    var flight: Flight = .{};
+    defer flight.deinit();
+    var taker: Taker = .{};
+    defer taker.deinit();
+    var q: TestQueue = .{ .starter = .{ .ctx = &flight, .call = Flight.start } };
+    flight.q = &q;
+
+    try std.testing.expect(!q.started); // idle: `done` here would assert
+    try q.submit(1, taker.callback());
+    try std.testing.expect(q.started);
+    try q.submit(2, taker.callback());
+    flight.finish(); // 1 answered, 2 started in the same call
+    try std.testing.expect(q.started); // legal — but for 2, not for 1
+    flight.finish();
+    try std.testing.expect(!q.started); // nothing in flight; a third `done` asserts
+    try std.testing.expectEqualSlices(u32, &.{ 10, 20 }, taker.got.items);
 }
 
 test "a re-entrant submit from a callback joins the back of the line" {

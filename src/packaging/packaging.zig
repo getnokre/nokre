@@ -856,6 +856,21 @@ pub fn webManifest(gpa: std.mem.Allocator, decl: Decl) error{OutOfMemory}![]u8 {
     return out.toOwnedSlice(gpa);
 }
 
+/// What the declaration's web corner holds, at the site root: the page
+/// in the three CSP-mandated pieces it is split into, and the manifest.
+/// Stated as data for the reason `icon_files` and `dom.driver_files`
+/// are: `addPkgTree` writes these four and `addWebSite` lists them in
+/// `site.manifest`, and a manifest whose whole purpose is deploy
+/// verification is the last place a second, hand-typed truth belongs.
+/// The icons in the same corner already come from `icon_files`, which is
+/// why they are not here.
+pub const web_page_files: []const []const u8 = &.{
+    "index.html",
+    "page.css",
+    "boot.js",
+    "manifest.webmanifest",
+};
+
 /// The page's own stylesheet, and the whole of what a page around a
 /// nokre app has to say: everything on screen comes out of the tree, so
 /// the one thing left over is what the tree cannot say — how wide a

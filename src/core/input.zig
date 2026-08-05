@@ -434,7 +434,7 @@ pub fn activate(app: *App, id: NodeId) !void {
 
 /// Icon controls carry their behavior in the glyph: chrome cannot
 /// be miswired.
-fn activateIcon(app: *App, id: NodeId, glyph: element_mod.Glyph) !void {
+fn activateIcon(app: *App, id: NodeId, glyph: element_mod.ChromeGlyph) !void {
     switch (glyph) {
         .expand => try notices.openNoticesPane(app),
         .minimize => notices.minimizeNotices(app),

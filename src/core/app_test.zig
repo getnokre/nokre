@@ -1036,6 +1036,30 @@ test "a boot locale rides Options through the same gate" {
     }));
 }
 
+test "chrome is a boot option beside the locale, so no screen stands up in English first" {
+    // The bug this closes: an app restoring a Turkish preference could
+    // say `.locale` and `.direction` at `init` but not its chrome, so
+    // the first frame's Back control, nav chip and notice controls were
+    // English until a separate `setChrome` — the correct path was one
+    // call longer than the wrong one.
+    var app = try App.init(testing.allocator, .{
+        .viewport = .{ .w = 300, .h = 600 },
+        .routes = &offroster_routes,
+        .services = .mocks(),
+        .chrome = .{ .back = "Geri", .section = "Bölüm", .show_notices = "Bildirimleri göster" },
+    });
+    defer app.deinit();
+    try app.setNav(&offroster_nav);
+    try app.navigate("home");
+    try app.navigate("terms"); // depth 2, so a back control exists
+
+    try testing.expectEqualStrings("Geri", app.tree.getConst(findBack(&app).?).?.label());
+    try testing.expectEqualStrings("Bölüm", app.tree.getConst(navChip(&app).?).?.label());
+    // A word the option left alone keeps the English default: the field
+    // is `Chrome`'s whole shape, not a patch over it.
+    try testing.expectEqualStrings("Notices", app.chrome.notices);
+}
+
 test "setChrome re-says the framework's own words, in place" {
     var app = try offRosterApp(300); // narrow: the collapsed chip
     defer app.deinit();
@@ -3014,7 +3038,7 @@ test "notices expand to the pane, minimize to the indicator, and reopen" {
     // With several pending, the banner leads with the expand control.
     const banner = layout.findNotice(&app.tree).?;
     const expand = focus.firstFocusable(&app.tree, banner).?.node;
-    try testing.expectEqual(element_mod.Glyph.expand, app.tree.getConst(expand).?.icon_button.glyph);
+    try testing.expectEqual(element_mod.ChromeGlyph.expand, app.tree.getConst(expand).?.icon_button.glyph);
     try app.activate(expand);
     try testing.expect(layout.findNoticesPane(&app.tree) != null);
     try testing.expectEqual(App.NoticeState.pane, app.notice_state);
@@ -3139,7 +3163,7 @@ test "the pane's dismiss controls remove one notice or all" {
 /// The glyphs of a notice row's icon controls, in document order — the
 /// census layout, the renderer and the DOM edition each take of the
 /// same children (`noticeTextBand`, `noticeControls`).
-fn expectRowGlyphs(app: *App, notice: NodeId, want: []const element_mod.Glyph) !void {
+fn expectRowGlyphs(app: *App, notice: NodeId, want: []const element_mod.ChromeGlyph) !void {
     var seen: usize = 0;
     var it = app.tree.children(notice);
     while (it.next()) |c| {
@@ -3173,7 +3197,7 @@ test "a routeless banner grows no open control, and its other chrome is untouche
     // The first stop is the surviving chrome, and pressing it parks the
     // notice — the refusal record stays empty.
     const first = focus.firstFocusable(&app.tree, bare).?.node;
-    try testing.expectEqual(element_mod.Glyph.minimize, app.tree.getConst(first).?.icon_button.glyph);
+    try testing.expectEqual(element_mod.ChromeGlyph.minimize, app.tree.getConst(first).?.icon_button.glyph);
     try app.activate(first);
     try testing.expectEqual(App.NoticeState.minimized, app.notice_state);
     try testing.expect(app.router.refused == null);

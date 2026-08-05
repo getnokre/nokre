@@ -366,6 +366,51 @@ test "ime composition updates then commits" {
     try testing.expectEqualStrings("", app.tree.getConst(input).?.text_input.composition);
 }
 
+test "the IME's caret is kept where the IME put it, and vetted on the way in" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    const input = try app.tree.appendId(app.tree.rootId(), .{ .text_input = .{ .label = "Search" } });
+    app.focused = .of(input);
+    const inp = struct {
+        fn get(a: *App, id: NodeId) element_mod.TextInput {
+            return a.tree.getConst(id).?.text_input;
+        }
+    }.get;
+
+    // "にほんご" mid-conversion, the user having moved back two
+    // codepoints to fix a syllable: the caret belongs there and not at
+    // the end of the run.
+    try app.dispatch(.{ .ime = .start });
+    try app.dispatch(.{ .ime = .{ .update = .{ .composition = "にほんご", .cursor = 6 } } });
+    try testing.expectEqual(@as(usize, 6), inp(&app, input).composition_cursor);
+    // …and the value's own caret is untouched: they index different
+    // strings.
+    try testing.expectEqual(@as(usize, 0), inp(&app, input).cursor);
+
+    // Past the end (Wayland's "hidden" cursor arrives as the length)
+    // clamps to the end.
+    try app.dispatch(.{ .ime = .{ .update = .{ .composition = "にほ", .cursor = 99 } } });
+    try testing.expectEqual(@as(usize, 6), inp(&app, input).composition_cursor);
+
+    // Mid-codepoint snaps back to a boundary — a shell converting
+    // UTF-16 units by hand can land there, and the renderer must never
+    // slice a codepoint to measure the prefix.
+    try app.dispatch(.{ .ime = .{ .update = .{ .composition = "にほ", .cursor = 4 } } });
+    try testing.expectEqual(@as(usize, 3), inp(&app, input).composition_cursor);
+
+    // Every way a pre-edit ends clears the pair together, so the offset
+    // can never outlive the string it indexes.
+    try app.dispatch(.{ .ime = .cancel });
+    try testing.expectEqual(@as(usize, 0), inp(&app, input).composition_cursor);
+    try app.dispatch(.{ .ime = .{ .update = .{ .composition = "にほ", .cursor = 3 } } });
+    try app.dispatch(.{ .key_down = .{ .key = .escape } });
+    try testing.expectEqual(@as(usize, 0), inp(&app, input).composition_cursor);
+    try app.dispatch(.{ .ime = .{ .update = .{ .composition = "にほ", .cursor = 3 } } });
+    try app.dispatch(.{ .ime = .{ .commit = .{ .text = "日本" } } });
+    try testing.expectEqual(@as(usize, 0), inp(&app, input).composition_cursor);
+    try testing.expectEqualStrings("", inp(&app, input).composition);
+}
+
 test "text area: enter inserts a newline instead of submitting" {
     var app = try test_app.init(400, 400);
     defer app.deinit();

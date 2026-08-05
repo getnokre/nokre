@@ -994,7 +994,11 @@ Single-line. `label` is mandatory and rendered above the field (small
 scale). `value`, `placeholder`, `cursor` (byte offset), `on_change`,
 `on_submit` (Enter). Editing is UTF-8 codepoint-aware (backspace/delete,
 ←/→, Home/End). `composition` holds in-progress IME text, rendered dark
-with an underline; IME is live on every platform, the web included
+with an underline, and `composition_cursor` is where the IME's own caret
+sits *inside* it — during a CJK conversion the user moves back through
+the reading to fix a syllable, so the caret is drawn there rather than
+at the end of the run. Both are written by core from the shell's events;
+a builder sets neither. IME is live on every platform, the web included
 ([internals/platform-shells.md](internals/platform-shells.md) has the
 per-shell contract).
 

@@ -350,7 +350,7 @@ fn unrefJob(job: *Job) void {
 }
 
 /// Copy the request and hand it to a fresh thread. UI thread only.
-pub fn send(g: std.mem.Allocator, ticket: workers.Ticket, opts: http.RequestOptions) !void {
+pub fn send(g: std.mem.Allocator, ticket: workers.Ticket, opts: http.RequestOptions) http.RequestError!void {
     // Two Io references and two runtime references — one per thread,
     // each released on that thread's way out. The runtime ones keep
     // the ticket's memory valid past any app shutdown: deliveries
@@ -393,7 +393,14 @@ pub fn send(g: std.mem.Allocator, ticket: workers.Ticket, opts: http.RequestOpti
             .max_body = opts.max_body,
         },
     };
-    const thread = try std.Thread.spawn(.{}, run, .{job});
+    // The transfer thread *is* the transport here, so a refused spawn
+    // is a refused request. Every way `spawn` fails is resource
+    // exhaustion at the OS edge — a thread quota, a locked-memory
+    // limit — which a caller can only report, so the five std members
+    // arrive as the one word the service's set has for it
+    // (`http.RequestError`). The watchdog below is the opposite case
+    // and says why.
+    const thread = std.Thread.spawn(.{}, run, .{job}) catch return error.Unavailable;
     thread.detach();
     // From here the job is shared property and send may not fail: the
     // errdefers above would free what the transfer thread now owns.

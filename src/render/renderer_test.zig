@@ -1260,7 +1260,7 @@ test "sheet paints last over a paper dither scrim" {
     // Scrim covers the content, sheet covers the scrim.
     try testing.expect(dither_index.? < sheet_fill_index.?);
     try testing.expect(rec.containsText("Options"));
-    try testing.expect(rec.containsText(element_mod.Glyph.dismiss.utf8()));
+    try testing.expect(rec.containsText(element_mod.ChromeGlyph.dismiss.utf8()));
 }
 
 test "notice banner: pane chrome at the bottom carrying its controls" {
@@ -1291,9 +1291,9 @@ test "notice banner: pane chrome at the bottom carrying its controls" {
     try testing.expect(rec.containsText("Saved"));
     try testing.expect(rec.containsText("Synced to disk."));
     try testing.expect(rec.containsText(element_mod.IconName.circle_check.utf8()));
-    try testing.expect(rec.containsText(element_mod.Glyph.open.utf8()));
-    try testing.expect(rec.containsText(element_mod.Glyph.minimize.utf8()));
-    try testing.expect(rec.containsText(element_mod.Glyph.dismiss.utf8()));
+    try testing.expect(rec.containsText(element_mod.ChromeGlyph.open.utf8()));
+    try testing.expect(rec.containsText(element_mod.ChromeGlyph.minimize.utf8()));
+    try testing.expect(rec.containsText(element_mod.ChromeGlyph.dismiss.utf8()));
 }
 
 test "notices pane paints over a scrim with a row per notice" {
@@ -1321,7 +1321,7 @@ test "notices pane paints over a scrim with a row per notice" {
     };
     try testing.expect(dither_index.? < pane_fill_index.?);
     try testing.expect(rec.containsText("Notices"));
-    try testing.expect(rec.containsText(element_mod.Glyph.dismiss_all.utf8()));
+    try testing.expect(rec.containsText(element_mod.ChromeGlyph.dismiss_all.utf8()));
     try testing.expect(rec.containsText("Saved"));
     try testing.expect(rec.containsText("Sync failed"));
     // Mixed importance: each group under its label.
@@ -1338,7 +1338,7 @@ test "the minimized indicator paints its glyph in the pane band" {
     var rec = frameOf(&app);
     defer rec.deinit();
 
-    try testing.expect(rec.containsText(element_mod.Glyph.expand.utf8()));
+    try testing.expect(rec.containsText(element_mod.ChromeGlyph.expand.utf8()));
     try testing.expect(!rec.containsText("Saved"));
 }
 

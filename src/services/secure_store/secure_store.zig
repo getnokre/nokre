@@ -125,8 +125,13 @@ pub fn validKeyByte(c: u8) bool {
 /// invalidates). `null` is absence — a missing key is data, like a
 /// 404, never a failure — and an empty slice is a present, empty
 /// value. `app` is the store's scope in tests (each app's mock is its
-/// own store); every call site already holds it.
-pub fn get(app: *App, key: []const u8, buf: *ValueBuf) GetError!?[]const u8 {
+/// own store); every call site already holds it, and a `*const App` is
+/// enough — reading the store changes nothing about the app, which is
+/// why every read-only service verb takes one (`share.available`,
+/// `clock.now`, `locale.tag`). The mock's journal still records the
+/// read: it hangs off a pointer field, so the app's constness never
+/// reached it.
+pub fn get(app: *const App, key: []const u8, buf: *ValueBuf) GetError!?[]const u8 {
     checkLinked();
     if (!validKey(key)) return error.InvalidKey;
     if (comptime builtin.is_test) return app.services.secure_store.state.?.svcGet(key, buf);
@@ -156,7 +161,7 @@ pub fn set(app: *App, key: []const u8, value: []const u8) SetError!void {
         // (an existing key never fails with StoreFull); only an insert
         // consults the count, so the key past `max_entries` fails on
         // the Zig side — identically on a keychain, in CredMan, in the
-        // Android Keystore store, in the web table, and in the Fake.
+        // Android Keystore store, in the web table, and in the MockState.
         // The count is the app's cache (see `CountCache`), seeded by
         // one enumeration on the first insert instead of a full
         // list + sort per write.
@@ -214,7 +219,7 @@ pub fn delete(app: *App, key: []const u8) DeleteError!void {
 /// only (values stay behind get). Sorted on the Zig side: no OS
 /// promises an enumeration order, and list must be deterministic.
 /// Slices alias `buf`.
-pub fn list(app: *App, buf: *ListBuf) ListError![]const []const u8 {
+pub fn list(app: *const App, buf: *ListBuf) ListError![]const []const u8 {
     checkLinked();
     if (comptime builtin.is_test) return app.services.secure_store.state.?.svcList(buf);
     if (comptime is_wasm) return web.list(buf);
@@ -223,7 +228,7 @@ pub fn list(app: *App, buf: *ListBuf) ListError![]const []const u8 {
 }
 
 fn checkLinked() void {
-    // Tests always run against the per-app Fake (the app's injected
+    // Tests always run against the per-app MockState (the app's injected
     // mock) and the fake path is the only compiled path under
     // builtin.is_test — requiring linking there would demand frameworks
     // test code cannot reach. A release build that skipped linking
@@ -239,7 +244,7 @@ fn checkLinked() void {
 // ---- the deterministic test surface (docs/testing.md) ----
 // Plain unconditional code: production references none of it, so it
 // dead-strips — while the four verbs above route to the app's mock
-// behind `comptime builtin.is_test`, so under `zig test` the Fake is
+// behind `comptime builtin.is_test`, so under `zig test` the MockState is
 // the only store that exists.
 
 pub const Seed = struct { key: []const u8, value: []const u8 };
@@ -247,7 +252,7 @@ pub const Seed = struct { key: []const u8, value: []const u8 };
 /// One recorded call, program order — for asserting what the app
 /// *did* to its secrets, not just what ended up stored ("signs
 /// out without rewriting the token" is a journal assertion).
-/// Slices are owned copies held by the Fake.
+/// Slices are owned copies held by the MockState.
 pub const Op = union(enum) {
     get: []const u8,
     set: struct { key: []const u8, value: []const u8 },
@@ -287,12 +292,12 @@ pub const CountCache = struct {
 /// One app's fake store, constructed into `.services`: seeds and the
 /// availability knob are boot state — applied inside App.init, so a
 /// boot-time read inside `build` sees them synchronously. App.deinit
-/// frees the Fake; nothing leaks to the next test.
+/// frees the MockState; nothing leaks to the next test.
 pub const Mock = struct {
     boot: Config = .{},
     /// The heap half (move-safe across the by-value returns a stack
     /// App makes); null only before App.init.
-    state: ?*Fake = null,
+    state: ?*MockState = null,
 
     /// The store's state at app boot — a populated keychain, or a
     /// locked one (`available = false`).
@@ -306,33 +311,33 @@ pub const Mock = struct {
     }
 
     pub fn init(self: *Mock, gpa: std.mem.Allocator) !void {
-        const fake = try gpa.create(Fake);
-        errdefer gpa.destroy(fake);
-        fake.* = Fake.init(gpa);
-        errdefer fake.deinit();
-        for (self.boot.seeds) |s| try fake.seed(s.key, s.value);
-        fake.available = self.boot.available;
-        self.state = fake;
+        const state = try gpa.create(MockState);
+        errdefer gpa.destroy(state);
+        state.* = MockState.init(gpa);
+        errdefer state.deinit();
+        for (self.boot.seeds) |s| try state.seed(s.key, s.value);
+        state.available = self.boot.available;
+        self.state = state;
     }
 
     pub fn deinit(self: *Mock) void {
-        const fake = self.state orelse return;
-        const g = fake.gpa;
-        fake.deinit();
-        g.destroy(fake);
+        const state = self.state orelse return;
+        const g = state.gpa;
+        state.deinit();
+        g.destroy(state);
         self.state = null;
     }
 };
 
 /// One app's whole store: entries, journal, and knobs — never shared,
-/// never global: two concurrently-driven apps get two Fakes with
+/// never global: two concurrently-driven apps get two of these with
 /// disjoint everything, by construction.
 ///
 /// Journal semantics: every call that passes argument validation
 /// is journaled — knob-failed calls and a StoreFull set included;
 /// InvalidKey / ValueTooLarge never reach the store on any
 /// platform, so they are never journaled either.
-pub const Fake = struct {
+pub const MockState = struct {
     gpa: std.mem.Allocator,
     entries: std.ArrayList(Entry) = .empty, // kept sorted by key — list() order is the storage order
     ops: std.ArrayList(Op) = .empty,
@@ -344,16 +349,16 @@ pub const Fake = struct {
     fail_writes: bool = false, // reads fine; set/delete Unavailable
     fail_next: u32 = 0, // next N calls Unavailable, then clears
     /// Contiguous view of entries' keys, maintained on mutation so
-    /// keys() answers from a *const Fake without allocating.
+    /// keys() answers from a *const MockState without allocating.
     key_views: [max_entries][]const u8 = undefined,
 
     pub const Entry = struct { key: []u8, value: []u8 };
 
-    pub fn init(gpa: std.mem.Allocator) Fake {
+    pub fn init(gpa: std.mem.Allocator) MockState {
         return .{ .gpa = gpa };
     }
 
-    pub fn deinit(self: *Fake) void {
+    pub fn deinit(self: *MockState) void {
         for (self.entries.items) |e| {
             self.gpa.free(e.key);
             self.gpa.free(e.value);
@@ -366,7 +371,7 @@ pub const Fake = struct {
     /// Test-side write: bypasses the knobs and the journal, but
     /// enforces the real caps — a test cannot seed a state no
     /// device could hold; a forbidden seed is a test bug, loudly.
-    pub fn seed(self: *Fake, key: []const u8, value: []const u8) !void {
+    pub fn seed(self: *MockState, key: []const u8, value: []const u8) !void {
         if (!validKey(key)) return error.InvalidKey;
         if (value.len > max_value_bytes) return error.ValueTooLarge;
         if (self.find(key)) |i| {
@@ -380,26 +385,26 @@ pub const Fake = struct {
     }
 
     /// What the app persisted; null = absent. Borrowed view.
-    pub fn peek(self: *const Fake, key: []const u8) ?[]const u8 {
+    pub fn peek(self: *const MockState, key: []const u8) ?[]const u8 {
         const i = self.find(key) orelse return null;
         return self.entries.items[i].value;
     }
 
-    pub fn count(self: *const Fake) usize {
+    pub fn count(self: *const MockState) usize {
         return self.entries.items.len;
     }
 
     /// Bytewise ascending — identical to what list() shows the app.
-    pub fn keys(self: *const Fake) []const []const u8 {
+    pub fn keys(self: *const MockState) []const []const u8 {
         return self.key_views[0..self.entries.items.len];
     }
 
     /// Every call the app made, in order.
-    pub fn journal(self: *const Fake) []const Op {
+    pub fn journal(self: *const MockState) []const Op {
         return self.ops.items;
     }
 
-    pub fn clearJournal(self: *Fake) void {
+    pub fn clearJournal(self: *MockState) void {
         for (self.ops.items) |op| switch (op) {
             .get, .delete => |k| self.gpa.free(k),
             .set => |s| {
@@ -413,7 +418,7 @@ pub const Fake = struct {
 
     // ---- the service side (reached only through the verbs) ----
 
-    fn svcGet(self: *Fake, key: []const u8, buf: *ValueBuf) GetError!?[]const u8 {
+    fn svcGet(self: *MockState, key: []const u8, buf: *ValueBuf) GetError!?[]const u8 {
         self.record(.{ .get = self.own(key) });
         if (self.knobFailed(false)) return error.Unavailable;
         const i = self.find(key) orelse return null;
@@ -422,7 +427,7 @@ pub const Fake = struct {
         return buf[0..v.len];
     }
 
-    fn svcSet(self: *Fake, key: []const u8, value: []const u8) SetError!void {
+    fn svcSet(self: *MockState, key: []const u8, value: []const u8) SetError!void {
         self.record(.{ .set = .{ .key = self.own(key), .value = self.own(value) } });
         if (self.knobFailed(true)) return error.Unavailable;
         if (self.find(key)) |i| {
@@ -435,7 +440,7 @@ pub const Fake = struct {
         self.insertNew(key, value) catch oom();
     }
 
-    fn svcDelete(self: *Fake, key: []const u8) DeleteError!void {
+    fn svcDelete(self: *MockState, key: []const u8) DeleteError!void {
         self.record(.{ .delete = self.own(key) });
         if (self.knobFailed(true)) return error.Unavailable;
         const i = self.find(key) orelse return;
@@ -445,7 +450,7 @@ pub const Fake = struct {
         self.refreshViews();
     }
 
-    fn svcList(self: *Fake, buf: *ListBuf) ListError![]const []const u8 {
+    fn svcList(self: *MockState, buf: *ListBuf) ListError![]const []const u8 {
         self.record(.list);
         if (self.knobFailed(false)) return error.Unavailable;
         var off: usize = 0;
@@ -459,7 +464,7 @@ pub const Fake = struct {
 
     // Knob precedence: a store that is down is down — fail_next
     // only counts calls that would otherwise have been served.
-    fn knobFailed(self: *Fake, write: bool) bool {
+    fn knobFailed(self: *MockState, write: bool) bool {
         if (!self.available) return true;
         if (self.fail_next > 0) {
             self.fail_next -= 1;
@@ -468,14 +473,14 @@ pub const Fake = struct {
         return write and self.fail_writes;
     }
 
-    fn find(self: *const Fake, key: []const u8) ?usize {
+    fn find(self: *const MockState, key: []const u8) ?usize {
         for (self.entries.items, 0..) |e, i| {
             if (std.mem.eql(u8, e.key, key)) return i;
         }
         return null;
     }
 
-    fn insertNew(self: *Fake, key: []const u8, value: []const u8) !void {
+    fn insertNew(self: *MockState, key: []const u8, value: []const u8) !void {
         const k = try self.gpa.dupe(u8, key);
         errdefer self.gpa.free(k);
         const v = try self.gpa.dupe(u8, value);
@@ -487,15 +492,15 @@ pub const Fake = struct {
         self.refreshViews();
     }
 
-    fn refreshViews(self: *Fake) void {
+    fn refreshViews(self: *MockState) void {
         for (self.entries.items, 0..) |e, i| self.key_views[i] = e.key;
     }
 
-    fn record(self: *Fake, op: Op) void {
+    fn record(self: *MockState, op: Op) void {
         self.ops.append(self.gpa, op) catch oom();
     }
 
-    fn own(self: *Fake, bytes: []const u8) []const u8 {
+    fn own(self: *MockState, bytes: []const u8) []const u8 {
         return self.gpa.dupe(u8, bytes) catch oom();
     }
 

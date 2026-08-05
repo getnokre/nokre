@@ -123,6 +123,11 @@ fn dumpNode(gpa: std.mem.Allocator, out: *std.ArrayList(u8), app: *App, id: Node
             if (!inp.obscured and inp.composition.len > 0) {
                 try out.appendSlice(gpa, " composition=");
                 try appendQuoted(gpa, out, inp.composition);
+                // The IME's own caret inside the pre-edit, beside the
+                // pre-edit: a trace that showed the run and not where
+                // the caret sits in it would hide the one thing an IME
+                // update moves.
+                try out.print(gpa, " composition_cursor={d}", .{inp.composition_cursor});
             }
             // The reason is never a secret, even on an obscured field:
             // the secret is what was typed.
@@ -139,6 +144,7 @@ fn dumpNode(gpa: std.mem.Allocator, out: *std.ArrayList(u8), app: *App, id: Node
             if (area.composition.len > 0) {
                 try out.appendSlice(gpa, " composition=");
                 try appendQuoted(gpa, out, area.composition);
+                try out.print(gpa, " composition_cursor={d}", .{area.composition_cursor});
             }
             if (area.problem.len > 0) {
                 try out.appendSlice(gpa, " problem=");

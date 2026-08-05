@@ -69,8 +69,8 @@ pub const Mock = struct {
     }
 
     /// Every copy the app made, in order. Borrowed views.
-    pub fn copies(self: Mock) []const []u8 {
-        return self.state.?.view();
+    pub fn copies(self: Mock) []const []const u8 {
+        return services.borrowed(self.state.?.view());
     }
 
     /// The per-phase reset (http's rule).

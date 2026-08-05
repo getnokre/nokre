@@ -24,7 +24,7 @@ var runtime: ?*workers.Runtime = null;
 /// Hand the request to fetch. JS copies every slice synchronously
 /// inside the call (services.js slices, never views), so the borrows
 /// end when this returns — the same contract as a worker send.
-pub fn send(g: std.mem.Allocator, ticket: workers.Ticket, opts: http.RequestOptions) !void {
+pub fn send(g: std.mem.Allocator, ticket: workers.Ticket, opts: http.RequestOptions) http.RequestError!void {
     gpa = g;
     runtime = ticket.runtime;
     // Headers flatten as name\nvalue\n… — a '\n' in either would move

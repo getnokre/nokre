@@ -111,7 +111,7 @@ that is *ours*, and the naming.
   cached count — seeded by one `list` enumeration on the first insert,
   adjusted on inserts and deletes thereafter — so the key past the cap
   fails identically on a keychain, in CredMan, in the web table,
-  and in the Fake. One O(n) enumeration per app lifetime, not per
+  and in the MockState. One O(n) enumeration per app lifetime, not per
   write; cross-process writers could drift the cache, but
   enumerate-then-set was never atomic either, so best-effort is
   unchanged.
@@ -197,7 +197,7 @@ The two-layer strategy — one store, coherent across both layers:
    [../services.md](../services.md); the structural facts here: an
    explicit Deny maps to `Unavailable` — a free rehearsal of the
    locked-keychain path every shipping app must handle — and
-   `zig build test` is immune because tests only ever reach the Fake.
+   `zig build test` is immune because tests only ever reach the MockState.
 
 ## Windows: Credential Manager, not raw DPAPI
 
@@ -326,7 +326,7 @@ the namespace, and nothing they write is trusted into the contract:
   order" is deterministic up to 512 externally-visible entries; beyond
   that the subset is unspecified — external-writer territory the OS
   itself cannot make deterministic, since no OS promises an
-  enumeration order. The wasm table and the Fake are capped at
+  enumeration order. The wasm table and the MockState are capped at
   `max_entries` by construction and never hit this.
 
 ## Web: snapshot in, mirror out
@@ -558,7 +558,7 @@ between calls.
 a `zig test` binary — and runs it on a native macOS or desktop-Linux
 host, against a store file in the build cache. It is the only place in
 this repository where the verbs a consumer calls reach a store the OS
-answers: everywhere else they reach the Fake (`zig test`), a
+answers: everywhere else they reach the MockState (`zig test`), a
 compile-only object (`check-targets`), or a linked artifact nothing
 runs (the examples). It also demonstrates the driver shape whole — an
 `App` constructed outside `zig test`, its screens driven through
@@ -571,23 +571,23 @@ note).
 Under `builtin.is_test` the four verbs route — comptime, so test
 builds never reference the native externs and `zig build test` stays
 dependency-free — to `app.services.secure_store.state`, the per-app
-`Fake` the app was constructed with. It is the only store that exists
+`MockState` the app was constructed with. It is the only store that exists
 under `zig test`: `secure_store.Service` *is* the mock there, so a
 test build has no fake-less state to reach — never a silent empty
 store, never the real keychain.
 
 The binding is construction, nothing else. `App.init` allocates the
-Fake on the heap (move-safe across the by-value returns a stack App
+MockState on the heap (move-safe across the by-value returns a stack App
 makes), applies the mock config's seeds and availability before
 `build` runs, and `App.deinit` frees it — no registry, no
 install/uninstall pairing, no serial keys. Two concurrently-driven
-apps get two Fakes with disjoint entries, journals, and knobs by
+apps get two of them with disjoint entries, journals, and knobs by
 construction: the state is a field of the app, so cross-app leakage
 is unrepresentable, not merely checked (the design rule in
 [architecture.md](architecture.md): service state lives on the App;
 a module-global `var` in a service is a bug).
 
-The Fake itself is plain unconditional code, dead-stripped from
+The MockState itself is plain unconditional code, dead-stripped from
 production binaries because nothing in production references it; no
 `if (builtin.is_test) type else void` gymnastics anywhere — the one
 comptime fork is `Service = if (builtin.is_test) Mock else …`, the
@@ -615,7 +615,7 @@ twin on the two targets it is allowed on; being plain POSIX with no
 framework and no daemon behind it, it is the one backend that step can
 analyze without an SDK.
 
-**What the Fake does not prove, and who proves it.** The Fake is a
+**What the MockState does not prove, and who proves it.** The MockState is a
 contract asserted against itself: its fidelity to a keychain is
 asserted by nothing under `zig test`, because the keychain is not
 compiled into a test binary at all. The dev store is what closes that

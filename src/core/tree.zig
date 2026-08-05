@@ -739,9 +739,31 @@ pub const Tree = struct {
                 if (self.rootChild(.notices_pane) != null) return error.MultipleNoticesPanes;
             },
             // Chrome only: consumers compose labeled `button`s instead.
-            .icon_button => switch (parent_role) {
-                .notice, .notices_pane => {},
-                else => if (!parent.eql(self.root)) return error.IconButtonOutsideChrome,
+            //
+            // Pinned per glyph, not per place. The rule used to be
+            // "under a notice, under the pane, or at the root", which
+            // admits every glyph at every one of those — so a consumer
+            // could append a working `dismiss_all` at the root and get
+            // a control that empties the notices ring out of an element
+            // documented as framework-only. Each glyph is chrome
+            // somewhere exactly once (notices.zig builds all six sites),
+            // and that is what this says.
+            .icon_button => |i| {
+                const at_root = parent.eql(self.root);
+                const ok = switch (i.glyph) {
+                    // The notice's own controls: open its route, expand
+                    // the ring, dismiss it. A row inside the pane is a
+                    // `notice` too, which is why one arm covers both.
+                    .open, .dismiss => parent_role == .notice,
+                    // Expand is also the collapsed chip standing at the
+                    // root when the ring is parked (`installChromeRoot`).
+                    .expand => parent_role == .notice or at_root,
+                    // Minimize parks the ring from either surface.
+                    .minimize => parent_role == .notice or parent_role == .notices_pane,
+                    // Emptying the ring is the pane header's alone.
+                    .dismiss_all => parent_role == .notices_pane,
+                };
+                if (!ok) return error.IconButtonOutsideChrome;
             },
             else => {},
         }
