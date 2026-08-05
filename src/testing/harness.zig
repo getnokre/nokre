@@ -71,6 +71,37 @@ pub const HttpOutcome = http.Outcome;
 pub const HttpHandler = http.Handler;
 pub const HttpOp = http.Op;
 
+/// What `expectRequest` checks a parked request against. Every field
+/// is optional, and `.{}` — the whole assertion being "this path was
+/// asked at all" — is the commonest spelling.
+///
+/// The set is what real suites assert, and no more: a body is either
+/// pinned whole or probed for the fragments that carry the decision,
+/// and a header is either an exact pair, a name that must have ridden
+/// along (a proof-of-work nonce, whose value is random), or a name
+/// that must not have (the `Authorization` an anonymous submission
+/// must never carry — an assertion that is load-bearing, not
+/// decorative). Lists, not single values, because one request routinely
+/// earns several: seven body fragments and four headers is a real
+/// call site, and a per-field verb would be seven calls.
+pub const RequestExpectation = struct {
+    method: ?http.Method = null,
+    /// The whole body, byte for byte.
+    body: ?[]const u8 = null,
+    /// Fragments the body must carry — for the request assembled from
+    /// several screens' worth of fields, where pinning it whole would
+    /// pin the serializer's key order too.
+    body_contains: []const []const u8 = &.{},
+    /// Fragments it must not: the field this form deliberately omits.
+    body_excludes: []const []const u8 = &.{},
+    /// Headers by name and exact value.
+    headers: []const http.Header = &.{},
+    /// Headers that must be there, whatever they say.
+    headers_present: []const []const u8 = &.{},
+    /// Headers that must not be there at all.
+    headers_absent: []const []const u8 = &.{},
+};
+
 /// One pending notice as the app holds it — `title()`, `description()`,
 /// `route()` (inline ring-slot storage, read through the accessors),
 /// icon, and whether it is important. Re-exported so a test asserting on
@@ -480,9 +511,169 @@ pub const Harness = struct {
                 }
             },
         }
-        diag.print("no parked request ending in \"{s}\"; parked:\n", .{suffix});
-        for (0..n) |i| diag.print("  {s}\n", .{mock.pendingAt(i).url});
+        diag.print("no parked request ending in \"{s}\"; in flight:\n", .{suffix});
+        self.printParked();
         return error.NoSuchRequest;
+    }
+
+    /// Every parked request, method and URL, one per line — the tail
+    /// every miss in this family prints, so "what was actually in
+    /// flight" reads the same however the test asked. Nothing parked
+    /// says so in words: a heading followed by silence is the
+    /// two-integer failure in miniature.
+    fn printParked(self: *const Harness) void {
+        const mock = &self.app.services.http;
+        const n = mock.pendingCount();
+        if (n == 0) return diag.print("  (nothing is parked)\n", .{});
+        for (0..n) |i| {
+            const p = mock.pendingAt(i);
+            diag.print("  {s} {s}\n", .{ @tagName(p.method), p.url });
+        }
+    }
+
+    // ---- the observing side ----
+    // `fulfillHttpPath` answers a request by name; these read one, and
+    // name it the same way — the URL's tail, never the queue position,
+    // because the position encodes issue order, which is the app's
+    // business. Every refusal here ends in the parked listing above:
+    // an assertion whose failure prints two integers has told the
+    // reader nothing about the run that produced them.
+
+    /// How many requests are parked — all of them (`null`), or just
+    /// the ones whose URL ends in `suffix`. A query, not an assertion:
+    /// `expectNoPendingHttp` and `expectNoRequest` are the loud forms
+    /// and are what a test asserting emptiness should reach for. This
+    /// is for the arithmetic they cannot say — "the retry asked once,
+    /// not once per attempt" — and for the before/after pair that
+    /// pins an action as issuing nothing.
+    pub fn httpPending(self: *const Harness, suffix: ?[]const u8) usize {
+        const mock = &self.app.services.http;
+        // No filter is the empty tail: every URL ends in nothing, so
+        // "all of them" needs no branch of its own.
+        const tail = suffix orelse "";
+        var found: usize = 0;
+        for (0..mock.pendingCount()) |i| {
+            if (std.mem.endsWith(u8, mock.pendingAt(i).url, tail)) found += 1;
+        }
+        return found;
+    }
+
+    /// Nothing at all is in flight — the assertion that closes a test
+    /// which meant to answer everything it asked. The loud twin of a
+    /// bare count: a failed `expectEqual(0, pendingCount())` prints
+    /// two integers, and the one that matters is the request nobody
+    /// expected, so this names each of them instead.
+    pub fn expectNoPendingHttp(self: *Harness) !void {
+        if (self.app.services.http.pendingCount() == 0) return;
+        diag.print("expected nothing in flight, but these are parked:\n", .{});
+        self.printParked();
+        return error.PendingHttp;
+    }
+
+    /// Nothing was sent to this path — `expectRequest`'s negative
+    /// twin, the assertion behind "the screen refused, so no call
+    /// left". The matches are printed, because they are the surprise;
+    /// `expectAbsent` names what it found for the same reason.
+    pub fn expectNoRequest(self: *Harness, suffix: []const u8) !void {
+        const mock = &self.app.services.http;
+        var found = false;
+        for (0..mock.pendingCount()) |i| {
+            const p = mock.pendingAt(i);
+            if (!std.mem.endsWith(u8, p.url, suffix)) continue;
+            if (!found) diag.print("expected nothing parked for \"{s}\", but these are:\n", .{suffix});
+            found = true;
+            diag.print("  {s} {s}\n", .{ @tagName(p.method), p.url });
+        }
+        if (found) return error.UnexpectedRequest;
+    }
+
+    /// The request this action should have sent, named by the tail of
+    /// its URL and checked against what it carried. Every field is
+    /// optional and an empty expectation is the whole assertion "this
+    /// path was asked at all", which is the commonest form of it.
+    ///
+    /// Pass the *whole* URL as the suffix and the locator is also the
+    /// assertion — a full URL is a suffix of itself and of nothing
+    /// else — so "the app asked exactly this address" needs no second
+    /// call and no second spelling.
+    pub fn expectRequest(self: *Harness, suffix: []const u8, expect: RequestExpectation) !void {
+        const req = try self.httpRequest(suffix);
+        if (expect.method) |want| {
+            if (req.method != want) return mismatch(req, "expected method {s}\n", .{@tagName(want)});
+        }
+        if (expect.body) |want| {
+            if (!std.mem.eql(u8, req.body, want)) {
+                // Two bodies on one line are unreadable at JSON
+                // lengths, so the block form — expectTree's, for the
+                // same reason.
+                diag.print("{s} {s}: body mismatch\n---- expected ----\n{s}\n---- actual ----\n{s}\n------------------\n", .{
+                    @tagName(req.method), req.url, want, req.body,
+                });
+                return error.RequestMismatch;
+            }
+        }
+        for (expect.body_contains) |needle| {
+            if (std.mem.indexOf(u8, req.body, needle) == null)
+                return mismatch(req, "expected the body to contain \"{s}\", but it is {s}\n", .{ needle, req.body });
+        }
+        for (expect.body_excludes) |needle| {
+            if (std.mem.indexOf(u8, req.body, needle) != null)
+                return mismatch(req, "expected the body not to mention \"{s}\", but it is {s}\n", .{ needle, req.body });
+        }
+        for (expect.headers) |want| {
+            const got = req.headerValue(want.name) orelse
+                return mismatchHeaders(req, "expected \"{s}: {s}\", but no such header rode along", .{ want.name, want.value });
+            if (!std.mem.eql(u8, got, want.value))
+                return mismatch(req, "expected \"{s}: {s}\", got \"{s}\"\n", .{ want.name, want.value, got });
+        }
+        for (expect.headers_present) |name| {
+            if (req.headerValue(name) == null)
+                return mismatchHeaders(req, "expected a \"{s}\" header", .{name});
+        }
+        for (expect.headers_absent) |name| {
+            if (req.headerValue(name)) |got|
+                return mismatch(req, "expected no \"{s}\" header, but it carries \"{s}\"\n", .{ name, got });
+        }
+    }
+
+    /// Every failure above names the request first: which call this
+    /// was is half of what the reader needs, and the queue position
+    /// they did not write down cannot supply it.
+    fn mismatch(req: http.PendingRequest, comptime fmt: []const u8, args: anytype) error{RequestMismatch} {
+        diag.print("{s} {s}: ", .{ @tagName(req.method), req.url });
+        diag.print(fmt, args);
+        return error.RequestMismatch;
+    }
+
+    /// A header expectation that found nothing lists the names the
+    /// request *does* carry — the queries' "here is what does exist",
+    /// which is what turns a typo'd header name into a one-look fix.
+    fn mismatchHeaders(req: http.PendingRequest, comptime fmt: []const u8, args: anytype) error{RequestMismatch} {
+        diag.print("{s} {s}: ", .{ @tagName(req.method), req.url });
+        diag.print(fmt, args);
+        if (req.headers.len == 0) {
+            diag.print("; it carries no headers at all\n", .{});
+        } else {
+            diag.print("; it carries:\n", .{});
+            for (req.headers) |h| diag.print("  {s}\n", .{h.name});
+        }
+        return error.RequestMismatch;
+    }
+
+    /// The parked request whose URL ends in `suffix`, oldest first —
+    /// for the assertion no expectation field can spell: a digest over
+    /// the body, a header parsed as a number, the proof-of-work a
+    /// server would verify. A miss is `httpIndexOf`'s loud one,
+    /// because it is the same refusal.
+    ///
+    /// **Peeks.** The request stays parked and the borrowed slices
+    /// stay valid until it is answered — which is the point: reading
+    /// what was sent is what a test does immediately *before*
+    /// answering it. Taking it out of the queue instead would leave
+    /// the app waiting on a result that can never arrive, with the
+    /// screen's `in_progress` up forever and nothing to say so.
+    pub fn httpRequest(self: *Harness, suffix: []const u8) !http.PendingRequest {
+        return self.app.services.http.pendingAt(try self.httpIndexOf(suffix, .oldest));
     }
 
     /// Install the test's fake server (see `HttpHandler`) on this
@@ -966,8 +1157,14 @@ pub const Harness = struct {
         }
     }
 
-    /// Text-input value or the selected option of a choice control
-    /// (segmented, radio group).
+    /// Whatever this control's a11y node reports as its *value*, which
+    /// is more than a field's text: the selected option of a choice
+    /// control, a tile's detail line, the string a `copyable` puts on
+    /// the clipboard, the URL a `qr` encodes, the section a collapsed
+    /// nav chip stands on (`a11y/semantics.zig`). If a screen reader
+    /// would announce it as the value, this is how a test reads it —
+    /// reaching into `tree.getConst(id).?.tile.detail` asserts the same
+    /// bytes through a door the audit does not watch.
     pub fn expectValue(self: *Harness, label: []const u8, expected: []const u8) !void {
         var snap = try self.a11ySnapshot(self.app.gpa);
         defer snap.deinit();
@@ -1015,6 +1212,18 @@ pub const Harness = struct {
         if (el.button.disabled) return;
         diag.print("expected \"{s}\" disabled, but it takes presses\n", .{label});
         return error.DisabledMismatch;
+    }
+
+    /// `expectDisabled`'s twin: a control that has become live. Not
+    /// the same as pressing it — "filling the last field armed Save"
+    /// is an assertion about the form, and a test that proved it by
+    /// pressing would have submitted the form to prove it.
+    pub fn expectEnabled(self: *Harness, label: []const u8) !void {
+        const id = try self.getByRole(.button, label);
+        const el = self.app.tree.getConst(id).?;
+        if (!el.button.disabled) return;
+        diag.print("expected \"{s}\" to take presses, but it is disabled\n", .{label});
+        return error.EnabledMismatch;
     }
 
     /// Inline snapshot of the whole laid-out tree in the trace format

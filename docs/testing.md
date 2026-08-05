@@ -224,6 +224,42 @@ a sweep behind it already asked. A miss prints every parked URL, so
 the failure says what was actually in flight. A request in hand
 answers header questions itself: `req.headerValue("Authorization")`.
 
+The observing side names a request the same way — and refuses the same
+way, with the queue printed rather than a bare integer:
+
+```zig
+try t.expectRequest("/api/notes", .{});          // it was asked at all
+try t.expectRequest("https://api.test/api/notes/n-1/share", .{
+    .method = .POST,                              // a whole URL is a suffix
+    .body_contains = &.{"\"to\":\"bob@acme.com\""}, // of itself, so the locator
+    .headers = &.{.{ .name = "Content-Type", .value = "application/json" }},
+    .headers_present = &.{"X-PoW-Nonce"},         // …is also the assertion
+    .headers_absent = &.{"Authorization"},        // anonymous: no token rode along
+});
+try t.expectNoRequest("/api/circles");            // the refusal sent nothing
+try t.expectNoPendingHttp();                      // everything asked was answered
+```
+
+`RequestExpectation`'s fields are lists because one request routinely
+earns several: `body` pins it whole, `body_contains` /`body_excludes`
+probe the fragments that carry the decision, and the three header
+fields are exact pair, name-that-must-have-ridden (a proof-of-work
+nonce, whose value is random), and name-that-must-not-have. Every
+failure names the request first — `POST https://…/share: expected no
+"Authorization" header, but it carries "Bearer jwt-1"` — because the
+queue position the test did not write down cannot say which call this
+was.
+
+Two more for the arithmetic assertions cannot make:
+`httpPending(suffix)` counts what is parked, all of it (`null`) or one
+path's share — "the retry asked once, not once per attempt" —  and
+`httpRequest(suffix)` hands the request over for what no field can
+spell: a digest over the body, a header parsed as a number, the
+proof-of-work a server would verify. It **peeks** — reading what was
+sent is what a test does immediately before answering it, and taking
+the request out of the queue would leave the app waiting on a result
+that can never arrive.
+
 For flows with many requests, `onHttp(ctx, handler)` installs a fake
 server: a function from a parked request to a canned response, a
 failure name, or null — leave it parked. `settleHttp()` runs it over
@@ -609,8 +645,14 @@ expectation can't be met there, a screen reader user can't meet it either.
 
 - `expectFocused(label)`
 - `expectChecked(label, expected)`
-- `expectValue(label, expected)` — text-input value or the selected
-  option of a segmented control
+- `expectValue(label, expected)` — whatever the control's a11y node
+  reports as its *value*, which is more than a field's text: the
+  selected option of a segmented control, a select or a radio group, a
+  tile's detail line, the string a `copyable` puts on the clipboard,
+  the URL a `qr` encodes, the section a collapsed nav chip stands on.
+  If a screen reader would announce it as the value, this reads it —
+  reaching into `tree.getConst(id).?.tile.detail` asserts the same
+  bytes through a door the audit does not watch.
 - `expectRoute(route)` — the screen on top ([routing.md](routing.md));
   pair it with `app.router.depth()` when the depth is the point, since
   a push and a `switchTo` land on the same route
@@ -622,6 +664,9 @@ expectation can't be met there, a screen reader user can't meet it either.
   read off the node instead of pressed: `tap` refuses a disabled
   control loudly, and a diagnostic from a passing test reads as a
   failure to whoever is watching the build.
+- `expectEnabled(label)` — its twin, for the assertion that a form
+  armed: proving "the last field enabled Save" by pressing Save would
+  submit the form to prove it.
 - `expectCopied(text)` — the most recent clipboard write, read from
   the app's journaling clipboard mock: "activating this copyable wrote
   X", first class. Sync, like the store — nothing settles.
@@ -656,6 +701,14 @@ expectation can't be met there, a screen reader user can't meet it either.
   actual, then paste it into the test.
 
 `a11ySnapshot(gpa)` returns the raw snapshot for anything bespoke.
+
+Every refusal above prints its diagnostic through `testing.diag`, the
+one stderr gate — so a test that *expects* a failure mutes it
+(`diag.quiet = true;` in a block scope) and `zig build test` stays
+silent when green. A test that wants to assert the words rather than
+only the error installs a `diag.Capture` instead: `said.start();`,
+`defer said.stop();`, then `said.text()`. Muting proves a verb failed;
+capturing proves it said something a reader could act on.
 
 ## A11y audit
 

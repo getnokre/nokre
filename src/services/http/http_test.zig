@@ -477,3 +477,261 @@ test "harness: answering by path echoes each request's own tag, and the journal 
     try std.testing.expectEqual(3, t.httpJournal()[0].tag);
     try std.testing.expectEqual(8, t.httpJournal()[1].tag);
 }
+
+// ---- the observing side ----
+// What the app *sent*, asserted by the same name the answering verbs
+// use. Each verb here is tested twice: once for what it accepts, once
+// for the words its refusal prints. An assertion whose failure says
+// nothing actionable has only moved the debugging — the two-integer
+// count these replace is exactly that bug, so the message is pinned
+// like any other contract.
+
+const diag = @import("../../testing/diag.zig");
+
+/// A harness with three requests parked, spanning what the expectation
+/// fields exist for: a plain GET, a POST carrying a body and two
+/// headers, and a third whose tail is nobody else's.
+const Observed = struct {
+    sink: Sink,
+    t: harness_mod.Harness = undefined,
+
+    fn build(_: ?*anyopaque, app: *App) !void {
+        const root = app.tree.rootId();
+        try app.tree.append(root, .{ .heading = .{ .content = "Fetch", .level = .h1 } });
+    }
+
+    fn init(self: *Observed) !void {
+        self.t = try harness_mod.Harness.init(self.sink.gpa, .{ .w = 320, .h = 240 }, .{ .ctx = self, .build = build });
+        _ = try http.request(.{ .app = &self.t.app, .url = "https://api.test/api/notes", .ctx = &self.sink, .on_result = Sink.onResult });
+        _ = try http.request(.{
+            .app = &self.t.app,
+            .url = "https://api.test/api/notes/n-1/share",
+            .method = .POST,
+            .headers = &.{
+                .{ .name = "Content-Type", .value = "application/json" },
+                .{ .name = "X-PoW-Nonce", .value = "8f31" },
+            },
+            .body = "{\"to\":\"bob@acme.com\",\"note\":\"n-1\"}",
+            .ctx = &self.sink,
+            .on_result = Sink.onResult,
+        });
+        _ = try http.request(.{ .app = &self.t.app, .url = "https://cdn.test/en/terms.json", .ctx = &self.sink, .on_result = Sink.onResult });
+    }
+
+    fn deinit(self: *Observed) void {
+        self.t.deinit();
+        self.sink.deinit();
+    }
+};
+
+const share_url = "https://api.test/api/notes/n-1/share";
+
+test "harness: httpPending counts the queue, all of it or one path's share" {
+    var o: Observed = .{ .sink = .{ .gpa = std.testing.allocator } };
+    try o.init();
+    defer o.deinit();
+
+    try std.testing.expectEqual(3, o.t.httpPending(null));
+    try std.testing.expectEqual(1, o.t.httpPending("/api/notes"));
+    try std.testing.expectEqual(1, o.t.httpPending(".json"));
+    try std.testing.expectEqual(0, o.t.httpPending("/api/circles"));
+
+    // The count is the point of the path form: "asked once, not once
+    // per attempt" is an assertion no presence check can make.
+    _ = try http.request(.{ .app = &o.t.app, .url = "https://api.test/api/notes", .ctx = &o.sink, .on_result = Sink.onResult });
+    try std.testing.expectEqual(2, o.t.httpPending("/api/notes"));
+
+    // The count follows the queue, not the journal: an answered ask is
+    // no longer in flight, though it is still on the record.
+    try o.t.fulfillHttpPath("/api/notes", .{ .status = 200 });
+    try std.testing.expectEqual(3, o.t.httpPending(null));
+    try std.testing.expectEqual(1, o.t.httpPending("/api/notes"));
+    try std.testing.expectEqual(4, o.t.httpJournal().len);
+}
+
+test "harness: expectNoPendingHttp names every request instead of a count" {
+    var o: Observed = .{ .sink = .{ .gpa = std.testing.allocator } };
+    try o.init();
+    defer o.deinit();
+
+    var said: diag.Capture = .{};
+    said.start();
+    defer said.stop();
+    try std.testing.expectError(error.PendingHttp, o.t.expectNoPendingHttp());
+    try std.testing.expectEqualStrings(
+        \\expected nothing in flight, but these are parked:
+        \\  GET https://api.test/api/notes
+        \\  POST https://api.test/api/notes/n-1/share
+        \\  GET https://cdn.test/en/terms.json
+        \\
+    , said.text());
+    said.stop();
+
+    // Answered to the last one, it passes — the shape of a test that
+    // meant to serve everything it asked.
+    try o.t.fulfillHttpPath("/api/notes", .{ .status = 200 });
+    try o.t.fulfillHttpPath("/share", .{ .status = 204 });
+    try o.t.failHttpPath("/terms.json", "FetchFailed");
+    try o.t.expectNoPendingHttp();
+}
+
+test "harness: expectRequest reads method, body, and headers off the named ask" {
+    var o: Observed = .{ .sink = .{ .gpa = std.testing.allocator } };
+    try o.init();
+    defer o.deinit();
+
+    // The empty expectation is the whole assertion "this was asked".
+    try o.t.expectRequest("/api/notes", .{});
+
+    // The whole URL is a suffix of itself, so the locator doubles as
+    // the address assertion.
+    try o.t.expectRequest(share_url, .{
+        .method = .POST,
+        .body = "{\"to\":\"bob@acme.com\",\"note\":\"n-1\"}",
+        .body_contains = &.{ "\"to\":\"bob@acme.com\"", "\"note\":\"n-1\"" },
+        .body_excludes = &.{"\"from\""},
+        .headers = &.{.{ .name = "Content-Type", .value = "application/json" }},
+        .headers_present = &.{"X-PoW-Nonce"},
+        .headers_absent = &.{"Authorization"},
+    });
+
+    // Reading it changed nothing: the app is still waiting, and the
+    // answer still lands.
+    try std.testing.expectEqual(3, o.t.httpPending(null));
+    try o.t.fulfillHttpPath("/share", .{ .status = 204 });
+    try std.testing.expectEqualStrings("204 \"\" h0;", o.sink.log.items);
+}
+
+test "harness: every expectRequest refusal names the request and what it carried" {
+    var o: Observed = .{ .sink = .{ .gpa = std.testing.allocator } };
+    try o.init();
+    defer o.deinit();
+
+    const cases = [_]struct { expect: harness_mod.RequestExpectation, want: []const u8 }{
+        .{
+            .expect = .{ .method = .PUT },
+            .want = "POST " ++ share_url ++ ": expected method PUT\n",
+        },
+        .{
+            .expect = .{ .body = "{}" },
+            .want = "POST " ++ share_url ++ ": body mismatch\n" ++
+                "---- expected ----\n{}\n" ++
+                "---- actual ----\n{\"to\":\"bob@acme.com\",\"note\":\"n-1\"}\n" ++
+                "------------------\n",
+        },
+        .{
+            .expect = .{ .body_contains = &.{"\"cc\""} },
+            .want = "POST " ++ share_url ++ ": expected the body to contain \"\"cc\"\", " ++
+                "but it is {\"to\":\"bob@acme.com\",\"note\":\"n-1\"}\n",
+        },
+        .{
+            .expect = .{ .body_excludes = &.{"bob@acme.com"} },
+            .want = "POST " ++ share_url ++ ": expected the body not to mention \"bob@acme.com\", " ++
+                "but it is {\"to\":\"bob@acme.com\",\"note\":\"n-1\"}\n",
+        },
+        .{
+            .expect = .{ .headers = &.{.{ .name = "Content-Type", .value = "text/plain" }} },
+            .want = "POST " ++ share_url ++ ": expected \"Content-Type: text/plain\", got \"application/json\"\n",
+        },
+        .{
+            .expect = .{ .headers = &.{.{ .name = "Accept", .value = "application/json" }} },
+            .want = "POST " ++ share_url ++ ": expected \"Accept: application/json\", but no such header rode along" ++
+                "; it carries:\n  Content-Type\n  X-PoW-Nonce\n",
+        },
+        .{
+            .expect = .{ .headers_present = &.{"X-PoW-Timestamp"} },
+            .want = "POST " ++ share_url ++ ": expected a \"X-PoW-Timestamp\" header; it carries:\n" ++
+                "  Content-Type\n  X-PoW-Nonce\n",
+        },
+        .{
+            .expect = .{ .headers_absent = &.{"X-PoW-Nonce"} },
+            .want = "POST " ++ share_url ++ ": expected no \"X-PoW-Nonce\" header, but it carries \"8f31\"\n",
+        },
+    };
+    for (cases) |case| {
+        var said: diag.Capture = .{};
+        said.start();
+        defer said.stop();
+        try std.testing.expectError(error.RequestMismatch, o.t.expectRequest("/share", case.expect));
+        try std.testing.expectEqualStrings(case.want, said.text());
+    }
+
+    // A path nobody asked for is the queries' loud miss: what was
+    // actually in flight, never a bare "false".
+    var said: diag.Capture = .{};
+    said.start();
+    defer said.stop();
+    try std.testing.expectError(error.NoSuchRequest, o.t.expectRequest("/api/circles", .{}));
+    try std.testing.expectEqualStrings(
+        \\no parked request ending in "/api/circles"; in flight:
+        \\  GET https://api.test/api/notes
+        \\  POST https://api.test/api/notes/n-1/share
+        \\  GET https://cdn.test/en/terms.json
+        \\
+    , said.text());
+}
+
+test "harness: a miss with an empty queue says the queue is empty" {
+    var o: Observed = .{ .sink = .{ .gpa = std.testing.allocator } };
+    try o.init();
+    defer o.deinit();
+
+    try o.t.fulfillHttpPath("/api/notes", .{ .status = 200 });
+    try o.t.fulfillHttpPath("/share", .{ .status = 204 });
+    try o.t.fulfillHttpPath("/terms.json", .{ .status = 200 });
+
+    var said: diag.Capture = .{};
+    said.start();
+    defer said.stop();
+    try std.testing.expectError(error.NoSuchRequest, o.t.expectRequest("/api/notes", .{}));
+    try std.testing.expectEqualStrings(
+        \\no parked request ending in "/api/notes"; in flight:
+        \\  (nothing is parked)
+        \\
+    , said.text());
+}
+
+test "harness: expectNoRequest passes on silence and prints the calls that broke it" {
+    var o: Observed = .{ .sink = .{ .gpa = std.testing.allocator } };
+    try o.init();
+    defer o.deinit();
+
+    try o.t.expectNoRequest("/api/circles");
+
+    var said: diag.Capture = .{};
+    said.start();
+    defer said.stop();
+    try std.testing.expectError(error.UnexpectedRequest, o.t.expectNoRequest(".json"));
+    try std.testing.expectEqualStrings(
+        \\expected nothing parked for ".json", but these are:
+        \\  GET https://cdn.test/en/terms.json
+        \\
+    , said.text());
+}
+
+test "harness: httpRequest hands the request over for what no field can spell" {
+    var o: Observed = .{ .sink = .{ .gpa = std.testing.allocator } };
+    try o.init();
+    defer o.deinit();
+
+    // The free-form case: a value *derived* from the body rather than
+    // compared to it, and a header read as something other than text.
+    const req = try o.t.httpRequest("/share");
+    var digest: [32]u8 = undefined;
+    std.crypto.hash.sha2.Sha256.hash(req.body, &digest, .{});
+    try std.testing.expectEqual(
+        0x8f31,
+        try std.fmt.parseInt(u32, req.headerValue("X-PoW-Nonce").?, 16),
+    );
+
+    // It peeked: the request is still the app's, still answerable.
+    try std.testing.expectEqual(3, o.t.httpPending(null));
+    try o.t.expectRequest("/share", .{ .method = .POST });
+
+    // Its miss is the same refusal, in the same words.
+    var said: diag.Capture = .{};
+    said.start();
+    defer said.stop();
+    try std.testing.expectError(error.NoSuchRequest, o.t.httpRequest("/api/circles"));
+    try std.testing.expect(std.mem.startsWith(u8, said.text(), "no parked request ending in \"/api/circles\""));
+}

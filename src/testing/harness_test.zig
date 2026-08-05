@@ -749,12 +749,64 @@ test "e2e: expectPresent and expectDisabled assert what a user meets" {
     // A control that declines rather than acts, read off the node —
     // pressing it would print a diagnostic from a passing test.
     try h.expectDisabled("Send");
+    // Its twin: "the last field armed Save" is an assertion about the
+    // form, and proving it by pressing would submit the form.
+    try h.expectEnabled("Save");
 
     diag.quiet = true;
     defer diag.quiet = false;
     try testing.expectError(error.NoSuchElement, h.expectPresent(.button, "Show done"));
     try testing.expectError(error.DisabledMismatch, h.expectDisabled("Save"));
     try testing.expectError(error.NoSuchElement, h.expectDisabled("Publish"));
+    try testing.expectError(error.EnabledMismatch, h.expectEnabled("Send"));
+    try testing.expectError(error.NoSuchElement, h.expectEnabled("Publish"));
+}
+
+test "e2e: expectValue reads whatever the a11y node calls its value" {
+    const Screen = struct {
+        fn open(_: ?*anyopaque) void {}
+
+        fn build(_: ?*anyopaque, app: *App) anyerror!void {
+            const root = app.tree.rootId();
+            const group = try app.tree.appendId(root, .{ .tile_group = .{} });
+            try app.tree.append(group, .{ .tile = .{
+                .label = "Design",
+                .detail = "3 more need to collect their keys",
+                .on_press = .{ .call = open },
+            } });
+            try app.tree.append(root, .{ .copyable = .{ .label = "Invite code", .value = "ACME01" } });
+            try app.tree.append(root, .{ .qr = .{
+                .label = "Scan to join",
+                .value = "https://example.test/#/invite/ACME01",
+            } });
+            try app.tree.append(root, .{ .select = .{
+                .label = "Country",
+                .options = &.{ "Japan", "Peru" },
+                .selected = 1,
+            } });
+        }
+    };
+    var h = try Harness.init(testing.allocator, .{ .w = 480, .h = 640 }, .{ .build = Screen.build });
+    defer h.deinit();
+
+    // A tile's detail line, a copyable's payload, a QR's encoded URL:
+    // all three are the *value* the snapshot reports, so all three
+    // answer to the one verb — reaching into `tree.getConst(id).?
+    // .tile.detail` asserts the same bytes through a door the audit
+    // does not watch.
+    try h.expectValue("Design", "3 more need to collect their keys");
+    try h.expectValue("Invite code", "ACME01");
+    try h.expectValue("Scan to join", "https://example.test/#/invite/ACME01");
+    try h.expectValue("Country", "Peru");
+
+    var said: diag.Capture = .{};
+    said.start();
+    defer said.stop();
+    try testing.expectError(error.ValueMismatch, h.expectValue("Invite code", "ACME02"));
+    try testing.expectEqualStrings(
+        "expected \"Invite code\" value \"ACME02\", got \"ACME01\"\n",
+        said.text(),
+    );
 }
 
 // Five destinations that cannot fit a phone's width: the roster golden

@@ -23,6 +23,59 @@ const std = @import("std");
 /// racing flip could do is print (or mute) a diagnostic, cosmetically.
 pub var quiet = false;
 
+/// Where the diagnostics go instead of stderr, while one is installed:
+/// `diag.sink = &w; defer diag.sink = null;`
+///
+/// Muting proves a verb *failed*; a sink proves it said something
+/// useful. An assertion whose failure prints nothing actionable is a
+/// bug in the assertion, so the harness's own tests pin the words —
+/// which they can only do if the words are reachable. A sink is
+/// implicitly quiet: nothing reaches stderr while one is set, so a
+/// capturing test keeps `zig build test` silent for free. Same module
+/// state, same exemption, same rationale as `quiet`.
+pub var sink: ?*std.Io.Writer = null;
+
+/// A sink and the buffer behind it, for the test that asserts what a
+/// refusal *said*:
+///
+/// ```zig
+/// var said: diag.Capture = .{};
+/// said.start();
+/// defer said.stop();
+/// try std.testing.expectError(error.RequestMismatch, t.expectRequest("/notes", .{ .method = .PUT }));
+/// try std.testing.expectEqualStrings("POST https://…/notes: expected method PUT\n", said.text());
+/// ```
+///
+/// `stop` is idempotent, so pairing `start` with a `defer` restores
+/// stderr even when the expectation itself fails. An over-long
+/// diagnostic truncates rather than erroring — a short message the
+/// test can widen the buffer for, never a failure attributed to the
+/// code under test.
+pub const Capture = struct {
+    buf: [1024]u8 = undefined,
+    w: std.Io.Writer = undefined,
+
+    pub fn start(self: *Capture) void {
+        self.w = std.Io.Writer.fixed(&self.buf);
+        sink = &self.w;
+    }
+
+    pub fn stop(_: *Capture) void {
+        sink = null;
+    }
+
+    pub fn text(self: *Capture) []const u8 {
+        return self.w.buffered();
+    }
+};
+
 pub fn print(comptime fmt: []const u8, args: anytype) void {
+    if (sink) |w| {
+        // A full fixed buffer truncates rather than failing: a test
+        // that under-sized its buffer should see a short message it
+        // can fix, not an error from the code under test.
+        w.print(fmt, args) catch {};
+        return;
+    }
     if (!quiet) std.debug.print(fmt, args);
 }
