@@ -964,7 +964,9 @@ passes bump `revision` and move all three pins.
     Left open: six sites still hand-roll `in_progress` as a boolean
     that must also turn *off*, which `patchProgress(id, pct)` cannot
     express. A `patchBusy` would be a third verb; not taken.
-12. **A11 field-error slot** — DONE, revision 30 (nokre `976fb62`,
+12. **A11 field-error slot** — DONE, revision 30 (and the A12 / Part B
+    / Part C sweep closing the round, revision 31: nokre `e1e9f43`,
+    rokovski `f6acc32d`, site `8db26a7`) (nokre `976fb62`,
     rokovski `3aba0643`, site `74a87ef`). Shipped as
     `TextInput.problem` / `TextArea.problem`; `trouble` lost because it
     names a mood the user is in rather than the thing wrong with the
@@ -993,10 +995,37 @@ passes bump `revision` and move all three pins.
     having given way to settled text and an Edit button — because
     nokre has no disabled field.
 
-    A12's items and the **Part B + C sweeps** close the round in the
-    same pass, with three owner decisions folded in: `secure_store`'s
-    `MockState`, the IME caret stored and drawn, and
-    `nokre.addGoldenTests`.
+    **The sweep** took A12's six, Part B's ten and Part C's seven, plus
+    the root re-export roster judged as a set (`Role`, `Action`, `Span`
+    promoted — all three are names a consumer *declares with*, the rule
+    every existing member already satisfied). Three owner decisions
+    landed as decided: `secure_store`'s `MockState`, the IME caret
+    stored and drawn, `nokre.addGoldenTests`.
+
+    Two findings bigger than their items. **`http.request`'s inferred
+    error set differed per target** — only the native transport could
+    return a spawn error — so an exhaustive switch over it compiled on
+    one platform and broke on another; it is `RequestError` now, closed
+    at each transport. And **`element.Glyph`'s rider was not just a
+    rename**: `validateAppend` gated chrome glyphs by *place*, so a
+    consumer could smuggle a working `dismiss_all` through anywhere the
+    place allowed. Per glyph now, with the test that never existed.
+
+    **One coordinator decision the code overturned, correctly.** I
+    asked for the journal `clear` roster to be settled with a sentence
+    saying boot-scoped journals deliberately do not reset. False for
+    three of the five: oauth, iap and notification journal *outbound
+    app calls* — the same thing the six services with `clearJournal`
+    record — and accumulate per action, not per boot. They got the
+    method; only `deep_link` and `locale`, which journal what a test
+    itself injected, keep the argument. The rule is written down and
+    now true.
+
+    Receipts that were stale, checked rather than assumed: Part C.7's
+    `external_attrs` half was already one home (skipped); `routeRef`
+    sites were 19 not 17, with three `[96]u8` literals the survey never
+    saw and one file contradicting itself; single-flight copies were 12
+    not 17; six services answered `clearJournal`, not five.
 
 13. **`TextInput.disabled`** — QUEUED, owner-requested 2026-08-05.
     Not an item in this file: it appears only as prose in A11 as "the
