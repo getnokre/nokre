@@ -406,36 +406,64 @@ Verified present. An item proposing any of these is a survey miss.
 
 ## Part E — carried forward from the ergonomics round, still open
 
-Not re-surveyed. Full receipts at `git show 3855adf:HANDOFF.md`.
+Re-checked against HEAD 2026-08-06. **Three bullets that stood here were already
+executed and have been deleted**: A8 (the owner took `bindKey` and declined the
+other two menu items; shipped revision 29), the whole Part B rename table
+(revision 31), and all of Part C (revision 31 — items 2 and 3 shipped alongside
+4 and 5, item 6's four doc gaps closed, and item 7 shipped except the
+`external_attrs` half, whose receipt was stale: it was already one home). The
+header above is right that Parts 0 and A are done through revision 32; the
+carried bullets contradicted it.
 
-- **A8 — the stale-reply surface.** *Owner decision still pending.* A three-way
-  posture menu: (a) a route-scoped `navigate` twin for callback use; (b) make
-  `.route` the default-visible field in `refresh`'s doc example plus a
-  harness-detectable audit note; (c) `bindKey` so position-vs-identity is a
-  vocabulary choice. Receipts: 0 route-scoped `refresh` adoptions in 70 org
-  calls, callbacks binding controller-not-request, `bindAt` carrying position
-  where a sibling screen keys by code, `http.Handle.cancel` discarded at every
-  call site.
-- **Part B — the rename table.** `secure_store.Fake` → `MockState`
-  (owner-confirmed), `element.Glyph` → `ChromeGlyph`, `http.request`'s inferred
-  error set → named, `*const App` on read-only service verbs, journal views'
-  mutable-bytes borrow, `Router.replace` alias-or-doc-line, shell.h haptic enum,
-  `hsk_` prefix (log only).
-- **Part C — consolidations. Two are directly relevant to this round:**
-  item 2, the site's `links.zig:134-138` re-implementing `router.zig:296`
-  `Router.current()`; and item 3, `build.zig:764`'s pkg-web quartet re-typing
-  what `addPkgTree` writes, wanting a `packaging.web_page_files` const in the
-  `driver_files` pattern. Both are the same driver-re-derives-the-library shape
-  Part C above argues from. Items 4–7 (Emitter anchors — since shipped as
-  `takeAnchors`; driver bytes — since shipped as `driver_sources`; docs one-home
-  gaps; site-side guards) should be re-checked against current HEAD before
-  being carried again.
-- **Part D — performance.** Full-frame `readPixels` copy per frame
-  (~15 MB/frame at 1200×800@2×), unbounded `services.js` measure cache, plus two
-  more.
-- **Part E — evidence filed, not proposed.** `Remote(T)`/staleness, ApiClient
-  `= undefined` wiring and two-phase init, number formatting. *"Part E items move
-  only on their own owner-level arguments."*
+What is genuinely still open:
+
+- **Part D — performance.** Untouched; Part F item 12 of the old round did not
+  scope it. Verified still true at HEAD: `shim/nokre_skia.cpp:276` still
+  `readPixels` the whole surface into a persistent buffer every frame
+  (~15 MB/frame at 1200×800@2×) where a CPU raster surface can hand its pixels
+  out directly, and `src/render/dom/services.js:351-355`'s measure cache is
+  still cleared only on `loadingdone`, so a long editing session grows it
+  without bound. Plus the DOM edition ignoring `needs_frame`, and `hsk_dither`
+  rebuilding a 2×2 bitmap and shader per scrim call.
+- **Part E of that round — evidence filed, not proposed.** `Remote(T)` and
+  staleness, the ApiClient `= undefined` wiring and two-phase init, number
+  formatting, `.table()`'s org-app absence, the notification mock's one-sided
+  journal, and rokovski's own placement debt. These move only on their own
+  owner-level arguments, and none has been made.
+
+Residue the executed round left behind, none of it carried by the bullets that
+were deleted. Full receipts at `git show 3855adf:HANDOFF.md`:
+
+- **`http.Handle.cancel` is still discarded at every call site.** It was an A8
+  *receipt* but never one of the three menu items, so the decision that closed
+  A8 did not touch it. One `.cancel()` exists in the consumer tree.
+- **`truncated` reaches no user-facing surface.** A1 shipped the disclosure and
+  the migration wired it nowhere, because neither app owns a string that could
+  say it — ~30 sites need catalog copy. **Two of them are not ceilings**: a
+  member's fifth permission silently loses the control it grants, and a dropped
+  `tags.Library` entry makes a real tag fail `knows()` and vanish. Also two
+  unexploded caps: `family_cap = 4` against a format that permits `industry`,
+  and an exact `id_cap = 8` whose overflow *collides* rather than truncates.
+- **`setHandler(app, ctx, fn)` and `Asker.ask(msg, ctx, fn)`** take the context
+  and the function as two positional arguments, so no pair exists for `bindAs`
+  to fill. That is the largest remaining `?*anyopaque` surface in nokre's own
+  API — 9 sites on the published services page, 4 in the tutorial, 6 live casts
+  in the apps.
+- **`overflow.closeTailSheet` is the fourth dismissal door** and still does not
+  rebuild, so a folded action writes state the screen never shows. 6b fixed the
+  other three; this one's fix is structurally different.
+- **`emptyGate` folds "not ready" into "ready and empty"**, so four sites that
+  append a hint or a control only in the empty case cannot use it; and `Gate`
+  has no bare `raise`, so two paths that legitimately re-raise discard
+  `begin`'s answer.
+- **Six sites hand-roll `in_progress` as a boolean that must also turn off**,
+  which `patchProgress(id, pct)` cannot express; a `patchBusy` was declined as a
+  third verb.
+- **Two consumer-side defects**, both flagged and neither fixed: org `Invites`
+  serves two routes and resets its notice only on organization change, so a
+  failure leaks across navigation and is reported out of context; and org
+  `organizations_sheets.zig:13`'s join-code sheet carries `.error_copy` but no
+  `.busy`, so its submit has no in-flight representation where its sibling does.
 
 ---
 
