@@ -10,6 +10,9 @@ every `issuing` guard deleted (refresh declines quietly in-build; bare
 transports; consumer client-array collapse examined and correctly
 declined (every slot is a distinct named adapter, not correlation
 plumbing — the doctrine change in PORTING.md is the consumer payoff);
+A6 (revision 14, minimal as owner decided) — `nokre.Load` vocabulary
++ `Cursor.loadGate` (51 of 52 phase switches migrated; one custom
+failed rendering stays hand-rolled; both app enums deleted);
 A10.1–3 (revision 13) — the `Refs` hook answers `Dest` and the
 emitter writes both href forms (the site's quote-splice is dead),
 `audit.collect` gains `Options.skip`, `dom.driver_files` is the one

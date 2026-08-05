@@ -29,6 +29,7 @@ const element_mod = @import("element.zig");
 const text_mod = @import("text.zig");
 const tree_mod = @import("tree.zig");
 const app_mod = @import("app.zig");
+const load_mod = @import("load.zig");
 
 const Tree = tree_mod.Tree;
 const NodeId = tree_mod.NodeId;
@@ -247,6 +248,82 @@ pub const Cursor = struct {
 
     pub fn more(c: Cursor, m: element_mod.More) !void {
         try c.tree.append(c.at, .{ .more = m });
+    }
+
+    // ---- idioms ----
+    // Not elements: compositions of the methods above that every real
+    // consumer wrote identically, promoted whole. The closed-set check
+    // below is by Role, so an idiom adds no second truth about the tree
+    // — each one is exactly the appends its caller would have written.
+
+    /// What `loadGate` renders in place of not-yet-ready content. Every
+    /// field is copy the app supplies (localized words are the app's,
+    /// never nokre's), and every field defaults to "append nothing" —
+    /// the gate's floor is a bare `phase == .ready` check.
+    pub const LoadGate = struct {
+        /// An `h1` opening the loading and failed states, for screens
+        /// that gate their whole body: the ready branch usually heads
+        /// itself with a loaded value (a row's own name), so the
+        /// placeholder title belongs to the not-ready states alone.
+        /// Appended before the copy, never on ready.
+        title: ?[]const u8 = null,
+        /// Body copy while the value is `.idle` or `.loading` — the two
+        /// phases render identically everywhere (an `ensure*`-on-build
+        /// app requests on first render, so `.idle` is on screen for at
+        /// most one frame and distinct words for it would flash).
+        loading: ?[]const u8 = null,
+        /// Body copy on `.failed`. null for the screens whose failure
+        /// is said elsewhere (or not at all — a sidebar section that
+        /// quietly vanishes).
+        failed: ?[]const u8 = null,
+        /// The retry control on `.failed`: label and action, rendered
+        /// as a secondary button — retrying is recovery beside the
+        /// failure copy, never the screen's primary act. null when the
+        /// failure is terminal (a revoked invite is not retried into
+        /// validity).
+        retry: ?Retry = null,
+
+        pub const Retry = struct {
+            label: []const u8,
+            on_press: element_mod.Action,
+        };
+    };
+
+    /// The loading/failed/retry scaffold in front of async content —
+    /// the one composition both real apps wrote at every phase switch.
+    /// Renders the not-ready states from `g` and answers whether the
+    /// caller should go on to build the ready content:
+    ///
+    /// ```zig
+    /// if (!try b.loadGate(view.phase, .{
+    ///     .loading = tr(.loading),
+    ///     .failed = tr(.eFailed),
+    ///     .retry = .{ .label = tr(.retry), .on_press = .bind(onRetry, state) },
+    /// })) return;
+    /// ```
+    ///
+    /// The phase is a parameter, deliberately: nokre never reads an
+    /// app's `Load` (core/load.zig) — the gate is the app showing nokre
+    /// its phase for one build, not nokre keeping it.
+    pub fn loadGate(c: Cursor, phase: load_mod.Load, g: LoadGate) !bool {
+        switch (phase) {
+            .idle, .loading => {
+                if (g.title) |t| try c.heading(.h1, t);
+                if (g.loading) |copy| try c.text(copy);
+                return false;
+            },
+            .failed => {
+                if (g.title) |t| try c.heading(.h1, t);
+                if (g.failed) |copy| try c.text(copy);
+                if (g.retry) |r| try c.button(.{
+                    .label = r.label,
+                    .form = .{ .secondary = null },
+                    .on_press = r.on_press,
+                });
+                return false;
+            },
+            .ready => return true,
+        }
     }
 
     /// The one shape every container method shares: append, then stand

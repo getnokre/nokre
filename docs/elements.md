@@ -35,6 +35,42 @@ spanned *heading*. A sheet builder starts from
 `app.at(try app.presentSheet(title))`, the cursor standing on the node
 the framework handed back.
 
+### The load gate
+
+Screens over async values keep their phase in `nokre.Load` — `idle`,
+`loading`, `ready`, `failed`. It is pure vocabulary: the app writes it,
+the app's screens read it, nokre never does (there is no framework
+fetch, no staleness, no `Remote(T)` — a deliberate stop). The one
+composition every consumer wrote at every such screen — say we're
+loading, or say it failed and offer a retry, else build the content —
+is the cursor's `loadGate`:
+
+```zig
+if (!try b.loadGate(state.view.phase, .{
+    .loading = tr(.loading),
+    .failed = tr(.couldNotLoad),
+    .retry = .{ .label = tr(.retry), .on_press = .bind(State.retry, state) },
+})) return;
+// … build the ready content …
+```
+
+It returns whether to continue: `true` on `.ready` (having appended
+nothing), `false` otherwise (having rendered the phase). `.idle` and
+`.loading` render identically — an app that requests on first build
+shows `.idle` for at most one frame, and distinct words for it would
+flash. Every option defaults to appending nothing, so each state keeps
+only what the screen actually says: drop `.retry` where retrying can't
+help (a revoked invite), drop `.failed` where the failure is silent,
+drop both copies and the gate is a bare phase check. `.title` adds an
+`h1` over the loading and failed states alone, for screens that gate
+their whole body and head the ready state with a loaded value (a row's
+own name). The retry renders as a secondary-form button — recovery
+beside the failure copy, never the screen's primary act. All copy is
+the app's: nokre ships no words it would then have to translate.
+A phase switch whose states say more than this (styled copy, extra
+controls) stays a hand-written `switch` — the gate is the common
+scaffold, not a required door.
+
 ## Static
 
 ### `text`

@@ -214,6 +214,105 @@ test "construction rules gate the cursor exactly as they gate append" {
     try std.testing.expectError(error.TileOutsideTileGroup, root.tile(.{ .label = "Row", .route = "home" }));
 }
 
+test "loadGate: the ready answer is the whole of ready" {
+    // Ready appends nothing — the placeholder title and copy belong to
+    // the not-ready states — and answers "go build the content".
+    var tree = try Tree.init(std.testing.allocator);
+    defer tree.deinit();
+    const root = rootCursor(&tree);
+
+    try std.testing.expect(try root.loadGate(.ready, .{
+        .title = "Circle",
+        .loading = "Loading…",
+        .failed = "Could not load",
+        .retry = .{ .label = "Retry", .on_press = .{} },
+    }));
+    try std.testing.expectEqual(@as(usize, 0), tree.childCount(tree.rootId()));
+}
+
+test "loadGate: idle and loading render identically" {
+    // An ensure-on-first-render app shows .idle for at most one frame;
+    // distinct words for it would flash. Both real apps grouped the two
+    // arms in every one of their hand-written switches — the gate keeps
+    // that grouping.
+    for ([_]@import("load.zig").Load{ .idle, .loading }) |phase| {
+        var tree = try Tree.init(std.testing.allocator);
+        defer tree.deinit();
+        const root = rootCursor(&tree);
+
+        try std.testing.expect(!try root.loadGate(phase, .{ .loading = "Loading…" }));
+        try std.testing.expectEqual(@as(usize, 1), tree.childCount(tree.rootId()));
+        const copy = tree.getConst(lastChild(&tree, tree.rootId())).?;
+        try std.testing.expectEqual(Role.text, copy.role());
+        try std.testing.expectEqualStrings("Loading…", copy.label());
+    }
+}
+
+test "loadGate: failed renders the copy and a secondary retry, wired" {
+    var tree = try Tree.init(std.testing.allocator);
+    defer tree.deinit();
+    const root = rootCursor(&tree);
+
+    const Counter = struct {
+        hits: usize = 0,
+        fn retry(self: *@This()) void {
+            self.hits += 1;
+        }
+    };
+    var counter: Counter = .{};
+
+    try std.testing.expect(!try root.loadGate(.failed, .{
+        .loading = "Loading…",
+        .failed = "Could not load",
+        .retry = .{ .label = "Retry", .on_press = .bind(Counter.retry, &counter) },
+    }));
+
+    // Exactly the two appends the apps wrote by hand: the copy, then a
+    // secondary-form button carrying the given action.
+    try std.testing.expectEqual(@as(usize, 2), tree.childCount(tree.rootId()));
+    var it = tree.children(tree.rootId());
+    const copy = tree.getConst(it.next().?).?;
+    try std.testing.expectEqual(Role.text, copy.role());
+    try std.testing.expectEqualStrings("Could not load", copy.label());
+    const button = tree.getConst(it.next().?).?.button;
+    try std.testing.expectEqualStrings("Retry", button.label);
+    try std.testing.expectEqual(element_mod.Button.Form{ .secondary = null }, button.form);
+    button.on_press.invoke();
+    try std.testing.expectEqual(@as(usize, 1), counter.hits);
+}
+
+test "loadGate: every field defaults to appending nothing" {
+    // The floor is a bare phase check: a section that quietly vanishes
+    // while not ready (both apps have several) is `loadGate(phase, .{})`.
+    var tree = try Tree.init(std.testing.allocator);
+    defer tree.deinit();
+    const root = rootCursor(&tree);
+
+    try std.testing.expect(!try root.loadGate(.loading, .{}));
+    try std.testing.expect(!try root.loadGate(.failed, .{}));
+    try std.testing.expect(try root.loadGate(.ready, .{}));
+    try std.testing.expectEqual(@as(usize, 0), tree.childCount(tree.rootId()));
+}
+
+test "loadGate: the title heads loading and failed alike" {
+    // The h1 for screens that gate their whole body: the same
+    // placeholder over both not-ready states, exactly where the apps
+    // put it by hand.
+    for ([_]@import("load.zig").Load{ .loading, .failed }) |phase| {
+        var tree = try Tree.init(std.testing.allocator);
+        defer tree.deinit();
+        const root = rootCursor(&tree);
+
+        try std.testing.expect(!try root.loadGate(phase, .{ .title = "Billing", .loading = "Loading…", .failed = "Could not load" }));
+        var it = tree.children(tree.rootId());
+        const title = tree.getConst(it.next().?).?;
+        try std.testing.expectEqual(Role.heading, title.role());
+        try std.testing.expectEqual(element_mod.HeadingLevel.h1, title.heading.level);
+        try std.testing.expectEqualStrings("Billing", title.label());
+        try std.testing.expectEqual(Role.text, tree.getConst(it.next().?).?.role());
+    }
+}
+
 test "root and at stand where they say" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
