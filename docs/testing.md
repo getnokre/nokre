@@ -685,6 +685,31 @@ expectation can't be met there, a screen reader user can't meet it either.
 - `expectEnabled(label)` — its twin, for the assertion that a form
   armed: proving "the last field enabled Save" by pressing Save would
   submit the form to prove it.
+- `expectBusy(label, expected)` — a control with work in flight: the
+  state `in_progress` draws and a `nokre.Gate` produces. Located **by
+  label across element kinds**, the way `expectValue` is and unlike
+  `expectDisabled`, because buttons are not the only things that work —
+  a toggle and a checkbox carry `in_progress` too, and half the tests
+  that used to reach into the raw tree for it were reading toggles. The
+  polarity is an argument, like `expectChecked`'s, because both answers
+  are assertions: that the press started the work, and that the reply
+  landed and cleared it. An element that cannot be busy at all — a
+  paragraph wearing the control's words — says so rather than reporting
+  a placid "not busy".
+
+  Busy is not disabled and not a value. A control with work in flight
+  keeps its focus stop and still reads what the server holds, so
+  `expectBusy("Share snapshot", true)` and
+  `expectChecked("Share snapshot", false)` are the honest pair for a
+  switch that has been flipped but not yet answered.
+
+  **`Device` has no twin for this one**, and the omission is the
+  decision. The harness owns the clock — a mock reply lands at a
+  `fulfill*` verb and not before — so "busy" is a state a unit test
+  *holds*. A live driver holds nothing: the work may finish before the
+  driver looks, so a wait for busy is a wait on a transient — the flake
+  the `Device` section's wait rule was written to end. A scenario
+  against a real server waits for what the work produced.
 - `expectCopied(text)` — the most recent clipboard write, read from
   the app's journaling clipboard mock: "activating this copyable wrote
   X", first class. Sync, like the store — nothing settles.

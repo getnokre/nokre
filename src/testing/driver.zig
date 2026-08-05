@@ -62,13 +62,31 @@ pub fn tap(app: *App, id: NodeId) !void {
 /// question — each keeps its focus stop while it does, so `isFocusable`
 /// cannot answer this and every driver verb that presses needs the same
 /// answer (`Toggle.in_progress`).
-fn inProgress(el: element_mod.Element) bool {
+///
+/// `null` is "this element cannot be busy at all", which is a different
+/// answer from `false` and the one an assertion needs: a paragraph
+/// wearing a control's words is a query that went wrong, not a control
+/// at rest. One switch, so a fourth element that gains `in_progress`
+/// cannot arrive in the driver's half and be missing from the harness's.
+///
+/// Public because the assertion tier needs the identical answer:
+/// `Harness.expectBusy` reads across the three kinds rather than being
+/// buttons-only like `expectDisabled`, and two readers of one fact is
+/// how they drift apart.
+pub fn progressOf(el: element_mod.Element) ?bool {
     return switch (el) {
         .button => |b| b.in_progress,
         .toggle => |t| t.in_progress,
         .checkbox => |c| c.in_progress,
-        else => false,
+        else => null,
     };
+}
+
+/// `progressOf` for the verbs that only need to know whether to refuse:
+/// an element with no work in flight and one that could never have any
+/// are both "go ahead".
+pub fn inProgress(el: element_mod.Element) bool {
+    return progressOf(el) orelse false;
 }
 
 /// Taps an inline link at the middle of its first rect — the same

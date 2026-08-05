@@ -857,3 +857,88 @@ test "e2e: goTab crosses the collapsed chip's picker" {
     try h.goTab("Downloads");
     try h.expectRoute("downloads");
 }
+
+// The three controls that can be busy, one of each, plus a paragraph
+// wearing a control's words: `in_progress` is not a button-only fact,
+// and half the consumer tests that reached into the raw tree for it
+// were reading toggles.
+fn buildBusy(_: ?*anyopaque, app: *App) anyerror!void {
+    const root = app.tree.rootId();
+    try app.tree.append(root, .{ .button = .{ .label = "Send", .in_progress = true } });
+    try app.tree.append(root, .{ .toggle = .{ .label = "Share snapshot", .on = false, .in_progress = true } });
+    try app.tree.append(root, .{ .checkbox = .{ .label = "Weekly digest", .checked = true, .in_progress = true } });
+    try app.tree.append(root, .{ .button = .{ .label = "Cancel" } });
+    try app.tree.append(root, .{ .text = .{ .content = "Encrypting..." } });
+}
+
+test "e2e: expectBusy reads across the three kinds that can be busy" {
+    var h = try Harness.init(testing.allocator, .{ .w = 480, .h = 640 }, .{ .build = buildBusy });
+    defer h.deinit();
+
+    try h.expectBusy("Send", true);
+    try h.expectBusy("Share snapshot", true);
+    try h.expectBusy("Weekly digest", true);
+    try h.expectBusy("Cancel", false);
+
+    // Busy is not disabled and not a value: a control with work in
+    // flight keeps its focus stop and still reads what the server holds.
+    try h.expectEnabled("Send");
+    try h.expectChecked("Share snapshot", false);
+}
+
+test "e2e: expectBusy says which way round it was, and refuses a non-control" {
+    var h = try Harness.init(testing.allocator, .{ .w = 480, .h = 640 }, .{ .build = buildBusy });
+    defer h.deinit();
+
+    {
+        var said: diag.Capture = .{};
+        said.start();
+        defer said.stop();
+        try testing.expectError(error.BusyMismatch, h.expectBusy("Send", false));
+        try testing.expectEqualStrings(
+            "expected \"Send\" not busy, but work is in flight on it\n",
+            said.text(),
+        );
+    }
+    {
+        var said: diag.Capture = .{};
+        said.start();
+        defer said.stop();
+        try testing.expectError(error.BusyMismatch, h.expectBusy("Cancel", true));
+        try testing.expectEqualStrings(
+            "expected \"Cancel\" busy, but no work is in flight on it\n",
+            said.text(),
+        );
+    }
+    {
+        // A paragraph is never busy, and saying "not busy" would send
+        // the reader looking at the control instead of at the query.
+        var said: diag.Capture = .{};
+        said.start();
+        defer said.stop();
+        try testing.expectError(error.NotAControl, h.expectBusy("Encrypting...", false));
+        try testing.expectEqualStrings(
+            "expected \"Encrypting...\" busy or not, but it is a text — only buttons, toggles and checkboxes carry work in flight\n",
+            said.text(),
+        );
+    }
+    {
+        // A name nothing carries is the query's usual loud miss.
+        diag.quiet = true;
+        defer diag.quiet = false;
+        try testing.expectError(error.NoSuchElement, h.expectBusy("Nowhere", true));
+    }
+}
+
+test "e2e: a busy control refuses the press, and expectBusy is how a test says so" {
+    var h = try Harness.init(testing.allocator, .{ .w = 480, .h = 640 }, .{ .build = buildBusy });
+    defer h.deinit();
+
+    // The pair the six migrated consumer sites are made of: the driver
+    // refuses to press work that is already running, and the assertion
+    // names the reason without reaching into the tree.
+    try h.expectBusy("Send", true);
+    diag.quiet = true;
+    defer diag.quiet = false;
+    try testing.expectError(error.InProgress, h.tapLabel("Send"));
+}

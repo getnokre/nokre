@@ -1204,6 +1204,41 @@ pub const Harness = struct {
         return error.EnabledMismatch;
     }
 
+    /// A control with work in flight — the state `Button.in_progress`,
+    /// `Toggle.in_progress` and `Checkbox.in_progress` draw, and the one
+    /// a `nokre.Gate` produces. Takes the polarity as an argument, like
+    /// `expectChecked`, because both answers are assertions a test makes
+    /// (four consumer sites asserted busy, two asserted the reply had
+    /// landed and cleared it) and one verb keeps one vocabulary.
+    ///
+    /// Located **by label across element kinds**, the way `expectValue`
+    /// is, not by role like `expectDisabled`: half the sites that
+    /// reached into the raw tree for this were toggles, and a
+    /// buttons-only verb would have left them there. An element that
+    /// cannot be busy at all says so rather than reporting a placid
+    /// "not busy" — the wrong words are how a test ends up asserting
+    /// against a paragraph that happens to share the control's name.
+    ///
+    /// Busy is not disabled: a control with work in flight keeps its
+    /// focus stop and reads its old value, so `expectDisabled` and
+    /// `expectChecked` are different questions with different answers
+    /// (element.zig; "busy, not unavailable").
+    pub fn expectBusy(self: *Harness, label: []const u8, expected: bool) !void {
+        const id = try self.getByLabel(label);
+        const el = self.app.tree.getConst(id).?;
+        const busy = driver.progressOf(el.*) orelse {
+            diag.print("expected \"{s}\" busy or not, but it is a {s} — only buttons, toggles and checkboxes carry work in flight\n", .{ label, @tagName(el.role()) });
+            return error.NotAControl;
+        };
+        if (busy == expected) return;
+        if (expected) {
+            diag.print("expected \"{s}\" busy, but no work is in flight on it\n", .{label});
+        } else {
+            diag.print("expected \"{s}\" not busy, but work is in flight on it\n", .{label});
+        }
+        return error.BusyMismatch;
+    }
+
     /// Inline snapshot of the whole laid-out tree in the trace format
     /// (see docs/testing.md). On mismatch both trees are printed — copy
     /// the actual into the test once you've reviewed it.

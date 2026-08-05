@@ -326,6 +326,50 @@ pub const Cursor = struct {
         }
     }
 
+    /// `loadGate`'s missing branch: the load is over, it succeeded, and
+    /// there is nothing to list. `loadGate` answers `true` on `.ready`
+    /// and says nothing about zero rows, so every screen wrote the tail
+    /// itself — twenty-seven sites across the two real apps, in two
+    /// different visual spellings.
+    ///
+    /// ```zig
+    /// if (!try b.loadGate(c.phase, .{ .loading = tr(.loading), .failed = tr(.eFailed) })) return;
+    /// try b.heading(.h2, tr(.invoices));
+    /// if (!try b.emptyGate(c.phase, c.rows.len, tr(.noInvoices))) return;
+    /// for (c.rows.items()) |*row| try appendInvoice(b, row);
+    /// ```
+    ///
+    /// It takes the phase **again**, and that is the point: the empty
+    /// line belongs where the list would have gone, which at most sites
+    /// is a heading and a tile group past the `loadGate` that admitted
+    /// it. A count-only verb standing there would print "No invoices"
+    /// over a request still in flight — the one thing an empty state
+    /// must never say. So the not-ready answer here is `false` with
+    /// nothing appended: whatever renders the phase, this does not, and
+    /// it will not speak before the phase is settled.
+    ///
+    /// `empty` is `null` for the section that vanishes silently when it
+    /// has nothing (four consumer sites), the way `loadGate`'s copy
+    /// fields default to appending nothing. One optional value, so it is
+    /// an argument and not a struct — the moment a second piece of copy
+    /// earns its place is the moment to grow one.
+    ///
+    /// **The line is plain body text.** The apps split evenly between
+    /// `text` and `styled(…, .{ .scale = .small, .ink = .dark })`, so
+    /// there was nothing to discover and the choice had to be argued:
+    /// an empty state is the whole of what that region says, not a
+    /// footnote under something else, and de-emphasis spent on the one
+    /// sentence a user has to read buys nothing an audit could name. A
+    /// screen that genuinely wants more — a second hint line, a control
+    /// that fills the emptiness — writes those appends itself, as two
+    /// consumer sites do; this is the common floor, not a required door.
+    pub fn emptyGate(c: Cursor, phase: load_mod.Load, count: usize, empty: ?[]const u8) !bool {
+        if (phase != .ready) return false;
+        if (count != 0) return true;
+        if (empty) |copy| try c.text(copy);
+        return false;
+    }
+
     /// What `confirmSheet` fills a confirmation with. Everything is the
     /// app's own copy, and the two optional lines default to appending
     /// nothing, as `LoadGate`'s do.

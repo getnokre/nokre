@@ -14,7 +14,7 @@ const std = @import("std");
 /// Hand-bumped on every consumer-visible contract change, never by
 /// machinery — the no-CI stance is deliberate
 /// (docs/getting-started.md).
-pub const revision: u32 = 26;
+pub const revision: u32 = 27;
 
 pub const geometry = @import("core/geometry.zig");
 pub const color = @import("core/color.zig");
@@ -22,6 +22,7 @@ pub const bidi = @import("core/bidi.zig");
 pub const text = @import("core/text.zig");
 pub const element = @import("core/element.zig");
 pub const load = @import("core/load.zig");
+pub const gate = @import("core/gate.zig");
 pub const bounded = @import("core/bounded.zig");
 pub const tree = @import("core/tree.zig");
 pub const cursor = @import("core/cursor.zig");
@@ -147,6 +148,11 @@ pub const Cursor = cursor.Cursor;
 /// screens read it, and `Cursor.loadGate` renders the not-ready states
 /// (core/load.zig).
 pub const Load = load.Load;
+/// The one-shot in-flight latch: `begin` refuses the second press,
+/// `end` lowers, `up` is what a builder feeds to `in_progress`. `Load`'s
+/// mutation twin, and pure data nokre never reads — a latch, not a
+/// machine (core/gate.zig).
+pub const Gate = gate.Gate;
 /// A string the consumer owns, up to `cap` bytes — the landing place
 /// for a slice borrowed for the length of a callback. Truncates at the
 /// ceiling without splitting a codepoint, and says when it did
@@ -200,6 +206,7 @@ test {
     _ = element;
     _ = @import("core/bind.zig");
     _ = load;
+    _ = gate;
     _ = bounded;
     _ = tree;
     _ = cursor;

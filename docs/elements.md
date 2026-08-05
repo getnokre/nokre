@@ -71,6 +71,88 @@ A phase switch whose states say more than this (styled copy, extra
 controls) stays a hand-written `switch` — the gate is the common
 scaffold, not a required door.
 
+#### … and the branch after it: ready, but nothing to show
+
+`loadGate` answers `true` on `.ready` and says nothing about zero rows.
+That branch is `emptyGate`, and it goes where the list would have gone:
+
+```zig
+if (!try b.loadGate(c.phase, .{ .loading = tr(.loading), .failed = tr(.eFailed) })) return;
+try b.heading(.h2, tr(.invoices));
+if (!try b.emptyGate(c.phase, c.invoices.len, tr(.noInvoicesYet))) return;
+for (c.invoices.items()) |*row| try appendInvoice(b, row);
+```
+
+It answers "there are rows — go on", and on ready-and-zero appends the
+one line the screen has for that and answers `false`.
+
+It takes the phase **again**, deliberately. The empty line belongs
+beside the rows, which is usually a heading and a tile group past the
+`loadGate` that admitted the build; a count-only verb standing there
+would print "No invoices yet" over a request still in flight. So a
+not-ready phase gets `false` with nothing appended — this verb never
+speaks before the phase is settled, and never speaks *about* the phase
+either, which is the other gate's job.
+
+The line is **plain body text**. An empty state is the whole of what
+that region says, not a footnote under something else, so it is not
+dimmed or shrunk. `null` copy is the section that vanishes silently
+when it has nothing, the same floor `loadGate`'s optional copy has. A
+screen that wants more than one line — a hint under it, a control that
+fills the emptiness — appends those itself; this is the common floor,
+not a required door.
+
+### The in-flight gate
+
+`Load` is display-only and `Button.in_progress` is a pixel: nothing in
+the framework *produces* busy. `nokre.Gate` is that missing bit, in the
+same slot as `Load` — pure data nokre never reads.
+
+```zig
+pub const Invites = struct {
+    deleting: nokre.Gate = .{},
+
+    pub fn deleteInvite(self: *Invites, id: []const u8) void {
+        if (!self.deleting.begin()) return;         // the second press does nothing
+        self.port.deleteInvite(id, nokre.bindAs(Port.DeleteCallback, onDeleted, self));
+    }
+
+    fn onDeleted(self: *Invites, result: Port.Result) void {
+        self.deleting.end();                        // on every arm, failure included
+        …
+    }
+};
+
+// and the screen reads the one bit:
+try b.button(.{ .label = tr(.delete), .in_progress = c.deleting.up, .on_press = … });
+```
+
+`begin` fuses the check and the set and answers whether to proceed;
+`end` lowers and is idempotent, because the reply paths that call it
+include ones that never raised it. `up` is the public field, because
+reading it is the whole consumer story and a second spelling would be
+two names for one fact — but write it through the two verbs: a bare
+`= true` is exactly the race the type exists to close.
+
+**Put `begin` last in a compound guard.** It mutates, so a screen's own
+preconditions go in front of it, where `or` short-circuits past it
+instead of leaving the gate up on a path that then returns:
+
+```zig
+if (!self.form.ready() or !self.creating.begin()) return;
+```
+
+There is **no `defer` helper**, and that is not an omission. The work
+these latches cover is dispatched, not performed: `begin` runs on the
+press and `end` runs in a callback landing frames later, on paths the
+raising function cannot see. `defer` composes with the wrong lifetime.
+
+A latch, not a machine — no phases, no staleness, no "which row", for
+the reason `Load` is not a machine either. A flow with more words than
+up and down keeps its own enum, and a phase that happens to feed
+`in_progress` (`stage == .sealing`, `search_phase == .searching`) is a
+richer fact that stays the app's.
+
 ### The confirm sheet
 
 The other composition every consumer wrote identically: a sheet that

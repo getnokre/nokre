@@ -6,6 +6,8 @@ const std = @import("std");
 const cursor_mod = @import("cursor.zig");
 const element_mod = @import("element.zig");
 const tree_mod = @import("tree.zig");
+const text_mod = @import("text.zig");
+const color_mod = @import("color.zig");
 const test_app = @import("test_app.zig");
 
 const Cursor = cursor_mod.Cursor;
@@ -411,4 +413,76 @@ test "root and at stand where they say" {
     const box = try root.box(.{});
     try std.testing.expectEqual(box.at, app.at(box.at).at);
     try std.testing.expectEqual(&app.tree, app.at(box.at).tree);
+}
+
+test "emptyGate: ready with rows appends nothing and says go on" {
+    var tree = try Tree.init(std.testing.allocator);
+    defer tree.deinit();
+    const root = rootCursor(&tree);
+
+    try std.testing.expect(try root.emptyGate(.ready, 3, "No invoices yet"));
+    try std.testing.expectEqual(@as(usize, 0), tree.childCount(tree.rootId()));
+}
+
+test "emptyGate: ready with nothing renders the one blessed line, plain" {
+    // Plain body text, not small-and-dark: the empty state is the whole
+    // of what the region says, and the two apps split evenly between the
+    // two spellings, so this was argued rather than counted.
+    var tree = try Tree.init(std.testing.allocator);
+    defer tree.deinit();
+    const root = rootCursor(&tree);
+
+    try std.testing.expect(!try root.emptyGate(.ready, 0, "No invoices yet"));
+    try std.testing.expectEqual(@as(usize, 1), tree.childCount(tree.rootId()));
+    const line = tree.getConst(lastChild(&tree, tree.rootId())).?;
+    try std.testing.expectEqual(Role.text, line.role());
+    try std.testing.expectEqualStrings("No invoices yet", line.label());
+    try std.testing.expectEqual(text_mod.Scale.body, line.text.style.scale);
+    try std.testing.expectEqual(color_mod.Gray.ink, line.text.style.ink);
+}
+
+test "emptyGate: a not-ready phase says nothing at all" {
+    // The reason the verb takes the phase a second time. At most consumer
+    // sites the empty check stands a heading and a tile group past the
+    // `loadGate` that admitted it, and a count-only verb there would
+    // print "No invoices" over a request still in flight.
+    for ([_]@import("load.zig").Load{ .idle, .loading, .failed }) |phase| {
+        var tree = try Tree.init(std.testing.allocator);
+        defer tree.deinit();
+        const root = rootCursor(&tree);
+
+        try std.testing.expect(!try root.emptyGate(phase, 0, "No invoices yet"));
+        try std.testing.expect(!try root.emptyGate(phase, 7, "No invoices yet"));
+        try std.testing.expectEqual(@as(usize, 0), tree.childCount(tree.rootId()));
+    }
+}
+
+test "emptyGate: null copy is the section that vanishes silently" {
+    // Four consumer sites spell their emptiness `if (rows.len == 0) return;`
+    // with nothing to say — the same floor `loadGate`'s optional copy has.
+    var tree = try Tree.init(std.testing.allocator);
+    defer tree.deinit();
+    const root = rootCursor(&tree);
+
+    try std.testing.expect(!try root.emptyGate(.ready, 0, null));
+    try std.testing.expect(try root.emptyGate(.ready, 1, null));
+    try std.testing.expectEqual(@as(usize, 0), tree.childCount(tree.rootId()));
+}
+
+test "emptyGate: the two gates compose into the shape every list screen wrote" {
+    // loadGate for the phase, then a heading the ready state owns, then
+    // emptyGate where the rows would have gone.
+    var tree = try Tree.init(std.testing.allocator);
+    defer tree.deinit();
+    const root = rootCursor(&tree);
+
+    const phase = @import("load.zig").Load.ready;
+    try std.testing.expect(try root.loadGate(phase, .{ .loading = "Loading…", .failed = "Could not load" }));
+    try root.heading(.h2, "Invoices");
+    try std.testing.expect(!try root.emptyGate(phase, 0, "No invoices yet"));
+
+    var it = tree.children(tree.rootId());
+    try std.testing.expectEqual(Role.heading, tree.getConst(it.next().?).?.role());
+    try std.testing.expectEqualStrings("No invoices yet", tree.getConst(it.next().?).?.label());
+    try std.testing.expect(it.next() == null);
 }
