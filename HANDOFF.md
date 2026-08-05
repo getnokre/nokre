@@ -48,31 +48,63 @@ may legitimately be "some of it, and not the rest."
 
 ---
 
-## The owner has reopened a killed item
+## The killed item, recovered — and it is not the one this file assumed
 
-The previous handoff refers, in Part C item 4, to *"the killed static-site
-driver."* A static-site driver in nokre was proposed in an earlier round and the
-owner refused it.
+*Written 2026-08-06, answering this file's own instruction to recover the kill
+argument first. It did not end the round, but it moves it.*
 
-**The owner has reopened that question**, and this file exists because of it.
-That is a deliberate departure from this file's own standing convention that
-nothing re-proposes an owner-killed item.
+**No full static-site driver was ever killed.** Round two's handoff
+(`git show c80c65c:HANDOFF.md`, item A10.4) proposed something much narrower —
+`dom.document(em, .{ .title, .lang, .head_extra, … })`, a helper owning
+"doctype, mount points and the skip link" — and about the larger thing said, in
+its own parenthesis:
 
-Two things follow, and both matter:
+> *"(A full static-site driver — the per-route loop, anchor harvest, stale-prune
+> — is a larger owner decision; log it, don't assume it.)"*
 
-1. The reopening is real. Do not treat Parts A and B as accidental re-proposals
-   and refuse them on adjacency grounds alone.
-2. The reopening is *not* a decision. The owner reopened the question after
-   seeing a second consumer about to hand-roll the same document shell. If the
-   original kill rationale still holds — and this file cannot see it, because it
-   lived in a handoff that has since been deleted — then **the right outcome is
-   to restate that rationale and kill the items again**, this time in a doc where
-   the next round will find it.
+So the larger question was never decided, in either direction. What the owner
+killed, in round two's status block (`git show 627ceda:HANDOFF.md`), was A10.4,
+in a list of items killed after an evidence review, each with a one-clause
+ground. A10.4's ground:
 
-If you can recover the original kill argument from git history, do that first.
-It is the highest-value ten minutes in this round, and it may end the round.
+> **"A10.4's contract-string premise half-wrong"**
 
----
+**That kill was evidentiary, not doctrinal**, and re-checking it at HEAD shows
+it was exactly right — "half" is literal. A10.4 claimed the site's raw HTML
+reproduced three nokre-internal contract strings. Checked today:
+
+| cited string | who owns it | verdict |
+|---|---|---|
+| `class="nokre has-chrome"` | nokre writes it (`live.zig:313`) and styles it (`stylesheet.zig:601`) | **real duplication** |
+| `#chrome` / `#content` / `.page` | nokre: **zero hits** | the site's own |
+| `addressing: "documents"` | nokre: **zero hits** | the site's own |
+
+Two of the three are the *driver's* inventions that nokre has never heard of. A
+helper owning "mount points" would have made nokre own ids and an addressing
+mode belonging to the consumer — the precise boundary
+`stylesheet.zig:541-543` states and this file quotes approvingly. The owner was
+declining to move that boundary on evidence that half the reason offered for
+moving it was not true.
+
+**Consequences for this round, and they cut three ways:**
+
+1. **Parts A and B are not re-proposals of a killed item.** They are new
+   questions about a question that was deferred. Refusing them on adjacency
+   grounds would be refusing something that was never refused.
+2. **The kill's surviving half is a real, still-live item, and it is small.**
+   `nokre has-chrome` is a genuine shared contract string that a host document
+   must write and nokre never exports — `dom.zig` exports `driver_files`,
+   `driver_sources`, `Emitter`, `Refs`, `Dest`, `content`, `chrome`, `node`, and
+   no class name at all. Both static consumers will retype it. That is one
+   exported constant, not a document shell, and it is worth doing whatever else
+   this round decides.
+3. **The precedent to honour is the *shape* of that kill, not its verdict.**
+   Round two killed a document helper because two thirds of what it proposed to
+   own belonged to the driver. Any Part A item that asks nokre to own something
+   the consumer invents — an id, an addressing mode, a path scheme — should die
+   the same way and for the same stated reason. Any item where nokre already
+   owns the fact and merely fails to export it is the opposite case, and A10.4's
+   surviving half is the model for it.
 
 ## Why now: the second consumer
 
