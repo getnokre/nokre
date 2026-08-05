@@ -452,7 +452,7 @@ polite-decline shape `refresh` established. Residue rider: org
 `refreshConsent` (state.zig:554) still node-pokes a screen with no
 editable — plain `refresh` residue, delete consumer-side.
 
-### A11. The field-error slot — semantics the element set is missing
+### A11 DONE (nokre `976fb62`, revision 30) — the field-error slot: semantics the element set was missing
 Org declares `Notice = enum` **11 times**, user `Trouble` 5 more —
 per-controller enums mapping server codes to copy rendered as an
 anonymous `text()` *beside* the form control, with no structural
@@ -964,8 +964,38 @@ passes bump `revision` and move all three pins.
     Left open: six sites still hand-roll `in_progress` as a boolean
     that must also turn *off*, which `patchProgress(id, pct)` cannot
     express. A `patchBusy` would be a third verb; not taken.
-12. **A11 field-error slot** — element-set argument on its own terms,
-    with A12's smaller items and **Part B + C sweeps** closing the
-    round once no in-flight migration can collide with renames.
+12. **A11 field-error slot** — DONE, revision 30 (nokre `976fb62`,
+    rokovski `3aba0643`, site `74a87ef`). Shipped as
+    `TextInput.problem` / `TextArea.problem`; `trouble` lost because it
+    names a mood the user is in rather than the thing wrong with the
+    value, and every other slot in the set is a plain noun for what it
+    holds. `invalid` is **derived** from `problem.len`, never stored,
+    so the flag and the reason cannot disagree. A refused field is
+    neither disabled nor busy — it takes every keystroke, or the user
+    is stranded in the value just refused.
+
+    In the DOM the message is a `<p>` **outside** the `<label>`: an
+    implicit label's subtree text is the input's accessible name, so
+    words left inside are announced as part of it. One audit rule —
+    a problem present but wordless, which marks the field refused to
+    every AT and then says nothing.
+
+    Counts again off, and the correction matters: **17** failure enums,
+    not 11+5, and only **8** ever had this defect — the other nine
+    already feed `confirmSheet.error_copy` or `loadGate.failed` and
+    were never this item's business.
+
+    **The handoff's own receipt was misfiled.** `create.zig:119` is
+    not an A11 receipt; read in place it is the `TextInput.disabled`
+    receipt, and the comment two lines above says so. That is now a
+    hard, countable one: **ten** refusals could not move onto their
+    field because by the time they arrive the address input is gone,
+    having given way to settled text and an Edit button — because
+    nokre has no disabled field.
+
+    A12's items and the **Part B + C sweeps** close the round in the
+    same pass, with three owner decisions folded in: `secure_store`'s
+    `MockState`, the IME caret stored and drawn, and
+    `nokre.addGoldenTests`.
 
 Part E items move only on their own owner-level arguments.
