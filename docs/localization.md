@@ -14,21 +14,20 @@ const L = h.l10n.Bundle(&.{
 // In a build function or action: the app's chosen locale (App.setLocale)
 // picks the catalog.
 const loc = L.resolve(app.locale());
-try tree.append(root, .{ .heading = .{ .content = L.tr(loc, .inboxTitle), .level = .h1 } });
-
-var buf: [128]u8 = undefined;
-const line = try L.fmt(&buf, loc, .nUnread, .{ .count = unread });
-try tree.append(root, .{ .text = .{ .content = line } });
+const b = app.root();
+try b.heading(.h1, L.tr(loc, .inboxTitle));
+try b.text(try L.fmtIn(&app.tree, loc, .nUnread, .{ .count = unread }));
 ```
 
 `Bundle` returns a type: `Locale` (one enum field per source, named by
 its `@@locale` — `"pt-BR"` becomes `.pt_BR`), `Key` (one field per
-message id), and five functions:
+message id), and six functions:
 
 | Call | Contract |
 | --- | --- |
 | `tr(locale, .key)` | A message with no placeholders, as a slice of constant data. No buffer, no error. Calling it on a message *with* placeholders is a compile error pointing at `fmt`. |
 | `fmt(buf, locale, .key, args)` | Formats into the caller's buffer, returns the written slice. `args` is an anonymous struct with exactly the message's placeholders — a missing, extra, or mistyped field is a compile error naming the message. The only runtime error is `NoSpace`: text is never silently truncated. |
+| `fmtIn(tree, locale, .key, args)` | `fmt` into the tree arena — `Tree.fmt`'s contract for a catalog message, and the form for a label the tree is about to store: no buffer to size, no `NoSpace`, the slice valid for the tree's lifetime. Placeholders are checked exactly as `fmt` checks them. `fmt` remains the form for bytes that outlive the tree (storage keys, worker messages). |
 | `resolve(tag)` | Runtime tag → bundled locale: exact match first (case and `-`/`_` ignored), then bare-language match in source order, then the template. `"fa-IR"` finds `.fa`; `"de"` against an en/fa bundle yields `.en`. |
 | `tag(locale)` | The `@@locale` string back — what `App.setLocale` takes, and what storage keeps. |
 | `dir(locale)` | The locale's writing direction (`l10n.Direction`), read from its tag at comptime. Feed it to `App.setDirection` to mirror the chrome — see [Right-to-left](#right-to-left). |

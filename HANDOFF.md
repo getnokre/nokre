@@ -10,12 +10,29 @@ every `issuing` guard deleted (refresh declines quietly in-build; bare
 transports; consumer client-array collapse examined and correctly
 declined (every slot is a distinct named adapter, not correlation
 plumbing — the doctrine change in PORTING.md is the consumer payoff);
+A4+A5 (revision 10) — the closed builder cursor (comptime-checked
+against `Role`) + `Tree.fmt`/`L.fmtIn` into the arena; all three
+consumers fully migrated (only id-storing appends stay raw, by the
+documented substrate split), the site's 16-helper facade deleted,
+goldens byte-identical everywhere;
 A8 (revision 9) — one harness door (`init(gpa, viewport, opts)`),
 the proven verbs (press/typeInto/goTab/expectPresent/expectDisabled)
 and `testing.wait.waitUntil` with injected Pacer; both fixtures
 shrunk, 682 discarded getByRole asserts became expectPresent;
 A6 scope decided by owner
-2026-08-04: minimal as written. Everything else below is unexecuted. The first
+2026-08-04: minimal as written. Owner decisions 2026-08-05 after an
+evidence review of the held items: **Part B is reduced to B1 (`ref`
+param unification), B3 (`NavHere.label` → `value` — owner chose
+`value` over `title`; a11y assigns the field as node.value), and B6
+(`workers.Vt` → `VTable`, `vt:` fields riding along). B2, B4, B5, B7,
+B8, B9, all of Part C, and A10.4 are killed** (verification found B2
+asserting a rule nokre itself breaks, B8 a deliberate house style,
+C3b inexpressible, C4's premise already-extracted, C1 reversing a
+recorded decision for ~50 lines, C2 blocked on expressibility,
+A10.4's contract-string premise half-wrong). The executing queue is
+A4+A5, A7, A9+A11, A10.1–3 (+ the sw.js fix, whose register URL must
+also be rooted for the documents addressing mode), A6, then the
+B1+B3+B6 sweep. Everything else below is unexecuted. The first
 handoff (deleted at `b3518a2`) was executed whole; this one comes from a
 full vocabulary-and-ergonomics review of nokre against its three real
 consumers — the rokovski user app (44.6k lines), the rokovski org app

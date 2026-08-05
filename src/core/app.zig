@@ -13,6 +13,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const bidi = @import("bidi.zig");
 const color = @import("color.zig");
+const cursor_mod = @import("cursor.zig");
 const editing = @import("editing.zig");
 const element_mod = @import("element.zig");
 const event_mod = @import("event.zig");
@@ -249,6 +250,12 @@ pub const App = struct {
 
     // ---- feature APIs, implemented in the sibling modules ----
 
+    /// The builder cursor at the tree root — where a screen builder
+    /// starts (core/cursor.zig).
+    pub const root = cursor_mod.root;
+    /// The builder cursor at a node the framework handed back — in
+    /// consumer code, `presentSheet`'s.
+    pub const at = cursor_mod.at;
     pub const setNav = nav_mod.setNav;
     pub const clearNav = nav_mod.clearNav;
     pub const openSheet = overlays.openSheet;

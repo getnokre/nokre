@@ -14,7 +14,7 @@ const std = @import("std");
 /// Hand-bumped on every consumer-visible contract change, never by
 /// machinery — the no-CI stance is deliberate
 /// (docs/getting-started.md).
-pub const revision: u32 = 9;
+pub const revision: u32 = 10;
 
 pub const geometry = @import("core/geometry.zig");
 pub const color = @import("core/color.zig");
@@ -22,6 +22,7 @@ pub const bidi = @import("core/bidi.zig");
 pub const text = @import("core/text.zig");
 pub const element = @import("core/element.zig");
 pub const tree = @import("core/tree.zig");
+pub const cursor = @import("core/cursor.zig");
 pub const layout = @import("core/layout.zig");
 pub const wrap = @import("core/wrap.zig");
 pub const event = @import("core/event.zig");
@@ -134,6 +135,11 @@ pub const App = app.App;
 pub const Tree = tree.Tree;
 pub const NodeId = tree.NodeId;
 pub const Element = element.Element;
+/// The builder cursor: one method per element, standing where children
+/// go. Sugar over `Tree.append` — the raw API stays the substrate
+/// (core/cursor.zig). Builders start from `App.root()`; a sheet's
+/// subtree from `App.at(presentSheet(...))`.
+pub const Cursor = cursor.Cursor;
 /// Every Lucide glyph a consumer can place, named. Daily now that a
 /// `tile` carries a mark as well as a button, a notice and a
 /// destination: an app that picks its glyphs once, by meaning, in one
@@ -164,6 +170,7 @@ test {
     _ = text;
     _ = element;
     _ = tree;
+    _ = cursor;
     _ = layout;
     _ = wrap;
     _ = event;
@@ -196,6 +203,7 @@ test {
     _ = @import("core/input_test.zig");
     _ = @import("core/layout_test.zig");
     _ = @import("core/markdown_test.zig");
+    _ = @import("core/cursor_test.zig");
     _ = @import("core/router_test.zig");
     _ = @import("core/tree_test.zig");
     _ = @import("core/wrap_test.zig");

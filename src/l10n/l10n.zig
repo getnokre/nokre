@@ -43,6 +43,7 @@
 
 const std = @import("std");
 const bidi = @import("../core/bidi.zig");
+const tree_mod = @import("../core/tree.zig");
 
 pub const arb = @import("arb.zig");
 pub const plural_rules = @import("plural_rules.zig");
@@ -227,14 +228,41 @@ pub fn Bundle(comptime arb_sources: []const []const u8) type {
         pub fn fmt(buf: []u8, locale: Locale, comptime key: Key, args: anytype) error{NoSpace}![]const u8 {
             const j = comptime @intFromEnum(key);
             comptime checkArgs(@TypeOf(args), params_table[j], keys[j]);
-            var pos: usize = 0;
+            var sink: Sink = .{ .buf = buf };
             switch (locale) {
                 inline else => |loc| {
                     const i = comptime @intFromEnum(loc);
-                    try emitSegs(catalog[i][j], locale_tags[i], params_table[j], args, 0, buf, &pos);
+                    try emitSegs(catalog[i][j], locale_tags[i], params_table[j], args, 0, &sink);
                 },
             }
-            return buf[0..pos];
+            return buf[0..sink.pos];
+        }
+
+        /// `fmt` into the tree arena instead of a caller buffer — the
+        /// catalog-message twin of `Tree.fmt`, with the same lifetime
+        /// contract: valid until the tree's next `reclaim`, which is
+        /// after every builder that could have called this has run.
+        /// Placeholders are checked at compile time exactly as `fmt`
+        /// checks them (`checkArgs` is shared), and the emitted bytes
+        /// are `fmt`'s to the byte (one emitter behind one `Sink`);
+        /// what changes is only where they land — sized by a counting
+        /// walk, so no cap exists to guess and no `NoSpace` to handle.
+        pub fn fmtIn(tree: *tree_mod.Tree, locale: Locale, comptime key: Key, args: anytype) error{OutOfMemory}![]const u8 {
+            const j = comptime @intFromEnum(key);
+            comptime checkArgs(@TypeOf(args), params_table[j], keys[j]);
+            switch (locale) {
+                inline else => |loc| {
+                    const i = comptime @intFromEnum(loc);
+                    // A counting sink cannot run out of anything, so
+                    // the emitter's one error is unreachable here.
+                    var count: Sink = .{ .buf = null };
+                    emitSegs(catalog[i][j], locale_tags[i], params_table[j], args, 0, &count) catch unreachable;
+                    const out = try tree.strings().alloc(u8, count.pos);
+                    var sink: Sink = .{ .buf = out };
+                    emitSegs(catalog[i][j], locale_tags[i], params_table[j], args, 0, &sink) catch unreachable;
+                    return out;
+                },
+            }
         }
 
         /// Maps a runtime locale tag (BCP 47 or POSIX flavored — case
@@ -521,11 +549,23 @@ fn isStringy(comptime T: type) bool {
 // ---------------------------------------------------------------------------
 // runtime emission — comptime-unrolled straight-line writes
 
-fn writeBytes(buf: []u8, pos: *usize, bytes: []const u8) error{NoSpace}!void {
-    if (buf.len - pos.* < bytes.len) return error.NoSpace;
-    @memcpy(buf[pos.*..][0..bytes.len], bytes);
-    pos.* += bytes.len;
-}
+/// Where emission lands: a caller buffer (`fmt` — `NoSpace` when it
+/// runs out) or nowhere (`fmtIn`'s counting walk, `buf` null, which
+/// cannot fail). One sink under one emitter, rather than a counting
+/// emitter beside a writing one, so the length a count promises and the
+/// bytes a write produces cannot drift.
+const Sink = struct {
+    buf: ?[]u8,
+    pos: usize = 0,
+
+    fn write(self: *Sink, bytes: []const u8) error{NoSpace}!void {
+        if (self.buf) |b| {
+            if (b.len - self.pos < bytes.len) return error.NoSpace;
+            @memcpy(b[self.pos..][0..bytes.len], bytes);
+        }
+        self.pos += bytes.len;
+    }
+};
 
 /// The digit shapes a catalog's numbers render in. Each non-ASCII set
 /// is a fixed ten-codepoint substitution of '0'–'9' — byte-determined
@@ -553,7 +593,7 @@ fn digitsOfTag(comptime tag: []const u8) Digits {
 /// digit shapes are the catalog locale's (`digitsOfTag`); the minus
 /// sign stays ASCII '-' in every set — digits are the decided scope,
 /// and localized punctuation would be a separate argument to have.
-fn writeDecimal(comptime digits: Digits, buf: []u8, pos: *usize, v: i64) error{NoSpace}!void {
+fn writeDecimal(comptime digits: Digits, sink: *Sink, v: i64) error{NoSpace}!void {
     var tmp: [20]u8 = undefined;
     var n: u64 = @abs(v);
     var i: usize = tmp.len;
@@ -563,9 +603,9 @@ fn writeDecimal(comptime digits: Digits, buf: []u8, pos: *usize, v: i64) error{N
         n /= 10;
         if (n == 0) break;
     }
-    if (v < 0) try writeBytes(buf, pos, "-");
+    if (v < 0) try sink.write("-");
     switch (digits) {
-        .ascii => try writeBytes(buf, pos, tmp[i..]),
+        .ascii => try sink.write(tmp[i..]),
         .arabic_indic, .extended_arabic_indic => {
             // Both blocks are contiguous, so each shaped digit is the
             // ASCII digit re-based onto a fixed two-byte UTF-8 pair.
@@ -575,7 +615,7 @@ fn writeDecimal(comptime digits: Digits, buf: []u8, pos: *usize, v: i64) error{N
                 .ascii => unreachable,
             };
             for (tmp[i..]) |c|
-                try writeBytes(buf, pos, &.{ lead, base + (c - '0') });
+                try sink.write(&.{ lead, base + (c - '0') });
         },
     }
 }
@@ -592,27 +632,27 @@ fn paramKind(comptime params: []const Param, comptime name: []const u8) Kind {
     unreachable; // usage collection put every used name in params
 }
 
-fn emitSegs(comptime segs: arb.Segs, comptime tag: []const u8, comptime params: []const Param, args: anytype, pound: i64, buf: []u8, pos: *usize) error{NoSpace}!void {
+fn emitSegs(comptime segs: arb.Segs, comptime tag: []const u8, comptime params: []const Param, args: anytype, pound: i64, sink: *Sink) error{NoSpace}!void {
     inline for (segs) |seg| switch (seg) {
-        .literal => |s| try writeBytes(buf, pos, s),
+        .literal => |s| try sink.write(s),
         .arg => |name| switch (comptime paramKind(params, name)) {
-            .string => try writeBytes(buf, pos, @field(args, name)),
-            .int => try writeDecimal(comptime digitsOfTag(tag), buf, pos, intValue(@field(args, name))),
+            .string => try sink.write(@field(args, name)),
+            .int => try writeDecimal(comptime digitsOfTag(tag), sink, intValue(@field(args, name))),
         },
-        .pound => try writeDecimal(comptime digitsOfTag(tag), buf, pos, pound),
-        .plural => |p| try emitPlural(p, tag, params, args, buf, pos),
-        .select => |s| try emitSelect(s, tag, params, args, pound, buf, pos),
+        .pound => try writeDecimal(comptime digitsOfTag(tag), sink, pound),
+        .plural => |p| try emitPlural(p, tag, params, args, sink),
+        .select => |s| try emitSelect(s, tag, params, args, pound, sink),
     };
 }
 
-fn emitPlural(comptime p: arb.Plural, comptime tag: []const u8, comptime params: []const Param, args: anytype, buf: []u8, pos: *usize) error{NoSpace}!void {
+fn emitPlural(comptime p: arb.Plural, comptime tag: []const u8, comptime params: []const Param, args: anytype, sink: *Sink) error{NoSpace}!void {
     const count = intValue(@field(args, p.arg));
     const n: u64 = @abs(count);
     // ICU precedence: =N exacts win over categories.
     inline for (p.branches) |br| {
         if (comptime br.selector == .exact) {
             if (n == comptime br.selector.exact)
-                return emitSegs(br.segs, tag, params, args, count, buf, pos);
+                return emitSegs(br.segs, tag, params, args, count, sink);
         }
     }
     const rule = comptime plural_rules.forLocale(tag).?; // validated at Bundle time
@@ -620,13 +660,13 @@ fn emitPlural(comptime p: arb.Plural, comptime tag: []const u8, comptime params:
     inline for (p.branches) |br| {
         if (comptime br.selector == .category and br.selector.category != .other) {
             if (cat == comptime br.selector.category)
-                return emitSegs(br.segs, tag, params, args, count, buf, pos);
+                return emitSegs(br.segs, tag, params, args, count, sink);
         }
     }
     // The mandatory other — also the landing spot for a finite category
     // whose members were all peeled off by exacts above.
     const other = comptime otherBranch(p);
-    return emitSegs(other, tag, params, args, count, buf, pos);
+    return emitSegs(other, tag, params, args, count, sink);
 }
 
 fn otherBranch(comptime p: arb.Plural) arb.Segs {
@@ -636,16 +676,16 @@ fn otherBranch(comptime p: arb.Plural) arb.Segs {
     unreachable; // validateSegs required it
 }
 
-fn emitSelect(comptime s: arb.Select, comptime tag: []const u8, comptime params: []const Param, args: anytype, pound: i64, buf: []u8, pos: *usize) error{NoSpace}!void {
+fn emitSelect(comptime s: arb.Select, comptime tag: []const u8, comptime params: []const Param, args: anytype, pound: i64, sink: *Sink) error{NoSpace}!void {
     const v: []const u8 = @field(args, s.arg);
     inline for (s.branches) |br| {
         if (comptime !std.mem.eql(u8, br.name, "other")) {
             if (std.mem.eql(u8, v, br.name))
-                return emitSegs(br.segs, tag, params, args, pound, buf, pos);
+                return emitSegs(br.segs, tag, params, args, pound, sink);
         }
     }
     const other = comptime selectOther(s);
-    return emitSegs(other, tag, params, args, pound, buf, pos);
+    return emitSegs(other, tag, params, args, pound, sink);
 }
 
 fn selectOther(comptime s: arb.Select) arb.Segs {

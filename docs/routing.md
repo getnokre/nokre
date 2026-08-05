@@ -235,7 +235,7 @@ validated against the same table `navigate` resolves through:
 ```zig
 var buf: [h.router.max_ref_bytes]u8 = undefined;
 const ref = try app.routeRef(&buf, "note", &.{id});   // "note~42"
-try app.tree.append(list, .{ .link = .{ .label = title, .route = ref } });
+try list.link(.{ .label = title, .route = ref });
 ```
 
 Everything resolution would refuse is refused here, at the site that

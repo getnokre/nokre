@@ -211,13 +211,13 @@ pub const State = struct {
 
 pub fn buildHome(ctx: ?*anyopaque, app: *h.App) !void {
     const state: *State = @ptrCast(@alignCast(ctx.?));
-    const root = app.tree.rootId();
-    try app.tree.append(root, .{ .heading = .{ .content = "Notes", .level = .h1 } });
-    state.label_id = try app.tree.appendId(root, .{ .text = .{ .content = "Pressed 0 times" } });
-    try app.tree.append(root, .{ .button = .{
+    const b = app.root();
+    try b.heading(.h1, "Notes");
+    state.label_id = try app.tree.appendId(b.at, .{ .text = .{ .content = "Pressed 0 times" } });
+    try b.button(.{
         .label = "Increment",
         .on_press = .bind(State.increment, state),
-    } });
+    });
 }
 
 pub fn main() !void {
@@ -245,12 +245,16 @@ are `pub` because Part 2's tests import them.)
 
 Things worth noticing, because they generalize:
 
-- **`append` is where correctness happens.** A button with an empty
-  label, a table row outside a table, text without enough contrast where
-  it sits — all rejected at the call site with a named error. If the
-  tree built, the screen is valid; an automatic audit covers what
-  construction can't see. The rules are in
-  [accessibility.md](accessibility.md).
+- **The cursor is where screens are written; `append` is where
+  correctness happens.** `app.root()` hands back a `Cursor` — one method
+  per element, containers returning the child cursor — and every method
+  *is* a `tree.append` call: a button with an empty label, a table row
+  outside a table, text without enough contrast where it sits — all
+  rejected at the call site with a named error. If the tree built, the
+  screen is valid; an automatic audit covers what construction can't
+  see. The rules are in [accessibility.md](accessibility.md). The raw
+  `Tree` API stays public as the substrate — `appendId` above is its
+  form for the node you address again (`setContent` needs the id).
 - **Actions are typed methods, bound.** `.bind(State.increment, state)`
   pairs a method on your state type with the pointer it runs against —
   nokre never allocates a closure. Every interactive element takes its
@@ -493,31 +497,31 @@ pub const State = struct {
 };
 
 fn buildSignIn(state: *State, app: *h.App) !void {
-    const root = app.tree.rootId();
-    try app.tree.append(root, .{ .heading = .{ .content = "Notes", .level = .h1 } });
-    try app.tree.append(root, .{ .text = .{ .spans = &.{
+    const b = app.root();
+    try b.heading(.h1, "Notes");
+    try b.spanned(&.{
         .{ .text = "Welcome. The passphrase is " },
         .{ .text = "letmein", .code = true },
         .{ .text = " — this is a course app, not a bank." },
-    } } });
-    const form = try app.tree.appendId(root, .{ .box = .{} });
-    try app.tree.append(form, .{ .text_input = .{
+    });
+    const form = try b.box(.{});
+    try form.textInput(.{
         .label = "Passphrase",
         .obscured = true,
         .on_change = .bind(editPassphrase, state),
         .on_submit = .bind(signIn, state),
-    } });
-    try app.tree.append(form, .{ .checkbox = .{
+    });
+    try form.checkbox(.{
         .label = "Stay signed in on this device",
         .checked = state.remember,
         .on_toggle = .bind(setRemember, state),
-    } });
-    try app.tree.append(form, .{ .button = .{
+    });
+    try form.button(.{
         .label = "Sign in",
         .on_press = .bind(signIn, state),
-    } });
+    });
     if (state.signin_status.len != 0) {
-        try app.tree.append(root, .{ .text = .{ .content = state.signin_status, .style = .{ .scale = .small, .ink = .dark } } });
+        try b.styled(state.signin_status, .{ .scale = .small, .ink = .dark });
     }
 }
 
@@ -769,50 +773,51 @@ and the new `State` fields:
 The signed-in half of `buildNotes`:
 
 ```zig
-    const root = app.tree.rootId();
-    const title_row = try app.tree.appendId(root, .{ .stack = .{ .axis = .horizontal } });
-    try app.tree.append(title_row, .{ .heading = .{ .content = "Notes", .level = .h1 } });
+    const b = app.root();
+    const title_row = try b.stack(.{ .axis = .horizontal });
+    try title_row.heading(.h1, "Notes");
     if (state.offline) {
-        try app.tree.append(title_row, .{ .badge = .{ .label = "Offline" } });
+        try title_row.badge(.{ .label = "Offline" });
     }
 
-    const actions = try app.tree.appendId(root, .{ .stack = .{ .axis = .horizontal } });
-    try app.tree.append(actions, .{ .button = .{
+    const actions = try b.stack(.{ .axis = .horizontal });
+    try actions.button(.{
         .label = "New note",
         .on_press = .bind(openNewNote, state),
-    } });
-    try app.tree.append(actions, .{ .button = .{
+    });
+    try actions.button(.{
         .label = "Sync", // Part 7
         .form = .{ .secondary = null },
         .on_press = .bind(sync, state),
-    } });
-    try app.tree.append(root, .{ .text = .{ .content = state.status, .style = .{ .scale = .small, .ink = .dark } } });
+    });
+    try b.styled(state.status, .{ .scale = .small, .ink = .dark });
 
     if (state.note_count == 0) {
-        try app.tree.append(root, .{ .text = .{ .content = "Nothing here yet. Press “New note” to write the first one." } });
+        try b.text("Nothing here yet. Press “New note” to write the first one.");
     } else {
-        const group = try app.tree.appendId(root, .{ .tile_group = .{
+        const group = try b.tileGroup(.{
             .description = "Tap a note to read, share, or delete it.",
-        } });
+        });
         for (0..state.note_count) |i| {
             const index = if (state.newest_first) state.note_count - 1 - i else i;
             // A per-row action carries its row as data on the element —
             // `bindAt` sets it at append, the method receives it at press.
-            try app.tree.append(group, .{ .tile = .{
+            try group.tile(.{
                 .label = state.notes[index].slice(),
                 .on_press = .bindAt(openNote, state, index),
-            } });
+            });
         }
     }
 
-    try app.tree.append(root, .{ .divider = .{} });
-    var cap_buf: [32]u8 = undefined;
-    const cap = try std.fmt.bufPrint(&cap_buf, "{d} of {d} notes", .{ state.note_count, max_notes });
-    try app.tree.append(root, .{ .meter = .{ .label = cap, .value = @intCast(state.note_count), .max = max_notes } });
+    try b.divider();
+    const cap = try app.tree.fmt("{d} of {d} notes", .{ state.note_count, max_notes });
+    try b.meter(.{ .label = cap, .value = @intCast(state.note_count), .max = max_notes });
 ```
 
-Notice the meter label was formatted into a stack buffer — safe, because
-the tree copies every string at `append`; it never borrows your memory.
+Notice the meter label was formatted with `tree.fmt` — straight into the
+tree's own arena, so there is no buffer to size and no way to truncate;
+the slice stays valid for the tree's lifetime like every other stored
+string.
 And notice what's absent: the screen may outgrow the viewport, and
 nothing wraps it — content taller than the window scrolls implicitly,
 and Tab always scrolls the focused element into view. Reach for an
@@ -835,16 +840,18 @@ pub fn openNewNote(state: *State) void {
 
 fn buildNewNote(ctx: ?*anyopaque, app: *nokre.App) anyerror!void {
     const state: *State = @ptrCast(@alignCast(ctx.?));
-    const sheet = try app.presentSheet("New note");
-    try app.tree.append(sheet, .{ .text_area = .{
+    // `presentSheet` hands back the sheet's node; `app.at` is the
+    // cursor standing on it.
+    const sheet = app.at(try app.presentSheet("New note"));
+    try sheet.textArea(.{
         .label = "Note",
         .placeholder = "Write it down…",
         .on_change = .bind(editDraft, state),
-    } });
-    try app.tree.append(sheet, .{ .button = .{
+    });
+    try sheet.button(.{
         .label = "Add",
         .on_press = .bind(commitDraft, state),
-    } });
+    });
 }
 
 pub fn commitDraft(state: *State) void {
@@ -1192,19 +1199,19 @@ pub fn buildNote(ctx: ?*anyopaque, app: *h.App) !void {
     const index = std.fmt.parseInt(usize, arg, 10) catch return;
     if (index >= state.note_count) return;
     const note = &state.notes[index];
-    const root = app.tree.rootId();
+    const b = app.root();
     // The framework's Back control shares this heading's line — a pushed
     // screen without a way back cannot exist.
-    try app.tree.append(root, .{ .heading = .{ .content = "Note", .level = .h1 } });
-    try app.tree.append(root, .{ .text = .{ .content = note.slice() } });
-    try app.tree.append(root, .{ .divider = .{} });
-    try app.tree.append(root, .{ .copyable = .{ .label = "Copy this note", .value = note.slice() } });
-    try app.tree.append(root, .{ .qr = .{ .label = "Scan to take it with you", .value = note.slice() } });
-    try app.tree.append(root, .{ .button = .{
+    try b.heading(.h1, "Note");
+    try b.text(note.slice());
+    try b.divider();
+    try b.copyable(.{ .label = "Copy this note", .value = note.slice() });
+    try b.qr(.{ .label = "Scan to take it with you", .value = note.slice() });
+    try b.button(.{
         .label = "Delete",
         .form = .{ .secondary = null },
         .on_press = .bind(deleteNote, state),
-    } });
+    });
 }
 
 pub fn openNote(state: *State, index: usize) void {
@@ -1273,10 +1280,10 @@ arrow keys, immediately — and a `toggle`, the switch that applies now
 ```zig
 pub fn buildSettings(ctx: ?*anyopaque, app: *h.App) !void {
     const state: *State = @ptrCast(@alignCast(ctx.?));
-    const root = app.tree.rootId();
-    try app.tree.append(root, .{ .heading = .{ .content = "Settings", .level = .h1 } });
+    const b = app.root();
+    try b.heading(.h1, "Settings");
 
-    try app.tree.append(root, .{ .segmented = .{
+    try b.segmented(.{
         .label = "Appearance",
         .options = &.{ "Light", "Dark", "Automatic" },
         .selected = switch (app.scheme) {
@@ -1285,39 +1292,37 @@ pub fn buildSettings(ctx: ?*anyopaque, app: *h.App) !void {
             .auto => 2,
         },
         .on_select = .bind(selectScheme, state),
-    } });
-    try app.tree.append(root, .{ .radio_group = .{
+    });
+    try b.radioGroup(.{
         .label = "Order",
         .options = &.{ "Newest first", "Oldest first" },
         .selected = if (state.newest_first) 0 else 1,
         .on_select = .bind(selectOrder, state),
-    } });
-    try app.tree.append(root, .{ .toggle = .{
+    });
+    try b.toggle(.{
         .label = "Show word-count stats",
         .on = state.show_stats,
         .on_toggle = .bind(setShowStats, state),
-    } });
+    });
 
-    try app.tree.append(root, .{ .divider = .{} });
+    try b.divider();
     if (state.signed_in) {
-        try app.tree.append(root, .{ .button = .{
+        try b.button(.{
             .label = "Sign out",
             .form = .{ .secondary = null },
             .on_press = .bind(signOut, state),
-        } });
+        });
     } else {
-        try app.tree.append(root, .{ .text = .{ .content = "Not signed in." } });
+        try b.text("Not signed in.");
     }
 
     // Identity is declared once in build.zig and baked in everywhere;
     // only the installer field is asked of the OS.
     const pkg = h.services.package_info.get();
-    var pkg_buf: [96]u8 = undefined;
-    const pkg_line = try std.fmt.bufPrint(&pkg_buf, "{s} {s} ({d}) — {s}", .{
+    try b.divider();
+    try b.styled(try app.tree.fmt("{s} {s} ({d}) — {s}", .{
         pkg.id, pkg.version, pkg.build, @tagName(pkg.installer),
-    });
-    try app.tree.append(root, .{ .divider = .{} });
-    try app.tree.append(root, .{ .text = .{ .content = pkg_line, .style = .{ .family = .mono, .scale = .small, .ink = .dark } } });
+    }), .{ .family = .mono, .scale = .small, .ink = .dark });
 }
 ```
 
@@ -1446,27 +1451,26 @@ heading and the empty state are `tr` — messages with no placeholders,
 returned as constant slices, no buffer:
 
 ```zig
-    try app.tree.append(title_row, .{ .heading = .{ .content = L.tr(loc(app), .notesTitle), .level = .h1 } });
+    try title_row.heading(.h1, L.tr(loc(app), .notesTitle));
 ```
 
 ```zig
     if (state.note_count == 0) {
-        try app.tree.append(root, .{ .text = .{ .content = L.tr(loc(app), .emptyState) } });
+        try b.text(L.tr(loc(app), .emptyState));
     } else {
-        var desc_buf: [160]u8 = undefined;
-        const desc = try L.fmt(&desc_buf, loc(app), .noteCount, .{ .count = state.note_count });
-        const group = try app.tree.appendId(root, .{ .tile_group = .{ .description = desc } });
+        const desc = try L.fmtIn(&app.tree, loc(app), .noteCount, .{ .count = state.note_count });
+        const group = try b.tileGroup(.{ .description = desc });
         // …the tiles loop, unchanged.
     }
 ```
 
-and the meter label's `std.fmt.bufPrint` from Part 6 becomes `fmt` —
-same stack buffer habit, because the tree copies at `append`:
+and the meter label's `tree.fmt` from Part 6 becomes `fmtIn` — the same
+format-into-the-arena contract, catalog-message-shaped: no buffer to
+size, and the placeholder set is still checked at compile time:
 
 ```zig
-    var cap_buf: [64]u8 = undefined;
-    const cap = try L.fmt(&cap_buf, loc(app), .noteCapacity, .{ .count = state.note_count, .max = max_notes });
-    try app.tree.append(root, .{ .meter = .{ .label = cap, .value = @intCast(state.note_count), .max = max_notes } });
+    const cap = try L.fmtIn(&app.tree, loc(app), .noteCapacity, .{ .count = state.note_count, .max = max_notes });
+    try b.meter(.{ .label = cap, .value = @intCast(state.note_count), .max = max_notes });
 ```
 
 Settings grows the picker — options are native language names, so a
@@ -1474,12 +1478,12 @@ reader lost in the wrong locale can find their own; it commits on
 arrow keys like the rest of Part 10:
 
 ```zig
-    try app.tree.append(root, .{ .segmented = .{
+    try b.segmented(.{
         .label = "Language",
         .options = &.{ "English", "فارسی" },
         .selected = if (loc(app) == .en) 0 else 1,
         .on_select = .bind(selectLanguage, state),
-    } });
+    });
 ```
 
 ```zig

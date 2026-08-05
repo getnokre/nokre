@@ -306,6 +306,26 @@ pub const Tree = struct {
         return dupeValid(self.arena.allocator(), s);
     }
 
+    /// Formats into the tree arena; the slice is valid for the tree's
+    /// lifetime like every other stored string — until `reclaim` (a
+    /// router rebuild) frees the arena, which is after every builder
+    /// that could have called this has run. The guessed scratch-buffer
+    /// cap and its truncation failure mode both disappear: the bytes
+    /// are sized by the format, where they will feed the append that
+    /// stores them.
+    pub fn fmt(self: *Tree, comptime f: []const u8, args: anytype) error{OutOfMemory}![]const u8 {
+        return std.fmt.allocPrint(self.arena.allocator(), f, args);
+    }
+
+    /// The arena every stored string lives in, for the one other
+    /// formatter that writes labels directly into tree-owned memory —
+    /// l10n's `fmtIn`, `fmt`'s catalog-message twin. Not a general
+    /// door: strings enter the tree through `append`'s validating copy,
+    /// and this allocator only positions bytes that are about to.
+    pub fn strings(self: *Tree) std.mem.Allocator {
+        return self.arena.allocator();
+    }
+
     /// The arena reclaim point the module doc promises. Every string
     /// owned by a *surviving* node is re-copied into a fresh arena and
     /// the old one — holding every removed screen's strings, every

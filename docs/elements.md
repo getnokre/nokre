@@ -8,6 +8,33 @@ derived rather than annotated. Layout metrics live in
 There is no styling API. If an element doesn't do what you want, the answer
 is a different composition of these elements, not a customization hook.
 
+## Building with the cursor
+
+Screens are written through the builder **cursor** — `app.root()`
+hands one back, standing at the tree root. One method per element,
+closed exactly as the element set is: a leaf method takes its element
+struct (`b.button(.{ .label = … })`) or, for the content-only elements,
+the content itself (`b.text(…)`, `b.heading(.h2, …)`,
+`b.codeBlock(…)`; a styled or spanned paragraph is `b.styled(content,
+style)` / `b.spanned(&.{…})`). A container method returns the child
+cursor, so nesting is the return value:
+
+```zig
+const b = app.root();
+try b.heading(.h1, "Inbox");
+const row = try b.stack(.{ .axis = .horizontal });
+try row.button(.{ .label = "Refresh", .on_press = .bind(State.refresh, state) });
+```
+
+Every method **is** a `tree.append` call — same validation, same string
+copy, same contrast gates; there is no second truth about the tree. The
+raw `Tree` API stays public as the substrate, and is the form for the
+two things the cursor does not carry: keeping a leaf's `NodeId`
+(`tree.appendId(b.at, …)` — a container's own id is `b.at`) and a
+spanned *heading*. A sheet builder starts from
+`app.at(try app.presentSheet(title))`, the cursor standing on the node
+the framework handed back.
+
 ## Static
 
 ### `text`
@@ -449,11 +476,11 @@ There is no size, no ink, no corner radius: a knob here would be an
 invitation to violate the guidelines the button exists to satisfy.
 
 ```zig
-try tree.append(root, .{ .button = .{
+try b.button(.{
     .label = "Sign in with Apple", // the vendor's published wording, your locale
     .form = .{ .provider = .apple },
     .on_press = .bind(State.startSignIn, state),
-} });
+});
 ```
 
 Nothing else changes. Role is `button`, activation is a plain button's,
@@ -506,11 +533,11 @@ no width to declare. Any row of actions you have already written folds
 the moment it runs out of room.
 
 ```zig
-const row = try tree.appendId(root, .{ .stack = .{ .axis = .horizontal, .gap = 8 } });
-try tree.append(row, .{ .button = .{ .label = "Publish", .on_press = ... } });
-try tree.append(row, .{ .button = .{ .label = "Save draft", .on_press = ... } });
-try tree.append(row, .{ .button = .{ .label = "Archive", .on_press = ... } });
-try tree.append(row, .{ .link = .{ .label = "More details", .route = "details" } });
+const row = try b.stack(.{ .axis = .horizontal, .gap = 8 });
+try row.button(.{ .label = "Publish", .on_press = ... });
+try row.button(.{ .label = "Save draft", .on_press = ... });
+try row.button(.{ .label = "Archive", .on_press = ... });
+try row.link(.{ .label = "More details", .route = "details" });
 // Narrow enough, this renders: Publish · More
 ```
 
@@ -1264,8 +1291,8 @@ built again — never appended directly to build content:
 fn buildFilter(ctx: ?*anyopaque, app: *nokre.App) anyerror!void {
     const c: *Filters = @ptrCast(@alignCast(ctx.?));
     if (!c.filtering) return; // declining is the builder's to do
-    const sheet = try app.presentSheet("Filter results");
-    try app.tree.append(sheet, .{ .toggle = .{ .label = "Only unread" } });
+    const sheet = app.at(try app.presentSheet("Filter results"));
+    try sheet.toggle(.{ .label = "Only unread" });
 }
 
 fn onFilterDismissed(ctx: ?*anyopaque) void {

@@ -8,10 +8,10 @@ rendered in-app:
 ```zig
 const body = try fetchTerms(gpa); // bytes you did not write
 defer gpa.free(body);             // the tree copied them; free at once
-try app.tree.append(root, .{ .document = .{
+try app.root().document(.{
     .label = "Terms of Service",
     .source = body,
-} });
+});
 ```
 
 Nothing else in nokre learns about Markdown.

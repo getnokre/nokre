@@ -33,7 +33,11 @@ doesn't go in. When one does, it is a cross-cutting commitment:
 
 1. Struct + `Element` union arm + `Role` in
    [element.zig](../../src/core/element.zig)
-   (`role()`, `isInteractive()`, `isFocusable()`, `label()`).
+   (`role()`, `isInteractive()`, `isFocusable()`, `label()`), and its
+   cursor method in [cursor.zig](../../src/core/cursor.zig) in the same
+   pass — the builder is closed exactly as the element set is, and the
+   comptime check there refuses to compile a union member the cursor
+   cannot spell.
 2. Layout rules in [layout.zig](../../src/core/layout.zig) — including
    the element's stance on the advised margin (`Ctx.margin`): apply it,
    the default; or, only if the element must reach an edge to work,

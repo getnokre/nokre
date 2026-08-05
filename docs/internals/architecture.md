@@ -36,6 +36,7 @@ nokre is a strict layer cake. Each layer knows only the layer below it.
 | [src/core/icon_names.zig](../../src/core/icon_names.zig) | the generated icon-name table from lucide-static (`tools/gen-icon-names.py`), regenerated only with the face itself |
 | [src/core/element.zig](../../src/core/element.zig) | the closed element set (`Element` union) |
 | [src/core/tree.zig](../../src/core/tree.zig) | retained tree, generational `NodeId`s |
+| [src/core/cursor.zig](../../src/core/cursor.zig) | the builder cursor — one method per element over `Tree.append`, closed with the set |
 | [src/core/layout.zig](../../src/core/layout.zig) | block-flow layout, row wrap (`rowOverflow`), metrics |
 | [src/core/wrap.zig](../../src/core/wrap.zig) | word wrap, span segmentation, bidi line pieces, middle elision |
 | [src/core/event.zig](../../src/core/event.zig) | pointer (press/release) / key / text / IME / scroll — no hover |

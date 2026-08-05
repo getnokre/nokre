@@ -994,3 +994,32 @@ test "a document expands wherever it enters the tree, not only via append" {
     const doc2 = try tree.insertAfter(anchor, .{ .document = .{ .label = "Doc2", .source = "words" } });
     try std.testing.expectEqual(@as(usize, 1), tree.childCount(doc2));
 }
+
+test "fmt formats into the arena: tree-lifetime bytes, no cap to guess" {
+    var tree = try Tree.init(std.testing.allocator);
+    defer tree.deinit();
+    const root = tree.rootId();
+
+    const label = try tree.fmt("{s} — {d}", .{ "Delete", 42 });
+    try std.testing.expectEqualStrings("Delete — 42", label);
+
+    // The slice survives everything a builder does after it: more
+    // appends, more fmt calls. It is arena memory, not a scratch buffer
+    // the next line overwrites.
+    const second = try tree.fmt("{d} pending", .{7});
+    for (0..40) |_| try tree.append(root, .{ .text = .{ .content = "filler" } });
+    try std.testing.expectEqualStrings("Delete — 42", label);
+    try std.testing.expectEqualStrings("7 pending", second);
+
+    // No truncation failure mode: a label longer than any cap a
+    // consumer used to guess ([48]u8 … [512]u8) comes out whole.
+    const long = try tree.fmt("{s}{s}", .{ "x" ** 400, "y" ** 400 });
+    try std.testing.expectEqual(@as(usize, 800), long.len);
+    try std.testing.expectEqual(@as(u8, 'x'), long[399]);
+    try std.testing.expectEqual(@as(u8, 'y'), long[400]);
+
+    // And the append that stores it copies like every other string, so
+    // the element's bytes are the formatted ones.
+    const badge = try tree.appendId(root, .{ .badge = .{ .label = label } });
+    try std.testing.expectEqualStrings("Delete — 42", tree.getConst(badge).?.badge.label);
+}

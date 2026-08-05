@@ -453,3 +453,48 @@ test "metadata-declared placeholder is usable by translations only" {
         try Declared.fmt(&buf, .de, .saved, .{ .name = "Notiz" }),
     );
 }
+
+test "fmtIn is fmt into the tree arena: identical bytes, no cap" {
+    const Tree = @import("../core/tree.zig").Tree;
+    var tree = try Tree.init(std.testing.allocator);
+    defer tree.deinit();
+    var buf: [64]u8 = undefined;
+
+    // One emitter behind one Sink: string and int placeholders, plural
+    // with #, select fallback, and shaped Persian digits all come out
+    // byte-identical to fmt's answer.
+    try std.testing.expectEqualStrings(
+        try L.fmt(&buf, .en, .greeting, .{ .name = "Ada" }),
+        try L.fmtIn(&tree, .en, .greeting, .{ .name = "Ada" }),
+    );
+    try std.testing.expectEqualStrings(
+        try L.fmt(&buf, .fa, .score, .{ .points = 400 }),
+        try L.fmtIn(&tree, .fa, .score, .{ .points = 400 }),
+    );
+    try std.testing.expectEqualStrings(
+        try L.fmt(&buf, .en, .nItems, .{ .count = 7 }),
+        try L.fmtIn(&tree, .en, .nItems, .{ .count = 7 }),
+    );
+    try std.testing.expectEqualStrings(
+        try L.fmt(&buf, .en, .pronoun, .{ .gender = "nonbinary" }),
+        try L.fmtIn(&tree, .en, .pronoun, .{ .gender = "nonbinary" }),
+    );
+
+    // Where fmt reports NoSpace, fmtIn has no cap to run out of: the
+    // counting walk sized the allocation, so the long value comes out
+    // whole — the truncation-by-guess failure mode gone, not enlarged.
+    const long_name = "x" ** 300;
+    try std.testing.expectError(
+        error.NoSpace,
+        L.fmt(&buf, .en, .greeting, .{ .name = long_name }),
+    );
+    const whole = try L.fmtIn(&tree, .en, .greeting, .{ .name = long_name });
+    try std.testing.expectEqual(@as(usize, "Hello, ".len + 300 + 1), whole.len);
+
+    // Arena lifetime, not call lifetime: an earlier answer survives
+    // later calls and appends, unlike the caller buffer fmt reuses.
+    const first = try L.fmtIn(&tree, .en, .greeting, .{ .name = "Ada" });
+    _ = try L.fmtIn(&tree, .en, .greeting, .{ .name = "Grace" });
+    try tree.append(tree.rootId(), .{ .text = .{ .content = first } });
+    try std.testing.expectEqualStrings("Hello, Ada!", first);
+}

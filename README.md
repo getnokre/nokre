@@ -38,13 +38,13 @@ const nok = @import("nokre");
 
 fn buildHome(ctx: ?*anyopaque, app: *nok.App) !void {
     const state: *Notes = @ptrCast(@alignCast(ctx.?));
-    const root = app.tree.rootId();
-    _ = try app.tree.append(root, .{ .heading = .{ .content = "Notes", .level = .h1 } });
-    _ = try app.tree.append(root, .{ .text = .{ .content = "Everything here is accessible by construction." } });
-    _ = try app.tree.append(root, .{ .button = .{
+    const b = app.root();
+    try b.heading(.h1, "Notes");
+    try b.text("Everything here is accessible by construction.");
+    try b.button(.{
         .label = "New note",
         .on_press = .bind(Notes.newNote, state),
-    } });
+    });
 }
 ```
 
