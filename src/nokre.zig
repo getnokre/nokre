@@ -14,7 +14,7 @@ const std = @import("std");
 /// Hand-bumped on every consumer-visible contract change, never by
 /// machinery — the no-CI stance is deliberate
 /// (docs/getting-started.md).
-pub const revision: u32 = 18;
+pub const revision: u32 = 19;
 
 pub const geometry = @import("core/geometry.zig");
 pub const color = @import("core/color.zig");
@@ -22,6 +22,7 @@ pub const bidi = @import("core/bidi.zig");
 pub const text = @import("core/text.zig");
 pub const element = @import("core/element.zig");
 pub const load = @import("core/load.zig");
+pub const bounded = @import("core/bounded.zig");
 pub const tree = @import("core/tree.zig");
 pub const cursor = @import("core/cursor.zig");
 pub const layout = @import("core/layout.zig");
@@ -146,6 +147,16 @@ pub const Cursor = cursor.Cursor;
 /// screens read it, and `Cursor.loadGate` renders the not-ready states
 /// (core/load.zig).
 pub const Load = load.Load;
+/// A string the consumer owns, up to `cap` bytes — the landing place
+/// for a slice borrowed for the length of a callback. Truncates at the
+/// ceiling without splitting a codepoint, and says when it did
+/// (core/bounded.zig).
+pub const Str = bounded.Str;
+/// A bounded list of rows the consumer owns: `push`/`fill` in a reply
+/// handler, `items` in the screen, and `truncated` when the reply had
+/// more than fits. Pure data nokre never reads, like `Load` — the
+/// phase stays a field beside the list (core/bounded.zig).
+pub const Rows = bounded.Rows;
 /// Every Lucide glyph a consumer can place, named. Daily now that a
 /// `tile` carries a mark as well as a button, a notice and a
 /// destination: an app that picks its glyphs once, by meaning, in one
@@ -178,6 +189,7 @@ test {
     _ = text;
     _ = element;
     _ = load;
+    _ = bounded;
     _ = tree;
     _ = cursor;
     _ = layout;

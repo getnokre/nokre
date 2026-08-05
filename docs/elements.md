@@ -71,6 +71,89 @@ A phase switch whose states say more than this (styled copy, extra
 controls) stays a hand-written `switch` — the gate is the common
 scaffold, not a required door.
 
+### Holding what a callback borrowed
+
+Every slice a service or a port hands a callback is borrowed **for that
+callback**. A screen that draws it next frame has to own a copy, and
+owning without an allocator means a fixed capacity. `nokre.Str(cap)`
+and `nokre.Rows(T, cap)` are those two shapes, in the same slot as
+`Load`: pure data the framework never reads.
+
+```zig
+const max_invoices = 24; // a ceiling, not a business rule
+
+const InvoiceRow = struct {
+    id: nokre.Str(64) = .{},
+    amount_cents: i64 = 0,
+};
+
+pub const Billing = struct {
+    app: *nokre.App = undefined,
+    phase: nokre.Load = .idle,      // the phase stays beside the list
+    name: nokre.Str(96) = .{},
+    invoices: nokre.Rows(InvoiceRow, max_invoices) = .{},
+};
+
+fn onDashboard(ctx: ?*anyopaque, result: Port.DashboardResult) void {
+    const self: *Billing = @ptrCast(@alignCast(ctx.?));
+    switch (result) {
+        .ok => |dashboard| {
+            self.name.set(dashboard.name);        // copied out of the reply
+            self.invoices.clear();
+            for (dashboard.invoices) |invoice| {
+                const row = self.invoices.push() orelse break;
+                row.id.set(invoice.id);
+                row.amount_cents = invoice.amount_cents;
+            }
+            self.phase = .ready;
+        },
+        .err => {
+            self.invoices.clear();
+            self.phase = .failed;
+        },
+    }
+    self.app.refresh(.{});
+}
+```
+
+**`Str(cap)`** — `set` copies and replaces; `get` hands the bytes back;
+`eql` compares against any slice (two `Str`s are `a.eql(b.get())`);
+`trimmed` drops surrounding ASCII whitespace and `blank` is that trim
+coming up empty. `len` is a public field, so `name.len != 0` is the
+idiom for "there is one". Not a builder: no `append`, no `fmt` — build
+a string in a stack buffer and `set` it once, or use `tree.fmt` for
+strings the tree will own anyway.
+
+A `set` past the ceiling truncates, and **never splits a UTF-8
+sequence**: the cut backs up to the start of the codepoint it landed
+inside, so what comes back is always something you can hand straight to
+`append` again.
+
+**`Rows(T, cap)`** — `items()` to draw, `at(i)` for a screen holding an
+index (`null` past the end, so a stale index is not a crash),
+`itemsMut()` for `std.mem.sort` or an edit in place. Filling is
+`clear()` then either `push()`, which hands back an empty slot to write
+field by field (`null` at the ceiling), or `append(row)` for a row
+already built; `fill(slice)` replaces the whole list at once. `removeAt`
+closes the gap and keeps order, and `full()` says the next push would
+refuse. Both types re-state their ceiling as a declaration
+(`@TypeOf(list).capacity`), for the `meter` max or the copy that names
+it where the constant is not in scope.
+
+**The ceiling is disclosable.** Both types carry `truncated`: on a
+`Str` it means the last `set` stored less than it was given, on a
+`Rows` it means something was offered and did not fit. Each verb that
+installs a whole value answers for that value — `set` and `fill`
+overwrite the flag, `clear` clears it — while `push` and `append` raise
+it on every refusal, so a `clear`-then-fill loop accumulates one honest
+answer. A screen that wants to say "showing the first 24" reads it; one
+that does not, ignores it. What neither type does is truncate in
+silence, which is what every hand-rolled `@min(cap, reply.len)` did.
+
+`Rows` carries no `Load`. The phase is the app's — one request may fill
+two lists, and one list may be filled by two requests — so it stays a
+field beside it, exactly as the example above has it.
+
 ## Static
 
 ### `text`

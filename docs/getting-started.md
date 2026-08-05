@@ -485,13 +485,19 @@ a `box` to group the form, inline `spans`, an obscured `text_input`, a
 `checkbox`, a `button` — every element's full contract is in
 [elements.md](elements.md).
 
+It is also the first place this app has to *keep* something it was
+handed. `on_change` gives the typed value as a borrowed slice, alive
+for the length of the call and no longer, so the passphrase lands in an
+`h.Str(64)` — a fixed-capacity string you own, copied on `set`
+([elements.md](elements.md#holding-what-a-callback-borrowed) is the
+contract, and the reason there is no allocator in sight).
+
 ```zig
 pub const State = struct {
     app: *h.App = undefined,
     signed_in: bool = false,
     remember: bool = true,
-    passphrase: [64]u8 = undefined,
-    passphrase_len: usize = 0,
+    passphrase: h.Str(64) = .{},
     signin_status: []const u8 = "",
     // …the earlier fields stay; later parts add more.
 };
@@ -534,8 +540,7 @@ pub fn buildNotes(ctx: ?*anyopaque, app: *h.App) !void {
 // Typed handlers, bound above — no `?*anyopaque` cast anywhere. A fn
 // nested in State binds the same way (`.bind(State.signIn, state)`).
 pub fn editPassphrase(state: *State, value: []const u8) void {
-    state.passphrase_len = @min(value.len, state.passphrase.len);
-    @memcpy(state.passphrase[0..state.passphrase_len], value[0..state.passphrase_len]);
+    state.passphrase.set(value); // copies; the borrowed slice ends with this call
 }
 
 pub fn setRemember(state: *State, checked: bool) void {
@@ -543,14 +548,14 @@ pub fn setRemember(state: *State, checked: bool) void {
 }
 
 pub fn signIn(state: *State) void {
-    if (!std.mem.eql(u8, state.passphrase[0..state.passphrase_len], "letmein")) {
+    if (!state.passphrase.eql("letmein")) {
         state.signin_status = "Wrong passphrase. (Hint: it's the one on screen.)";
         state.app.refresh(.{});
         return;
     }
     state.signed_in = true;
     state.signin_status = "";
-    state.passphrase_len = 0;
+    state.passphrase = .{}; // an empty Str is its default; nothing to free
     state.app.refresh(.{});
 }
 ```
@@ -740,34 +745,28 @@ button that opens the one modal surface. New declarations:
 const max_notes = 16;
 const max_note_len = 120;
 
-pub const Note = struct {
-    text: [max_note_len]u8 = undefined,
-    len: usize = 0,
+/// A note is its text, and a note list is a bounded list of them. Both
+/// ceilings are the app's — nokre allocates nothing on your behalf.
+pub const Note = h.Str(max_note_len);
 
-    pub fn slice(self: *const Note) []const u8 {
-        return self.text[0..self.len];
-    }
-};
-
-fn addNote(state: *State, text: []const u8) void {
-    if (state.note_count == max_notes) return; // full — the meter says so
-    const note = &state.notes[state.note_count];
-    note.len = @min(text.len, max_note_len);
-    @memcpy(note.text[0..note.len], text[0..note.len]);
-    state.note_count += 1;
+/// False when the list is full. `push` hands back an empty slot to
+/// write into, or `null` at the ceiling — and the list also *remembers*
+/// that it refused, which is the form Part 7 needs.
+fn addNote(state: *State, text: []const u8) bool {
+    const note = state.notes.push() orelse return false;
+    note.set(text);
+    return true;
 }
 ```
 
 and the new `State` fields:
 
 ```zig
-    notes: [max_notes]Note = @splat(.{}),
-    note_count: usize = 0,
+    notes: h.Rows(Note, max_notes) = .{},
     newest_first: bool = true,
     status: []const u8 = "Ready.",
     offline: bool = false,
-    draft: [max_note_len]u8 = undefined,
-    draft_len: usize = 0,
+    draft: Note = .{},
 ```
 
 The signed-in half of `buildNotes`:
@@ -792,26 +791,28 @@ The signed-in half of `buildNotes`:
     });
     try b.styled(state.status, .{ .scale = .small, .ink = .dark });
 
-    if (state.note_count == 0) {
+    if (state.notes.len == 0) {
         try b.text("Nothing here yet. Press “New note” to write the first one.");
     } else {
         const group = try b.tileGroup(.{
             .description = "Tap a note to read, share, or delete it.",
         });
-        for (0..state.note_count) |i| {
-            const index = if (state.newest_first) state.note_count - 1 - i else i;
+        // `items()` is the reading form — the rows actually there, and
+        // never the empty tail of the array behind them.
+        for (0..state.notes.len) |i| {
+            const index = if (state.newest_first) state.notes.len - 1 - i else i;
             // A per-row action carries its row as data on the element —
             // `bindAt` sets it at append, the method receives it at press.
             try group.tile(.{
-                .label = state.notes[index].slice(),
+                .label = state.notes.items()[index].get(),
                 .on_press = .bindAt(openNote, state, index),
             });
         }
     }
 
     try b.divider();
-    const cap = try app.tree.fmt("{d} of {d} notes", .{ state.note_count, max_notes });
-    try b.meter(.{ .label = cap, .value = @intCast(state.note_count), .max = max_notes });
+    const cap = try app.tree.fmt("{d} of {d} notes", .{ state.notes.len, max_notes });
+    try b.meter(.{ .label = cap, .value = @intCast(state.notes.len), .max = max_notes });
 ```
 
 Notice the meter label was formatted with `tree.fmt` — straight into the
@@ -834,7 +835,7 @@ behind inert, Esc/scrim dismissal, focus returned:
 
 ```zig
 pub fn openNewNote(state: *State) void {
-    state.draft_len = 0;
+    state.draft = .{};
     state.app.openSheet(.{ .ctx = state, .call = buildNewNote }) catch return;
 }
 
@@ -856,9 +857,17 @@ fn buildNewNote(ctx: ?*anyopaque, app: *nokre.App) anyerror!void {
 
 pub fn commitDraft(state: *State) void {
     state.app.dismissSheet();
-    if (state.draft_len != 0) {
-        addNote(state, state.draft[0..state.draft_len]);
-        state.status = "Note added.";
+    // `blank` is empty-or-whitespace: a draft of nothing but spaces is
+    // nothing, and a form asking that question is why the verb exists.
+    if (!state.draft.blank()) {
+        // A ceiling reached is something the user is told. Saying
+        // "Note added." over a note that did not fit is the bug the
+        // bounded containers exist to make impossible to write by
+        // accident.
+        state.status = if (addNote(state, state.draft.get()))
+            "Note added."
+        else
+            "No room — this app holds 16 notes.";
     }
     state.app.refresh(.{});
 }
@@ -871,9 +880,9 @@ for the work a closure owes, not for recording it. A controller with
 several sheets names each with `tag` — [elements.md](elements.md),
 "sheet", has the full contract.)
 
-(`editDraft` copies like `editPassphrase`. A `text_area`
-because Enter must insert a newline; submission belongs to the explicit
-button beside it.)
+(`editDraft` is one `state.draft.set(value)`, like `editPassphrase`. A
+`text_area` because Enter must insert a newline; submission belongs to
+the explicit button beside it.)
 
 The tests assert the choreography the framework guarantees — and drive
 an IME through the same pipeline a platform shell would:
@@ -947,13 +956,21 @@ fn onSyncResult(ctx: ?*anyopaque, _: u64, result: h.services.http.Result) void {
             }
             // The body is the notes, one per line. Status codes are
             // data; slices are valid only for this call, so copy.
-            state.note_count = 0;
+            state.notes.clear();
             var lines = std.mem.splitScalar(u8, r.body.view(), '\n');
             while (lines.next()) |line| {
-                if (line.len != 0) addNote(state, line);
+                if (line.len != 0) _ = addNote(state, line);
             }
             state.offline = false;
-            state.status = "Synced.";
+            // Here the per-note answer is the wrong grain — the loop
+            // wants one verdict over the whole reply. `truncated` is
+            // the list's own: raised by every push it had to refuse,
+            // cleared by the `clear` above. Nothing re-derives it from
+            // the line count, and nothing is dropped in silence.
+            state.status = if (state.notes.truncated)
+                "Synced — showing the first 16."
+            else
+                "Synced.";
             state.app.refresh(.{ .route = "notes" });
         },
         .failure => |f| {
@@ -1070,7 +1087,7 @@ pub const Stats = struct {
     /// Messages are values: this fixed buffer is copied at `send`. For
     /// payloads worth moving instead of copying, see h.workers.Bytes
     /// (docs/internals/workers.md).
-    pub const Corpus = struct { text: [max_notes * max_note_len]u8, len: u32 };
+    pub const Corpus = struct { text: [max_notes * (max_note_len + 1)]u8, len: u32 };
     pub const Msg = union(enum) { analyze: Corpus };
     pub const Reply = union(enum) { analyzed: struct { words: u64, longest: u64 } };
 
@@ -1112,8 +1129,8 @@ Spawn lazily, send from an action, and let the reply land in state:
 pub fn countWords(state: *State) void {
     const worker = ensureStats(state) orelse return;
     var corpus: Stats.Corpus = .{ .text = undefined, .len = 0 };
-    for (state.notes[0..state.note_count]) |*note| {
-        const text = note.slice();
+    for (state.notes.items()) |*note| {
+        const text = note.get();
         @memcpy(corpus.text[corpus.len..][0..text.len], text);
         corpus.len += @intCast(text.len);
         corpus.text[corpus.len] = '\n';
@@ -1127,7 +1144,7 @@ pub fn countWords(state: *State) void {
 fn onStatsReply(ctx: ?*anyopaque, reply: Stats.Reply) void {
     const state: *State = @ptrCast(@alignCast(ctx.?));
     switch (reply) {
-        .analyzed => |a| setStatsLine(state, "{d} words across {d} notes; the longest word runs {d} letters.", .{ a.words, state.note_count, a.longest }),
+        .analyzed => |a| setStatsLine(state, "{d} words across {d} notes; the longest word runs {d} letters.", .{ a.words, state.notes.len, a.longest }),
     }
     state.app.refresh(.{ .route = "notes" });
 }
@@ -1198,16 +1215,18 @@ pub fn buildNote(ctx: ?*anyopaque, app: *h.App) !void {
     const state: *State = @ptrCast(@alignCast(ctx.?));
     const arg = app.routeArg(0) orelse return; // arity is declared, so it is there
     const index = std.fmt.parseInt(usize, arg, 10) catch return;
-    if (index >= state.note_count) return;
-    const note = &state.notes[index];
+    // `at` is bounds-checked: a reference can outlive the note it names
+    // (a sync that returned fewer), and this screen simply has nothing
+    // to draw then.
+    const note = state.notes.at(index) orelse return;
     const b = app.root();
     // The framework's Back control shares this heading's line — a pushed
     // screen without a way back cannot exist.
     try b.heading(.h1, "Note");
-    try b.text(note.slice());
+    try b.text(note.get());
     try b.divider();
-    try b.copyable(.{ .label = "Copy this note", .value = note.slice() });
-    try b.qr(.{ .label = "Scan to take it with you", .value = note.slice() });
+    try b.copyable(.{ .label = "Copy this note", .value = note.get() });
+    try b.qr(.{ .label = "Scan to take it with you", .value = note.get() });
     try b.button(.{
         .label = "Delete",
         .form = .{ .secondary = null },
@@ -1226,11 +1245,10 @@ pub fn deleteNote(state: *State) void {
     // The action runs on the note screen, so the entry's argument is
     // still the one to read.
     const arg = state.app.routeArg(0) orelse return;
-    var i = std.fmt.parseInt(usize, arg, 10) catch return;
-    while (i + 1 < state.note_count) : (i += 1) {
-        state.notes[i] = state.notes[i + 1];
-    }
-    state.note_count -= 1;
+    const index = std.fmt.parseInt(usize, arg, 10) catch return;
+    // Closes the gap and keeps order; an index that is already gone is
+    // a no-op, not a panic.
+    state.notes.removeAt(index);
     state.status = "Note deleted.";
     // Popping rebuilds the notes screen from the changed state.
     state.app.navigateBack() catch {};
@@ -1456,10 +1474,10 @@ returned as constant slices, no buffer:
 ```
 
 ```zig
-    if (state.note_count == 0) {
+    if (state.notes.len == 0) {
         try b.text(L.tr(loc(app), .emptyState));
     } else {
-        const desc = try L.fmtIn(&app.tree, loc(app), .noteCount, .{ .count = state.note_count });
+        const desc = try L.fmtIn(&app.tree, loc(app), .noteCount, .{ .count = state.notes.len });
         const group = try b.tileGroup(.{ .description = desc });
         // …the tiles loop, unchanged.
     }
@@ -1470,8 +1488,8 @@ format-into-the-arena contract, catalog-message-shaped: no buffer to
 size, and the placeholder set is still checked at compile time:
 
 ```zig
-    const cap = try L.fmtIn(&app.tree, loc(app), .noteCapacity, .{ .count = state.note_count, .max = max_notes });
-    try b.meter(.{ .label = cap, .value = @intCast(state.note_count), .max = max_notes });
+    const cap = try L.fmtIn(&app.tree, loc(app), .noteCapacity, .{ .count = state.notes.len, .max = max_notes });
+    try b.meter(.{ .label = cap, .value = @intCast(state.notes.len), .max = max_notes });
 ```
 
 Settings grows the picker — options are native language names, so a
@@ -2028,7 +2046,8 @@ a `std.Thread` or a Web Worker, `std.http.Client` or `fetch`.
 ## Part 14 — Where you are now
 
 You have used the core consumer surface: the element vocabulary and
-its commit contracts, the tree's append-time correctness, routes and
+its commit contracts, the tree's append-time correctness, `Str` and
+`Rows` holding what each callback only lent you, routes and
 the framework's navigation chrome, the sheet and notices, six of the
 services (`secure_store`, `package_info`, `clipboard` through
 `copyable`, `deep_link`, `http`, `worker`), ARB catalogs compiled and validated at

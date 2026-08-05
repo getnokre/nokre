@@ -36,7 +36,9 @@ you need them.
 **Reference** — one per surface, semantics first
 
 - [elements.md](elements.md) — the closed element set: each element's
-  meaning, its visual spec, and when to reach for it over its neighbors.
+  meaning, its visual spec, and when to reach for it over its neighbors;
+  and the builder cursor that places them, including the load gate and
+  the two containers a screen keeps a borrowed reply in.
 - [routing.md](routing.md) — screens as named builders and navigation as
   a stack: the motions, the scroll positions an entry remembers, the
   references that name a screen and its arguments, the address bar they
