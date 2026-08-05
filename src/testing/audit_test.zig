@@ -375,7 +375,7 @@ test "audit passes a framework-built sheet and notice" {
     var app = try navApp(400, 600);
     defer app.deinit();
     _ = try app.presentSheet("Options");
-    try app.notify(.{ .title = "Saved", .route = "home", .important = true });
+    app.notify(.{ .title = "Saved", .route = "home", .important = true });
 
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(testing.allocator);
@@ -386,8 +386,8 @@ test "audit passes a framework-built sheet and notice" {
 test "audit passes the framework-built notices pane" {
     var app = try navApp(400, 600);
     defer app.deinit();
-    try app.notify(.{ .title = "Saved", .route = "home" });
-    try app.notify(.{ .title = "Sync failed", .route = "home", .important = true });
+    app.notify(.{ .title = "Saved", .route = "home" });
+    app.notify(.{ .title = "Sync failed", .route = "home", .important = true });
     try app.openNoticesPane();
 
     var violations: std.ArrayList(Violation) = .empty;
@@ -490,7 +490,7 @@ test "audit flags a badge label emptied after construction" {
 test "audit flags a notice title emptied after construction" {
     var app = try navApp(400, 600);
     defer app.deinit();
-    try app.notify(.{ .title = "Saved", .route = "home", .important = true });
+    app.notify(.{ .title = "Saved", .route = "home", .important = true });
     const notice = layout.findNotice(&app.tree).?;
     app.tree.get(notice).?.notice.title = "";
 
@@ -763,7 +763,7 @@ test "a notice routing nowhere is caught before its pane ever opens" {
     // Quiet, so no banner: the route sits in app state with no node to
     // hang a violation on, which is why the gate reads the notices
     // directly.
-    try app.notify(.{ .title = "Sync failed", .route = "nowhere" });
+    app.notify(.{ .title = "Sync failed", .route = "nowhere" });
     diag.quiet = true;
     defer diag.quiet = false;
     try testing.expectError(error.NavigationRefused, audit(&app));

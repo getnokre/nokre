@@ -10,6 +10,10 @@ every `issuing` guard deleted (refresh declines quietly in-build; bare
 transports; consumer client-array collapse examined and correctly
 declined (every slot is a distinct named adapter, not correlation
 plumbing — the doctrine change in PORTING.md is the consumer payoff);
+A9+A11 (revision 12) — `SheetBuilder.tag` + `openSheetTag` (13
+mirror-zeroing onDismiss shims deleted, none did real work) and
+infallible `notify` (bounded inline ring, reserved at init,
+drop-oldest quiet-first; user app's notices.zig wrapper deleted);
 A7 (revision 11) — `L.of(app)` bound bundle, runtime `trAny` table,
 the `date` ARB placeholder (components + `yMd`; month words as
 reserved `monthJan…Dec` catalog keys) and `L.chrome(locale)` derived

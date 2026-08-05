@@ -149,9 +149,9 @@ pub fn audit(app: *App) !void {
         diag.print("navigation refused: \"{s}\" ({s})\n", .{ r.ref(), @tagName(r.reason) });
         return error.NavigationRefused;
     }
-    for (app.notices.items) |n| {
-        if (n.route.len > 0 and app.router.vet(n.route) != null) {
-            diag.print("notice \"{s}\" routes to \"{s}\", which resolves to no screen\n", .{ n.title, n.route });
+    for (app.notices.items) |*n| {
+        if (n.route().len > 0 and app.router.vet(n.route()) != null) {
+            diag.print("notice \"{s}\" routes to \"{s}\", which resolves to no screen\n", .{ n.title(), n.route() });
             return error.NavigationRefused;
         }
     }

@@ -14,7 +14,7 @@ const std = @import("std");
 /// Hand-bumped on every consumer-visible contract change, never by
 /// machinery — the no-CI stance is deliberate
 /// (docs/getting-started.md).
-pub const revision: u32 = 11;
+pub const revision: u32 = 12;
 
 pub const geometry = @import("core/geometry.zig");
 pub const color = @import("core/color.zig");
@@ -151,7 +151,9 @@ pub const Destination = @import("core/nav.zig").Destination;
 pub const Event = event.Event;
 pub const RouteDef = router.RouteDef;
 /// A sheet declared as data: what `App.openSheet` takes, and the
-/// framework re-runs on reload (core/overlays.zig).
+/// framework re-runs on reload. Its `tag` is the consumer's name for
+/// the sheet, answered back by `App.openSheetTag` while it is up
+/// (core/overlays.zig).
 pub const SheetBuilder = app.App.SheetBuilder;
 pub const Gray = color.Gray;
 pub const Scheme = color.Scheme;

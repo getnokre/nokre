@@ -1434,7 +1434,7 @@ fn onNotification(ctx: ?*anyopaque, event: N.Event) void {
         // One came due with the app on screen. No OS banner is drawn for
         // it — what to do is yours: raise an in-app notice, refresh a
         // list, ignore it.
-        .received => |p| state.app.notify(.{ .title = "Updated", .route = p.route }) catch {},
+        .received => |p| state.app.notify(.{ .title = "Updated", .route = p.route }),
         // The push transport minted (or rotated) a token. Ship it to
         // your backend over `http`; nokre speaks to no push service.
         .push_token => |t| postTokenToBackend(state, t),

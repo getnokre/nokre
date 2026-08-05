@@ -223,7 +223,7 @@ fn notifyDone(state: *State, title: []const u8, comptime fmt: []const u8, args: 
         .description = desc,
         .route = "home",
         .icon = .circle_check,
-    }) catch {};
+    });
 }
 
 fn save(state: *State) void {
@@ -343,7 +343,7 @@ fn notifySaved(state: *State) void {
         .description = "This notice stays until dismissed or minimized.",
         .route = "home",
         .icon = .circle_check,
-    }) catch return;
+    });
 }
 
 fn notifySync(state: *State) void {
@@ -354,7 +354,7 @@ fn notifySync(state: *State) void {
         .route = "details",
         .icon = .cloud_off,
         .important = true,
-    }) catch return;
+    });
 }
 
 fn countPrimes(state: *State) void {

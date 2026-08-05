@@ -68,7 +68,8 @@ pub const HttpOutcome = http.Outcome;
 pub const HttpHandler = http.Handler;
 pub const HttpOp = http.Op;
 
-/// One pending notice as the app holds it — title, description, route,
+/// One pending notice as the app holds it — `title()`, `description()`,
+/// `route()` (inline ring-slot storage, read through the accessors),
 /// icon, and whether it is important. Re-exported so a test asserting on
 /// `noticesPending()` reads one import, `Knock`'s rationale for a type
 /// only tests name.
@@ -886,13 +887,13 @@ pub const Harness = struct {
     /// "was it raised", whether it is showing as the banner, listed in
     /// the pane, or waiting quietly behind the indicator.
     pub fn expectNotified(self: *Harness, title: []const u8) !void {
-        for (self.app.notices.items) |n| {
-            if (std.mem.eql(u8, n.title, title)) return;
+        for (self.app.notices.items) |*n| {
+            if (std.mem.eql(u8, n.title(), title)) return;
         }
         diag.print("expected a notice titled \"{s}\", but the pending ones are:\n", .{title});
         if (self.app.notices.items.len == 0) diag.print("  (none)\n", .{});
-        for (self.app.notices.items) |n| {
-            diag.print("  {s} \"{s}\"\n", .{ if (n.important) "important" else "quiet    ", n.title });
+        for (self.app.notices.items) |*n| {
+            diag.print("  {s} \"{s}\"\n", .{ if (n.important) "important" else "quiet    ", n.title() });
         }
         return error.NoticeMismatch;
     }
@@ -907,8 +908,8 @@ pub const Harness = struct {
     /// behind it resolves. Emits a trace step and re-audits, so the
     /// chrome the dismissal reshaped is asserted like any other screen.
     pub fn dismissNotice(self: *Harness, title: []const u8) !void {
-        for (self.app.notices.items, 0..) |n, i| {
-            if (!std.mem.eql(u8, n.title, title)) continue;
+        for (self.app.notices.items, 0..) |*n, i| {
+            if (!std.mem.eql(u8, n.title(), title)) continue;
             self.app.dismissNoticeAt(i);
             return self.afterStep("dismiss notice {s}", .{title});
         }

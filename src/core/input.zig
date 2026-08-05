@@ -440,7 +440,13 @@ fn activateIcon(app: *App, id: NodeId, glyph: element_mod.Glyph) !void {
         .minimize => notices.minimizeNotices(app),
         .open => {
             const idx = notices.noticeIndexOf(app, id) orelse return;
-            const route = app.notices.items[idx].route;
+            // Copied out first: the route now lives in a ring slot,
+            // and a build the navigation runs may raise notices that
+            // shift or evict it mid-read.
+            var route_buf: [notices.max_route_bytes]u8 = undefined;
+            const stored = app.notices.items[idx].route();
+            @memcpy(route_buf[0..stored.len], stored);
+            const route = route_buf[0..stored.len];
             // Deep-link: minimize (the notice stays pending), then go.
             notices.minimizeNotices(app);
             try app.navigate(route);

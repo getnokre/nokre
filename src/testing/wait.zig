@@ -99,7 +99,7 @@ pub fn writeScreen(gpa: std.mem.Allocator, out: *std.ArrayList(u8), app: *App) !
         };
         try out.print(gpa, "  {s} \"{s}\"{s}\n", .{ @tagName(el.role()), el.label(), state });
     }
-    for (app.notices.items) |n| try out.print(gpa, "  notice \"{s}\"\n", .{n.title});
+    for (app.notices.items) |*n| try out.print(gpa, "  notice \"{s}\"\n", .{n.title()});
     try trace.dump(gpa, out, app);
 }
 
@@ -189,7 +189,7 @@ test "the failure dump names the route, element states, notices, and the laid-ou
         try app.tree.append(row, .{ .button = .{ .label = label } });
     }
     try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Submit", .disabled = true } });
-    try app.notify(.{ .title = "Sync failed", .important = true });
+    app.notify(.{ .title = "Sync failed", .important = true });
 
     var out: std.ArrayList(u8) = .empty;
     defer out.deinit(testing.allocator);

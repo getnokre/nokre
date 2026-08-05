@@ -300,28 +300,28 @@ test "e2e: pending notices are assertable where the snapshot cannot see them" {
 
     // Quiet: nothing but the indicator appears, so the only trace on
     // screen is a button named for the *chrome*, not for the notice.
-    try h.app.notify(.{ .title = "Draft saved", .description = "Kept locally." });
+    h.app.notify(.{ .title = "Draft saved", .description = "Kept locally." });
     try h.expectNotified("Draft saved");
     try h.expectAbsent("Draft saved"); // …and no element says so
     _ = try h.getByLabel("Show notices");
 
     // Important notices go in front of quiet ones, whatever order they
     // were raised in, and the banner is always the front one.
-    try h.app.notify(.{ .title = "Sync failed", .route = "home", .important = true });
+    h.app.notify(.{ .title = "Sync failed", .route = "home", .important = true });
     const pending = h.noticesPending();
     try testing.expectEqual(@as(usize, 2), pending.len);
-    try testing.expectEqualStrings("Sync failed", pending[0].title);
+    try testing.expectEqualStrings("Sync failed", pending[0].title());
     try testing.expect(pending[0].important);
-    try testing.expectEqualStrings("home", pending[0].route);
-    try testing.expectEqualStrings("Draft saved", pending[1].title);
+    try testing.expectEqualStrings("home", pending[0].route());
+    try testing.expectEqualStrings("Draft saved", pending[1].title());
     try testing.expect(!pending[1].important);
-    try testing.expectEqualStrings("Kept locally.", pending[1].description);
+    try testing.expectEqualStrings("Kept locally.", pending[1].description());
 
     // A duplicate title is dropped, and leaves no mark anywhere else:
     // the second call is silent, so the count is the only witness.
-    try h.app.notify(.{ .title = "Sync failed", .description = "…again", .important = true });
+    h.app.notify(.{ .title = "Sync failed", .description = "…again", .important = true });
     try testing.expectEqual(@as(usize, 2), h.noticesPending().len);
-    try testing.expectEqualStrings("", h.noticesPending()[0].description);
+    try testing.expectEqualStrings("", h.noticesPending()[0].description());
 
     // Dismissing by title, app-side: the front one goes and the quiet
     // one behind it does not inherit the banner (notices.zig).
@@ -340,7 +340,7 @@ test "e2e: the notice verbs fail loudly when the title is not pending" {
     var ctx: TodoCtx = .{};
     var h = try Harness.init(testing.allocator, .{ .w = 480, .h = 640 }, .{ .ctx = &ctx, .build = buildTodo });
     defer h.deinit();
-    try h.app.notify(.{ .title = "Draft saved" });
+    h.app.notify(.{ .title = "Draft saved" });
 
     diag.quiet = true;
     defer diag.quiet = false;

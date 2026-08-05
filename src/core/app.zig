@@ -165,6 +165,9 @@ pub const App = struct {
     nav_items: std.ArrayList(nav_mod.RosterItem) = .empty,
     /// Every pending notice: important ones in front, arrival order
     /// within each group; the front one is the banner (see `notify`).
+    /// A bounded ring — all `notices_mod.max_pending` slots reserved at
+    /// `init`, which is what makes `notify` infallible; past the bound
+    /// it evicts drop-oldest.
     notices: std.ArrayList(notices_mod.OwnedNotice) = .empty,
     /// How the pending notices surface; `.none` iff there are none.
     notice_state: NoticeState = .none,
@@ -259,6 +262,10 @@ pub const App = struct {
     pub const setNav = nav_mod.setNav;
     pub const clearNav = nav_mod.clearNav;
     pub const openSheet = overlays.openSheet;
+    /// Which declared sheet is up (`SheetBuilder.tag`), or null — the
+    /// framework's answer to the question every controller used to
+    /// mirror in an enum beside it (overlays.zig).
+    pub const openSheetTag = overlays.openSheetTag;
     pub const presentSheet = overlays.presentSheet;
     pub const dismissSheet = overlays.dismissSheet;
     pub const notify = notices_mod.notify;
@@ -293,6 +300,11 @@ pub const App = struct {
             .scheme = options.scheme,
         };
         errdefer self.runtime.destroy();
+        // The notice ring, reserved whole up front: `notify` returns
+        // void because this line already paid for every slot it could
+        // ever need (notices.zig, `max_pending`).
+        try self.notices.ensureTotalCapacity(gpa, notices_mod.max_pending);
+        errdefer self.notices.deinit(gpa);
         // Through the one door, so a boot locale is vetted exactly as a
         // chosen one: every title must answer it, or `init` fails here
         // instead of a screen booting half-said. Before the services
@@ -308,7 +320,6 @@ pub const App = struct {
         // their parked state points into the runtime's tickets.
         self.runtime.destroy();
         self.services.deinit();
-        for (self.notices.items) |n| n.deinit(self.gpa);
         self.notices.deinit(self.gpa);
         self.nav_items.deinit(self.gpa);
         self.router.deinit(self.gpa);

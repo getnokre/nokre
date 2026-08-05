@@ -1288,25 +1288,30 @@ framework calls to build the sheet, and calls again whenever it must be
 built again — never appended directly to build content:
 
 ```zig
-fn buildFilter(ctx: ?*anyopaque, app: *nokre.App) anyerror!void {
-    const c: *Filters = @ptrCast(@alignCast(ctx.?));
-    if (!c.filtering) return; // declining is the builder's to do
-    const sheet = app.at(try app.presentSheet("Filter results"));
-    try sheet.toggle(.{ .label = "Only unread" });
-}
+const Dialog = enum(u32) { filter = 1, saved_views }; // this controller's sheets, named
 
-fn onFilterDismissed(ctx: ?*anyopaque) void {
+fn buildDialog(ctx: ?*anyopaque, app: *nokre.App) anyerror!void {
     const c: *Filters = @ptrCast(@alignCast(ctx.?));
-    c.filtering = false;
+    switch (@as(Dialog, @enumFromInt(app.openSheetTag() orelse return))) {
+        .filter => {
+            const sheet = app.at(try app.presentSheet("Filter results"));
+            try sheet.toggle(.{ .label = "Only unread" });
+        },
+        .saved_views => try c.buildSavedViews(app),
+    }
 }
 
 // at the point the user asks for it:
-c.filtering = true;
-try app.openSheet(.{ .ctx = c, .call = buildFilter, .on_dismiss = onFilterDismissed });
+try app.openSheet(.{ .ctx = c, .tag = @intFromEnum(Dialog.filter), .call = buildDialog });
 ```
 
 `openSheet` runs the builder at once and keeps it — as data, for as
-long as the sheet is up. That one declaration is the whole lifecycle:
+long as the sheet is up. The `tag` is the consumer's name for the sheet
+(0 = unnamed, fine for a controller with only one), and
+`App.openSheetTag()` answers it — the declared tag while the sheet is
+up, null once it is not — so a controller never mirrors "which of my
+sheets is open" in its own state: the framework already knows, through
+every rebuild and reload. That one declaration is the whole lifecycle:
 
 - **State changed under the open sheet?** Call `openSheet` again with
   the same builder — the sheet is rebuilt in place, never stacked. The
@@ -1319,10 +1324,13 @@ long as the sheet is up. That one declaration is the whole lifecycle:
   navigation is a different screen, and drops the sheet.
 - **The sheet closed?** However it happened — Esc, the close control, a
   tap outside, `App.dismissSheet`, a navigation — the builder is
-  dropped and its optional `on_dismiss` told, so the state the builder
-  reads can record a closure it did not initiate. A builder that
-  presents nothing has *declined* — its subject vanished — and is
-  dropped quietly, with no `on_dismiss`: the state already knows.
+  dropped (so `openSheetTag()` already answers null) and its optional
+  `on_dismiss` told. That callback is for *work* a closure owes — free
+  a held row, cancel a request the dialog was waiting on — not for
+  recording that the sheet closed, which is now the framework's answer.
+  A builder that presents nothing has *declined* — its subject vanished
+  — and is dropped quietly, with no `on_dismiss`: the state already
+  knows.
 
 Inside the builder, `presentSheet` is the verb that makes the node: it
 returns the sheet to fill with content.
@@ -1347,7 +1355,7 @@ nokre has no animation to begin with).
 A persistent notice, raised through the app:
 
 ```zig
-try app.notify(.{
+app.notify(.{
     .title = "Sync failed",
     .description = "Changes are kept locally.",
     .route = "sync",
@@ -1355,6 +1363,14 @@ try app.notify(.{
     .important = true,
 });
 ```
+
+`notify` cannot fail: the pending list is a bounded ring whose slots
+`App.init` reserves whole, so raising a notice is a copy, not an
+allocation — there was never anything an app could do with the old
+error but swallow it. The bound is generous (32 pending, and titles are
+identity, so that is 32 *distinct* notices); past it the ring evicts
+drop-oldest, quiet notices first — the banner's important front is the
+last thing to go.
 
 A notice is a title, an optional description, the route its open
 control deep-links to, an optional leading icon (decorative — the title

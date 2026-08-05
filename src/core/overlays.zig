@@ -30,6 +30,13 @@ const NodeId = tree_mod.NodeId;
 /// builder it was not just handed.
 pub const SheetBuilder = struct {
     ctx: ?*anyopaque = null,
+    /// The consumer's name for this sheet; `App.openSheetTag()` answers
+    /// it while the sheet is up. 0 = unnamed. The framework never reads
+    /// it — it exists so a controller with several sheets can ask
+    /// *which* is open instead of mirroring the answer in its own
+    /// state, the shadow the survey found beside every builder
+    /// (`@intFromEnum` a small enum in, `@enumFromInt` it back out).
+    tag: u32 = 0,
     /// Presents the sheet (`App.presentSheet`) and fills it from state.
     /// It always runs against a tree with no sheet in it — the
     /// framework takes an open one down first, so building is building
@@ -64,6 +71,19 @@ pub fn openSheet(app: *App, builder: SheetBuilder) !void {
     }
     try builder.call(builder.ctx, app);
     if (layout.findSheet(&app.tree) == null) app.sheet_builder = null;
+}
+
+/// The open sheet's `SheetBuilder.tag` — null when no declared sheet
+/// is up, the declared tag (0 for an unnamed one) while one is. The
+/// kept builder carries it, so it survives everything the sheet itself
+/// survives: `refresh`'s re-present, `reload`'s carry, `openSheet`'s
+/// rebuild-in-place. It answers *from the builder's own installation
+/// on*, so a builder can read its own tag mid-build. A bare
+/// `presentSheet` with no declared builder answers null — that sheet
+/// has no consumer name, and dies on reload besides.
+pub fn openSheetTag(app: *const App) ?u32 {
+    const builder = app.sheet_builder orelse return null;
+    return builder.tag;
 }
 
 /// Re-runs the kept builder — the router's arm of `openSheet`'s

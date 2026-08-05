@@ -12,6 +12,7 @@ const input_mod = @import("input.zig");
 const layout = @import("layout.zig");
 const wrap = @import("wrap.zig");
 const nav_mod = @import("nav.zig");
+const notices_mod = @import("notices.zig");
 const overflow = @import("overflow.zig");
 const router_mod = @import("router.zig");
 const text = @import("text.zig");
@@ -1041,7 +1042,7 @@ test "setChrome re-says the framework's own words, in place" {
     try app.setNav(&offroster_nav);
     try app.navigate("home");
     try app.navigate("terms"); // depth 2, so a back control exists
-    try app.notify(.{ .title = "Kaydedildi", .route = "home", .important = true });
+    app.notify(.{ .title = "Kaydedildi", .route = "home", .important = true });
 
     try testing.expectEqualStrings("Back", app.tree.getConst(findBack(&app).?).?.label());
     try testing.expectEqualStrings("Section", app.tree.getConst(navChip(&app).?).?.label());
@@ -1688,7 +1689,7 @@ test "rtl: the sheet close control pins to the left corner" {
 test "rtl: a lone minimized-notices indicator centers, having no edge to swap" {
     var app = try test_app.mirrored(400, 600);
     defer app.deinit();
-    try app.notify(.{ .title = "Saved", .route = "home" });
+    app.notify(.{ .title = "Saved", .route = "home" });
     app.minimizeNotices();
     app.performLayout();
     const ind = layout.findIndicator(&app.tree).?;
@@ -1704,7 +1705,7 @@ test "rtl: a lone minimized-notices indicator centers, having no edge to swap" {
 
     var ltr = try test_app.init(400, 600);
     defer ltr.deinit();
-    try ltr.notify(.{ .title = "Saved", .route = "home" });
+    ltr.notify(.{ .title = "Saved", .route = "home" });
     ltr.minimizeNotices();
     ltr.performLayout();
     try testing.expectEqual(
@@ -2226,6 +2227,68 @@ test "a builder that fails strands no half-built sheet" {
     try testing.expect(app.focused.?.on(behind));
 }
 
+test "openSheetTag answers the declared tag while the sheet is up, null when closed" {
+    var app = try test_app.init(400, 600);
+    defer app.deinit();
+    try testing.expectEqual(@as(?u32, null), app.openSheetTag());
+
+    var host: SheetHost = .{ .sheet = .confirm };
+    var b = host.builder();
+    b.tag = 7;
+    try app.openSheet(b);
+    try testing.expectEqual(@as(?u32, 7), app.openSheetTag());
+
+    // Rebuild-in-place keeps the identity with the builder it rides on.
+    try app.openSheet(b);
+    try testing.expectEqual(@as(?u32, 7), app.openSheetTag());
+
+    app.dismissSheet();
+    try testing.expectEqual(@as(?u32, null), app.openSheetTag());
+
+    // A builder that declines leaves no sheet and so no name for one.
+    host.sheet = .none;
+    try app.openSheet(b);
+    try testing.expectEqual(@as(?u32, null), app.openSheetTag());
+
+    // A bare `presentSheet` never declared a builder: that sheet has no
+    // consumer name (and dies on reload besides).
+    _ = try app.presentSheet("Options");
+    try testing.expectEqual(@as(?u32, null), app.openSheetTag());
+}
+
+/// The dismissal-ordering fixture: records what `openSheetTag` says
+/// *inside* `on_dismiss`, where consumer state code runs.
+const DismissOrderHost = struct {
+    app: *App,
+    told: bool = false,
+    tag_inside: ?u32 = 99, // overwritten; 99 = "handler never ran"
+
+    fn build(_: ?*anyopaque, app: *App) anyerror!void {
+        _ = try app.presentSheet("Confirm");
+    }
+
+    fn onDismiss(ctx: ?*anyopaque) void {
+        const self: *DismissOrderHost = @ptrCast(@alignCast(ctx.?));
+        self.told = true;
+        self.tag_inside = self.app.openSheetTag();
+    }
+};
+
+test "on_dismiss is told after the tag is gone: the callback reads a closed sheet" {
+    var app = try test_app.init(400, 600);
+    defer app.deinit();
+    var host: DismissOrderHost = .{ .app = &app };
+    try app.openSheet(.{ .ctx = &host, .tag = 9, .call = DismissOrderHost.build, .on_dismiss = DismissOrderHost.onDismiss });
+    try testing.expectEqual(@as(?u32, 9), app.openSheetTag());
+
+    // The builder is let go before its `on_dismiss` is told, so state
+    // code in the callback sees "closed" — never a ghost of the sheet
+    // it is recording the closure of.
+    app.dismissSheet();
+    try testing.expect(host.told);
+    try testing.expectEqual(@as(?u32, null), host.tag_inside);
+}
+
 // ---- refresh: the composed polite-update verb (docs/routing.md) ----
 
 /// A controller in miniature for `App.refresh`: state the builders
@@ -2332,6 +2395,30 @@ test "refresh re-runs the open sheet's builder instead of reloading under it" {
     try testing.expectEqual(@as(u32, 3), host.sheet_builds);
 }
 
+test "the sheet's tag survives refresh's re-present and reload's carry" {
+    var host: RefreshHost = .{};
+    var app = try host.fixture();
+    defer app.deinit();
+    try app.navigate("notes");
+    try app.openSheet(.{ .ctx = &host, .tag = 3, .call = RefreshHost.buildSheet });
+    try testing.expectEqual(@as(?u32, 3), app.openSheetTag());
+
+    // The kept builder carries the tag, so both promises that keep the
+    // sheet alive keep its name: refresh's re-present…
+    app.refresh(.{});
+    try testing.expectEqual(@as(u32, 2), host.sheet_builds);
+    try testing.expectEqual(@as(?u32, 3), app.openSheetTag());
+
+    // …and the reload that rebuilds the screen under it.
+    try app.reload();
+    try testing.expectEqual(@as(u32, 3), host.sheet_builds);
+    try testing.expectEqual(@as(?u32, 3), app.openSheetTag());
+
+    // Navigation is a closure, and takes the name with the sheet.
+    try app.navigate("docs");
+    try testing.expectEqual(@as(?u32, null), app.openSheetTag());
+}
+
 test "refresh from inside a build declines quietly, with nothing on the record" {
     var host: RefreshHost = .{ .refresh_in_build = true };
     var app = try host.fixture();
@@ -2371,9 +2458,9 @@ test "notify shows the front notice as a banner and dedups by title" {
     var app = try test_app.init(400, 600);
     defer app.deinit();
 
-    try app.notify(.{ .title = "Saved", .route = "home", .important = true });
-    try app.notify(.{ .title = "Sync failed", .description = "Changes kept locally.", .route = "details", .important = true });
-    try app.notify(.{ .title = "Saved", .route = "home", .important = true }); // duplicate: dropped
+    app.notify(.{ .title = "Saved", .route = "home", .important = true });
+    app.notify(.{ .title = "Sync failed", .description = "Changes kept locally.", .route = "details", .important = true });
+    app.notify(.{ .title = "Saved", .route = "home", .important = true }); // duplicate: dropped
     try testing.expectEqual(@as(usize, 2), app.notices.items.len);
     try testing.expectEqual(App.NoticeState.banner, app.notice_state);
 
@@ -2389,6 +2476,84 @@ test "notify shows the front notice as a banner and dedups by title" {
     try testing.expectEqual(App.NoticeState.none, app.notice_state);
 }
 
+test "notify is infallible: void-typed, and no allocator is touched after init" {
+    // The signature is the contract: there was never anything a
+    // consumer could do with the old error, so there is no error.
+    comptime std.debug.assert(@typeInfo(@TypeOf(notices_mod.notify)).@"fn".return_type.? == void);
+
+    var app = try test_app.init(400, 600);
+    defer app.deinit();
+    // Every slot was reserved at init; from here a notice is a copy
+    // into paid-for memory — proven by handing the app an allocator
+    // that refuses everything. (The chrome resync draws on the tree's
+    // own allocator, captured at its init, so the banner still stands.)
+    const real_gpa = app.gpa;
+    defer app.gpa = real_gpa;
+    app.gpa = testing.failing_allocator;
+    app.notify(.{ .title = "Saved", .description = "Synced.", .route = "home", .important = true });
+    try testing.expectEqual(@as(usize, 1), app.notices.items.len);
+    try testing.expectEqualStrings("Saved", app.notices.items[0].title());
+    try testing.expect(layout.findNotice(&app.tree) != null);
+}
+
+test "a full ring evicts drop-oldest, quiet before important" {
+    var app = try test_app.init(400, 600);
+    defer app.deinit();
+    app.notify(.{ .title = "Important 0", .important = true });
+    var buf: [32]u8 = undefined;
+    var i: usize = 0;
+    while (i < notices_mod.max_pending - 1) : (i += 1) {
+        app.notify(.{ .title = std.fmt.bufPrint(&buf, "Quiet {d}", .{i}) catch unreachable });
+    }
+    try testing.expectEqual(notices_mod.max_pending, app.notices.items.len);
+
+    // One past the bound: the longest-waiting *quiet* notice goes —
+    // never the banner's important front, which outranks it.
+    app.notify(.{ .title = "Quiet last" });
+    try testing.expectEqual(notices_mod.max_pending, app.notices.items.len);
+    try testing.expectEqualStrings("Important 0", app.notices.items[0].title());
+    try testing.expectEqualStrings("Quiet 1", app.notices.items[1].title());
+    try testing.expectEqualStrings("Quiet last", app.notices.items[app.notices.items.len - 1].title());
+}
+
+test "a ring of nothing but important notices evicts its own front" {
+    var app = try test_app.init(400, 600);
+    defer app.deinit();
+    var buf: [32]u8 = undefined;
+    var i: usize = 0;
+    while (i < notices_mod.max_pending) : (i += 1) {
+        app.notify(.{ .title = std.fmt.bufPrint(&buf, "Important {d}", .{i}) catch unreachable, .important = true });
+    }
+    try testing.expectEqualStrings("Important 0", app.notices.items[0].title());
+
+    // With no quiet notice to give up, the oldest important goes; the
+    // newcomer joins the back of the group like any other arrival.
+    app.notify(.{ .title = "Important new", .important = true });
+    try testing.expectEqual(notices_mod.max_pending, app.notices.items.len);
+    try testing.expectEqualStrings("Important 1", app.notices.items[0].title());
+    try testing.expectEqualStrings("Important new", app.notices.items[app.notices.items.len - 1].title());
+    try testing.expectEqual(App.NoticeState.banner, app.notice_state);
+}
+
+test "an overlong title is clipped at a codepoint boundary and dedups on the stored form" {
+    var app = try test_app.init(400, 600);
+    defer app.deinit();
+    // 127 ASCII bytes then a two-byte codepoint straddling the cap:
+    // storing 128 bytes would keep half of "é", so the clip backs up.
+    var long: [notices_mod.max_title_bytes + 1]u8 = undefined;
+    @memset(long[0 .. notices_mod.max_title_bytes - 1], 'a');
+    long[notices_mod.max_title_bytes - 1] = 0xC3; // "é",
+    long[notices_mod.max_title_bytes] = 0xA9; // split by the cap
+    app.notify(.{ .title = &long });
+    try testing.expectEqual(@as(usize, 1), app.notices.items.len);
+    try testing.expectEqual(notices_mod.max_title_bytes - 1, app.notices.items[0].title().len);
+
+    // The stored form is the identity: raising the clipped twin —
+    // byte-identical once stored — is the duplicate dedup drops.
+    app.notify(.{ .title = long[0 .. notices_mod.max_title_bytes - 1] });
+    try testing.expectEqual(@as(usize, 1), app.notices.items.len);
+}
+
 test "the banner reserves its band at the viewport bottom" {
     var app = try test_app.init(400, 600);
     defer app.deinit();
@@ -2397,7 +2562,7 @@ test "the banner reserves its band at the viewport bottom" {
     app.performLayout();
     const before = app.tree.rectOf(btn).y;
 
-    try app.notify(.{ .title = "Saved", .route = "home", .important = true });
+    app.notify(.{ .title = "Saved", .route = "home", .important = true });
     app.performLayout();
     const banner = app.tree.rectOf(layout.findNotice(&app.tree).?);
     try testing.expect(banner.h > 0);
@@ -2412,7 +2577,7 @@ test "notice never steals focus and dismissal keeps focus sane" {
     const btn = try app.tree.appendId(app.tree.rootId(), .{ .button = .{ .label = "Go" } });
     app.focused = .of(btn);
 
-    try app.notify(.{ .title = "Saved", .route = "home", .important = true });
+    app.notify(.{ .title = "Saved", .route = "home", .important = true });
     try testing.expect(app.focused.?.on(btn));
 
     // Focus a banner control, then dismiss: focus must not dangle.
@@ -2425,8 +2590,8 @@ test "notice never steals focus and dismissal keeps focus sane" {
 test "notices expand to the pane, minimize to the indicator, and reopen" {
     var app = try test_app.init(400, 600);
     defer app.deinit();
-    try app.notify(.{ .title = "Saved", .route = "home", .important = true });
-    try app.notify(.{ .title = "Sync failed", .route = "details", .important = true });
+    app.notify(.{ .title = "Saved", .route = "home", .important = true });
+    app.notify(.{ .title = "Sync failed", .route = "details", .important = true });
 
     // With several pending, the banner leads with the expand control.
     const banner = layout.findNotice(&app.tree).?;
@@ -2465,7 +2630,7 @@ test "the notices pane keeps its rows reachable on a landscape viewport" {
     var app = try test_app.init(844, 390);
     defer app.deinit();
     for ([_][]const u8{ "Settings saved", "Sync failed", "Primes counted", "Payload hashed", "Export ready" }) |t| {
-        try app.notify(.{ .title = t, .description = "This notice stays until dismissed or minimized.", .route = "home" });
+        app.notify(.{ .title = t, .description = "This notice stays until dismissed or minimized.", .route = "home" });
     }
     try app.openNoticesPane();
     app.performLayout();
@@ -2503,7 +2668,7 @@ test "the notices pane keeps its rows reachable on a landscape viewport" {
 test "a notices pane that fits takes only the height it needs" {
     var app = try test_app.init(400, 800);
     defer app.deinit();
-    try app.notify(.{ .title = "Saved", .route = "home" });
+    app.notify(.{ .title = "Saved", .route = "home" });
     try app.openNoticesPane();
     app.performLayout();
 
@@ -2520,8 +2685,8 @@ test "a notices pane that fits takes only the height it needs" {
 test "the pane's dismiss controls remove one notice or all" {
     var app = try test_app.init(400, 600);
     defer app.deinit();
-    try app.notify(.{ .title = "Saved", .route = "home" });
-    try app.notify(.{ .title = "Sync failed", .route = "details" });
+    app.notify(.{ .title = "Saved", .route = "home" });
+    app.notify(.{ .title = "Sync failed", .route = "details" });
     try app.openNoticesPane();
 
     const pane = layout.findNoticesPane(&app.tree).?;
@@ -2536,7 +2701,7 @@ test "the pane's dismiss controls remove one notice or all" {
     }
     try app.activate(dismiss.?);
     try testing.expectEqual(@as(usize, 1), app.notices.items.len);
-    try testing.expectEqualStrings("Sync failed", app.notices.items[0].title);
+    try testing.expectEqualStrings("Sync failed", app.notices.items[0].title());
     try testing.expect(layout.findNoticesPane(&app.tree) != null);
 
     // The header's dismiss-all control empties the rest.
@@ -2556,11 +2721,11 @@ test "the pane's dismiss controls remove one notice or all" {
 test "a new important notice re-surfaces minimized ones as the banner" {
     var app = try test_app.init(400, 600);
     defer app.deinit();
-    try app.notify(.{ .title = "Saved", .route = "home", .important = true });
+    app.notify(.{ .title = "Saved", .route = "home", .important = true });
     app.minimizeNotices();
     try testing.expect(layout.findIndicator(&app.tree) != null);
 
-    try app.notify(.{ .title = "Sync failed", .route = "details", .important = true });
+    app.notify(.{ .title = "Sync failed", .route = "details", .important = true });
     try testing.expectEqual(App.NoticeState.banner, app.notice_state);
     try testing.expect(layout.findNotice(&app.tree) != null);
     try testing.expect(layout.findIndicator(&app.tree) == null);
@@ -2569,7 +2734,7 @@ test "a new important notice re-surfaces minimized ones as the banner" {
 test "a quiet notice lands behind the indicator without a banner" {
     var app = try test_app.init(400, 600);
     defer app.deinit();
-    try app.notify(.{ .title = "Export ready", .route = "exports" });
+    app.notify(.{ .title = "Export ready", .route = "exports" });
     try testing.expectEqual(App.NoticeState.minimized, app.notice_state);
     try testing.expect(layout.findNotice(&app.tree) == null);
     try testing.expect(layout.findIndicator(&app.tree) != null);
@@ -2577,7 +2742,7 @@ test "a quiet notice lands behind the indicator without a banner" {
     // A second quiet one accumulates; a banner already up stays on its
     // own notice; a pane already open lists the newcomer — no state
     // changes hands either way.
-    try app.notify(.{ .title = "Backup done", .route = "home" });
+    app.notify(.{ .title = "Backup done", .route = "home" });
     try testing.expectEqual(App.NoticeState.minimized, app.notice_state);
     try testing.expectEqual(@as(usize, 2), app.notices.items.len);
 }
@@ -2585,12 +2750,12 @@ test "a quiet notice lands behind the indicator without a banner" {
 test "important notices stand in front of quiet ones" {
     var app = try test_app.init(400, 600);
     defer app.deinit();
-    try app.notify(.{ .title = "Export ready", .route = "exports" });
-    try app.notify(.{ .title = "Sync failed", .route = "details", .important = true });
+    app.notify(.{ .title = "Export ready", .route = "exports" });
+    app.notify(.{ .title = "Sync failed", .route = "details", .important = true });
 
     // The important arrival claims the banner even though it came last.
     try testing.expectEqual(App.NoticeState.banner, app.notice_state);
-    try testing.expectEqualStrings("Sync failed", app.notices.items[0].title);
+    try testing.expectEqualStrings("Sync failed", app.notices.items[0].title());
     const banner = layout.findNotice(&app.tree).?;
     try testing.expectEqualStrings("Sync failed", app.tree.getConst(banner).?.notice.title);
 }
@@ -2598,8 +2763,8 @@ test "important notices stand in front of quiet ones" {
 test "dismissing the last important collapses the banner to the indicator" {
     var app = try test_app.init(400, 600);
     defer app.deinit();
-    try app.notify(.{ .title = "Export ready", .route = "exports" });
-    try app.notify(.{ .title = "Sync failed", .route = "details", .important = true });
+    app.notify(.{ .title = "Export ready", .route = "exports" });
+    app.notify(.{ .title = "Sync failed", .route = "details", .important = true });
 
     // Quiet notices never claim the banner — not even by succession.
     app.dismissNotice();
@@ -2612,8 +2777,8 @@ test "dismissing the last important collapses the banner to the indicator" {
 test "the pane groups important and quiet notices under labels" {
     var app = try test_app.init(400, 600);
     defer app.deinit();
-    try app.notify(.{ .title = "Export ready", .route = "exports" });
-    try app.notify(.{ .title = "Sync failed", .route = "details", .important = true });
+    app.notify(.{ .title = "Export ready", .route = "exports" });
+    app.notify(.{ .title = "Sync failed", .route = "details", .important = true });
     try app.openNoticesPane();
 
     // Important leads, and each group takes its label.
@@ -2637,12 +2802,12 @@ test "the pane groups important and quiet notices under labels" {
 test "a notice's icon narrows the words' column by its square and gap" {
     var app = try test_app.init(400, 600);
     defer app.deinit();
-    try app.notify(.{ .title = "Saved", .route = "home", .important = true });
+    app.notify(.{ .title = "Saved", .route = "home", .important = true });
     app.performLayout();
     const bare = layout.noticeTextRegion(&app.tree, layout.findNotice(&app.tree).?, false);
 
     app.dismissAllNotices();
-    try app.notify(.{ .title = "Saved", .route = "home", .icon = .circle_check, .important = true });
+    app.notify(.{ .title = "Saved", .route = "home", .icon = .circle_check, .important = true });
     app.performLayout();
     const marked = layout.noticeTextRegion(&app.tree, layout.findNotice(&app.tree).?, false);
 
@@ -2654,7 +2819,7 @@ test "a notice's icon narrows the words' column by its square and gap" {
 test "a sheet suppresses notice chrome to the indicator until dismissed" {
     var app = try test_app.init(400, 600);
     defer app.deinit();
-    try app.notify(.{ .title = "Saved", .route = "home", .important = true });
+    app.notify(.{ .title = "Saved", .route = "home", .important = true });
 
     _ = try app.presentSheet("Options");
     try testing.expect(layout.findNotice(&app.tree) == null);
@@ -2681,7 +2846,7 @@ test "the banner hides the nav from pointer and keyboard alike" {
         .{ .route = "away", .icon = .circle },
     });
     try app.navigate("home");
-    try app.notify(.{ .title = "Saved", .route = "home", .important = true });
+    app.notify(.{ .title = "Saved", .route = "home", .important = true });
     app.performLayout();
 
     const nav = layout.findNav(&app.tree).?;
@@ -3374,7 +3539,7 @@ test "chrome keeps its nodes across the reclaim, strings and all" {
     defer app.deinit();
     try app.setNav(&crowded_nav);
     try app.navigate("library");
-    try app.notify(.{ .title = "Update ready", .description = "Restart to apply", .route = "settings" });
+    app.notify(.{ .title = "Update ready", .description = "Restart to apply", .route = "settings" });
     app.minimizeNotices();
 
     const chip = navChip(&app).?;

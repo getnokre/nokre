@@ -864,10 +864,11 @@ pub fn commitDraft(state: *State) void {
 }
 ```
 
-(This app never needs to know the sheet closed under it, so it declares
-no `on_dismiss`; an app whose state records "a sheet is open" gives the
-builder one, and the framework tells it on Esc, the scrim, and every
-other closure the consumer did not make — [elements.md](elements.md),
+(This app has one sheet and no closure work to do, so it declares
+neither a `tag` nor an `on_dismiss`: whether a sheet is up is already
+the framework's answer — `app.openSheetTag()` — and `on_dismiss` exists
+for the work a closure owes, not for recording it. A controller with
+several sheets names each with `tag` — [elements.md](elements.md),
 "sheet", has the full contract.)
 
 (`editDraft` copies like `editPassphrase`. A `text_area`
@@ -966,7 +967,7 @@ fn onSyncResult(ctx: ?*anyopaque, _: u64, result: h.services.http.Result) void {
                 .description = "Your notes are unchanged on this device.",
                 .route = "notes",
                 .important = true,
-            }) catch {};
+            });
             state.app.refresh(.{ .route = "notes" });
         },
     }

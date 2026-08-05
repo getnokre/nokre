@@ -712,7 +712,7 @@ test "the notices indicator stands in the nav's row, not beside it" {
         .{ .route = "settings", .icon = .settings },
     });
     try app.navigate("library");
-    try app.notify(.{ .title = "Saved", .route = "library" });
+    app.notify(.{ .title = "Saved", .route = "library" });
     app.minimizeNotices();
 
     const bar = try renderChrome(&app);
@@ -732,7 +732,7 @@ test "the notices indicator stands in the nav's row, not beside it" {
     // asked once and answered for both editions.
     var bare_app = try test_app.init(400, 600);
     defer bare_app.deinit();
-    try bare_app.notify(.{ .title = "Saved" });
+    bare_app.notify(.{ .title = "Saved" });
     bare_app.minimizeNotices();
     const bare = try renderChrome(&bare_app);
     defer testing.allocator.free(bare);
@@ -742,7 +742,7 @@ test "the notices indicator stands in the nav's row, not beside it" {
 test "a notice's icon is a decorative square between the controls and the words" {
     var app = try test_app.init(400, 600);
     defer app.deinit();
-    try app.notify(.{
+    app.notify(.{
         .title = "Sync failed",
         .description = "Changes are kept locally.",
         .route = "home",
@@ -759,7 +759,7 @@ test "a notice's icon is a decorative square between the controls and the words"
     try expectContains(banner, "<span class=\"icon square\" aria-hidden=\"true\">&#xE08D;</span><div class=\"notice-words\">");
 
     // Mixed importance groups the pane, each group under its label.
-    try app.notify(.{ .title = "Export ready", .route = "home" });
+    app.notify(.{ .title = "Export ready", .route = "home" });
     try app.openNoticesPane();
     const pane = try renderChrome(&app);
     defer testing.allocator.free(pane);

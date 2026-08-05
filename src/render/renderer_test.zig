@@ -1266,7 +1266,7 @@ test "sheet paints last over a paper dither scrim" {
 test "notice banner: pane chrome at the bottom carrying its controls" {
     var app = try test_app.init(400, 600);
     defer app.deinit();
-    try app.notify(.{ .title = "Saved", .description = "Synced to disk.", .route = "home", .icon = .circle_check, .important = true });
+    app.notify(.{ .title = "Saved", .description = "Synced to disk.", .route = "home", .icon = .circle_check, .important = true });
 
     var rec = frameOf(&app);
     defer rec.deinit();
@@ -1299,8 +1299,8 @@ test "notice banner: pane chrome at the bottom carrying its controls" {
 test "notices pane paints over a scrim with a row per notice" {
     var app = try test_app.init(400, 600);
     defer app.deinit();
-    try app.notify(.{ .title = "Saved", .route = "home" });
-    try app.notify(.{ .title = "Sync failed", .route = "home", .important = true });
+    app.notify(.{ .title = "Saved", .route = "home" });
+    app.notify(.{ .title = "Sync failed", .route = "home", .important = true });
     try app.openNoticesPane();
 
     var rec = frameOf(&app);
@@ -1332,7 +1332,7 @@ test "notices pane paints over a scrim with a row per notice" {
 test "the minimized indicator paints its glyph in the pane band" {
     var app = try test_app.init(400, 600);
     defer app.deinit();
-    try app.notify(.{ .title = "Saved", .route = "home" });
+    app.notify(.{ .title = "Saved", .route = "home" });
     app.minimizeNotices();
 
     var rec = frameOf(&app);
