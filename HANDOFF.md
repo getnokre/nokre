@@ -998,4 +998,32 @@ passes bump `revision` and move all three pins.
     `MockState`, the IME caret stored and drawn, and
     `nokre.addGoldenTests`.
 
+13. **`TextInput.readonly`** — QUEUED, owner-requested 2026-08-05.
+    Not an item in this file: it appears only as prose in A11 as "the
+    flagged candidate", carried over from an earlier round with no
+    design attached. A11's execution made it the best-evidenced unbuilt
+    item on the list — **ten** refusals could not move onto their field
+    because the address input is replaced by settled text and an Edit
+    button the moment it verifies, so by the time the server refuses it
+    there is no field to attach the refusal to (4 in the org create
+    screens, 1 in the user join flow, plus siblings).
+
+    **Owner decided the shape: `readonly`, not `disabled`.** The flag's
+    own name was misleading — every receipt is a settled-value case
+    ("press Edit to change it"), and in ARIA that is a different state
+    with different behaviour from disabled. Readonly stays in the focus
+    order, stays selectable and copyable, is announced read-only, and
+    refuses keystrokes; disabled leaves the focus order and cannot be
+    copied, and a disabled control carrying an error message is a
+    contradiction. Decisively: a readonly field **must still carry
+    `problem`**, which is exactly what closes the ten receipts. The
+    three-state enum was offered and declined — only the readonly half
+    has receipts, and a half that ships unused is what this round has
+    refused elsewhere.
+
+    Element-set argument on the set's own terms, same lane as A11, and
+    it owes the full `contributing.md` checklist: element, layout, DOM
+    markup, a11y across AccessKit/Android/iOS, validate/audit, input
+    (keystrokes refused, focus kept), tests, golden, docs.
+
 Part E items move only on their own owner-level arguments.
