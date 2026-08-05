@@ -206,7 +206,7 @@ lines and closes the silent-truncation class. Meets queue.zig's own
 bar for existing ("every consumer was hand-rolling the same ring") —
 twenty-five times over.
 
-### A2. `.bind` stopped at Action — export the trampoline door itself
+### A2 DONE (nokre `c858cb6`, revision 21) — `.bind` stopped at Action; the trampoline door is exported
 Revision 6 removed the trampoline ritual for the four action types.
 Everything else that carries `{ctx, call}` still pays it:
 **12 identical `Signal` structs** across the apps (each 8 lines,
@@ -707,8 +707,42 @@ passes bump `revision` and move all three pins.
      with an existing tag rather than merely losing bytes.
    - `adapters/api_client.zig:371` `keep()` is the same silent-`@min`
      class in the transport, untouched.
-5. **A2.1 `bindAs` export** (additive; Signals and port Callbacks
-   migrate; A2.2 route table only if owner scopes it in).
+5. ~~**A2.1 `bindAs` export**~~ and ~~**A2.2 typed route table**~~ —
+   DONE, revision 21 (nokre `c858cb6`, rokovski `93eb6f15`, site
+   `1653c39`). Owner scoped both pieces into one pass. The survey said
+   30 port callbacks; there are **202**, and all 202 spell the pair the
+   same way — which is the argument for hardcoding the field names
+   rather than parameterizing them. `bind`/`bindAt` now route through
+   `bindAs`, so there is one generator and four hand-written
+   trampolines left `element.zig`.
+
+   A2.2 turned out additive and `RouteDef` never moved: `def.build` has
+   exactly one call site (`router.zig:596`) passing a single app-wide
+   `app.ctx`, and all 91 builders across the three trees cast to their
+   tree's one state type — the erasure was never carrying polymorphism.
+   `Routes(State).Def` is *reified* from `RouteDef`'s own fields rather
+   than mirroring them, so a field added later arrives carrying its
+   default instead of being silently dropped. `app.ctx` stays erased:
+   typing it means `App` generic over consumer state, and `*App` is in
+   the signature of every element call, every service, all six shells
+   and the harness.
+
+   **Decided, not deferred**: `dom.Refs` keeps its `{ctx, resolve}`
+   spelling and the site keeps its two casts — renaming a contract
+   field to fit a helper, or widening the public surface with
+   `bindField` for two call sites in one tree, are both worse. The
+   reasoning is recorded in `bind.zig`'s module doc so it is not
+   re-opened.
+
+   **Left open**: `setHandler(app, ctx, fn)` on five services and
+   `workers.Asker.ask(msg, ctx, fn)` take the context and the function
+   as two positional arguments, so no pair exists for `bindAs` to fill.
+   That is now the largest remaining `?*anyopaque` surface in nokre's
+   own API — 9 sites on the published services page, 4 in the tutorial,
+   and 6 live casts in the two apps. It wants its own item. Separately,
+   `Action`, `Role` and `Span` are reached as `h.element.X` because
+   nokre's root re-export roster omits them; the Part B sweep should
+   judge that roster as a set rather than promoting one name.
 6. **A3 sheet completion** (openSheetAs/sheetTagAs/closeSheet +
    confirmSheet + error narrowing; both apps' six-controller ritual
    deletes in the same pass).
