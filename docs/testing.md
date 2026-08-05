@@ -87,11 +87,18 @@ have already told you so.
 sequence), `selectOption(group_label, option)`, `scroll(id, delta)`,
 `focusVia(id)`, `edgePanBack()`.
 
-Three verbs sit above those primitives, because every consumer ends up
-wanting exactly them — both shipped apps wrote the same three, with
+Four verbs sit above those primitives, because every consumer ends up
+wanting exactly them — both shipped apps wrote the same ones, with
 the same fallbacks, before they moved here. Each names its control by
 **role plus accessible name**: a bare label stops being an identity
 the moment the chosen locale can change under it.
+
+They live one layer below the harness, in `testing.driver`, as free
+functions over `*App` that name no mock — because a *driver* against a
+real server needs the same four and can never hold a `Harness`
+([below](#driving-an-app-outside-zig-test)). The harness adds a trace
+step and a re-audit around each; a driver adds a wait in front. The
+ladder itself is written once.
 
 - `press(role, label)` presses a control the way a user would: a tap
   where it is on screen, Tab-and-Enter where a long screen has pushed
@@ -106,6 +113,14 @@ the moment the chosen locale can change under it.
   appending like typing does. The label is looked up among the two
   text-entry roles only (`text_input`, `text_area`), so the words can
   never land on a control that merely shares them.
+- `clearField(label)` empties that field the way a user empties one: to
+  the end, then back over what is there. `clearField` then `typeInto`
+  is "leave this field holding exactly this" — two acts, because they
+  are two acts for a user, and a fixture whose fields start empty needs
+  only the second. It counts *bytes* as its budget, so a field holding
+  multi-byte text is emptied rather than nearly emptied, and it re-reads
+  the field by label between keystrokes, so a screen that rebuilds on
+  every edit does not strand it on a stale node.
 - `goTab(title)` crosses the nav to the destination with that title,
   whichever shape the nav is in
   ([elements.md](elements.md#navigation-chrome)): the
@@ -133,8 +148,11 @@ chip scrolled out of an overflowing track and a picker row below the fold
 are both unreachable by a tap at their center, and both are reached by
 stepping, because stepping is what scrolls them into view. Every step
 goes through real dispatch and commits like a user's, so a handler
-watching for `on_select` sees exactly what it would in the app. Choosing
-the option already chosen is the no-op it is for a user. The refusals are
+watching for `on_select` sees exactly what it would in the app — and
+the control is re-found by role and name between steps, so a screen
+that reloads itself on every commit does not strand the walk on a node
+id that commit retired. Choosing the option already chosen is the no-op
+it is for a user. The refusals are
 the usual ones: `error.NotKeyboardReachable` if Tab can't get to the
 control, `error.NotAChoiceControl` if it has no options to choose among
 (tap that one instead), and `error.NoSuchOption` — whose diagnostic lists
@@ -914,46 +932,130 @@ turned on, and deliberately not:
   carry every mock into it, which is the exact thing that rule exists to
   make unrepresentable. So the seam is one layer down.
 - **The driver layer already is that seam.** `testing.driver`,
-  `testing.queries`, `testing.audit`, `testing.trace`, `testing.wait`
-  and `testing.golden` name no `builtin.is_test` at all and are
-  exported unconditionally. `driver.tap(app, id)`,
+  `testing.queries`, `testing.audit`, `testing.trace`, `testing.wait`,
+  `testing.device` and `testing.golden` name no `builtin.is_test` at
+  all and are exported unconditionally. `driver.tap(app, id)`,
   `queries.queryByLabel(&app.tree, …)` and `audit.audit(app)` work on
-  any `*App`, in any build.
+  any `*App`, in any build — and so, therefore, do the four verbs the
+  harness builds on them ([above](#input-driver)).
+
+### Waiting is the only real difference
 
 A driver's synchronization story is different from the harness's, and
 `testing.wait` owns it. Under the mocks nothing ever waits — every
 settle is a verb — but a real server answers when it answers, so a
 driver's only move is "pump until the screen says what it came to say,
-or a deadline passes". `wait.waitUntil(app, pacer, what, ctx, ready)`
-is that loop, once: it pumps the delivery queue, asks the predicate
-after each pump, and on timeout prints what was waited for plus the
-whole screen as it stands — route, every labeled element with its
+or a deadline passes". `wait.waitUntil(app, pacer, what, ready)` is
+that loop, once: it pumps the delivery queue, asks the predicate after
+each pump, and on timeout prints what was waited for plus the whole
+screen as it stands — route, every labeled element with its
 user-visible state (working, disabled, folded), pending notices, and
 the laid-out tree — then returns `error.WaitTimeout`. The `Pacer` is
 the driver's own clock and its own nap, handed in as function
 pointers: nokre reads no wall clock and sleeps no thread itself, which
 keeps the library deterministic and makes the timeout path itself
-testable against a fake clock. A driver's verbs stay one predicate
-each:
+testable against a fake clock.
+
+The conditions **nokre can evaluate for itself** are shipped, one verb
+each, so no driver writes them again. Each answers what it found, so
+the wait and the lookup are one call:
+
+| verb | holds when |
+| --- | --- |
+| `untilLabel(app, pacer, label) !NodeId` | an element carries exactly that accessible label |
+| `untilRole(app, pacer, role, name) !NodeId` | a control of that role carries that name — the wait `press` synchronizes on |
+| `untilLabelContaining(app, pacer, needle) !NodeId` | some label contains the needle |
+| `untilEither(app, pacer, a, b) ![]const u8` | either label is there; answers which, so a fork can branch |
+| `untilGone(app, pacer, label)` | that label has left the screen |
+| `untilRoute(app, pacer, ref)` | the router stands on that route |
+| `untilNotice(app, pacer, title)` | a notice with that title is pending |
+
+Everything else is a condition about **your** state — a work queue
+draining, a prefetch sweep finishing — and reaches the same loop
+through `wait.Ready`, a `{ ctx, call }` pair that
+[`bindAs`](elements.md#binding-callbacks-nokre-never-sees) fills from an
+ordinary method. There is no `@ptrCast` to write and no wrapper struct
+per condition:
 
 ```zig
-const wait = nokre.testing.wait;
-
-fn waitFor(d: *Device, label: []const u8) !nokre.NodeId {
-    var target = label;
-    try wait.waitUntil(&d.app, d.pacer(), label, &target, struct {
-        fn ready(ctx: ?*anyopaque, app: *nokre.App) bool {
-            const l: *[]const u8 = @ptrCast(@alignCast(ctx.?));
-            return nokre.testing.queries.queryByLabel(&app.tree, l.*) != null;
-        }
-    }.ready);
-    return nokre.testing.queries.queryByLabel(&d.app.tree, label).?;
-}
+// fn quiet(self: *State, _: *nokre.App) bool { return self.solver.pending() == 0; }
+try wait.waitUntil(&app, pacer, "the proof queue to drain",
+    nokre.bindAs(wait.Ready, State.quiet, &state));
 ```
 
-`wait.dumpScreen(app)` is the same failure picture on demand, for the
-driver's own refusal paths — a tap that could not land owes the reader
-the screen it could not land on.
+A timeout owes two things, and every one of these pays both — what it
+was waiting for, in the caller's own words, and the screen that stood
+there instead:
+
+```
+waited 60000ms for a button named "Continue"; the screen stands at:
+  on route "circle~4821"
+  heading "Ada's circle"
+  button "Retry" (working)
+  text "Something went wrong."
+  notice "Sync failed"
+  …the laid-out tree…
+```
+
+`wait.dumpScreen(app)` is that same picture on demand, for the driver's
+own refusal paths — a tap that could not land owes the reader the
+screen it could not land on.
+
+### `Device`: the harness's verbs over a live app
+
+`testing.Device` is what a driver holds where a test holds a
+`Harness`: a `*App`, a `Pacer`, and **the harness's own verb names
+running the harness's own ladders**, each with a wait in front. It is
+not a copy of the harness and not a parallel vocabulary — `press`,
+`typeInto`, `clearField`, `selectOption`, `goTab`, `expectPresent`,
+`expectAbsent`, `expectGone`, `expectRoute`, `expectValue`,
+`expectDisabled`, `expectEnabled`, `expectNotified` mean here exactly
+what they mean in a unit test,
+because the ladder under each is the same function in `testing.driver`.
+A third edition's driver is a `Device` and a domain vocabulary, not a
+third transcription of this file.
+
+```zig
+pub const Device = struct {
+    app: *nokre.App,
+    pacer: nokre.testing.wait.Pacer,
+    notes: ?nokre.testing.device.Notes = null,
+};
+
+var d: nokre.testing.Device = .{ .app = &self.app, .pacer = self.pacer() };
+try d.press(.button, "Sign in");
+try d.clearField("Email");
+try d.typeInto("Email", "ada@example.com");
+try d.expectPresent(.heading, "Your circles");
+try d.expectRoute("circles");
+```
+
+Three rules the set follows, each of them a decision:
+
+- **Every acting verb re-audits**, exactly as the harness's do. That is
+  what makes driving by accessible name safe: two live controls sharing
+  a label fail at the audit rather than silently taking the first.
+- **`press` checks the fold without waiting.** A control its row folded
+  away is invisible to every query, so waiting a full deadline to
+  discover that — and another for a "More" that is not there either —
+  is how one missing label costs an hour. Folded first, then the wait.
+- **`expectAbsent` never waits, `expectGone` does.** A label that is
+  *going* to appear would satisfy a waiting absence check for as long
+  as it took to arrive; the only absence it is honest to wait for is
+  one that was on screen when the action was taken.
+
+`Device.notes` is the seam for what nokre cannot know. Bind it to a
+method of your own and it prints under the framework's screen dump on
+any refusal — the proofs still queued, the load phases behind a screen
+that never filled in. nokre says what is on the screen; the driver says
+what is behind it.
+
+Two verbs a driver keeps for itself. `quiesce(millis)` ships (it is a
+deadline, not a condition — the verb of last resort, and every use of
+it is a screen that should have said something), but "the app is
+finished working" is app state: a proof-of-work queue, a background
+sweep, a retry ladder. That is a `waitUntil` with your own bound
+predicate, and it belongs in your driver beside your domain verbs.
 
 Two things a driver owes that a test does not. It owes the hooks a
 shell owes — the free C functions the services name, which a binary

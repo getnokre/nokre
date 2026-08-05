@@ -42,11 +42,19 @@ pub const Knock = haptic.Knock;
 pub const diag = @import("diag.zig");
 pub const queries = @import("queries.zig");
 pub const driver = @import("driver.zig");
-/// Deadline-bounded waiting for the driver tier — `wait.waitUntil`
-/// and the `Pacer` a driver hands its own clock in with. Not a
-/// harness verb on purpose: under the mocks nothing ever waits
-/// (see wait.zig's own rationale).
+/// Deadline-bounded waiting for the driver tier — `wait.waitUntil`,
+/// the `until*` predicates nokre can evaluate for itself, and the
+/// `Pacer` a driver hands its own clock in with. Not a harness verb on
+/// purpose: under the mocks nothing ever waits (see wait.zig's own
+/// rationale).
 pub const wait = @import("wait.zig");
+/// The driver tier's verb set: this harness's names and this harness's
+/// ladders, with a wait in front of each, over a live `App` and no
+/// mock anywhere. `testing.Device` is what a driver holds where a test
+/// holds a `Harness` (docs/testing.md, "Driving an app outside
+/// `zig test`").
+pub const device = @import("device.zig");
+pub const Device = device.Device;
 pub const audit = @import("audit.zig");
 pub const golden = @import("golden.zig");
 pub const trace = @import("trace.zig");
@@ -342,13 +350,15 @@ pub const Harness = struct {
         try self.afterStep("focus {s}", .{self.labelOf(id)});
     }
 
-    // ---- the verbs consumers rebuilt ----
-    // Both shipped apps grew the same four verbs over the primitives
-    // above, with the same fallbacks, under the same rationale: a
-    // control is named by role plus accessible name — semantic
-    // identity — because a bare label stops being an identity the
-    // moment the chosen locale can change under it. Folded into the
-    // framework so the next app does not write them a third time.
+    // ---- the verbs above the primitives ----
+    // Four ladders — `press`, `typeInto`, `clearField`, `goTab` — that
+    // both shipped apps grew over the primitives above before they
+    // moved into the framework. The ladders themselves live in
+    // `driver.zig`, mock-free, because a *driver* holding a live `App`
+    // needs the same four and cannot see a `Harness` (a mock exists
+    // only under `builtin.is_test`). What this tier adds is what a
+    // harness always adds: one trace step and one re-audit per action.
+    // `testing.Device` is the same four with a wait in front of each.
 
     /// Presses a control the way a user would: a tap where the control
     /// is on screen, the keyboard where a long screen has pushed it
@@ -357,30 +367,8 @@ pub const Harness = struct {
     /// Enter in a field it just focused is a submit, not a focus;
     /// `typeInto` is the field verb.
     pub fn press(self: *Harness, role: element_mod.Role, label: []const u8) !void {
-        // Folded first, silently: a folded control is off the screen
-        // as far as the queries are concerned, so asking for it loudly
-        // would print a miss for an action that is one More-press away.
-        self.app.performLayout();
-        if (queries.queryFolded(&self.app.tree, role, label) != null) return self.pressFolded(role, label);
-        const id = try self.getByRole(role, label);
-        // Probe the finger's route before taking it: a control past
-        // the fold is this verb's business, not a failure, and letting
-        // `tap` refuse it would print a diagnostic from a passing test
-        // (the build runner banners any stderr). A tap that would land
-        // on *another* element stays `tap`'s loud Obscured refusal.
-        if (self.app.hitTest(self.app.tree.rectOf(id).center()) == null) {
-            try self.focusVia(id);
-            return self.pressKey(.enter, .{});
-        }
-        try self.tap(id);
-    }
-
-    /// A row that ran out of width put this action behind "More"; the
-    /// sheet that control opens restates it whole — same role, same
-    /// words (overflow.zig) — so the press lands there.
-    fn pressFolded(self: *Harness, role: element_mod.Role, label: []const u8) !void {
-        try self.tap(try self.getByRole(.more, self.app.chrome.more));
-        try self.tap(try self.getByRole(role, label));
+        try driver.press(&self.app, role, label);
+        try self.afterStep("press {s}", .{label});
     }
 
     /// Puts the caret in a named field and types, the way a user fills
@@ -389,11 +377,18 @@ pub const Harness = struct {
     /// roles only, so the words can never land on a control that
     /// merely shares them.
     pub fn typeInto(self: *Harness, label: []const u8, bytes: []const u8) !void {
-        const id = queries.queryByRole(&self.app.tree, .text_input, label) orelse
-            queries.queryByRole(&self.app.tree, .text_area, label) orelse
-            return queries.noMatch(&self.app.tree, "text field label", label);
-        try self.focusVia(id);
-        try self.typeText(bytes);
+        try driver.typeInto(&self.app, label, bytes);
+        try self.afterStep("type into {s}", .{label});
+    }
+
+    /// Empties a named field the way a user empties one: to the end,
+    /// then back over what is there. `clearField` then `typeInto` is
+    /// how a test says "leave this field holding exactly this" — the
+    /// shape a screen revisited with a value already in it needs, and
+    /// the one a driver against a real server needs constantly.
+    pub fn clearField(self: *Harness, label: []const u8) !void {
+        try driver.clearField(&self.app, label);
+        try self.afterStep("clear {s}", .{label});
     }
 
     /// Crosses the nav to the destination with this title, whichever
@@ -405,25 +400,8 @@ pub const Harness = struct {
     /// is named by the app's chrome, so a localized app crosses its
     /// bar in its own words.
     pub fn goTab(self: *Harness, title: []const u8) !void {
-        // `query`, not `get`: a wide viewport lays the destinations
-        // out as a row and has no chip at all, and a `get` miss prints
-        // a diagnostic even from a passing test.
-        if (self.queryByRole(.nav_current, self.app.chrome.section)) |chip| {
-            try self.tap(chip);
-            // The picker restates the roster as its own rows.
-            return self.tap(try self.getByRole(.picker_item, title));
-        }
-        // The wide shape: a row of destinations, the current one a
-        // `nav_here` whose *value* is the title (its accessible name
-        // is the chrome's "Current screen", so it is matched on the
-        // element, not through the name queries).
-        if (self.queryByRole(.nav_item, title)) |id| return self.tap(id);
-        var it = self.app.tree.dfs();
-        while (it.next()) |id| {
-            const el = self.app.tree.getConst(id).?;
-            if (el.* == .nav_here and std.mem.eql(u8, el.nav_here.value, title)) return;
-        }
-        return queries.noMatch(&self.app.tree, "nav destination titled", title);
+        try driver.goTab(&self.app, title);
+        try self.afterStep("go to {s}", .{title});
     }
 
     /// Runs every queued worker message and delivers every queued

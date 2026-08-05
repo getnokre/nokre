@@ -156,12 +156,34 @@ pub fn selectOption(app: *App, id: NodeId, option: []const u8) !void {
 /// does. ↑/↓ in a radio group are direction-blind; ←/→ on a track swap
 /// roles with mirrored chrome, so the forward key is asked of the app's
 /// own direction rather than assumed (input.zig).
-fn stepSelection(app: *App, id: NodeId, role: element_mod.Role, want: usize, option: []const u8) !void {
+///
+/// The control is **re-found between steps**, not held: a commit runs
+/// the app's `on_select`, and an app that reloads its screen there
+/// mints fresh node ids (`Tree` generations), so the id this walk
+/// started from would read back as `InvalidNode` on a control that is
+/// plainly still there. Both shipped drivers hit exactly that and
+/// re-implemented the whole walk to avoid it; re-finding here is what
+/// lets there be one walk.
+fn stepSelection(app: *App, start: NodeId, role: element_mod.Role, want: usize, option: []const u8) !void {
+    // The name is copied, not borrowed: a rebuild may free the string
+    // the old element pointed at, and a driver that compared against
+    // freed bytes would be worse than one that gave up. An unnamed (or
+    // implausibly long) control falls back to holding the id, which is
+    // the behaviour this had before.
+    var name_buf: [128]u8 = undefined;
+    const name = blk: {
+        const l = (app.tree.getConst(start) orelse return error.InvalidNode).label();
+        if (l.len == 0 or l.len > name_buf.len) break :blk "";
+        @memcpy(name_buf[0..l.len], l);
+        break :blk name_buf[0..l.len];
+    };
+    var id = start;
     var steps: usize = 0;
     // One step per option is a whole traversal of the list and then
     // some; past that the control is not taking the key.
     const limit = (optionsOf(app.tree.getConst(id).?.*) orelse return error.NotAChoiceControl).len;
     while (steps <= limit) : (steps += 1) {
+        id = relocate(app, id, role, name);
         const el = app.tree.getConst(id) orelse return error.InvalidNode;
         const at = selectedOf(el.*) orelse return error.NotAChoiceControl;
         if (at == want) return;
@@ -170,6 +192,7 @@ fn stepSelection(app: *App, id: NodeId, role: element_mod.Role, want: usize, opt
             .radio_group => if (forward) .down else .up,
             else => if (forward != (app.direction == .rtl)) .right else .left,
         }, .{});
+        id = relocate(app, id, role, name);
         const moved = selectedOf((app.tree.getConst(id) orelse return error.InvalidNode).*) orelse return error.NotAChoiceControl;
         if (moved == at) {
             diag.print("selectOption: stepping toward \"{s}\" did not move the selection — the control did not take the key\n", .{option});
@@ -177,6 +200,15 @@ fn stepSelection(app: *App, id: NodeId, role: element_mod.Role, want: usize, opt
         }
     }
     return error.NotInteractive;
+}
+
+/// The same control after a dispatch that may have rebuilt the screen,
+/// addressed by the identity every verb here uses — role plus
+/// accessible name. Falls back to the id it was given, so a control
+/// with no name behaves as it did before.
+fn relocate(app: *App, id: NodeId, role: element_mod.Role, name: []const u8) NodeId {
+    if (name.len == 0) return id;
+    return queries.queryByRole(&app.tree, role, name) orelse id;
 }
 
 fn optionsOf(el: element_mod.Element) ?[]const []const u8 {
@@ -270,4 +302,155 @@ pub fn focusVia(app: *App, id: NodeId) !void {
         }
     }
     return error.NotKeyboardReachable;
+}
+
+// ---- the verbs above the primitives ----
+//
+// Four ladders over the calls above: locate a control by semantic
+// identity, then take the route a user's hand would. They live here,
+// with the primitives and with no mock in sight, because *two* tiers
+// need them and only one of those can see a mock — `Harness` (which
+// adds a trace step and a re-audit around each) and a driver holding a
+// live `App` (which adds a wait in front of each). A ladder written in
+// the harness is a ladder a driver has to write again, and both shipped
+// drivers did, differently: one probed the fold, one caught the tap's
+// refusal, and only one of those two answers is right.
+//
+// Like `selectOption`, they audit nothing and trace nothing: a ladder
+// is one action to whoever called it, and the caller owns what happens
+// after an action.
+
+/// Presses a control the way a user would: a tap where it is on
+/// screen, the keyboard where a long screen has pushed it past the
+/// fold, and More-then-the-action where a narrow row folded it away.
+/// The control is named by role plus accessible name — semantic
+/// identity, never a bare label, because a bare label stops being an
+/// identity the moment the chosen locale can change under it.
+///
+/// Not for text fields: the keyboard fallback's Enter in a field it
+/// just focused is a submit, not a focus. `typeInto` is the field verb.
+///
+/// `tap`'s other refusals stand and stay loud. In particular a control
+/// with work in flight is *not* pressed through the keyboard fallback:
+/// Enter on a busy control does nothing at all (input.zig), so falling
+/// back there would turn a refusal into a silent no-op and a passing
+/// test of an action that never ran.
+pub fn press(app: *App, role: element_mod.Role, label: []const u8) !void {
+    // Folded first, and silently: a control its row folded away is off
+    // the screen as far as the queries are concerned, so asking for it
+    // loudly would print a miss for an action that is one More-press
+    // away — and layout is what decides the fold.
+    app.performLayout();
+    if (queries.queryFolded(&app.tree, role, label) != null) return pressFolded(app, role, label);
+    const id = queries.queryByRole(&app.tree, role, label) orelse
+        return queries.noMatch(&app.tree, @tagName(role), label);
+    // Probe the finger's route before taking it: a control past the
+    // fold is this verb's business, not a failure, and letting `tap`
+    // refuse it would print a diagnostic from a passing test. A tap
+    // that would land on *another* element stays `tap`'s loud Obscured
+    // refusal.
+    if (app.hitTest(app.tree.rectOf(id).center()) == null) {
+        try focusVia(app, id);
+        return pressKey(app, .enter, .{});
+    }
+    return tap(app, id);
+}
+
+/// A row that ran out of width put this action behind the chrome's
+/// overflow control; the sheet that control opens restates it whole —
+/// same role, same words (overflow.zig) — so the press lands there.
+fn pressFolded(app: *App, role: element_mod.Role, label: []const u8) !void {
+    const more = queries.queryByRole(&app.tree, .more, app.chrome.more) orelse
+        return queries.noMatch(&app.tree, "overflow control named", app.chrome.more);
+    try tap(app, more);
+    const id = queries.queryByRole(&app.tree, role, label) orelse
+        return queries.noMatch(&app.tree, @tagName(role), label);
+    return tap(app, id);
+}
+
+/// Puts the caret in a named field and types, the way a user fills one
+/// — appending to what the field already holds, exactly as typing
+/// does. The label is looked up among the two text-entry roles only,
+/// so the words can never land on a control that merely shares them.
+/// `clearField` is how a test empties one first.
+pub fn typeInto(app: *App, label: []const u8, bytes: []const u8) !void {
+    try focusVia(app, try fieldWithLabel(app, label));
+    return typeText(app, bytes);
+}
+
+/// Empties a named field the way a user empties one: to the end, then
+/// back over what is there. The verb a driver needs and a harness test
+/// did not, because a fixture's fields start empty and a screen
+/// revisited against a real server does not — `clearField` then
+/// `typeInto` is "leave this field holding exactly this".
+pub fn clearField(app: *App, label: []const u8) !void {
+    try focusVia(app, try fieldWithLabel(app, label));
+    try pressKey(app, .end, .{});
+    // Bytes are the budget, not the step count: backspace removes a
+    // codepoint at a time, so the byte length is an upper bound that
+    // always terminates, and the loop stops the moment the field reads
+    // empty. The field is re-read by *label* each time rather than by
+    // node id — a screen that rebuilds on every edit mints new ids, and
+    // the one this started from would go stale mid-clear.
+    var budget = fieldText(app, label).len;
+    while (budget > 0) : (budget -= 1) {
+        if (fieldText(app, label).len == 0) return;
+        try pressKey(app, .backspace, .{});
+    }
+    const left = fieldText(app, label);
+    if (left.len == 0) return;
+    diag.print("clearField: \"{s}\" still reads \"{s}\" after being emptied — something other than the keyboard is writing this field's value\n", .{ label, left });
+    return error.NotCleared;
+}
+
+/// The text-entry control with this label, among the two text-entry
+/// roles only. A miss is the queries' loud one, listing what is there.
+fn fieldWithLabel(app: *App, label: []const u8) !NodeId {
+    return queries.queryByRole(&app.tree, .text_input, label) orelse
+        queries.queryByRole(&app.tree, .text_area, label) orelse
+        queries.noMatch(&app.tree, "text field label", label);
+}
+
+/// What that field holds right now, or "" if it is not on screen — the
+/// element's own value, which is also what the a11y node carries
+/// except on an obscured field, where the snapshot deliberately says
+/// nothing and a driver still has to count what it is deleting.
+fn fieldText(app: *App, label: []const u8) []const u8 {
+    const id = queries.queryByRole(&app.tree, .text_input, label) orelse
+        queries.queryByRole(&app.tree, .text_area, label) orelse return "";
+    return switch (app.tree.getConst(id).?.*) {
+        .text_input => |i| i.value,
+        .text_area => |a| a.value,
+        else => "",
+    };
+}
+
+/// Crosses the nav to the destination with this title, whichever shape
+/// the nav is in: the collapsed chip's picker where the labels did not
+/// fit, the row of destinations where they did, and the `nav_here`
+/// marker when the title is the screen already under foot — that
+/// marker is deliberately not a control (element.zig), so "go where
+/// you stand" is the no-op it is for a user. The chip is named by the
+/// app's chrome, so a localized app crosses its bar in its own words.
+pub fn goTab(app: *App, title: []const u8) !void {
+    // `query`, not `noMatch`: a wide viewport lays the destinations out
+    // as a row and has no chip at all, and a loud miss would print a
+    // diagnostic from a passing crossing.
+    if (queries.queryByRole(&app.tree, .nav_current, app.chrome.section)) |chip| {
+        try tap(app, chip);
+        // The picker restates the roster as its own rows.
+        const row = queries.queryByRole(&app.tree, .picker_item, title) orelse
+            return queries.noMatch(&app.tree, "picker_item", title);
+        return tap(app, row);
+    }
+    if (queries.queryByRole(&app.tree, .nav_item, title)) |id| return tap(app, id);
+    // The current destination's accessible name is the chrome's
+    // "Current screen", so the marker under foot is matched on the
+    // element rather than through the name queries.
+    var it = app.tree.dfs();
+    while (it.next()) |id| {
+        const el = app.tree.getConst(id).?;
+        if (el.* == .nav_here and std.mem.eql(u8, el.nav_here.value, title)) return;
+    }
+    return queries.noMatch(&app.tree, "nav destination titled", title);
 }

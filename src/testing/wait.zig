@@ -19,11 +19,17 @@
 //! how a deadline failure is itself testable without waiting.
 
 const std = @import("std");
+const bind = @import("../core/bind.zig");
 const diag = @import("diag.zig");
+const queries = @import("queries.zig");
 const trace = @import("trace.zig");
 const app_mod = @import("../core/app.zig");
+const element_mod = @import("../core/element.zig");
+const tree_mod = @import("../core/tree.zig");
 
 const App = app_mod.App;
+const NodeId = tree_mod.NodeId;
+const Role = element_mod.Role;
 
 /// The driver's time, injected. `now_ms` is whatever clock the driver
 /// already bounds its run with; `nap` yields between polls so the
@@ -38,18 +44,46 @@ pub const Pacer = struct {
     /// How long to yield between polls.
     poll_ns: u64 = 200 * std.time.ns_per_us,
 
-    fn nowMs(self: Pacer) i64 {
+    /// The driver's clock, read. Public because a driver's own bounded
+    /// loops — and `Device.quiesce` — run on the same clock this
+    /// module's deadlines do, and two clocks in one run is one clock
+    /// too many.
+    pub fn nowMs(self: Pacer) i64 {
         return self.now_ms(self.ctx);
     }
 
-    fn rest(self: Pacer) void {
+    /// One poll's worth of yielding, so the transport threads a wait is
+    /// waiting on get the core.
+    pub fn rest(self: Pacer) void {
         self.nap(self.ctx, self.poll_ns);
     }
 };
 
 /// What a wait watches: asked once per pump, against the app as it
 /// stands. Return true to end the wait.
-pub const Predicate = *const fn (ctx: ?*anyopaque, app: *App) bool;
+///
+/// A `{ ctx, call }` pair rather than a bare function pointer, because
+/// the interesting predicates are about *app state* the framework
+/// cannot see — "the proof-of-work queue is empty", "the prefetch
+/// sweep finished" — and a bare pointer made every one of those a
+/// hand-written `struct { fn check(ctx: ?*anyopaque, app: *App) bool }`
+/// wrapper around an `@ptrCast`. The pair is the shape `nokre.bindAs`
+/// fills (core/bind.zig), so an ordinary method on the driver's own
+/// state becomes a predicate with no cast at all:
+///
+/// ```zig
+/// // fn quiet(self: *State, _: *nokre.App) bool { return self.solver.pending() == 0; }
+/// try wait.waitUntil(&app, pacer, "the queue to drain",
+///     nokre.bindAs(wait.Ready, State.quiet, &state));
+/// ```
+pub const Ready = struct {
+    ctx: ?*anyopaque = null,
+    call: *const fn (ctx: ?*anyopaque, app: *App) bool,
+
+    fn holds(self: Ready, app: *App) bool {
+        return self.call(self.ctx, app);
+    }
+};
 
 /// Pumps the delivery queue until `ready` holds or the pacer's deadline
 /// passes. On timeout it prints what was waited for (`what`, the
@@ -57,11 +91,11 @@ pub const Predicate = *const fn (ctx: ?*anyopaque, app: *App) bool;
 /// turns "waited 60000ms" into a diagnosis — then returns
 /// `error.WaitTimeout`. The predicate runs after each pump, so a result
 /// that is already on screen returns without a single nap.
-pub fn waitUntil(app: *App, pacer: Pacer, what: []const u8, ctx: ?*anyopaque, ready: Predicate) error{WaitTimeout}!void {
+pub fn waitUntil(app: *App, pacer: Pacer, what: []const u8, ready: Ready) error{WaitTimeout}!void {
     const deadline = pacer.nowMs() + pacer.timeout_ms;
     while (true) {
         _ = app.runtime.pump();
-        if (ready(ctx, app)) return;
+        if (ready.holds(app)) return;
         if (pacer.nowMs() > deadline) {
             diag.print("waited {d}ms for {s}; the screen stands at:\n", .{ pacer.timeout_ms, what });
             dumpScreen(app);
@@ -69,6 +103,159 @@ pub fn waitUntil(app: *App, pacer: Pacer, what: []const u8, ctx: ?*anyopaque, re
         }
         pacer.rest();
     }
+}
+
+// ---- the predicates nokre can evaluate for itself ----
+//
+// Everything below is `waitUntil` with a condition the framework can
+// answer off its own tree, router and notice list. They are here rather
+// than in each driver because both shipped drivers wrote all seven, in
+// the same order, with the same `@ptrCast` plumbing and the same
+// diagnostic wording — ~110 lines apiece of a thing with exactly one
+// correct implementation. A driver's own predicates (its ports, its
+// phases, its work queue) stay its own, and reach `waitUntil` through
+// `Ready`.
+//
+// Each answers what it found, so the wait and the lookup are one call:
+// the predicate held on the last pump, so the query that follows it
+// cannot miss.
+
+/// How much of a formatted `what` a timeout prints. Long enough for a
+/// role and a screen's worth of words; a longer one truncates to the
+/// bare needle rather than failing a wait over its own diagnostic.
+const what_cap = 256;
+
+fn describe(buf: []u8, comptime fmt: []const u8, args: anytype, fallback: []const u8) []const u8 {
+    return std.fmt.bufPrint(buf, fmt, args) catch fallback;
+}
+
+/// One label, five questions. The predicates are methods so `bindAs`
+/// can make the pair — the same door a driver's own state uses, proved
+/// here rather than only documented.
+const Label = struct {
+    text: []const u8,
+
+    fn present(self: *Label, app: *App) bool {
+        return queries.queryByLabel(&app.tree, self.text) != null;
+    }
+
+    fn gone(self: *Label, app: *App) bool {
+        return queries.queryByLabel(&app.tree, self.text) == null;
+    }
+
+    fn containing(self: *Label, app: *App) bool {
+        return queries.queryByLabelContaining(&app.tree, self.text) != null;
+    }
+
+    fn routed(self: *Label, app: *App) bool {
+        const current = app.router.current() orelse return false;
+        return std.mem.eql(u8, current, self.text);
+    }
+
+    fn notified(self: *Label, app: *App) bool {
+        for (app.notices.items) |*n| {
+            if (std.mem.eql(u8, n.title(), self.text)) return true;
+        }
+        return false;
+    }
+};
+
+const Named = struct {
+    role: Role,
+    name: []const u8,
+
+    fn present(self: *Named, app: *App) bool {
+        return queries.queryByRole(&app.tree, self.role, self.name) != null;
+    }
+};
+
+const Either = struct {
+    a: []const u8,
+    b: []const u8,
+
+    fn present(self: *Either, app: *App) bool {
+        return queries.queryByLabel(&app.tree, self.a) != null or
+            queries.queryByLabel(&app.tree, self.b) != null;
+    }
+};
+
+/// Pumps until an element with exactly this accessible label is on
+/// screen, and answers it. The whole synchronization story of a driver
+/// in one verb: there is no settle against a real server, and a screen
+/// is done when it says what it came to say.
+pub fn untilLabel(app: *App, pacer: Pacer, label: []const u8) error{WaitTimeout}!NodeId {
+    var target: Label = .{ .text = label };
+    var buf: [what_cap]u8 = undefined;
+    try waitUntil(app, pacer, describe(&buf, "\"{s}\"", .{label}, label), bind.bindAs(Ready, Label.present, &target));
+    return queries.queryByLabel(&app.tree, label).?;
+}
+
+/// `untilLabel` aimed by semantic identity — role plus accessible
+/// name, the shape every acting verb locates through, and the wait
+/// `press` synchronizes on.
+pub fn untilRole(app: *App, pacer: Pacer, role: Role, name: []const u8) error{WaitTimeout}!NodeId {
+    var target: Named = .{ .role = role, .name = name };
+    var buf: [what_cap]u8 = undefined;
+    const what = describe(&buf, "a {s} named \"{s}\"", .{ @tagName(role), name }, name);
+    try waitUntil(app, pacer, what, bind.bindAs(Ready, Named.present, &target));
+    return queries.queryByRole(&app.tree, role, name).?;
+}
+
+/// Pumps until some element's label *contains* `needle` — the wait for
+/// a value the screen prints into a sentence rather than into a
+/// control.
+pub fn untilLabelContaining(app: *App, pacer: Pacer, needle: []const u8) error{WaitTimeout}!NodeId {
+    var target: Label = .{ .text = needle };
+    var buf: [what_cap]u8 = undefined;
+    const what = describe(&buf, "a label containing \"{s}\"", .{needle}, needle);
+    try waitUntil(app, pacer, what, bind.bindAs(Ready, Label.containing, &target));
+    return queries.queryByLabelContaining(&app.tree, needle).?;
+}
+
+/// Whichever of the two labels arrives first, answered by name — the
+/// shape a fork in a flow needs, like a sign-in that may or may not be
+/// followed by a consent screen. Two, not a slice: every site in the
+/// shipped drivers is a fork with two ends, and a slice would make the
+/// common case allocate a literal array to say so.
+pub fn untilEither(app: *App, pacer: Pacer, a: []const u8, b: []const u8) error{WaitTimeout}![]const u8 {
+    var target: Either = .{ .a = a, .b = b };
+    var buf: [what_cap]u8 = undefined;
+    const what = describe(&buf, "\"{s}\" or \"{s}\"", .{ a, b }, a);
+    try waitUntil(app, pacer, what, bind.bindAs(Ready, Either.present, &target));
+    return if (queries.queryByLabel(&app.tree, a) != null) a else b;
+}
+
+/// Pumps until the label *leaves*. The outcome of a deletion, and the
+/// one absence it is safe to wait for: the label was on screen when
+/// the action was taken, so the wait can only be about the answer
+/// arriving. Waiting for a label that was never there to go away
+/// succeeds instantly and proves nothing — `expectAbsent` is the verb
+/// for "and it never appears", and it deliberately does not wait.
+pub fn untilGone(app: *App, pacer: Pacer, label: []const u8) error{WaitTimeout}!void {
+    var target: Label = .{ .text = label };
+    var buf: [what_cap]u8 = undefined;
+    const what = describe(&buf, "\"{s}\" to leave the screen", .{label}, label);
+    try waitUntil(app, pacer, what, bind.bindAs(Ready, Label.gone, &target));
+}
+
+/// Pumps until the router stands on this route reference — the wait
+/// for a screen a *callback* navigated to, where there is no label to
+/// name yet.
+pub fn untilRoute(app: *App, pacer: Pacer, ref: []const u8) error{WaitTimeout}!void {
+    var target: Label = .{ .text = ref };
+    var buf: [what_cap]u8 = undefined;
+    const what = describe(&buf, "route \"{s}\"", .{ref}, ref);
+    try waitUntil(app, pacer, what, bind.bindAs(Ready, Label.routed, &target));
+}
+
+/// Pumps until a notice with this title is pending. Titles are the
+/// identity (`App.notify` dedups on them), and the pending notices ride
+/// along in the failure dump, so a miss says what *was* raised.
+pub fn untilNotice(app: *App, pacer: Pacer, title: []const u8) error{WaitTimeout}!void {
+    var target: Label = .{ .text = title };
+    var buf: [what_cap]u8 = undefined;
+    const what = describe(&buf, "a notice titled \"{s}\"", .{title}, title);
+    try waitUntil(app, pacer, what, bind.bindAs(Ready, Label.notified, &target));
 }
 
 /// The failure dump, printed through the diag gate: route, every
@@ -104,101 +291,8 @@ pub fn writeScreen(gpa: std.mem.Allocator, out: *std.ArrayList(u8), app: *App) !
 }
 
 // ---- tests ----
-// Small module, design-proof tests inline (CLAUDE.md). The pacer is a
-// fake clock that only moves when the wait naps, so both the success
-// and the timeout path run deterministically, with no real time read
-// and no thread slept.
-
-const testing = std.testing;
-
-const FakePacer = struct {
-    millis: i64 = 0,
-    naps: usize = 0,
-    step_ms: i64 = 10,
-
-    fn now(ctx: ?*anyopaque) i64 {
-        return @as(*FakePacer, @ptrCast(@alignCast(ctx.?))).millis;
-    }
-
-    fn nap(ctx: ?*anyopaque, ns: u64) void {
-        _ = ns;
-        const self: *FakePacer = @ptrCast(@alignCast(ctx.?));
-        self.naps += 1;
-        self.millis += self.step_ms;
-    }
-
-    fn pacer(self: *FakePacer, timeout_ms: i64) Pacer {
-        return .{ .ctx = self, .now_ms = now, .nap = nap, .timeout_ms = timeout_ms };
-    }
-};
-
-fn testApp(gpa: std.mem.Allocator, w: i32, h: i32) !App {
-    return App.init(gpa, .{ .viewport = .{ .w = w, .h = h }, .services = .mocks() });
-}
-
-test "waitUntil returns as soon as the predicate holds" {
-    var app = try testApp(testing.allocator, 320, 240);
-    defer app.deinit();
-
-    const Counter = struct {
-        asked: usize = 0,
-        fn readyOnThird(ctx: ?*anyopaque, _: *App) bool {
-            const self: *@This() = @ptrCast(@alignCast(ctx.?));
-            self.asked += 1;
-            return self.asked >= 3;
-        }
-    };
-    var counter: Counter = .{};
-    var fake: FakePacer = .{};
-    try waitUntil(&app, fake.pacer(60_000), "the third poll", &counter, Counter.readyOnThird);
-    try testing.expectEqual(@as(usize, 3), counter.asked);
-    // One nap per miss, none after the hit.
-    try testing.expectEqual(@as(usize, 2), fake.naps);
-}
-
-test "waitUntil deadline failure errors after polling to the deadline and dumps the tree" {
-    var app = try testApp(testing.allocator, 320, 240);
-    defer app.deinit();
-    try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Save" } });
-
-    const Never = struct {
-        fn ready(_: ?*anyopaque, _: *App) bool {
-            return false;
-        }
-    };
-    var fake: FakePacer = .{}; // 10ms per nap
-    diag.quiet = true;
-    defer diag.quiet = false;
-    try testing.expectError(
-        error.WaitTimeout,
-        waitUntil(&app, fake.pacer(35), "a label that never comes", null, Never.ready),
-    );
-    // The wait held to its deadline — four polls at 10ms crossed 35ms —
-    // rather than giving up early or spinning forever.
-    try testing.expectEqual(@as(usize, 4), fake.naps);
-}
-
-test "the failure dump names the route, element states, notices, and the laid-out tree" {
-    var app = try testApp(testing.allocator, 400, 640);
-    defer app.deinit();
-    // A row too narrow for its actions, so the tail folds — the state a
-    // driver most needs the dump to explain, because the folded action
-    // is invisible to every query.
-    const row = try app.tree.appendId(app.tree.rootId(), .{ .stack = .{ .axis = .horizontal, .gap = 8 } });
-    for ([_][]const u8{ "Publish", "Save draft", "Duplicate", "Archive", "Delete" }) |label| {
-        try app.tree.append(row, .{ .button = .{ .label = label } });
-    }
-    try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Submit", .disabled = true } });
-    app.notify(.{ .title = "Sync failed", .important = true });
-
-    var out: std.ArrayList(u8) = .empty;
-    defer out.deinit(testing.allocator);
-    try writeScreen(testing.allocator, &out, &app);
-
-    try testing.expect(std.mem.indexOf(u8, out.items, "on route \"(none)\"") != null);
-    try testing.expect(std.mem.indexOf(u8, out.items, "button \"Delete\" (folded)") != null);
-    try testing.expect(std.mem.indexOf(u8, out.items, "button \"Submit\" (disabled)") != null);
-    try testing.expect(std.mem.indexOf(u8, out.items, "notice \"Sync failed\"") != null);
-    // The trace-format tree rides along, laid out.
-    try testing.expect(std.mem.indexOf(u8, out.items, "viewport 400x640") != null);
-}
+// The whole driver tier is proved in one sibling suite,
+// `device_test.zig`: these waits and the `Device` composed over them
+// share a fake pacer — a clock that moves only when the wait naps —
+// and a suite that split them would keep two copies of it (CLAUDE.md,
+// tests in a sibling once a module is past a few hundred lines).
