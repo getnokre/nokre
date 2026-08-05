@@ -1,12 +1,20 @@
-//! The modal layers above content: the bottom sheet (`App.openSheet`,
+//! The modal layers above content: the bottom sheet (`App.openSheetAs`,
 //! built by a declared `SheetBuilder`; `App.presentSheet` is the node
-//! the builder starts from) and the select picker (opened by activating
-//! a `select`). While one is open the rest of the tree is inert —
-//! `App.focusScope` and hit testing enforce that; this module owns
-//! their lifecycle and focus hand-off.
+//! the builder starts from, `App.closeSheet` takes it back down) and the
+//! select picker (opened by activating a `select`). While one is open
+//! the rest of the tree is inert — `App.focusScope` and hit testing
+//! enforce that; this module owns their lifecycle and focus hand-off.
+//!
+//! The sheet has an untyped floor and a typed door, and the door is
+//! where consumers live: `openSheet` takes the builder as data (the
+//! form the framework itself re-runs), `openSheetAs` writes it from a
+//! name and a bound builder. The tag those names ride in is one flat
+//! `u32` across the whole app, which is why the reading half is
+//! `sheetTagAs` — the question with the context in it.
 
 const std = @import("std");
 const app_mod = @import("app.zig");
+const bind = @import("bind.zig");
 const element_mod = @import("element.zig");
 const focus = @import("focus.zig");
 const input = @import("input.zig");
@@ -30,12 +38,13 @@ const NodeId = tree_mod.NodeId;
 /// builder it was not just handed.
 pub const SheetBuilder = struct {
     ctx: ?*anyopaque = null,
-    /// The consumer's name for this sheet; `App.openSheetTag()` answers
-    /// it while the sheet is up. 0 = unnamed. The framework never reads
-    /// it — it exists so a controller with several sheets can ask
-    /// *which* is open instead of mirroring the answer in its own
-    /// state, the shadow the survey found beside every builder
-    /// (`@intFromEnum` a small enum in, `@enumFromInt` it back out).
+    /// The consumer's name for this sheet; `App.sheetTagAs` answers it
+    /// while the sheet is up, and `App.openSheetTag()` answers the raw
+    /// number. 0 = unnamed. The framework never reads it — it exists so
+    /// a controller with several sheets can ask *which* is open instead
+    /// of mirroring the answer in its own state. Written by
+    /// `openSheetAs` from an enum, which is the shape every consumer
+    /// packed into it by hand.
     tag: u32 = 0,
     /// Presents the sheet (`App.presentSheet`) and fills it from state.
     /// It always runs against a tree with no sheet in it — the
@@ -52,15 +61,43 @@ pub const SheetBuilder = struct {
     on_dismiss: ?*const fn (ctx: ?*anyopaque) void = null,
 };
 
+/// Everything the sheet doors answer — a *declared* set where the
+/// builder's `anyerror` used to be. A sheet is opened from a handler
+/// that returns nothing (a button's `Action`), so the caller's whole
+/// vocabulary is what it can do about a sheet that did not open, and
+/// against `anyerror` that came to `catch {}` at every site: an error
+/// nobody can name is an error nobody handles. Two members, because a
+/// caller acts on exactly two things.
+pub const OpenSheetError = error{
+    /// The tree could not grow. Not about this sheet at all — the
+    /// process is out of room — and kept separate for the app that
+    /// reports memory pressure differently from a dialog that failed.
+    OutOfMemory,
+    /// The builder said no: it returned an error of its own, or the
+    /// content it appended was refused at construction. Either way no
+    /// sheet is up and the screen behind is untouched.
+    ///
+    /// The builder's own error *identity* stops here. A builder that
+    /// must tell its failures apart catches them inside itself, where
+    /// it still has them and is the only code that knows what they
+    /// meant; what crosses this door is the one bit the opener can act
+    /// on.
+    SheetBuildFailed,
+};
+
 /// Opens the sheet `builder` describes, and keeps the builder: the
 /// framework runs it again after `App.reload` rebuilds the screen, so
 /// an open sheet answers changed state instead of dying with the tree
 /// it stood on. A consumer whose state changed under an open sheet
 /// calls this again — same builder, no ceremony: an open sheet is
 /// rebuilt in place, never stacked. However the sheet then closes —
-/// `dismissSheet`, Esc, the close control, a tap outside, a navigation
-/// — the builder is dropped and its `on_dismiss` told.
-pub fn openSheet(app: *App, builder: SheetBuilder) !void {
+/// `closeSheet`, `dismissSheet`, Esc, the close control, a tap
+/// outside, a navigation — the builder is dropped and its `on_dismiss`
+/// told.
+///
+/// A controller whose sheets are named takes `openSheetAs` instead,
+/// which is this verb with the tag typed and the context bound.
+pub fn openSheet(app: *App, builder: SheetBuilder) OpenSheetError!void {
     teardownSheet(app);
     app.sheet_builder = builder;
     // A builder that fails half-way strands no half-built dialog: the
@@ -69,8 +106,111 @@ pub fn openSheet(app: *App, builder: SheetBuilder) !void {
         teardownSheet(app);
         app.sheet_builder = null;
     }
-    try builder.call(builder.ctx, app);
+    builder.call(builder.ctx, app) catch |err| return switch (err) {
+        error.OutOfMemory => error.OutOfMemory,
+        else => error.SheetBuildFailed,
+    };
     if (layout.findSheet(&app.tree) == null) app.sheet_builder = null;
+}
+
+/// `openSheet` with the sheet's name typed and its context bound: the
+/// door a controller with named sheets takes.
+///
+/// ```zig
+/// const Sheet = enum(u32) { remove_member = 1, refresh_code };
+///
+/// // at the point the user asks for it:
+/// try app.openSheetAs(Sheet.remove_member, Security.render, self);
+///
+/// // in Security — a sheet builder is written like a screen builder:
+/// fn render(self: *Security, app: *App, which: Sheet) !void {
+///     const sheet = app.at(try app.presentSheet(self.title(which)));
+///     switch (which) { … }
+/// }
+/// ```
+///
+/// The name arrives at the builder as the enum it was opened with,
+/// because at that point the framework knows it: the builder it is
+/// running is the one it just installed. That is the whole prologue
+/// every controller wrote — the cast, `openSheetTag() orelse return`,
+/// `@enumFromInt` — and none of the three says anything the caller of
+/// this line did not already say.
+///
+/// A builder that has nothing to tell apart drops the parameter:
+/// `fn (self: *State, app: *App) !void`, exactly a `Routes(State)`
+/// screen builder. Nothing decides between the two forms but the
+/// builder's own parameter list, and Zig refuses an unused parameter,
+/// so the form that compiles is the honest one. A sheet is still
+/// *named* either way — that is what makes `sheetTagAs` able to say the
+/// open sheet is yours, which a controller with one sheet needs most,
+/// being the kind that used to leave it unnamed and read another
+/// controller's tag as its own.
+///
+/// A sheet that owes work when it closes declares the `SheetBuilder`
+/// itself and hands it to `openSheet`: `on_dismiss` is a second
+/// function over the same context, and binding fills a pair, not a
+/// struct (core/bind.zig).
+pub fn openSheetAs(app: *App, tag: anytype, comptime render: anytype, state: anytype) OpenSheetError!void {
+    const E = @TypeOf(tag);
+    comptime checkTagEnum(E, "openSheetAs");
+    // Bound either way — the name is what decides *what* gets bound.
+    // A builder that takes it is bound through a generated fn that
+    // reads it back out; one that does not is handed to `bindAs`
+    // untouched, so a mis-shaped builder fails against `bindAs`'s own
+    // curated comparison rather than a second copy of it.
+    var builder = if (comptime takesTag(E, render, @TypeOf(state)))
+        bind.bindAs(SheetBuilder, Named(E, render, @TypeOf(state)).build, state)
+    else
+        bind.bindAs(SheetBuilder, render, state);
+    builder.tag = @intFromEnum(tag);
+    return openSheet(app, builder);
+}
+
+/// Whether `render` is the form that takes the sheet's name. Three
+/// parameters is the only thing that can mean it, so a builder with any
+/// other arity is refused here with both shapes printed.
+fn takesTag(comptime E: type, comptime render: anytype, comptime StatePtr: type) bool {
+    const F = switch (@typeInfo(@TypeOf(render))) {
+        .pointer => |p| p.child,
+        else => @TypeOf(render),
+    };
+    const info = switch (@typeInfo(F)) {
+        .@"fn" => |f| f,
+        else => @compileError(std.fmt.comptimePrint(
+            "openSheetAs: `render` is `{s}`, not a function. A sheet is built by one.",
+            .{@typeName(@TypeOf(render))},
+        )),
+    };
+    const fits = switch (info.params.len) {
+        2 => true,
+        3 => info.params[2].type == E,
+        else => false,
+    };
+    if (!fits) @compileError(std.fmt.comptimePrint(
+        "openSheetAs: this builder is neither sheet-builder shape.\n" ++
+            "  with the name: fn ({s}, *App, {s}) !void\n" ++
+            "  without it:    fn ({s}, *App) !void\n" ++
+            "  found:         {s}",
+        .{ @typeName(StatePtr), @typeName(E), @typeName(StatePtr), @typeName(@TypeOf(render)) },
+    ));
+    return info.params.len == 3;
+}
+
+/// The generated builder for the named form: reads the name the sheet
+/// was opened with and hands it over typed. `bindAs` still owns the
+/// context — the erasure, the cast, the null unwrap — so this adds the
+/// one thing binding cannot know and nothing else.
+fn Named(comptime E: type, comptime render: anytype, comptime StatePtr: type) type {
+    return struct {
+        fn build(self: StatePtr, app: *App) anyerror!void {
+            // The name is this builder's own, installed a line before
+            // it ran. It answers null only where something re-installed
+            // a foreign one over this context, and a builder that
+            // cannot say which sheet it is declines rather than guess:
+            // presenting nothing is how a builder says no.
+            return render(self, app, sheetTagAs(app, E, self) orelse return);
+        }
+    };
 }
 
 /// The open sheet's `SheetBuilder.tag` — null when no declared sheet
@@ -81,16 +221,93 @@ pub fn openSheet(app: *App, builder: SheetBuilder) !void {
 /// on*, so a builder can read its own tag mid-build. A bare
 /// `presentSheet` with no declared builder answers null — that sheet
 /// has no consumer name, and dies on reload besides.
+///
+/// This is the raw answer over a namespace every controller shares:
+/// "which sheet is up", including one this caller has never heard of.
+/// The question a controller means is almost always `sheetTagAs`'s —
+/// "is *mine* up, and which" — and asking it this way instead is how a
+/// tag from another controller gets read as one of your own.
 pub fn openSheetTag(app: *const App) ?u32 {
     const builder = app.sheet_builder orelse return null;
     return builder.tag;
 }
 
+/// Which of *this* controller's sheets is up: the open builder's tag as
+/// an `E`, and null unless the open sheet is one this `ctx` opened.
+///
+/// The tag namespace is flat and shared — every controller in an app
+/// mints into the same `u32` — so `openSheetTag` alone cannot say
+/// whether the number it just handed back is yours. Two controllers
+/// whose enums both start at 1 read each other's sheets as their own,
+/// which is the hazard, and it shows up as a controller re-presenting
+/// its dialog over whatever was open. The context is what disambiguates
+/// them, and it is already on the kept builder, so nothing new is
+/// stored to answer this.
+///
+/// `ctx` is the same pointer the sheet was opened with — the controller
+/// itself at every real site (`openSheetAs` binds it for you). A tag
+/// this controller minted from some *other* enum answers null too: it
+/// is not a member of `E`, so it is not this question's answer, and
+/// reading it as one would be an illegal cast.
+pub fn sheetTagAs(app: *const App, comptime E: type, ctx: ?*anyopaque) ?E {
+    comptime checkTagEnum(E, "sheetTagAs");
+    const builder = app.sheet_builder orelse return null;
+    if (builder.ctx != ctx) return null;
+    return std.enums.fromInt(E, builder.tag);
+}
+
+/// Takes the sheet down and rebuilds the screen behind it — the pair
+/// every consumer wrote at every close, once.
+///
+/// The rebuild is `reload`, not `refresh`: closing a sheet is the
+/// user's own gesture (they pressed Cancel, or the work finished), and
+/// the deliberate verb is the one that does not ask permission. Its
+/// error is swallowed here for the reason `App.refresh` swallows the
+/// same one — nothing at a close handler can act on a failed rebuild,
+/// the state is already written, and the next navigation or gesture
+/// builds the screen from it. The one failure that is a programmer
+/// error, a `reload` issued from inside a builder, is recorded by the
+/// router either way (`Router.refused`), so the `catch` hides nothing.
+pub fn closeSheet(app: *App) void {
+    dismissSheet(app);
+    app.reload() catch {};
+}
+
 /// Re-runs the kept builder — the router's arm of `openSheet`'s
 /// promise, called after a reload's rebuild. No-op without one.
-pub fn representSheet(app: *App) !void {
+pub fn representSheet(app: *App) OpenSheetError!void {
     const builder = app.sheet_builder orelse return;
     try openSheet(app, builder);
+}
+
+/// What a sheet enum must be, checked at both typed doors so a bad one
+/// fails at the call that names it rather than at the cast inside.
+///
+/// The tag on the wire is a `u32` whose 0 means *unnamed* — the sheet a
+/// controller with only one never bothered to name. An enum minting 0
+/// would make "this sheet has no name" and "this sheet is my first one"
+/// the same answer, at the one door whose whole job is telling sheets
+/// apart, so it is refused here instead: start the enum at 1.
+fn checkTagEnum(comptime E: type, comptime who: []const u8) void {
+    const info = switch (@typeInfo(E)) {
+        .@"enum" => |e| e,
+        else => @compileError(std.fmt.comptimePrint(
+            "{s}: `{s}` is not an enum. A sheet's name is one member of the enum " ++
+                "listing that controller's sheets.",
+            .{ who, @typeName(E) },
+        )),
+    };
+    for (info.fields) |f| {
+        if (f.value == 0) @compileError(std.fmt.comptimePrint(
+            "{s}: `{s}.{s}` is 0, which is how a sheet says it has no name at all. " ++
+                "Start the enum at 1: `enum(u32) {{ {s} = 1, … }}`.",
+            .{ who, @typeName(E), f.name, f.name },
+        ));
+        if (f.value < 0 or f.value > std.math.maxInt(u32)) @compileError(std.fmt.comptimePrint(
+            "{s}: `{s}.{s}` is {d}, which does not fit the `u32` a sheet's tag rides in.",
+            .{ who, @typeName(E), f.name, f.value },
+        ));
+    }
 }
 
 /// Forgets the kept builder and tells its `on_dismiss` — the

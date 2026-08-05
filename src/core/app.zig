@@ -273,12 +273,23 @@ pub const App = struct {
     pub const setNav = nav_mod.setNav;
     pub const clearNav = nav_mod.clearNav;
     pub const openSheet = overlays.openSheet;
+    /// `openSheet` with the sheet's name typed and the context bound —
+    /// the door for a controller whose sheets are named (overlays.zig).
+    pub const openSheetAs = overlays.openSheetAs;
     /// Which declared sheet is up (`SheetBuilder.tag`), or null — the
     /// framework's answer to the question every controller used to
     /// mirror in an enum beside it (overlays.zig).
     pub const openSheetTag = overlays.openSheetTag;
+    /// Which of *this* controller's sheets is up, typed — null unless
+    /// the open sheet is one this context opened (overlays.zig).
+    pub const sheetTagAs = overlays.sheetTagAs;
     pub const presentSheet = overlays.presentSheet;
     pub const dismissSheet = overlays.dismissSheet;
+    /// Takes the sheet down and rebuilds the screen behind it — the
+    /// pair every close handler wrote by hand (overlays.zig).
+    pub const closeSheet = overlays.closeSheet;
+    /// What the sheet doors answer instead of `anyerror` (overlays.zig).
+    pub const OpenSheetError = overlays.OpenSheetError;
     pub const notify = notices_mod.notify;
     pub const dismissNotice = notices_mod.dismissNotice;
     pub const dismissNoticeAt = notices_mod.dismissNoticeAt;

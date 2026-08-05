@@ -326,6 +326,94 @@ pub const Cursor = struct {
         }
     }
 
+    /// What `confirmSheet` fills a confirmation with. Everything is the
+    /// app's own copy, and the two optional lines default to appending
+    /// nothing, as `LoadGate`'s do.
+    pub const ConfirmSheet = struct {
+        /// What is about to happen, in the app's words. Optional
+        /// because a sheet whose title already asks the whole question
+        /// says nothing twice, and because a confirmation with more to
+        /// show — a continuity warning, a typed-name box — appends that
+        /// itself before calling this.
+        body: ?[]const u8 = null,
+        /// What the last attempt reported, said where the user is about
+        /// to press again. Plain body copy: nokre has no error styling,
+        /// and the words are what carries it.
+        error_copy: ?[]const u8 = null,
+        /// The act being confirmed — the filled primary.
+        confirm: Confirm,
+        /// The way out — the secondary beside it.
+        cancel: Cancel,
+        /// The confirmed act is running: the primary takes
+        /// `in_progress`, which is the whole of what a busy
+        /// confirmation shows.
+        busy: bool = false,
+
+        pub const Confirm = struct {
+            label: []const u8,
+            on_press: element_mod.Action,
+            /// The sheet's own precondition, when it has one — a
+            /// checkbox not ticked, a name not typed. Distinct from
+            /// `busy`, which the sheet derives from its work.
+            disabled: bool = false,
+        };
+
+        /// No `disabled`, deliberately — see `confirmSheet`.
+        pub const Cancel = struct {
+            label: []const u8,
+            on_press: element_mod.Action,
+        };
+    };
+
+    /// The confirmation dialog's body: what is about to happen, what
+    /// went wrong last time, and the two buttons — the composition
+    /// every confirm sheet in both real consumers wrote identically.
+    /// Called on the sheet's own cursor, after `presentSheet` (whose
+    /// argument is the title: the question belongs to the sheet, not to
+    /// this).
+    ///
+    /// ```zig
+    /// const sheet = app.at(try app.presentSheet(tr(.removeMemberTitle)));
+    /// try sheet.confirmSheet(.{
+    ///     .body = tr(.removeMemberBody),
+    ///     .error_copy = if (self.failed) tr(.couldNotRemove) else null,
+    ///     .confirm = .{ .label = tr(.remove), .on_press = .bind(C.confirmRemove, self) },
+    ///     .cancel = .{ .label = tr(.cancel), .on_press = .bind(App.closeSheet, app) },
+    ///     .busy = self.removing,
+    /// });
+    /// ```
+    ///
+    /// **Cancel stays enabled while the act is running**, which is the
+    /// question the two consumers disagreed about, settled here. nokre
+    /// has no spinner and no animation: a busy confirmation shows a
+    /// static `in_progress` primary and nothing else moves, so a user
+    /// who cannot tell whether anything is happening must keep the way
+    /// out. Taking it away is backwards at the moment the interface is
+    /// least legible — and dismissal is reachable anyway, by Esc, by
+    /// the scrim, and by the close control the framework pins, so a
+    /// disabled Cancel would be a control lying about what the sheet
+    /// permits. What a cancelled act owes — a reply landing on a sheet
+    /// that is gone — belongs to the handler that started it, not to a
+    /// button that pretends the door is locked. The audit already says
+    /// the weaker half of this (`sheet_missing_dismiss`: a sheet whose
+    /// buttons are all disabled leaves pointer users on Esc-less
+    /// platforms with only the pinned ×); this says the rest of it.
+    pub fn confirmSheet(c: Cursor, s: ConfirmSheet) !void {
+        if (s.body) |copy| try c.text(copy);
+        if (s.error_copy) |copy| try c.text(copy);
+        try c.button(.{
+            .label = s.confirm.label,
+            .disabled = s.confirm.disabled,
+            .in_progress = s.busy,
+            .on_press = s.confirm.on_press,
+        });
+        try c.button(.{
+            .label = s.cancel.label,
+            .form = .{ .secondary = null },
+            .on_press = s.cancel.on_press,
+        });
+    }
+
     /// The one shape every container method shares: append, then stand
     /// on what was appended.
     fn child(c: Cursor, e: element_mod.Element) !Cursor {

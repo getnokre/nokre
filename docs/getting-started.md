@@ -834,20 +834,26 @@ explicit `scroll_region` only to pin a viewport *within* a screen
 the rest this app doesn't need).
 
 The sheet is *declared* to the app, never appended by a screen builder:
-`openSheet` takes a builder fn, runs it now, and keeps it — so the
-framework can build the sheet again whenever it must (a `reload` under
-an open sheet, for one). Everything else about its lifecycle is
-framework-owned too — close control pinned, focus moved in, everything
-behind inert, Esc/scrim dismissal, focus returned:
+`openSheetAs` takes a name and a builder fn, runs it now, and keeps it
+— so the framework can build the sheet again whenever it must (a
+`reload` under an open sheet, for one). Everything else about its
+lifecycle is framework-owned too — close control pinned, focus moved
+in, everything behind inert, Esc/scrim dismissal, focus returned:
 
 ```zig
+/// This app's sheets, named. One member and it still earns the enum:
+/// the name is what lets `app.sheetTagAs(Sheet, state)` say an open
+/// sheet is *this* state's, and 0 is reserved for a sheet with no name.
+const Sheet = enum(u32) { new_note = 1 };
+
 pub fn openNewNote(state: *State) void {
     state.draft = .{};
-    state.app.openSheet(.{ .ctx = state, .call = buildNewNote }) catch return;
+    state.app.openSheetAs(Sheet.new_note, buildNewNote, state) catch return;
 }
 
-fn buildNewNote(ctx: ?*anyopaque, app: *nokre.App) anyerror!void {
-    const state: *State = @ptrCast(@alignCast(ctx.?));
+// A sheet builder is written like a screen builder — the state typed,
+// the name only where there are several sheets to tell apart.
+fn buildNewNote(state: *State, app: *nokre.App) !void {
     // `presentSheet` hands back the sheet's node; `app.at` is the
     // cursor standing on it.
     const sheet = app.at(try app.presentSheet("New note"));
@@ -863,7 +869,6 @@ fn buildNewNote(ctx: ?*anyopaque, app: *nokre.App) anyerror!void {
 }
 
 pub fn commitDraft(state: *State) void {
-    state.app.dismissSheet();
     // `blank` is empty-or-whitespace: a draft of nothing but spaces is
     // nothing, and a form asking that question is why the verb exists.
     if (!state.draft.blank()) {
@@ -876,16 +881,19 @@ pub fn commitDraft(state: *State) void {
         else
             "No room — this app holds 16 notes.";
     }
-    state.app.refresh(.{});
+    // Write the state, then close: `closeSheet` takes the sheet down
+    // and rebuilds the screen behind it from what you just wrote.
+    state.app.closeSheet();
 }
 ```
 
-(This app has one sheet and no closure work to do, so it declares
-neither a `tag` nor an `on_dismiss`: whether a sheet is up is already
-the framework's answer — `app.openSheetTag()` — and `on_dismiss` exists
-for the work a closure owes, not for recording it. A controller with
-several sheets names each with `tag` — [elements.md](elements.md),
-"sheet", has the full contract.)
+(This app has no closure work to do, so it declares no `on_dismiss`:
+whether its sheet is up is already the framework's answer —
+`app.sheetTagAs(Sheet, state)` — and `on_dismiss` exists for the work a
+closure owes, not for recording it. A controller with several sheets
+lists them all in that one enum and its builder takes the name as a
+third parameter — [elements.md](elements.md), "sheet", has the full
+contract.)
 
 (`editDraft` is one `state.draft.set(value)`, like `editPassphrase`. A
 `text_area` because Enter must insert a newline; submission belongs to

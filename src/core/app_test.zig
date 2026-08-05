@@ -2221,10 +2221,27 @@ test "a builder that fails strands no half-built sheet" {
     const behind = try app.tree.appendId(app.tree.rootId(), .{ .button = .{ .label = "Behind" } });
     app.focused = .of(behind);
 
-    try testing.expectError(error.SheetFixture, app.openSheet(.{ .call = buildHalfThenFail }));
+    // The builder's own error becomes the one bit the opener can act
+    // on: no sheet is up. Its identity stopped at the door, where
+    // `anyerror` used to cross it (`overlays.OpenSheetError`).
+    try testing.expectError(error.SheetBuildFailed, app.openSheet(.{ .call = buildHalfThenFail }));
     try testing.expect(layout.findSheet(&app.tree) == null);
     try testing.expect(app.sheet_builder == null);
     try testing.expect(app.focused.?.on(behind));
+}
+
+fn buildOutOfMemory(_: ?*anyopaque, _: *App) anyerror!void {
+    return error.OutOfMemory;
+}
+
+test "the one failure that is not about this sheet keeps its name" {
+    var app = try test_app.init(400, 600);
+    defer app.deinit();
+    // An app that reports memory pressure differently from a dialog
+    // that failed can still tell them apart — the whole reason the
+    // declared set has two members rather than one.
+    try testing.expectError(error.OutOfMemory, app.openSheet(.{ .call = buildOutOfMemory }));
+    try testing.expect(app.sheet_builder == null);
 }
 
 test "openSheetTag answers the declared tag while the sheet is up, null when closed" {
@@ -2254,6 +2271,132 @@ test "openSheetTag answers the declared tag while the sheet is up, null when clo
     // consumer name (and dies on reload besides).
     _ = try app.presentSheet("Options");
     try testing.expectEqual(@as(?u32, null), app.openSheetTag());
+}
+
+// ---- the typed door: openSheetAs / sheetTagAs (overlays.zig) ----
+
+/// A controller in miniature whose sheets are *named*, and which there
+/// are two of on one screen — the shape that made the flat tag
+/// namespace a hazard: both mint from 1, so the raw answer cannot say
+/// whose sheet is up.
+const TypedSheetHost = struct {
+    who: []const u8,
+    builds: u32 = 0,
+    saw: ?Sheet = null,
+
+    const Sheet = enum(u32) { remove = 1, refresh };
+
+    fn render(self: *TypedSheetHost, app: *App, which: Sheet) anyerror!void {
+        self.builds += 1;
+        self.saw = which;
+        const sheet = app.at(try app.presentSheet(self.who));
+        try sheet.button(.{ .label = @tagName(which) });
+    }
+
+    /// The other builder shape: a sheet with nothing to tell apart
+    /// still declares its name, and still reads its own state.
+    fn renderOnly(self: *TypedSheetHost, app: *App) anyerror!void {
+        self.builds += 1;
+        const sheet = app.at(try app.presentSheet(self.who));
+        try sheet.button(.{ .label = "Only" });
+    }
+
+    fn refuse(_: *TypedSheetHost, _: *App, _: Sheet) anyerror!void {
+        return error.HostFixture;
+    }
+
+    /// A sheet opened the untyped way over this same context — what a
+    /// controller's *other* sheets look like to `sheetTagAs`.
+    fn plain(_: ?*anyopaque, app: *App) anyerror!void {
+        _ = try app.presentSheet("Unnamed");
+    }
+};
+
+test "openSheetAs hands the builder the name it was opened with, typed" {
+    var app = try test_app.init(400, 600);
+    defer app.deinit();
+    var host: TypedSheetHost = .{ .who = "Members" };
+
+    try app.openSheetAs(TypedSheetHost.Sheet.refresh, TypedSheetHost.render, &host);
+    // The three lines every render prologue opened with — the cast, the
+    // tag unwrap, the `@enumFromInt` — are the framework's own record,
+    // handed over rather than reconstructed.
+    try testing.expectEqual(TypedSheetHost.Sheet.refresh, host.saw.?);
+    try testing.expectEqual(@as(u32, 1), host.builds);
+    try testing.expect(sheetHasButton(&app, "refresh"));
+    try testing.expectEqual(TypedSheetHost.Sheet.refresh, app.sheetTagAs(TypedSheetHost.Sheet, &host).?);
+}
+
+test "sheetTagAs answers the controller whose sheet is up, and no other" {
+    var app = try test_app.init(400, 600);
+    defer app.deinit();
+    var a: TypedSheetHost = .{ .who = "Danger" };
+    var b: TypedSheetHost = .{ .who = "Takeover" };
+
+    try app.openSheetAs(TypedSheetHost.Sheet.remove, TypedSheetHost.render, &a);
+
+    // The raw answer cannot tell them apart: one number, one namespace,
+    // and B's `.remove` is A's `.remove`. That is the cross-fire — a
+    // controller re-presenting its dialog over whatever was open.
+    try testing.expectEqual(@as(?u32, 1), app.openSheetTag());
+    try testing.expectEqual(TypedSheetHost.Sheet.remove, app.sheetTagAs(TypedSheetHost.Sheet, &a).?);
+    try testing.expectEqual(@as(?TypedSheetHost.Sheet, null), app.sheetTagAs(TypedSheetHost.Sheet, &b));
+
+    // And it keeps answering across the rebuilds that keep the sheet
+    // alive, because it reads the kept builder, not a mirror.
+    try app.openSheetAs(TypedSheetHost.Sheet.remove, TypedSheetHost.render, &a);
+    try testing.expectEqual(TypedSheetHost.Sheet.remove, app.sheetTagAs(TypedSheetHost.Sheet, &a).?);
+    try testing.expectEqual(@as(?TypedSheetHost.Sheet, null), app.sheetTagAs(TypedSheetHost.Sheet, &b));
+
+    // B taking the screen is the same question answered the other way.
+    try app.openSheetAs(TypedSheetHost.Sheet.refresh, TypedSheetHost.render, &b);
+    try testing.expectEqual(@as(?TypedSheetHost.Sheet, null), app.sheetTagAs(TypedSheetHost.Sheet, &a));
+    try testing.expectEqual(TypedSheetHost.Sheet.refresh, app.sheetTagAs(TypedSheetHost.Sheet, &b).?);
+
+    app.dismissSheet();
+    try testing.expectEqual(@as(?TypedSheetHost.Sheet, null), app.sheetTagAs(TypedSheetHost.Sheet, &b));
+}
+
+test "a tag that is not a member of the asked enum is not the asked question's answer" {
+    var app = try test_app.init(400, 600);
+    defer app.deinit();
+    var host: TypedSheetHost = .{ .who = "Members" };
+
+    // Same context, a sheet it opened without a name: 0 is "unnamed",
+    // never `Sheet`'s first member — which is why an enum minting 0 is
+    // refused at both typed doors.
+    try app.openSheet(.{ .ctx = &host, .call = TypedSheetHost.plain });
+    try testing.expectEqual(@as(?u32, 0), app.openSheetTag());
+    try testing.expectEqual(@as(?TypedSheetHost.Sheet, null), app.sheetTagAs(TypedSheetHost.Sheet, &host));
+
+    // And a name from some other enum answers null rather than casting
+    // into a member `Sheet` does not have.
+    try app.openSheet(.{ .ctx = &host, .tag = 9, .call = TypedSheetHost.plain });
+    try testing.expectEqual(@as(?TypedSheetHost.Sheet, null), app.sheetTagAs(TypedSheetHost.Sheet, &host));
+}
+
+test "a builder with nothing to tell apart drops the name and still has one" {
+    var app = try test_app.init(400, 600);
+    defer app.deinit();
+    var host: TypedSheetHost = .{ .who = "Delete" };
+
+    try app.openSheetAs(TypedSheetHost.Sheet.remove, TypedSheetHost.renderOnly, &host);
+    try testing.expectEqual(@as(u32, 1), host.builds);
+    try testing.expect(sheetHasButton(&app, "Only"));
+    // The name it never asked for is the one that makes this sheet
+    // *its* sheet, which is the whole answer to the tag-0 collision.
+    try testing.expectEqual(TypedSheetHost.Sheet.remove, app.sheetTagAs(TypedSheetHost.Sheet, &host).?);
+}
+
+test "openSheetAs answers the same declared error the untyped door does" {
+    var app = try test_app.init(400, 600);
+    defer app.deinit();
+    var host: TypedSheetHost = .{ .who = "Members" };
+    try testing.expectError(
+        error.SheetBuildFailed,
+        app.openSheetAs(TypedSheetHost.Sheet.remove, TypedSheetHost.refuse, &host),
+    );
+    try testing.expect(app.sheet_builder == null);
 }
 
 /// The dismissal-ordering fixture: records what `openSheetTag` says
@@ -2417,6 +2560,59 @@ test "the sheet's tag survives refresh's re-present and reload's carry" {
     // Navigation is a closure, and takes the name with the sheet.
     try app.navigate("docs");
     try testing.expectEqual(@as(?u32, null), app.openSheetTag());
+}
+
+test "closeSheet takes the sheet down and rebuilds the screen behind it" {
+    var host: RefreshHost = .{};
+    var app = try host.fixture();
+    defer app.deinit();
+    try app.navigate("notes");
+    try app.openSheet(.{ .ctx = &host, .call = RefreshHost.buildSheet });
+    try testing.expectEqual(@as(u32, 1), host.screen_builds);
+
+    // Both halves, at one door: the sheet is gone with its builder, and
+    // the screen behind — built before whatever the sheet just did —
+    // is built again from the state that did it.
+    app.closeSheet();
+    try testing.expect(layout.findSheet(&app.tree) == null);
+    try testing.expect(app.sheet_builder == null);
+    try testing.expectEqual(@as(u32, 2), host.screen_builds);
+    try testing.expectEqual(@as(u32, 1), host.sheet_builds);
+}
+
+test "closeSheet is a whole button's worth of handler: it binds as one" {
+    var host: RefreshHost = .{};
+    var app = try host.fixture();
+    defer app.deinit();
+    try app.navigate("notes");
+    try app.openSheet(.{ .ctx = &host, .call = RefreshHost.buildSheet });
+
+    // What a Cancel button is now wired to. The verb takes the App and
+    // nothing else, so the App *is* the state it binds against — which
+    // is what lets a controller stop declaring a close of its own.
+    const cancel: element_mod.Action = .bind(App.closeSheet, &app);
+    cancel.invoke();
+    try testing.expect(layout.findSheet(&app.tree) == null);
+    try testing.expectEqual(@as(u32, 2), host.screen_builds);
+}
+
+test "closeSheet rebuilds deliberately: a held edit does not stop it" {
+    var host: RefreshHost = .{};
+    var app = try host.fixture();
+    defer app.deinit();
+    try app.navigate("notes");
+    try app.openSheet(.{ .ctx = &host, .call = RefreshHost.buildSheet });
+
+    // Focus returns to the screen behind on dismissal, and that screen
+    // carries an editable — the one thing the *polite* verb declines
+    // for. Closing a sheet is the user's own gesture, so it takes the
+    // deliberate path, as the hand-written pair did at all 13 copies.
+    var it = app.tree.dfs();
+    while (it.next()) |id| {
+        if (app.tree.getConst(id).?.* == .text_input) app.sheet_return_focus = .of(id);
+    }
+    app.closeSheet();
+    try testing.expectEqual(@as(u32, 2), host.screen_builds);
 }
 
 test "refresh from inside a build declines quietly, with nothing on the record" {

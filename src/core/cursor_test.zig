@@ -313,6 +313,95 @@ test "loadGate: the title heads loading and failed alike" {
     }
 }
 
+test "confirmSheet: the four appends every confirmation wrote by hand" {
+    var tree = try Tree.init(std.testing.allocator);
+    defer tree.deinit();
+    const root = rootCursor(&tree);
+
+    const Acts = struct {
+        confirmed: usize = 0,
+        cancelled: usize = 0,
+        fn confirm(self: *@This()) void {
+            self.confirmed += 1;
+        }
+        fn cancel(self: *@This()) void {
+            self.cancelled += 1;
+        }
+    };
+    var acts: Acts = .{};
+
+    try root.confirmSheet(.{
+        .body = "This removes their access.",
+        .error_copy = "Could not remove them.",
+        .confirm = .{ .label = "Remove", .on_press = .bind(Acts.confirm, &acts) },
+        .cancel = .{ .label = "Cancel", .on_press = .bind(Acts.cancel, &acts) },
+    });
+
+    // Body, then what went wrong last time, then the filled primary,
+    // then the secondary beside it — the order is the reading order,
+    // and the failure sits where the user is about to press again.
+    try std.testing.expectEqual(@as(usize, 4), tree.childCount(tree.rootId()));
+    var it = tree.children(tree.rootId());
+    try std.testing.expectEqualStrings("This removes their access.", tree.getConst(it.next().?).?.label());
+    try std.testing.expectEqualStrings("Could not remove them.", tree.getConst(it.next().?).?.label());
+    const confirm = tree.getConst(it.next().?).?.button;
+    try std.testing.expectEqualStrings("Remove", confirm.label);
+    try std.testing.expectEqual(element_mod.Button.Form{ .filled = null }, confirm.form);
+    confirm.on_press.invoke();
+    const cancel = tree.getConst(it.next().?).?.button;
+    try std.testing.expectEqualStrings("Cancel", cancel.label);
+    try std.testing.expectEqual(element_mod.Button.Form{ .secondary = null }, cancel.form);
+    cancel.on_press.invoke();
+    try std.testing.expectEqual(@as(usize, 1), acts.confirmed);
+    try std.testing.expectEqual(@as(usize, 1), acts.cancelled);
+}
+
+test "confirmSheet: busy marks the primary and leaves the way out" {
+    var tree = try Tree.init(std.testing.allocator);
+    defer tree.deinit();
+    const root = rootCursor(&tree);
+
+    try root.confirmSheet(.{
+        .confirm = .{ .label = "Delete", .on_press = .{} },
+        .cancel = .{ .label = "Cancel", .on_press = .{} },
+        .busy = true,
+    });
+
+    // The settled disagreement: with no spinner and no animation, a
+    // busy sheet shows a static `in_progress` primary and nothing else
+    // moves, so Cancel stays pressable — and stays a focus stop, which
+    // is what makes it the way out rather than a control that lies.
+    var it = tree.children(tree.rootId());
+    const confirm = tree.getConst(it.next().?).?.button;
+    try std.testing.expect(confirm.in_progress);
+    try std.testing.expect(!confirm.disabled);
+    const cancel = tree.getConst(it.next().?).?.button;
+    try std.testing.expect(!cancel.disabled);
+    try std.testing.expect(!cancel.in_progress);
+    try std.testing.expect(tree.getConst(lastChild(&tree, tree.rootId())).?.isInteractive());
+}
+
+test "confirmSheet: both copies are optional, and the precondition is the primary's" {
+    var tree = try Tree.init(std.testing.allocator);
+    defer tree.deinit();
+    const root = rootCursor(&tree);
+
+    // A confirmation whose title asks the whole question, and whose
+    // body is content the sheet appended itself before calling this —
+    // a continuity warning, a checkbox — says neither line here.
+    try root.confirmSheet(.{
+        .confirm = .{ .label = "Delete", .on_press = .{}, .disabled = true },
+        .cancel = .{ .label = "Cancel", .on_press = .{} },
+    });
+    try std.testing.expectEqual(@as(usize, 2), tree.childCount(tree.rootId()));
+    var it = tree.children(tree.rootId());
+    const confirm = tree.getConst(it.next().?).?.button;
+    // The sheet's own precondition — a name not typed, a box not
+    // ticked — is distinct from `busy`, and only the primary has one.
+    try std.testing.expect(confirm.disabled);
+    try std.testing.expect(!confirm.in_progress);
+}
+
 test "root and at stand where they say" {
     var app = try test_app.init(400, 400);
     defer app.deinit();

@@ -123,7 +123,7 @@ and guessing would move a screen reader's cursor somewhere nobody asked
 for.
 
 **An open sheet survives `reload` too, by the same argument.** A sheet
-is declared to the app as a builder (`App.openSheet` —
+is declared to the app as a builder (`App.openSheetAs` —
 docs/elements.md, "sheet"), and after a reload rebuilds the screen the
 framework runs that builder again, so a dialog is never the reason
 state cannot be answered. The other four motions drop it — each is a

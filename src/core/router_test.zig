@@ -919,8 +919,12 @@ const SheetFocusCtx = struct {
         try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Refresh" } });
     }
 
-    fn buildSheet(ctx: ?*anyopaque, app: *App) anyerror!void {
-        const self: *SheetFocusCtx = @ptrCast(@alignCast(ctx.?));
+    /// Declared through the typed door, so the carry is proved for the
+    /// builder shape consumers actually write: the name rides on the
+    /// kept builder, and the reload runs it again.
+    const Sheet = enum(u32) { confirm = 1 };
+
+    fn buildSheet(self: *SheetFocusCtx, app: *App) anyerror!void {
         if (!self.sheet_open) return;
         const sheet = try app.presentSheet("Confirm");
         try app.tree.append(sheet, .{ .button = .{ .label = "Keep" } });
@@ -939,7 +943,7 @@ test "reload under a sheet re-finds focus inside the re-presented sheet" {
     defer app.deinit();
     try app.navigate("home");
     data.sheet_open = true;
-    try app.openSheet(.{ .ctx = &data, .call = SheetFocusCtx.buildSheet });
+    try app.openSheetAs(SheetFocusCtx.Sheet.confirm, SheetFocusCtx.buildSheet, &data);
 
     const before = nodeLabeled(&app, "Delete").?;
     app.focused = .of(before);
@@ -947,6 +951,9 @@ test "reload under a sheet re-finds focus inside the re-presented sheet" {
     const after = app.focused orelse return error.TestUnexpectedResult;
     try testing.expect(!after.node.eql(before));
     try testing.expectEqualStrings("Delete", app.tree.getConst(after.node).?.label());
+    // The reload carried the builder, and the builder still knows which
+    // sheet it is — a name survives what the sheet survives.
+    try testing.expectEqual(SheetFocusCtx.Sheet.confirm, app.sheetTagAs(SheetFocusCtx.Sheet, &data).?);
 }
 
 test "reloadSafe: an overlay or an edit in flight says wait" {

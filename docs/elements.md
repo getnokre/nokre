@@ -71,6 +71,41 @@ A phase switch whose states say more than this (styled copy, extra
 controls) stays a hand-written `switch` — the gate is the common
 scaffold, not a required door.
 
+### The confirm sheet
+
+The other composition every consumer wrote identically: a sheet that
+asks before it acts. Title, what is about to happen, what went wrong
+last time, the act, the way out — `confirmSheet` is the four appends
+after the title, on the sheet's own cursor:
+
+```zig
+const sheet = app.at(try app.presentSheet(tr(.removeMemberTitle)));
+try sheet.confirmSheet(.{
+    .body = tr(.removeMemberBody),
+    .error_copy = if (self.failed) tr(.couldNotRemove) else null,
+    .confirm = .{ .label = tr(.remove), .on_press = .bind(Members.confirmRemove, self) },
+    .cancel = .{ .label = tr(.cancel), .on_press = .bind(nokre.App.closeSheet, app) },
+    .busy = self.removing,
+});
+```
+
+The question is the sheet's *title*, so it stays `presentSheet`'s
+argument; `.body` and `.error_copy` are optional, and a confirmation
+with more to show — a continuity warning, a checkbox that gates the
+act — appends that itself first and then calls this for the tail.
+`.busy` marks the primary `in_progress`; `.confirm.disabled` is the
+sheet's own precondition (a box not ticked), which is a different fact
+and stays a different field.
+
+**Cancel stays enabled while the act is running.** nokre has no spinner
+and no animation, so a busy confirmation shows a static `…` primary and
+nothing else moves: a user who cannot tell whether anything is
+happening must keep the way out. It is reachable anyway — Esc, the
+scrim, and the close control the framework pins are all live — so a
+disabled Cancel would be a control lying about what the sheet permits.
+What a cancelled act owes, a reply landing on a sheet that is gone,
+belongs to the handler that started it.
+
 ### Holding what a callback borrowed
 
 Every slice a service or a port hands a callback is borrowed **for that
@@ -1419,11 +1454,10 @@ framework calls to build the sheet, and calls again whenever it must be
 built again — never appended directly to build content:
 
 ```zig
-const Dialog = enum(u32) { filter = 1, saved_views }; // this controller's sheets, named
+const Sheet = enum(u32) { filter = 1, saved_views }; // this controller's sheets, named
 
-fn buildDialog(ctx: ?*anyopaque, app: *nokre.App) anyerror!void {
-    const c: *Filters = @ptrCast(@alignCast(ctx.?));
-    switch (@as(Dialog, @enumFromInt(app.openSheetTag() orelse return))) {
+fn buildDialog(c: *Filters, app: *nokre.App, which: Sheet) !void {
+    switch (which) {
         .filter => {
             const sheet = app.at(try app.presentSheet("Filter results"));
             try sheet.toggle(.{ .label = "Only unread" });
@@ -1433,38 +1467,81 @@ fn buildDialog(ctx: ?*anyopaque, app: *nokre.App) anyerror!void {
 }
 
 // at the point the user asks for it:
-try app.openSheet(.{ .ctx = c, .tag = @intFromEnum(Dialog.filter), .call = buildDialog });
+try app.openSheetAs(Sheet.filter, buildDialog, c);
 ```
 
-`openSheet` runs the builder at once and keeps it — as data, for as
-long as the sheet is up. The `tag` is the consumer's name for the sheet
-(0 = unnamed, fine for a controller with only one), and
-`App.openSheetTag()` answers it — the declared tag while the sheet is
-up, null once it is not — so a controller never mirrors "which of my
-sheets is open" in its own state: the framework already knows, through
-every rebuild and reload. That one declaration is the whole lifecycle:
+`openSheetAs` runs the builder at once and keeps it — as data, for as
+long as the sheet is up — with the sheet's name typed and the context
+bound, exactly as `Routes(State)` does for a screen. The name arrives
+at the builder because the framework knows it: the builder it is
+running is the one it just installed, so the cast, the tag unwrap and
+the `@enumFromInt` that used to open every one of these functions say
+nothing the `openSheetAs` line did not already say.
 
-- **State changed under the open sheet?** Call `openSheet` again with
-  the same builder — the sheet is rebuilt in place, never stacked. The
-  builder always starts from a tree with no sheet in it (the framework
-  takes the open one down first), so building is always building from
-  scratch, and a builder never calls `dismissSheet` itself.
+A builder with nothing to tell apart drops the last parameter and is
+`fn (c: *Filters, app: *nokre.App) !void` — a sheet builder is written
+like a screen builder. Nothing chooses between the two forms but the
+builder's own parameter list, and Zig refuses an unused parameter, so
+the form that compiles is the honest one. Name the sheet either way:
+that is what lets
+
+```zig
+if (app.sheetTagAs(Sheet, c)) |which| { … }   // is *mine* up, and which?
+```
+
+answer for **this** controller. The tag namespace is flat — every
+controller in an app mints into the same `u32` — so the raw
+`App.openSheetTag()` cannot say whether the number it hands back is
+yours, and two controllers on one screen whose enums both start at 1
+read each other's sheets as their own. The context disambiguates them,
+and `sheetTagAs` is that question. (`0` is how a sheet says it has no
+name at all, which is why an enum with a member at 0 is refused where
+you write it.)
+
+That one declaration is the whole lifecycle:
+
+- **State changed under the open sheet?** Call `openSheetAs` again with
+  the same name and builder — the sheet is rebuilt in place, never
+  stacked. (`App.refresh` does it for you when a sheet owns the
+  screen.) The builder always starts from a tree with no sheet in it
+  (the framework takes the open one down first), so building is always
+  building from scratch, and a builder never calls `dismissSheet`
+  itself.
 - **The screen reloaded?** The builder runs again over the rebuilt
   screen, unasked: a sheet survives `reload` the way scroll does,
   because a reload is the same screen answering changed state. A real
   navigation is a different screen, and drops the sheet.
+- **Done with it?** `App.closeSheet()` — the sheet comes down and the
+  screen behind is rebuilt from the state the sheet just changed. That
+  pair is one verb because it was one pair at every close handler ever
+  written; the rebuild is the deliberate `reload` (closing a sheet is
+  the user's own gesture) and its error is unactionable, so it is
+  swallowed there rather than at your call site. A Cancel button wires
+  straight to it — `.on_press = .bind(nokre.App.closeSheet, app)`, the
+  App being the only state the verb takes — so a controller declares no
+  close of its own.
 - **The sheet closed?** However it happened — Esc, the close control, a
-  tap outside, `App.dismissSheet`, a navigation — the builder is
-  dropped (so `openSheetTag()` already answers null) and its optional
+  tap outside, `closeSheet`, `dismissSheet`, a navigation — the builder
+  is dropped (so `sheetTagAs` already answers null) and its optional
   `on_dismiss` told. That callback is for *work* a closure owes — free
   a held row, cancel a request the dialog was waiting on — not for
   recording that the sheet closed, which is now the framework's answer.
-  A builder that presents nothing has *declined* — its subject vanished
-  — and is dropped quietly, with no `on_dismiss`: the state already
-  knows.
+  A sheet that owes such work declares the `SheetBuilder` struct itself
+  and hands it to `App.openSheet`, the untyped door underneath:
+  `on_dismiss` is a second function over the same context, and binding
+  fills a pair, not a struct. A builder that presents nothing has
+  *declined* — its subject vanished — and is dropped quietly, with no
+  `on_dismiss`: the state already knows.
+
+Both doors answer a **declared** error set, `App.OpenSheetError`:
+`OutOfMemory`, or `SheetBuildFailed` when the builder itself said no.
+Two members because a caller acts on two things — a dialog that did not
+open, and a process out of room; against `anyerror` every call site
+wrote `catch {}` and a failed confirmation vanished with it.
 
 Inside the builder, `presentSheet` is the verb that makes the node: it
-returns the sheet to fill with content.
+returns the sheet to fill with content. A confirmation fills it with
+[the confirm-sheet idiom](#the-confirm-sheet).
 
 A bottom-anchored panel (top corners rounded, `.g6` outline), at most
 `metrics.sheet_max_w` (560px) wide and never closer than
@@ -1646,8 +1723,9 @@ bind.zig: bindAs: this handler does not fit `Port.RowsCallback.call`.
 
 What `bindAs` is not is a way to reach a callback field riding on a
 larger struct — an http `Request` carrying a URL and a tag, a
-`SheetBuilder` carrying its tag. Binding fills a whole value; a struct
-with more in it is built by the code that has the rest.
+`SheetBuilder` carrying its tag and its `on_dismiss`. Binding fills a
+whole value; a struct with more in it is built by the code that has the
+rest, which for a sheet is `App.openSheetAs` (it has the tag).
 
 ## Proposing an element
 

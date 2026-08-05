@@ -329,11 +329,22 @@ fn selectScheme(state: *State, selected: usize) void {
     });
 }
 
+/// This screen's sheets, named. One member and it still earns the
+/// enum: the name is what lets `sheetTagAs` say an open sheet is
+/// *this* state's, and 0 is reserved for a sheet with no name at all.
+const Sheet = enum(u32) { demo = 1 };
+
 fn showSheet(state: *State) void {
-    const app = state.app;
-    const sheet = app.at(app.presentSheet("Sheet demo") catch return);
-    sheet.text("A modal bottom sheet. Everything behind is inert; Esc or a tap outside dismisses it and focus returns where it was.") catch return;
-    sheet.toggle(.{ .label = "A choice inside the sheet" }) catch return;
+    // Declared, not appended: the framework keeps the builder and runs
+    // it again whenever the sheet must be built again — a reload under
+    // it, a state change answered with `refresh`.
+    state.app.openSheetAs(Sheet.demo, buildSheet, state) catch return;
+}
+
+fn buildSheet(_: *State, app: *h.App) !void {
+    const sheet = app.at(try app.presentSheet("Sheet demo"));
+    try sheet.text("A modal bottom sheet. Everything behind is inert; Esc or a tap outside dismisses it and focus returns where it was.");
+    try sheet.toggle(.{ .label = "A choice inside the sheet" });
 }
 
 fn notifySaved(state: *State) void {
