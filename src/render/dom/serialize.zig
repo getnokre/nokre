@@ -603,10 +603,10 @@ pub fn node(em: *Emitter, id: NodeId) anyerror!void {
         },
         .nav_current => |n| {
             // A combo box, not a link: it opens a list and takes a
-            // choice. Its accessible name stays "Section" and the
-            // current one is its *value*, so the control a screen-reader
-            // user looks for does not rename itself every time it is
-            // used.
+            // choice. Its accessible name stays the framework's word for
+            // the control and the current section is its *value*, so the
+            // control a screen-reader user looks for does not rename
+            // itself every time it is used.
             const open = if (em.app.picker_owner) |o| o.eql(id) else false;
             try em.print("<button type=\"button\" class=\"chip current\" role=\"combobox\"" ++
                 " aria-haspopup=\"listbox\" aria-expanded=\"{s}\"{s}", .{
@@ -614,7 +614,15 @@ pub fn node(em: *Emitter, id: NodeId) anyerror!void {
                 if (open) " aria-controls=\"nokre-listbox\"" else "",
             });
             try em.stop(id);
-            try em.raw("><span class=\"visually-hidden\">Section: </span>");
+            // Name from the element's own field (`App.Chrome.section`,
+            // copied in at construction) — the string `label()` hands
+            // the native a11y tree, so both editions say this control's
+            // name in one language. The colon joins a name to its value
+            // and is punctuation, not a word: keeping it out of the
+            // catalog spares every locale a re-typed separator.
+            try em.raw("><span class=\"visually-hidden\">");
+            try em.text(n.name);
+            try em.raw(": </span>");
             try icon(em, n.icon, "", .ink, .body, .mark);
             try em.text(n.section);
             try icon(em, .chevron_up, "", .ink, .body, .mark);
@@ -623,13 +631,21 @@ pub fn node(em: *Emitter, id: NodeId) anyerror!void {
         .nav_here => |n| {
             // A label, not a destination: it goes where you already are,
             // takes no focus, and answers no press.
-            try em.raw("<span class=\"chip current here\"><span class=\"visually-hidden\">Current screen: </span>");
+            try em.raw("<span class=\"chip current here\"><span class=\"visually-hidden\">");
+            try em.text(n.name);
+            try em.raw(": </span>");
             try icon(em, element_mod.nav_here_icon, "", .ink, .body, .mark);
             try em.text(n.value);
             try em.raw("</span>");
         },
-        .back => {
-            try em.raw("<button type=\"button\" class=\"icon-button back\" aria-label=\"Back\"");
+        .back => |b| {
+            // Nothing draws this word, so the attribute is the only
+            // place it reaches anyone — and it is the element's own
+            // (`App.Chrome.back`), the string `label()` gives the
+            // native tree.
+            try em.raw("<button type=\"button\" class=\"icon-button back\" aria-label=\"");
+            try em.text(b.label);
+            try em.raw("\"");
             try em.stop(id);
             try em.raw(">");
             // Back points along the reading direction, so a mirrored
@@ -650,8 +666,10 @@ pub fn node(em: *Emitter, id: NodeId) anyerror!void {
             try children(em, id);
             try em.raw("</div>");
         },
-        .sheet_close => {
-            try em.raw("<button type=\"button\" class=\"icon-button sheet-close\" aria-label=\"Close\"");
+        .sheet_close => |c| {
+            try em.raw("<button type=\"button\" class=\"icon-button sheet-close\" aria-label=\"");
+            try em.text(c.label);
+            try em.raw("\"");
             try em.stop(id);
             try em.raw(">");
             try glyph(em, .dismiss);

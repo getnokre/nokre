@@ -62,6 +62,26 @@ fn expectLacks(haystack: []const u8, needle: []const u8) !void {
     }
 }
 
+/// A chrome word as it must reach the markup, assembled from whatever
+/// the app's catalog says rather than from a literal here — an
+/// assertion spelled in English would pass against a serializer that
+/// only speaks English, which is the drift these two guard.
+fn expectAriaLabel(haystack: []const u8, word: []const u8) !void {
+    const needle = try std.fmt.allocPrint(testing.allocator, "aria-label=\"{s}\"", .{word});
+    defer testing.allocator.free(needle);
+    try expectContains(haystack, needle);
+}
+
+fn expectHiddenName(haystack: []const u8, word: []const u8) !void {
+    const needle = try std.fmt.allocPrint(
+        testing.allocator,
+        "<span class=\"visually-hidden\">{s}: </span>",
+        .{word},
+    );
+    defer testing.allocator.free(needle);
+    try expectContains(haystack, needle);
+}
+
 // ---------------------------------------------------------- the shape
 
 test "the root's children come through in tree order" {
@@ -803,12 +823,105 @@ test "an off-roster screen names itself, and the marker is not a link" {
     const bar = try renderChrome(&app);
     defer testing.allocator.free(bar);
     // It goes where you already are, so it is a label and answers no
-    // press — static_text to assistive tech, named "Current screen"
+    // press — static_text to assistive tech, named by the chrome word
     // with the title as its value.
     try expectContains(bar, "<span class=\"chip current here\">");
-    try expectContains(bar, "Current screen: ");
+    try expectHiddenName(bar, app.chrome.current_screen);
     try expectContains(bar, "Note</span>");
     try expectLacks(bar, "href=\"#note\"");
+}
+
+test "the four framework-chrome names are said in the app's language, not the serializer's" {
+    const Screens = struct {
+        fn build(_: ?*anyopaque, app: *App) anyerror!void {
+            try app.tree.append(app.tree.rootId(), .{ .text = .{ .content = "A note" } });
+        }
+    };
+    // Every other test here runs English, where a hard-coded literal and
+    // a catalog read are the same bytes. This one is the difference: the
+    // words below are what `setChrome` put on the elements, and the
+    // markup must carry them because `label()` does — the guarantee is
+    // that both editions consult one catalog.
+    const tr: element_mod.Chrome = .{
+        .back = "Geri",
+        .close = "Kapat",
+        .section = "Bölüm",
+        .current_screen = "Bu ekran",
+        .sections = "Bölümler",
+    };
+
+    // Phone width and a crowded roster, so the row folds to the chip.
+    var narrow = try App.init(testing.allocator, .{
+        .viewport = .{ .w = 375, .h = 600 },
+        .services = .mocks(),
+        .routes = &.{
+            .{ .name = "library", .title = .{ .fixed = "Library" }, .build = Screens.build },
+            .{ .name = "settings", .title = .{ .fixed = "Settings" }, .build = Screens.build },
+            .{ .name = "explore", .title = .{ .fixed = "Explore" }, .build = Screens.build },
+            .{ .name = "subs", .title = .{ .fixed = "Subscriptions" }, .build = Screens.build },
+        },
+    });
+    defer narrow.deinit();
+    try narrow.setNav(&.{
+        .{ .route = "library", .icon = .library },
+        .{ .route = "settings", .icon = .settings },
+        .{ .route = "explore", .icon = .compass },
+        .{ .route = "subs", .icon = .circle },
+    });
+    try narrow.navigate("library");
+    try narrow.navigate("settings"); // depth 2, so a back control exists
+    _ = try narrow.presentSheet("Bir sayfa");
+    narrow.setChrome(tr);
+
+    const screen = try render(&narrow);
+    defer testing.allocator.free(screen);
+    try expectAriaLabel(screen, tr.back);
+    try expectLacks(screen, "aria-label=\"Back\"");
+
+    const layers = try renderChrome(&narrow);
+    defer testing.allocator.free(layers);
+    try expectAriaLabel(layers, tr.close);
+    try expectLacks(layers, "aria-label=\"Close\"");
+    try expectHiddenName(layers, tr.section);
+    try expectLacks(layers, "Section: ");
+
+    // The off-roster marker is the fourth, and it only stands in a row
+    // that did not fold — so it needs a viewport the roster fits in.
+    var wide = try App.init(testing.allocator, .{
+        .viewport = .{ .w = 900, .h = 600 },
+        .services = .mocks(),
+        .routes = &.{
+            .{ .name = "library", .title = .{ .fixed = "Library" }, .build = Screens.build },
+            .{ .name = "settings", .title = .{ .fixed = "Settings" }, .build = Screens.build },
+            .{ .name = "note", .title = .{ .fixed = "Note" }, .build = Screens.build },
+        },
+    });
+    defer wide.deinit();
+    try wide.setNav(&.{
+        .{ .route = "library", .icon = .library },
+        .{ .route = "settings", .icon = .settings },
+    });
+    try wide.navigate("note");
+    wide.setChrome(tr);
+
+    const bar = try renderChrome(&wide);
+    defer testing.allocator.free(bar);
+    try expectHiddenName(bar, tr.current_screen);
+    try expectLacks(bar, "Current screen: ");
+}
+
+test "a chrome word takes the same escape every other string does" {
+    var app = try test_app.init(500, 700);
+    defer app.deinit();
+    _ = try app.presentSheet("Move note");
+    // A catalog is a consumer's file, so a chrome word is a consumer's
+    // bytes: written raw into an attribute, a quote in one would close
+    // the attribute and the rest would be markup.
+    app.setChrome(.{ .close = "Close \"x\" & go" });
+
+    const layers = try renderChrome(&app);
+    defer testing.allocator.free(layers);
+    try expectContains(layers, "aria-label=\"Close &quot;x&quot; &amp; go\"");
 }
 
 test "an open sheet is a modal dialog named by its title" {
@@ -830,9 +943,10 @@ test "an open sheet is a modal dialog named by its title" {
     try expectContains(layers, ">Move note</h2>");
     try expectLacks(layers, "aria-label=\"Move note\"");
     try expectContains(layers, "<div class=\"scrim\"></div>");
-    // The close control the framework installs is named, and named in
-    // framework English — no consumer's string can name it.
-    try expectContains(layers, "aria-label=\"Close\"");
+    // The close control the framework installs is named by the
+    // framework's own word — no consumer's string can name it, and the
+    // word is the app's chrome, not a literal in the serializer.
+    try expectAriaLabel(layers, app.chrome.close);
 }
 
 test "a picker over a sheet: each layer arrives over a scrim of its own, in paint order" {

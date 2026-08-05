@@ -449,6 +449,23 @@ plaintext` rule here, so a Persian paragraph reads right to left in an
 otherwise left-to-right screen and an app never has to call
 `setDirection` for RTL *text* to be right.
 
+### Framework names come off the element, never out of this file
+
+Four controls are named by nokre rather than by an app — the back
+control, the sheet's close, the collapsed nav chip and the off-roster
+marker. Each carries its own copy of the word
+([localization.md](../localization.md#the-frameworks-own-words) owns the
+list and where it comes from), and this edition reads that copy: the two
+icon-only buttons spend it as `aria-label`, and the two chips, which
+have a name *and* a value where HTML gives them one accessible name,
+write it into a visually-hidden span ahead of the value so the computed
+name comes out in the same two parts AccessKit carries in two fields. A
+literal here would be a second catalog, and a second catalog is one that
+can only ever say English — the whole point of the words riding on the
+elements is that both editions read one. What this edition does supply
+is the colon between the two parts: punctuation joining a name to a
+value, not a word a catalog should have to re-type per locale.
+
 ### A measured answer is only as old as the faces behind it
 
 Measurement is the shell's job on every platform, and here it is the
