@@ -117,7 +117,7 @@ today `Span.route` is `?[]const u8 = null` while `Link`/`Tile`/
 legal is the argument for the optional form on Notice/Notify; either
 way, one spelling.
 
-### 0.6 `Style.family` lets body text into the icon and brand faces, against a documented guarantee
+### 0.6 DONE (nokre `aebe154`, revision 18) — `Style.family` let body text into the icon and brand faces, against a documented guarantee
 text.zig:19-26 states `brand` "is **not a face consumers may set on a
 span or a text element, and the element set gives them no way to name
 it**." But `text.Style` carries the full four-member `Family`, and
@@ -135,7 +135,7 @@ switch (t.style.family) { .icons, .brand => return error.ReservedFamily, else =>
 mapped to `Family` at the render seam — makes the state
 unrepresentable at comptime; more churn, same guarantee. Owner picks.)
 
-### 0.7 Three smaller admission gaps, one shape: input the seam trusts
+### 0.7 DONE (nokre `aebe154`, revision 18) — three smaller admission gaps, one shape: input the seam trusts
 - **wasm exports trust `len`**: `live.zig`'s seven string-carrying
   exports (`boot`:222, `text`:413, `imeUpdate`:424, `imeCommit`:429,
   `navigate`:446, `href`:350, `seedBytes`:242) slice
@@ -659,8 +659,14 @@ passes bump `revision` and move all three pins.
    retains a zero-length consumer pointer, and `tree.zig`'s header
    names the `App.Chrome` strings it borrows by contract instead of
    claiming it never borrows.
-3. **0.6 + 0.7 admission sweep** — family refusal, wasm len clamp,
-   focus one-home vet, iap no-handler; one pass, all doors.
+3. ~~**0.6 + 0.7 admission sweep**~~ — DONE, revision 18 (nokre
+   `aebe154`, rokovski `da58593d`, site `fffd8ed`). Owner picked 0.6's
+   stronger form, so there is no family *refusal*: `Style.family` is a
+   two-member `BodyFamily` widened at one seam in `Style.face()`, and
+   the misuse is a compile error. The wasm clamp is pinned in the node
+   harness (the one gate those exports run in); the focus vet lives in
+   `deliver(.focus)` and both seams shrank, with assistive-tech focus
+   now routed through core instead of writing `focused` directly.
 4. **A1 containers** (additive; consumers migrate the 25 structs and
    3 Str copies mechanically — fork-parallelizable).
 5. **A2.1 `bindAs` export** (additive; Signals and port Callbacks
