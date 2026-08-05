@@ -82,6 +82,15 @@ pub const A11yNode = struct {
     role: A11yRole,
     label: []const u8,
     value: []const u8 = "",
+    /// The accessible *description*: words about the node that are not
+    /// its name and not its value. Today one element writes it — a text
+    /// field's `problem` — and it is announced after both, which is
+    /// where a reason belongs. Every backend already owns this slot
+    /// under its own name (AccessKit `description`, Android's error
+    /// text, an iOS hint), and on the web it is what `aria-describedby`
+    /// computes to, so the DOM edition reaches the same property by
+    /// pointing at the words it already drew.
+    description: []const u8 = "",
     rect: geometry.Rect,
     focusable: bool,
     focused: bool,
@@ -103,6 +112,16 @@ pub const A11yNode = struct {
     /// its focus stop (WCAG 4.1.2: the state is programmatically
     /// determinable, not merely drawn).
     busy: bool = false,
+    /// aria-invalid / AccessKit `invalid`: what this node holds was
+    /// refused. Derived from the words in `description`, never stored
+    /// beside them — a control announced invalid with no reason given
+    /// is the state this slot exists to abolish, so the framework
+    /// cannot spell it.
+    ///
+    /// It is not `disabled`: the field still takes every keystroke, and
+    /// saying otherwise would strand the user in the value that was
+    /// refused. That is the whole difference from the busy pair above.
+    invalid: bool = false,
     heading_level: u8 = 0,
     /// True for the open sheet: adapters expose it as a modal dialog and
     /// treat everything outside as inert.
@@ -222,10 +241,20 @@ fn appendNode(snap: *Snapshot, app: *App, id: NodeId, parent: ?usize) !void {
                 node.value = percentText(pct);
             };
         },
+        // The problem rides in the description and lights `invalid`,
+        // one pair for both fields. An obscured field withholds its
+        // value and not its reason: the secret is what was typed, never
+        // why it was refused.
         .text_input => |i| {
             if (!i.obscured) node.value = i.value;
+            node.description = i.problem;
+            node.invalid = i.problem.len > 0;
         },
-        .text_area => |a| node.value = a.value,
+        .text_area => |a| {
+            node.value = a.value;
+            node.description = a.problem;
+            node.invalid = a.problem.len > 0;
+        },
         .segmented => |s| {
             if (s.selected < s.options.len) node.value = s.options[s.selected];
         },

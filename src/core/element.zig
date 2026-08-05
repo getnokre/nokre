@@ -696,6 +696,32 @@ pub const TextInput = struct {
     /// Password mode: renders one bullet per codepoint and never exposes
     /// the value to assistive tech or traces. Editing is unchanged.
     obscured: bool = false,
+    /// What is wrong with the value, in the app's own words. Empty is
+    /// the ordinary state; any words at all make the field *invalid* —
+    /// the flag is derived from these bytes rather than stored beside
+    /// them, so the two can never disagree.
+    ///
+    /// This is the one form concept that has no home outside the
+    /// element: a message drawn beside a field is prose that happens to
+    /// sit nearby, and prose carries no relation. Every backend has a
+    /// slot for the pair and none of them can be reached from a
+    /// sibling — `aria-invalid` + `aria-describedby` on the web,
+    /// AccessKit's `invalid` + `description` natively, `setContentInvalid`
+    /// + `setError` on Android — so a field error is either a field's
+    /// own field or it is invisible to assistive tech. It is announced
+    /// after the name and the value, which is where a reason belongs:
+    /// the user hears what the control is, what it holds, and then why
+    /// that is not accepted.
+    ///
+    /// The words are the app's, never the framework's. nokre has no
+    /// validation and no opinion about what a valid value is; it owns
+    /// the association, and the association is the part a consumer
+    /// cannot build.
+    ///
+    /// It is not `disabled` and it is not busy: a field with a problem
+    /// takes every keystroke it took before. Saying otherwise would trap
+    /// the user in the value that was refused.
+    problem: []const u8 = "",
     on_change: ChangeAction = .{},
     on_submit: Action = .{},
 };
@@ -708,6 +734,12 @@ pub const TextArea = struct {
     placeholder: []const u8 = "",
     cursor: usize = 0,
     composition: []const u8 = "",
+    /// `TextInput.problem`, unchanged: the words hang under the field at
+    /// the labeled-field gap and the field is announced invalid. A
+    /// multi-line field is refused for the same reasons a single-line
+    /// one is, and the only edition-visible difference is how far down
+    /// the words start.
+    problem: []const u8 = "",
     on_change: ChangeAction = .{},
 };
 

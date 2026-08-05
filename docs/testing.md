@@ -671,6 +671,15 @@ expectation can't be met there, a screen reader user can't meet it either.
   If a screen reader would announce it as the value, this reads it —
   reaching into `tree.getConst(id).?.tile.detail` asserts the same
   bytes through a door the audit does not watch.
+- `expectProblem(label, expected)` — what a field says is wrong with
+  its value (`TextInput.problem`), read the way assistive tech gets it:
+  the node's *description*, with `invalid` asserted alongside. Both,
+  because the pair is the point — a test that compared only the words
+  would pass on a message nothing was told to associate with the field,
+  which is the whole state the slot exists to abolish. The empty string
+  is the assertion that a field is **clean**, which is the shape the
+  other half of every validation test wants: a form that refused a
+  value and then accepted the correction.
 - `expectRoute(route)` — the screen on top ([routing.md](routing.md));
   pair it with `app.router.depth()` when the depth is the point, since
   a push and a `switchTo` land on the same route
@@ -998,6 +1007,7 @@ the wait and the lookup are one call:
 | `untilDestination(app, pacer, title)` | the nav can answer for that destination — `nav_item`, `nav_here`, or the collapsed chip |
 | `untilEnabled` / `untilDisabled(app, pacer, label)` | that button takes presses, or has stopped |
 | `untilValue(app, pacer, label, expected)` | the control with that label *reads* that value on the a11y snapshot |
+| `untilProblem(app, pacer, label, expected)` | the field with that label states that problem — or, for `""`, has come clean |
 
 Everything else is a condition about **your** state — a work queue
 draining, a prefetch sweep finishing — and reaches the same loop
@@ -1038,7 +1048,8 @@ running the harness's own ladders**, each with a wait in front. It is
 not a copy of the harness and not a parallel vocabulary — `press`,
 `typeInto`, `clearField`, `selectOption`, `goTab`, `expectPresent`,
 `expectAbsent`, `expectGone`, `expectRoute`, `expectValue`,
-`expectDisabled`, `expectEnabled`, `expectNotified` mean here exactly
+`expectProblem`, `expectDisabled`, `expectEnabled`, `expectNotified`
+mean here exactly
 what they mean in a unit test,
 because the ladder under each is the same function in `testing.driver`.
 A third edition's driver is a `Device` and a domain vocabulary, not a
@@ -1079,10 +1090,12 @@ Three rules the set follows, each of them a decision:
   wait and strand the verb. `selectOption` waits for a choice control
   the same way. `goTab` waits for the bar to be able to answer for the
   destination in any of its three shapes. `expectValue` waits for the
-  **value**, `expectEnabled`/`expectDisabled` for the **state**: a
+  **value**, `expectProblem` for the **reason**, and
+  `expectEnabled`/`expectDisabled` for the **state**: a
   screen revisited against a real server stands there with the last
-  answer in it, and a button is on screen for the whole time the reply
-  that arms it is in flight. `settled` and `quiesce` are the two that
+  answer in it, a field is unmarked and plausible for the whole time
+  the submission that will refuse it is in flight, and a button is on
+  screen for the whole time the reply that arms it is in flight. `settled` and `quiesce` are the two that
   deliberately do not wait — one audits the frame an action produced,
   the other is a bare deadline.
 

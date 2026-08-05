@@ -456,6 +456,7 @@ pub fn node(em: *Emitter, id: NodeId) anyerror!void {
         .toggle => |t| try switchRow(em, id, "toggle", t.label, .{ .on = t.on, .busy = t.in_progress }),
         .checkbox => |c| try switchRow(em, id, "check", c.label, .{ .on = c.checked, .busy = c.in_progress }),
         .text_input => |t| {
+            try fieldOpen(em, t.problem);
             try em.raw("<label class=\"field\"><span class=\"field-label\">");
             try em.text(t.label);
             try em.print("</span><span class=\"field-box\"><input type=\"{s}\" value=\"", .{
@@ -465,10 +466,13 @@ pub fn node(em: *Emitter, id: NodeId) anyerror!void {
             try em.raw("\" placeholder=\"");
             try em.text(t.placeholder);
             try em.raw("\"");
+            try fieldProblemRef(em, id, t.problem);
             try em.stop(id);
             try em.raw("></span></label>");
+            try fieldClose(em, id, t.problem);
         },
         .text_area => |t| {
+            try fieldOpen(em, t.problem);
             try em.raw("<label class=\"field\"><span class=\"field-label\">");
             try em.text(t.label);
             try em.print("</span><span class=\"field-box\"><textarea rows=\"{d}\" placeholder=\"", .{
@@ -476,6 +480,7 @@ pub fn node(em: *Emitter, id: NodeId) anyerror!void {
             });
             try em.text(t.placeholder);
             try em.raw("\"");
+            try fieldProblemRef(em, id, t.problem);
             try em.stop(id);
             try em.raw(">");
             // The HTML parser drops one newline immediately after the
@@ -484,6 +489,7 @@ pub fn node(em: *Emitter, id: NodeId) anyerror!void {
             if (std.mem.startsWith(u8, t.value, "\n")) try em.raw("\n");
             try em.text(t.value);
             try em.raw("</textarea></span></label>");
+            try fieldClose(em, id, t.problem);
         },
         .select => |s| {
             // Not a `<select>`. A native one opens the platform's own
@@ -910,6 +916,54 @@ fn noticeControls(em: *Emitter, notice: NodeId, flank: enum { lead, trail }) !vo
             try node(em, c);
         }
     }
+}
+
+/// A field's problem, in three pieces around the field's own markup.
+///
+/// The words hang below the field's outline at the labeled-field gap
+/// (`fieldProblemHeight` spends `input_label_gap` on it), which is not
+/// the page's flow gap — so the field and its problem are wrapped and
+/// spaced together, exactly as `tile_group` wraps its caption. The
+/// wrapper exists only when there is something to group.
+///
+/// The wrapping is also load-bearing for the a11y tree, and this is the
+/// one place the two editions had to be argued separately: a text field
+/// is inside an *implicit* `<label>`, whose whole subtree text becomes
+/// the field's accessible name. Words placed in there would be spliced
+/// into the name — "Email That address is already in use" — so the
+/// problem stands outside the label and is reached by reference
+/// instead.
+///
+/// The wrapper's one cost, weighed and taken: a tag change is an
+/// identity change to the live driver, so the frame a problem first
+/// appears in replaces the field's subtree rather than patching it.
+/// Focus and the caret are restored from core on every frame, so what
+/// that actually costs is an *open IME session* — and a problem lands
+/// on a submission or on a committed change, never mid-preedit.
+/// Emitting the wrapper unconditionally would buy the invariant and
+/// charge every field on every page a div it has no use for.
+///
+/// `aria-describedby`, not `aria-errormessage`: the latter is the
+/// tighter-fitting attribute and the one screen readers support least
+/// evenly, while `describedby` is what every AT already reads and what
+/// the WAI's own form-validation tutorial pairs with `aria-invalid`.
+/// The relation computes to the same accessible *description* the
+/// native snapshot carries, so both editions land on one property.
+fn fieldOpen(em: *Emitter, problem: []const u8) !void {
+    if (problem.len == 0) return;
+    try em.raw("<div class=\"field-group\">");
+}
+
+fn fieldProblemRef(em: *Emitter, id: NodeId, problem: []const u8) !void {
+    if (problem.len == 0) return;
+    try em.print(" aria-invalid=\"true\" aria-describedby=\"problem-{d}\"", .{@as(u32, @bitCast(id))});
+}
+
+fn fieldClose(em: *Emitter, id: NodeId, problem: []const u8) !void {
+    if (problem.len == 0) return;
+    try em.print("<p class=\"field-problem\" id=\"problem-{d}\">", .{@as(u32, @bitCast(id))});
+    try em.text(problem);
+    try em.raw("</p></div>");
 }
 
 /// Work in flight stands the control's *drawing* down and nothing else

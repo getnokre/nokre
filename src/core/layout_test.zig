@@ -962,6 +962,35 @@ test "layout: text area holds three rows empty and grows with content" {
     try testing.expectEqual(chrome + 4 * text.Scale.body.lineHeight(), tree.rectOf(ta).h);
 }
 
+test "layout: a problem extends the field's rect below its outline" {
+    var tree = try Tree.init(testing.allocator);
+    defer tree.deinit();
+    const plain = try tree.appendId(tree.rootId(), .{ .text_input = .{ .label = "City" } });
+    const refused = try tree.appendId(tree.rootId(), .{ .text_input = .{
+        .label = "Email",
+        .problem = "That is not an email address.",
+    } });
+    const area = try tree.appendId(tree.rootId(), .{ .text_area = .{
+        .label = "Notes",
+        .problem = "Say a little more than that.",
+    } });
+    compute(&tree, text.Measurer.fixed, .{ .w = 400, .h = 900 });
+
+    // The words ride *inside* the element's rect rather than beside it,
+    // which is what makes them scroll, clip and hit-test with the field
+    // they belong to — the same move `tile_group` makes for a caption.
+    const box = tree.rectOf(plain).h;
+    const words = layout.fieldProblemHeight(text.Measurer.fixed, "That is not an email address.", 400);
+    try testing.expect(words > metrics.input_label_gap);
+    try testing.expectEqual(box + words, tree.rectOf(refused).h);
+
+    const min_area = layout.labeledFieldHeight(3 * text.Scale.body.lineHeight());
+    try testing.expectEqual(
+        min_area + layout.fieldProblemHeight(text.Measurer.fixed, "Say a little more than that.", 400),
+        tree.rectOf(area).h,
+    );
+}
+
 test "design proof: every interactive target is at least 24x24 (WCAG 2.5.8)" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();

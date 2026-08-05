@@ -871,6 +871,43 @@ fn buildBusy(_: ?*anyopaque, app: *App) anyerror!void {
     try app.tree.append(root, .{ .text = .{ .content = "Encrypting..." } });
 }
 
+test "e2e: expectProblem reads the reason and the invalid flag together" {
+    const Screen = struct {
+        fn build(_: ?*anyopaque, app: *App) anyerror!void {
+            const root = app.tree.rootId();
+            try app.tree.append(root, .{ .text_input = .{
+                .label = "Email",
+                .value = "not-an-address",
+                .problem = "That is not an email address.",
+            } });
+            try app.tree.append(root, .{ .text_area = .{ .label = "Notes" } });
+        }
+    };
+    var h = try Harness.init(testing.allocator, .{ .w = 480, .h = 640 }, .{ .build = Screen.build });
+    defer h.deinit();
+
+    try h.expectProblem("Email", "That is not an email address.");
+    // A field with nothing wrong with it answers the same verb with the
+    // empty string — the other half of every validation test.
+    try h.expectProblem("Notes", "");
+
+    var said: diag.Capture = .{};
+    said.start();
+    defer said.stop();
+    try testing.expectError(error.ProblemMismatch, h.expectProblem("Email", "Try again."));
+    try testing.expectEqualStrings(
+        "expected \"Email\" problem \"Try again.\", got \"That is not an email address.\"\n",
+        said.text(),
+    );
+    said.stop();
+
+    // Cleared, and the flag clears with it — the pair is derived from
+    // one string, so there is no second field to leave behind.
+    h.app.tree.get(try h.getByLabel("Email")).?.text_input.problem = "";
+    h.app.invalidate();
+    try h.expectProblem("Email", "");
+}
+
 test "e2e: expectBusy reads across the three kinds that can be busy" {
     var h = try Harness.init(testing.allocator, .{ .w = 480, .h = 640 }, .{ .build = buildBusy });
     defer h.deinit();

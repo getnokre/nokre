@@ -582,6 +582,27 @@ fn drawModalSurface(app: *App, canvas: Painter, r: Rect, title: []const u8, titl
 /// plus the border that padding sits inside.
 const field_pad = metrics.input_pad + metrics.border;
 
+/// Draws a field's problem under its outline and returns the rect the
+/// field itself owns — the caller's rect minus the words. Small scale,
+/// full `ink`: the library dims *detail* lines, and this is not one. It
+/// is not dimmed and it takes no mark of its own, because grayscale
+/// leaves nothing for a mark to mean here — the words are the whole
+/// indicator, which is what WCAG 1.4.1 asks for and what a palette with
+/// no red gets for free.
+///
+/// Nothing about the field's own drawing changes: the outline does not
+/// thicken and does not darken, because focus already spends both
+/// (`drawFocusEdge`), and a field that is focused *and* refused would
+/// otherwise have one appearance for two states.
+fn drawFieldProblem(app: *App, canvas: Painter, r: Rect, problem: []const u8) Rect {
+    const h = layout.fieldProblemHeight(app.measurer, problem, r.w);
+    if (h == 0) return r;
+    const body: Rect = .{ .x = r.x, .y = r.y, .w = r.w, .h = r.h - h };
+    const words: Rect = .{ .x = r.x, .y = body.bottom() + metrics.input_label_gap, .w = r.w, .h = h };
+    drawWrapped(app, canvas, words, .prose, .small, problem, .ink);
+    return body;
+}
+
 fn drawFieldChrome(app: *App, canvas: Painter, r: Rect, label: []const u8, focused: bool) Rect {
     drawSmallLabel(app, canvas, r, label);
     const label_h = text.Scale.small.lineHeight();
@@ -1652,7 +1673,7 @@ fn drawPlaceholder(app: *App, canvas: Painter, x: i32, baseline: i32, avail_w: i
 }
 
 fn drawTextInput(app: *App, canvas: Painter, r: Rect, inp: element_mod.TextInput, focused: bool) void {
-    const field = drawFieldChrome(app, canvas, r, inp.label, focused);
+    const field = drawFieldChrome(app, canvas, drawFieldProblem(app, canvas, r, inp.problem), inp.label, focused);
     const tx = field.x + field_pad;
     const ty = field.y + field_pad + text.Scale.body.baseline();
     const size = text.Scale.body.px();
@@ -1739,7 +1760,7 @@ fn drawAreaLine(app: *App, canvas: Painter, x: i32, baseline: i32, size: i32, va
 }
 
 fn drawTextArea(app: *App, canvas: Painter, r: Rect, area: element_mod.TextArea, focused: bool) void {
-    const field = drawFieldChrome(app, canvas, r, area.label, focused);
+    const field = drawFieldChrome(app, canvas, drawFieldProblem(app, canvas, r, area.problem), area.label, focused);
     const size = text.Scale.body.px();
     const line_h = text.Scale.body.lineHeight();
     const tx = field.x + field_pad;

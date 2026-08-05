@@ -930,6 +930,16 @@ static size_t nokre_caret_utf8(NSString *s, NSUInteger loc, size_t utf8_len) {
             // on/off, so busy says so there.
             el.accessibilityValue = @"in progress";
         }
+        // UIKit has no invalid trait either, and unlike busy there is
+        // nothing for the shell to spell out: the app's own words are
+        // the statement that the value was refused. The hint is where
+        // VoiceOver reads them — after the label and the value, which
+        // is the order a reason belongs in.
+        if (n->description_len > 0) {
+            el.accessibilityHint = [[NSString alloc] initWithBytes:n->description
+                                                            length:n->description_len
+                                                          encoding:NSUTF8StringEncoding];
+        }
 
         UIAccessibilityTraits traits = UIAccessibilityTraitNone;
         switch (n->role) {

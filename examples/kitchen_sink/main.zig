@@ -660,6 +660,15 @@ fn buildHome(state: *State, app: *h.App) !void {
         .placeholder = "Obscured as you type",
         .obscured = true,
     });
+    // A field whose value was refused. The words are the app's — nokre
+    // validates nothing — and setting them is the whole of it: the
+    // message hangs under the outline, and assistive tech is told the
+    // field is invalid and why.
+    try b.textInput(.{
+        .label = "Email",
+        .value = "not-an-address",
+        .problem = "That is not an email address.",
+    });
     state.notify_toggle_id = try tree.appendId(b.at, .{ .toggle = .{
         .label = "Notify me",
         .on_toggle = .bind(toggleNotify, state),

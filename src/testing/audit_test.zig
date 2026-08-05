@@ -73,6 +73,36 @@ test "audit flags copyable values emptied after construction" {
     try testing.expectEqual(Violation.Rule.empty_copyable, violations.items[0].rule);
 }
 
+test "audit flags a field marked invalid with nothing to say" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    // A problem formatted from a catalog entry that came back blank:
+    // the bytes exist, so the field is invalid to every AT, and they
+    // draw and announce nothing.
+    try app.tree.append(app.tree.rootId(), .{ .text_input = .{ .label = "Email", .problem = "   " } });
+
+    var violations: std.ArrayList(Violation) = .empty;
+    defer violations.deinit(testing.allocator);
+    try collect(&app, &violations, .{});
+    try testing.expectEqual(@as(usize, 1), violations.items.len);
+    try testing.expectEqual(Violation.Rule.wordless_problem, violations.items[0].rule);
+}
+
+test "audit leaves a field with no problem, and one with real words, alone" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    try app.tree.append(app.tree.rootId(), .{ .text_input = .{ .label = "Email" } });
+    try app.tree.append(app.tree.rootId(), .{ .text_area = .{
+        .label = "Notes",
+        .problem = "Say a little more than that.",
+    } });
+
+    var violations: std.ArrayList(Violation) = .empty;
+    defer violations.deinit(testing.allocator);
+    try collect(&app, &violations, .{});
+    try testing.expectEqual(@as(usize, 0), violations.items.len);
+}
+
 test "audit flags a qr label emptied after construction" {
     var app = try test_app.init(400, 400);
     defer app.deinit();

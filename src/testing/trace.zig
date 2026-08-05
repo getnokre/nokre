@@ -124,6 +124,12 @@ fn dumpNode(gpa: std.mem.Allocator, out: *std.ArrayList(u8), app: *App, id: Node
                 try out.appendSlice(gpa, " composition=");
                 try appendQuoted(gpa, out, inp.composition);
             }
+            // The reason is never a secret, even on an obscured field:
+            // the secret is what was typed.
+            if (inp.problem.len > 0) {
+                try out.appendSlice(gpa, " problem=");
+                try appendQuoted(gpa, out, inp.problem);
+            }
         },
         .text_area => |area| {
             try appendQuoted(gpa, out, area.label);
@@ -133,6 +139,10 @@ fn dumpNode(gpa: std.mem.Allocator, out: *std.ArrayList(u8), app: *App, id: Node
             if (area.composition.len > 0) {
                 try out.appendSlice(gpa, " composition=");
                 try appendQuoted(gpa, out, area.composition);
+            }
+            if (area.problem.len > 0) {
+                try out.appendSlice(gpa, " problem=");
+                try appendQuoted(gpa, out, area.problem);
             }
         },
         .segmented => |s| {

@@ -953,6 +953,7 @@ pub const Tree = struct {
                 i.value = try dupeValid(a, i.value);
                 i.placeholder = try dupeValid(a, i.placeholder);
                 i.composition = try dupeValid(a, i.composition);
+                i.problem = try dupeValid(a, i.problem);
                 // The caret arrives as untrusted as the bytes: clamped
                 // to the value's codepoint boundaries at the door, like
                 // setContent's rule, or the first keystroke after a Tab
@@ -964,6 +965,7 @@ pub const Tree = struct {
                 ta.value = try dupeValid(a, ta.value);
                 ta.placeholder = try dupeValid(a, ta.placeholder);
                 ta.composition = try dupeValid(a, ta.composition);
+                ta.problem = try dupeValid(a, ta.problem);
                 ta.cursor = codepointFloor(ta.value, ta.cursor);
             },
             .segmented => |*s| {

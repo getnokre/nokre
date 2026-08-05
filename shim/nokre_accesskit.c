@@ -78,6 +78,12 @@ static accesskit_node *build_node(const nokre_a11y_node *n) {
         accesskit_node_set_toggled(
             node, n->checked ? ACCESSKIT_TOGGLED_TRUE : ACCESSKIT_TOGGLED_FALSE);
     if (n->selected >= 0) accesskit_node_set_selected(node, n->selected != 0);
+    if (n->description_len > 0)
+        accesskit_node_set_description_with_length(node, n->description,
+                                                   n->description_len);
+    // ACCESSKIT_INVALID_TRUE, not the grammar/spelling variants: those
+    // are about a word inside the text, and this is about the value.
+    if (n->invalid) accesskit_node_set_invalid(node, ACCESSKIT_INVALID_TRUE);
     if (n->disabled) accesskit_node_set_disabled(node);
     if (n->busy) accesskit_node_set_busy(node);
     if (n->modal) accesskit_node_set_modal(node);
@@ -336,7 +342,10 @@ typedef struct nokre_a11y_unix {
     nokre_a11y_node *cache;
     size_t cache_count;
     uint64_t cache_focus;
-    char *cache_strings; // backing store the cached label/value point into
+    // Backing store the cached label/value/description point into. Every
+    // borrowed string on the node has to be in here: one left pointing
+    // at the tree is a use-after-mutation the AT thread reads.
+    char *cache_strings;
 } nokre_a11y_unix;
 
 // One marshalled action in flight, freed after it runs on the UI thread.
@@ -359,7 +368,8 @@ static void unix_refresh_cache(nokre_a11y_unix *a) {
     size_t ncount = 0;
     if (nodes != NULL && count > 0) {
         size_t sbytes = 0;
-        for (size_t i = 0; i < count; i++) sbytes += nodes[i].label_len + nodes[i].value_len;
+        for (size_t i = 0; i < count; i++)
+            sbytes += nodes[i].label_len + nodes[i].value_len + nodes[i].description_len;
         nc = malloc(count * sizeof(nokre_a11y_node));
         ns = sbytes ? malloc(sbytes) : NULL;
         if (nc != NULL && (sbytes == 0 || ns != NULL)) {
@@ -379,6 +389,13 @@ static void unix_refresh_cache(nokre_a11y_unix *a) {
                     off += nodes[i].value_len;
                 } else {
                     nc[i].value = NULL;
+                }
+                if (nodes[i].description_len > 0) {
+                    memcpy(ns + off, nodes[i].description, nodes[i].description_len);
+                    nc[i].description = ns + off;
+                    off += nodes[i].description_len;
+                } else {
+                    nc[i].description = NULL;
                 }
             }
             ncount = count;

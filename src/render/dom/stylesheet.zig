@@ -1322,6 +1322,20 @@ const sheet =
     \\   box's, so the control inside it is exactly the rows. */
     \\.field-box textarea { resize: vertical; height: calc(var(--text-area-rows) * var(--lh-body)); }
     \\.field-box input::placeholder, .field-box textarea::placeholder { color: var(--mid); }
+    \\/* A field's problem hangs below its outline at the labeled-field
+    \\   gap, not the page's flow — `fieldProblemHeight` spends
+    \\   `input_label_gap` on it — so the field and the words about it
+    \\   are wrapped and spaced together, the same move `.tile-group`
+    \\   makes for its caption. */
+    \\.field-group { display: flex; flex-direction: column; gap: var(--input-label-gap); }
+    \\/* Small scale in full ink, like the field's own label: this is not
+    \\   a detail line, and the library dims only those. Nothing else
+    \\   marks it — the reference has no red to spend and neither does
+    \\   this edition, so the words are the whole indicator, which is
+    \\   what WCAG 1.4.1 asks for anyway. The box is left alone: focus
+    \\   already darkens that border, and one appearance cannot carry
+    \\   two states. */
+    \\.field-problem { font-size: var(--px-small); line-height: var(--lh-small); color: var(--ink); }
     \\.copyable code { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     \\/* The affordance is quiet; the acknowledgement is not — the check
     \\   arrives in ink, because it is the only visible sign the copy

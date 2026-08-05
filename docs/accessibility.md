@@ -30,9 +30,9 @@ and produces a flat, parent-linked `Snapshot` in document order. Roles map
 | `toggle` | `switch` | on (carried as checked), focused; `in_progress`: disabled *and* busy, the value still carried, still a focus stop |
 | `checkbox` | `checkbox` | checked, focused; `in_progress` as `toggle` |
 | `copyable` | `button` | copied value carried, focused; a `status` child while acknowledged |
-| `text_input` | `text_field` | value, composition, focused |
-| `text_input` (obscured) | `password_field` | value withheld |
-| `text_area` | `multiline_text_field` | value, composition, focused |
+| `text_input` | `text_field` | value, composition, focused; `problem` as the description, with `invalid` set |
+| `text_input` (obscured) | `password_field` | value withheld — the `problem` is not |
+| `text_area` | `multiline_text_field` | value, composition, focused; `problem` as `text_input`'s |
 | `list` / `list_item` | `list` / `listitem` | —; the derived marker is presentation and is never announced |
 | `code_block` | `code` | content announced whole, focused |
 | `blockquote` | `blockquote` | —; the attribution is words inside it |
@@ -75,6 +75,33 @@ trade `meter` already makes, and it needs nothing new on the wire, so
 every backend carries it today. It is also why the bar being absent on a
 disabled button costs a screen reader nothing: the pixels drop the
 track, the value keeps the number.
+
+A refused field ([elements.md](elements.md#problem-what-is-wrong-with-the-value))
+is the one state that rides as a **description plus `invalid`**, and it
+is deliberately *not* the disabled/busy pair above: the field takes
+every keystroke it took before, because a control the user cannot edit
+traps them in the value that was just refused. `invalid` is derived
+from the words rather than stored beside them, so a control can never
+be announced refused with no reason given. It is read after the name
+and the value — what the control is, what it holds, then why that is
+not accepted — and each backend spells it its own way: `aria-invalid`
+plus an `aria-describedby` reference to the words on the web,
+AccessKit's `invalid` and `description` on macOS/Windows/Linux,
+`setContentInvalid` with `setError` on Android, and, because UIKit has
+no invalid trait, the hint slot on iOS, where the app's own words are
+the statement. That last one needs no invented English, unlike busy:
+the reason is the app's to write, always.
+
+Where the words *live* is the one place the two editions had to be
+argued apart. Natively the description is a property of the node. On
+the web the message is a real element the browser is already drawing,
+and it stands **outside** the field's `<label>`: an implicit label's
+subtree text is the field's accessible *name*, so words left inside it
+would be read as part of the name rather than as a reason. It is
+reached by `aria-describedby` — not `aria-errormessage`, which is the
+tighter-fitting attribute and the one screen readers support least
+evenly — and that relation computes to the same accessible description
+the native snapshot carries. One property, two spellings.
 
 One node is derived rather than mirrored from an element: an
 acknowledged `copyable` (see [elements](elements.md#copyable)) gains a
@@ -259,6 +286,14 @@ fails on:
   mutation after append
 - `empty_code_block` — a verbatim block emptied by mutation, leaving a
   tab stop over blank space
+- `wordless_problem` — a text field whose `problem` is present but
+  holds nothing but whitespace. The invalid state is *derived* from
+  those bytes, so this is a field every assistive technology calls
+  refused with no reason given: the exact defect the slot exists to
+  abolish, reached from the other side. Not an `append` refusal,
+  because no other string field in nokre looks past its UTF-8 check,
+  and one field inventing a stricter door would be a rule the rest of
+  the set does not keep
 - `empty_list` — a `list` with no items. This one is not about
   mutation: a list is appended before its items exist, so `append` has
   nothing to check and the whole-tree pass is the only place the rule

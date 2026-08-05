@@ -40,6 +40,16 @@ pub const CNode = extern struct {
     /// padding: every offset before it — and the 80-byte size the web
     /// mirror reads by hand — stays exactly what it was.
     busy: u8,
+    /// aria-invalid: what this field holds was refused. Rides in the
+    /// same tail padding `busy` found, so again nothing before it moves.
+    invalid: u8,
+    /// The accessible description (a field's `problem`). A pointer pair
+    /// cannot hide in padding, so it goes last, where appending is the
+    /// only thing it does: every existing offset is untouched and only
+    /// the size grows — which is the same promise the role ordinals
+    /// make, spelled in bytes instead of integers.
+    description: ?[*]const u8,
+    description_len: usize,
 };
 
 pub const action_click: i32 = 1;
@@ -114,6 +124,9 @@ pub fn flatten(
             .selected = if (n.selected) |s| @intFromBool(s) else -1,
             .heading_level = n.heading_level,
             .busy = @intFromBool(n.busy),
+            .invalid = @intFromBool(n.invalid),
+            .description = if (n.description.len > 0) n.description.ptr else null,
+            .description_len = n.description.len,
         });
     }
     return focus;
@@ -338,6 +351,32 @@ test "busy crosses the bridge beside disabled, and takes the click away" {
     try testing.expectEqual(@as(u8, 0), b.clickable);
     // …and must still be able to land on it.
     try testing.expectEqual(@as(u8, 1), b.focusable);
+}
+
+test "a refused field crosses the bridge invalid, described, and still operable" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    try app.tree.append(app.tree.rootId(), .{ .text_input = .{
+        .label = "Email",
+        .value = "not-an-address",
+        .problem = "That is not an email address.",
+    } });
+
+    var snap = try semantics.snapshot(testing.allocator, &app);
+    defer snap.deinit();
+    var nodes: std.ArrayList(CNode) = .empty;
+    defer nodes.deinit(testing.allocator);
+    _ = try flatten(&snap, testing.allocator, &nodes);
+
+    const f = nodes.items[1];
+    try testing.expectEqual(@as(u8, 1), f.invalid);
+    try testing.expectEqualStrings("That is not an email address.", f.description.?[0..f.description_len]);
+    // The pair `busy` makes is disabled+busy; this one is neither. A
+    // field whose value was refused is exactly as operable as it was
+    // before — anything else strands the user in the refused value.
+    try testing.expectEqual(@as(u8, 0), f.disabled);
+    try testing.expectEqual(@as(u8, 0), f.busy);
+    try testing.expectEqual(@as(u8, 1), f.focusable);
 }
 
 test "node ids round-trip through the u64 bridge encoding" {

@@ -1010,6 +1010,49 @@ withheld from assistive tech (announced as a secure field) and from
 test traces. Editing, placeholder, and caret behavior are unchanged.
 The placeholder stays plain — it is a hint, not the secret.
 
+#### `problem`: what is wrong with the value
+
+`problem` holds the reason the field's value was refused, in your own
+words. Empty is the ordinary state; any words at all make the field
+**invalid**. The message hangs under the field's outline at the same
+gap the label stands above it — small scale, full ink, no mark — so
+the label, the field and the reason read as one thing.
+
+```zig
+try b.textInput(.{
+    .label = state.tr(.email),
+    .value = form.email.get(),
+    .problem = if (form.rejected) state.tr(.emailNotAnAddress) else "",
+    .on_change = .bind(onEmail, state),
+});
+```
+
+nokre validates nothing and has no opinion about what a valid value
+is. What it owns is the *association*, and the association is the part
+you cannot build from outside: a message appended beside a field is
+prose that happens to sit nearby, and prose carries no relation — no
+`aria-describedby`, no `aria-invalid`, nothing an assistive technology
+can follow from the control to the reason. Both editions state the
+pair (`aria-invalid` plus a reference on the web, AccessKit's `invalid`
+and description natively, `setContentInvalid`/`setError` on Android),
+and it is announced after the name and the value, which is where a
+reason belongs: what the control is, what it holds, then why that is
+not accepted.
+
+A field with a problem is **not disabled and not busy**. It takes every
+keystroke it took before — a control the user cannot edit is a control
+that traps them in the value that was just refused. That is the whole
+difference from `Button.in_progress`, which really is both.
+
+Two things that are not this field. A failure that belongs to the
+*form* rather than to one of its values — a rate limit, a server that
+declined, a permission the account lacks — is not a field error; it is
+either the screen's own prose or a [notice](#notice), and putting it on
+an arbitrary field would point the user at a value that is fine. And
+the framework never writes these words: an empty-looking problem (only
+spaces) marks the field invalid with nothing to say, which the
+[audit](testing.md) fails as `wordless_problem`.
+
 ### `text_area`
 Multi-line `text_input`: same fields minus `on_submit`, because Enter
 inserts a newline — a field that swallows Enter to submit loses the one
@@ -1022,8 +1065,9 @@ there is no inner scrollbar to fight the page's own scrolling. ↑/↓ move
 the caret between visual lines preserving its horizontal position;
 Home/End go to the bounds of the caret's line (the whole value is a ↑/↓
 walk away). Everything else — codepoint-aware editing, placeholder, IME
-composition — matches `text_input`. Semantics: a multiline text field
-carrying the value.
+composition — matches `text_input`, `problem` included: the words hang
+under the field the same way and the field is announced invalid the
+same way. Semantics: a multiline text field carrying the value.
 
 ### `select`
 An exclusive choice among many options, in `text_input`'s clothing: the

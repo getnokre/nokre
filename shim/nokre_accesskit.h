@@ -75,6 +75,16 @@ typedef struct nokre_a11y_node {
     // in_progress). Always paired with disabled: busy means named and
     // present but not operable yet.
     uint8_t busy;
+    // aria-invalid: what this field holds was refused. Never paired
+    // with disabled — the field still takes input, which is the whole
+    // difference from busy.
+    uint8_t invalid;
+    // The accessible description: words that are neither the name nor
+    // the value. Today a text field's problem, and always non-empty
+    // when `invalid` is set — an invalid control with no reason given
+    // is the state the slot exists to abolish.
+    const char *description;
+    size_t description_len;
 } nokre_a11y_node;
 
 // Returns the current UI as a flat array (root first, document order),

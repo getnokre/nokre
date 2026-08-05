@@ -396,6 +396,67 @@ test "obscured input is a password field and never exposes its value" {
     try testing.expect(n.focusable);
 }
 
+test "a field's problem is its description, and lights invalid on both fields" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    const email = try app.tree.appendId(app.tree.rootId(), .{ .text_input = .{
+        .label = "Email",
+        .value = "not-an-address",
+        .problem = "That is not an email address.",
+    } });
+    const notes = try app.tree.appendId(app.tree.rootId(), .{ .text_area = .{
+        .label = "Notes",
+        .value = "hi",
+        .problem = "Say a little more than that.",
+    } });
+    const ok = try app.tree.appendId(app.tree.rootId(), .{ .text_input = .{ .label = "City" } });
+
+    var snap = try snapshot(testing.allocator, &app);
+    defer snap.deinit();
+
+    const e = snap.find(email).?;
+    try testing.expect(e.invalid);
+    try testing.expectEqualStrings("That is not an email address.", e.description);
+    // Name and value are untouched: the reason is a third thing, read
+    // after both, never spliced into either.
+    try testing.expectEqualStrings("Email", e.label);
+    try testing.expectEqualStrings("not-an-address", e.value);
+    // And it is not disabled — the field still takes input, which is
+    // the whole difference from the busy pair.
+    try testing.expect(!e.disabled);
+    try testing.expect(!e.busy);
+
+    const n = snap.find(notes).?;
+    try testing.expect(n.invalid);
+    try testing.expectEqualStrings("Say a little more than that.", n.description);
+
+    const c = snap.find(ok).?;
+    try testing.expect(!c.invalid);
+    try testing.expectEqualStrings("", c.description);
+}
+
+test "an obscured field withholds its value and not its reason" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    const pw = try app.tree.appendId(app.tree.rootId(), .{ .text_input = .{
+        .label = "Passphrase",
+        .value = "hunter2",
+        .obscured = true,
+        .problem = "Too short by four characters.",
+    } });
+
+    var snap = try snapshot(testing.allocator, &app);
+    defer snap.deinit();
+
+    const n = snap.find(pw).?;
+    try testing.expectEqualStrings("", n.value);
+    // The secret is what was typed, never why it was refused: a
+    // password field that cannot say what is wrong is one nobody can
+    // fill in without sight of the screen.
+    try testing.expect(n.invalid);
+    try testing.expectEqualStrings("Too short by four characters.", n.description);
+}
+
 test "copyable maps to a button carrying the value it copies" {
     var app = try test_app.init(400, 400);
     defer app.deinit();

@@ -553,6 +553,7 @@ static jint nativeA11yFill(JNIEnv *env, jobject view) {
         const nokre_a11y_node *n = &nodes[i];
         jbyteArray label = NULL;
         jbyteArray value = NULL;
+        jbyteArray description = NULL;
         if (n->label_len > 0) {
             label = (*env)->NewByteArray(env, (jsize)n->label_len);
             if (label != NULL)
@@ -565,16 +566,23 @@ static jint nativeA11yFill(JNIEnv *env, jobject view) {
                 (*env)->SetByteArrayRegion(env, value, 0, (jsize)n->value_len,
                                            (const jbyte *)n->value);
         }
+        if (n->description_len > 0) {
+            description = (*env)->NewByteArray(env, (jsize)n->description_len);
+            if (description != NULL)
+                (*env)->SetByteArrayRegion(env, description, 0, (jsize)n->description_len,
+                                           (const jbyte *)n->description);
+        }
         (*env)->CallVoidMethod(env, view, g_mid_a11y_node, (jlong)n->id, (jint)n->role, label,
-                               value, (jint)n->x, (jint)n->y, (jint)n->w, (jint)n->h,
+                               value, description, (jint)n->x, (jint)n->y, (jint)n->w, (jint)n->h,
                                (jint)(n->parent == (size_t)-1 ? -1 : (jint)n->parent),
                                (jboolean)(n->focusable != 0), (jboolean)(n->focused != 0),
                                (jboolean)(n->disabled != 0), (jboolean)(n->modal != 0),
                                (jboolean)(n->clickable != 0), (jint)n->checked,
                                (jint)n->selected, (jint)n->heading_level,
-                               (jboolean)(n->busy != 0));
+                               (jboolean)(n->busy != 0), (jboolean)(n->invalid != 0));
         if (label != NULL) (*env)->DeleteLocalRef(env, label);
         if (value != NULL) (*env)->DeleteLocalRef(env, value);
+        if (description != NULL) (*env)->DeleteLocalRef(env, description);
     }
     return (jint)count;
 }
@@ -625,7 +633,7 @@ JNIEXPORT jint JNI_OnLoad(JavaVM *vm, void *reserved) {
     g_mid_request_render = (*env)->GetMethodID(env, cls, "requestRenderFromNative", "()V");
     g_mid_a11y_changed = (*env)->GetMethodID(env, cls, "a11yChanged", "()V");
     g_mid_a11y_begin = (*env)->GetMethodID(env, cls, "a11yBegin", "(IJ)V");
-    g_mid_a11y_node = (*env)->GetMethodID(env, cls, "a11yNode", "(JI[B[BIIIIIZZZZZIIIZ)V");
+    g_mid_a11y_node = (*env)->GetMethodID(env, cls, "a11yNode", "(JI[B[B[BIIIIIZZZZZIIIZZ)V");
     g_mid_write_clipboard = (*env)->GetMethodID(env, cls, "writeClipboard", "([B)V");
     g_mid_open_url = (*env)->GetMethodID(env, cls, "openUrl", "([B)V");
     g_mid_show_share = (*env)->GetMethodID(env, cls, "showShare", "([B)V");

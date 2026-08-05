@@ -397,6 +397,22 @@ pub fn labeledFieldHeight(content_h: i32) i32 {
         content_h + 2 * (metrics.input_pad + metrics.border);
 }
 
+/// Height a field's problem adds beneath the field's own outline: a
+/// label gap plus the wrapped small text, zero when there is none. The
+/// caption shape `tileGroupDescHeight` already establishes — layout and
+/// the renderer split the rect with this one number, so the outline
+/// never strays onto the words and the words never float free of the
+/// field. It hangs at `input_label_gap`, the same distance the label
+/// stands above, because that is what makes the three read as one
+/// field instead of three things stacked.
+pub fn fieldProblemHeight(measurer: text.Measurer, problem: []const u8, avail_w: i32) i32 {
+    if (problem.len == 0) return 0;
+    var lines: i32 = 0;
+    var it = wrap_mod.wrap(measurer, .prose, text.Scale.small.px(), problem, avail_w);
+    while (it.next()) |_| lines += 1;
+    return metrics.input_label_gap + @max(lines, 1) * text.Scale.small.lineHeight();
+}
+
 pub fn radioRowHeight() i32 {
     return text.Scale.body.lineHeight() + 2 * metrics.tile_pad_v;
 }
@@ -1272,12 +1288,19 @@ const Ctx = struct {
             // Tile-group geometry: a full-width bordered group of rows
             // under the label, one hairline between rows.
             .radio_group => |rg| self.fullWidth(id, x, y, avail_w, radioRowY(rg.options.len)),
-            .text_input, .select, .copyable => self.fullWidth(id, x, y, avail_w, labeledFieldHeight(text.Scale.body.lineHeight())),
+            .select, .copyable => self.fullWidth(id, x, y, avail_w, labeledFieldHeight(text.Scale.body.lineHeight())),
+            // A problem extends the rect below the field's outline, the
+            // way a description extends a tile group's: the words then
+            // scroll, clip and hit-test with the field they belong to
+            // instead of being a sibling that happens to sit nearby.
+            .text_input => |i| self.fullWidth(id, x, y, avail_w, labeledFieldHeight(text.Scale.body.lineHeight()) +
+                fieldProblemHeight(self.measurer, i.problem, avail_w)),
             .text_area => |ta| blk: {
                 const inner_w = avail_w - 2 * (metrics.input_pad + metrics.border);
                 const min_h = metrics.text_area_min_rows * text.Scale.body.lineHeight();
                 const content_h = @max(min_h, self.wrappedHeight(.prose, .body, ta.value, &.{}, inner_w));
-                break :blk self.fullWidth(id, x, y, avail_w, labeledFieldHeight(content_h));
+                break :blk self.fullWidth(id, x, y, avail_w, labeledFieldHeight(content_h) +
+                    fieldProblemHeight(self.measurer, ta.problem, avail_w));
             },
             // A list draws no edge of its own, so the advice passes
             // straight through to the items — a code block inside one

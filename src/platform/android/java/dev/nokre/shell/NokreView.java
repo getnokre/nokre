@@ -646,10 +646,10 @@ public final class NokreView extends SurfaceView implements SurfaceHolder.Callba
     private static final class A11yNode {
         long id;
         int role;
-        String label, value;
+        String label, value, description;
         int x, y, w, h;
         int parent;
-        boolean focusable, focused, disabled, modal, clickable, busy;
+        boolean focusable, focused, disabled, modal, clickable, busy, invalid;
         int checked, selected, headingLevel;
     }
 
@@ -707,14 +707,16 @@ public final class NokreView extends SurfaceView implements SurfaceHolder.Callba
         a11yFillFocusId = focusId;
     }
 
-    void a11yNode(long id, int role, byte[] label, byte[] value, int x, int y, int w, int h,
-            int parent, boolean focusable, boolean focused, boolean disabled, boolean modal,
-            boolean clickable, int checked, int selected, int headingLevel, boolean busy) {
+    void a11yNode(long id, int role, byte[] label, byte[] value, byte[] description, int x, int y,
+            int w, int h, int parent, boolean focusable, boolean focused, boolean disabled,
+            boolean modal, boolean clickable, int checked, int selected, int headingLevel,
+            boolean busy, boolean invalid) {
         A11yNode n = new A11yNode();
         n.id = id;
         n.role = role;
         n.label = label == null ? null : new String(label, StandardCharsets.UTF_8);
         n.value = value == null ? null : new String(value, StandardCharsets.UTF_8);
+        n.description = description == null ? null : new String(description, StandardCharsets.UTF_8);
         n.x = x;
         n.y = y;
         n.w = w;
@@ -729,6 +731,7 @@ public final class NokreView extends SurfaceView implements SurfaceHolder.Callba
         n.selected = selected;
         n.headingLevel = headingLevel;
         n.busy = busy;
+        n.invalid = invalid;
         a11yNodes.add(n);
     }
 
@@ -803,6 +806,15 @@ public final class NokreView extends SurfaceView implements SurfaceHolder.Callba
             // such slot, and the node stays merely disabled.
             if (n.busy && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 info.setStateDescription("in progress");
+            }
+            // The framework's own pair for a refused value, and the one
+            // place the shell needs no words of its own: setError takes
+            // the app's, and TalkBack reads them after the name and the
+            // value. Unlike busy this is never also `disabled` — the
+            // field still takes input.
+            if (n.invalid) {
+                info.setContentInvalid(true);
+                if (n.description != null) info.setError(n.description);
             }
             // Flat list under the host, the iOS element-list shape —
             // TalkBack reads document order, which the snapshot is in.

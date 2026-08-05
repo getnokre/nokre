@@ -510,6 +510,53 @@ test "an obscured field is a password field, and its value is not the label" {
     try expectContains(html, "<span class=\"field-label\">Passphrase</span>");
 }
 
+test "a field's problem is announced as a description, never as part of the name" {
+    // What a pixel golden cannot check for this edition: the *relation*.
+    // The words are drawn either way; what makes them a field error is
+    // `aria-invalid` on the control plus a reference to where they are.
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    const email = try app.tree.appendId(app.tree.rootId(), .{ .text_input = .{
+        .label = "Email",
+        .value = "not-an-address",
+        .problem = "That is not an email address.",
+    } });
+
+    const html = try render(&app);
+    defer testing.allocator.free(html);
+
+    var buf: [96]u8 = undefined;
+    const ref = try std.fmt.bufPrint(&buf, "problem-{d}", .{@as(u32, @bitCast(email))});
+    var attr: [128]u8 = undefined;
+    try expectContains(html, try std.fmt.bufPrint(
+        &attr,
+        " aria-invalid=\"true\" aria-describedby=\"{s}\"",
+        .{ref},
+    ));
+    var para: [160]u8 = undefined;
+    try expectContains(html, try std.fmt.bufPrint(
+        &para,
+        "</label><p class=\"field-problem\" id=\"{s}\">That is not an email address.</p></div>",
+        .{ref},
+    ));
+    // Outside the `<label>`, and that is the whole point: an implicit
+    // label's subtree text *is* the field's accessible name, so words
+    // left inside it would be read as part of the name rather than as
+    // a reason it was refused.
+    try expectContains(html, "<div class=\"field-group\"><label class=\"field\">");
+}
+
+test "a field with no problem carries no invalid state and no wrapper" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    try app.tree.append(app.tree.rootId(), .{ .text_area = .{ .label = "Notes" } });
+
+    const html = try render(&app);
+    defer testing.allocator.free(html);
+    try testing.expect(std.mem.indexOf(u8, html, "aria-invalid") == null);
+    try testing.expect(std.mem.indexOf(u8, html, "field-group") == null);
+}
+
 test "a text area value that starts with a newline keeps it" {
     // The HTML parser drops one newline immediately after the
     // <textarea> tag, so the serializer emits a sacrificial extra — a

@@ -291,6 +291,27 @@ pub const Device = struct {
         };
     }
 
+    /// What a field says is wrong with its value, read the way
+    /// assistive tech gets it — the description plus the invalid flag,
+    /// never one without the other. The empty string waits for the
+    /// field to come clean.
+    ///
+    /// Waits, because against a real server a refusal is exactly what
+    /// arrives late: the field is on screen, unmarked and plausible,
+    /// for the whole time the submission is in flight.
+    pub fn expectProblem(self: *Device, label: []const u8, expected: []const u8) !void {
+        wait.untilProblem(self.app, self.pacer, label, expected) catch |e| {
+            var snap = semantics.snapshot(self.app.gpa, self.app) catch return self.noted(e);
+            defer snap.deinit();
+            if (snap.findByLabel(label)) |node| {
+                diag.print("expected \"{s}\" problem \"{s}\", got \"{s}\" (invalid={})\n", .{ label, expected, node.description, node.invalid });
+            } else {
+                diag.print("expected \"{s}\" problem \"{s}\", but nothing on screen carries that label\n", .{ label, expected });
+            }
+            return self.noted(e);
+        };
+    }
+
     /// A control that declines rather than acts. Read off the node
     /// instead of pressed: pressing a disabled control refuses loudly
     /// and proves nothing either way. Waits for the **state** — a

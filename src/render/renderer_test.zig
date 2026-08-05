@@ -1513,6 +1513,29 @@ test "a focused pill's ring keeps clear of the fill it rings" {
     try testing.expectEqual(@as(usize, 1), strokesOn(&rec, focusRingRect(r)));
 }
 
+test "a problem hangs below the outline and leaves the box exactly where it was" {
+    var app = try test_app.init(400, 300);
+    defer app.deinit();
+    const input = try app.tree.appendId(app.tree.rootId(), .{ .text_input = .{ .label = "Email" } });
+
+    const before = fieldRect(&app, input);
+    app.tree.get(input).?.text_input.problem = "That is not an email address.";
+    app.layout_dirty = true;
+    app.performLayout();
+
+    var rec = frameOf(&app);
+    defer rec.deinit();
+    // The rect grew downward; the field itself did not move and did not
+    // resize. A refused field looks exactly like the field it was, plus
+    // the words saying why — the outline is left to focus, which is the
+    // only state allowed to change it.
+    const after = app.tree.rectOf(input);
+    try testing.expect(after.h > before.h + text.Scale.small.lineHeight() - 1);
+    try testing.expectEqual(@as(usize, 1), strokesOn(&rec, before));
+    try testing.expectEqual(Gray.g7, strokeOn(&rec, before).?.gray);
+    try testing.expect(rec.containsText("That is not an email address."));
+}
+
 fn fieldRect(app: *App, input: anytype) Rect {
     app.performLayout();
     const r = app.tree.rectOf(input);

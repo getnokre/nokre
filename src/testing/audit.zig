@@ -123,6 +123,22 @@ pub const Violation = struct {
         /// navigating verbs stop returning errors nobody handled:
         /// a mistyped reference fails the first test that shows it.
         unresolvable_route,
+        /// A field's `problem` is what makes it invalid — the snapshot
+        /// derives the flag from these bytes rather than storing one
+        /// beside them, so the two can never disagree. What they *can*
+        /// be is present and wordless: a string of spaces draws nothing,
+        /// announces nothing, and still tells every assistive technology
+        /// the value was refused. That is precisely the state the slot
+        /// exists to abolish, arrived at from the other side.
+        ///
+        /// Here and not in `append`, because whitespace-only is not a
+        /// refusal nokre makes anywhere else — no other string field
+        /// looks past `dupeValid`'s UTF-8 check — and one field inventing
+        /// a stricter door would be a rule the rest of the set does not
+        /// keep. The audit is where content rules live, and it runs
+        /// after every driver action, which is exactly when a problem
+        /// formatted from an empty catalog entry first appears.
+        wordless_problem,
         /// An overflowing scroll region must visibly cut an element at
         /// its offset-0 viewport edge. The resting indicator is
         /// deliberately quiet (see the renderer), so the mid-element
@@ -359,6 +375,16 @@ pub fn collect(app: *App, out: *std.ArrayList(Violation), options: Options) !voi
                     try out.append(app.gpa, .{ .id = id, .rule = .malformed_meter });
                 }
             },
+            .text_input => |t| {
+                if (wordless(t.problem)) {
+                    try out.append(app.gpa, .{ .id = id, .rule = .wordless_problem });
+                }
+            },
+            .text_area => |t| {
+                if (wordless(t.problem)) {
+                    try out.append(app.gpa, .{ .id = id, .rule = .wordless_problem });
+                }
+            },
             .copyable => |c| {
                 if (c.value.len == 0) {
                     try out.append(app.gpa, .{ .id = id, .rule = .empty_copyable });
@@ -445,6 +471,14 @@ pub fn collect(app: *App, out: *std.ArrayList(Violation), options: Options) !voi
         kept += 1;
     }
     out.shrinkRetainingCapacity(kept);
+}
+
+/// Present but with nothing to say. Empty is the ordinary state — a
+/// field with no problem — so only bytes that exist and draw nothing
+/// qualify. The same trim the span-contrast check uses, for the same
+/// reason: whitespace is not ink.
+fn wordless(problem: []const u8) bool {
+    return problem.len > 0 and std.mem.trim(u8, problem, " \t\n\r").len == 0;
 }
 
 /// The route a control's activation navigates to, or null when pressing

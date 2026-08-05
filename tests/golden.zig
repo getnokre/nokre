@@ -114,6 +114,35 @@ test "golden: form with focused input caret" {
     try renderGolden(&harness, "form-focused");
 }
 
+fn buildFieldProblem(_: ?*anyopaque, app: *h.App) !void {
+    const tree = &app.tree;
+    const root = tree.rootId();
+    try tree.append(root, .{ .heading = .{ .content = "Sign up", .level = .h1 } });
+    // Refused *and* focused, in one picture: the outline is focus's to
+    // change and the words are the problem's, so the two states have to
+    // be legible at the same time.
+    try tree.append(root, .{ .text_input = .{
+        .label = "Email",
+        .value = "not-an-address",
+        .cursor = 14,
+        .problem = "That is not an email address.",
+    } });
+    // A clean field between them: nothing about it moves.
+    try tree.append(root, .{ .text_input = .{ .label = "City", .value = "Berlin", .cursor = 6 } });
+    try tree.append(root, .{ .text_area = .{
+        .label = "Why you are joining",
+        .problem = "Please say a little more than that — a sentence is plenty, and it is the only thing the reviewers read.",
+    } });
+    try tree.append(root, .{ .button = .{ .label = "Create account" } });
+}
+
+test "golden: a refused field carries its reason under the outline" {
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 420 }, .{ .build = buildFieldProblem });
+    defer harness.deinit();
+    try harness.pressKey(.tab, .{});
+    try renderGolden(&harness, "field-problem");
+}
+
 fn buildPassword(_: ?*anyopaque, app: *h.App) !void {
     const tree = &app.tree;
     const root = tree.rootId();

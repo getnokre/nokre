@@ -1153,6 +1153,30 @@ pub const Harness = struct {
         return error.ValueMismatch;
     }
 
+    /// What a field says is wrong with its value (`TextInput.problem`),
+    /// read the way assistive tech gets it — the node's description,
+    /// with `invalid` asserted alongside, because the pair is the whole
+    /// point: a test that only compared strings would pass on a message
+    /// nothing was told to associate with the field.
+    ///
+    /// The empty string is the assertion that a field is *clean*, which
+    /// is the shape half these tests want: a form that refused a value
+    /// and then accepted the correction.
+    pub fn expectProblem(self: *Harness, label: []const u8, expected: []const u8) !void {
+        var snap = try self.a11ySnapshot(self.app.gpa);
+        defer snap.deinit();
+        const node = snap.findByLabel(label) orelse
+            return queries.noMatch(&self.app.tree, "label", label);
+        if (!std.mem.eql(u8, node.description, expected)) {
+            diag.print("expected \"{s}\" problem \"{s}\", got \"{s}\"\n", .{ label, expected, node.description });
+            return error.ProblemMismatch;
+        }
+        if (node.invalid != (expected.len > 0)) {
+            diag.print("\"{s}\" reports invalid={}, which its problem does not\n", .{ label, node.invalid });
+            return error.ProblemMismatch;
+        }
+    }
+
     pub fn expectRoute(self: *Harness, route: []const u8) !void {
         const actual = self.app.router.current() orelse {
             diag.print("expected route \"{s}\", but no route is active\n", .{route});

@@ -245,6 +245,23 @@ const Valued = struct {
     }
 };
 
+/// A field's stated reason, and the invalid flag that must agree with
+/// it. Both, because a message with no association is the state the
+/// slot exists to abolish and a wait that read only the words would
+/// stop on it.
+const Refused = struct {
+    label: []const u8,
+    expected: []const u8,
+
+    fn reads(self: *Refused, app: *App) bool {
+        var snap = semantics.snapshot(app.gpa, app) catch return false;
+        defer snap.deinit();
+        const node = snap.findByLabel(self.label) orelse return false;
+        return std.mem.eql(u8, node.description, self.expected) and
+            node.invalid == (self.expected.len > 0);
+    }
+};
+
 const Either = struct {
     a: []const u8,
     b: []const u8,
@@ -392,6 +409,20 @@ pub fn untilValue(app: *App, pacer: Pacer, label: []const u8, expected: []const 
     var buf: [what_cap]u8 = undefined;
     const what = describe(&buf, "\"{s}\" to read \"{s}\"", .{ label, expected }, label);
     try waitUntil(app, pacer, what, bind.bindAs(Ready, Valued.reads, &target));
+}
+
+/// Pumps until the field with this label states this problem — the
+/// server's refusal landing, not merely the field being on screen. The
+/// empty string waits for the field to come *clean*, which is the
+/// other half of every validation test.
+pub fn untilProblem(app: *App, pacer: Pacer, label: []const u8, expected: []const u8) error{WaitTimeout}!void {
+    var target: Refused = .{ .label = label, .expected = expected };
+    var buf: [what_cap]u8 = undefined;
+    const what = if (expected.len == 0)
+        describe(&buf, "\"{s}\" to have no problem", .{label}, label)
+    else
+        describe(&buf, "\"{s}\" to report \"{s}\"", .{ label, expected }, label);
+    try waitUntil(app, pacer, what, bind.bindAs(Ready, Refused.reads, &target));
 }
 
 /// The failure dump, printed through the diag gate: route, every
