@@ -422,7 +422,7 @@ comptime form that carries a small stable identity (`bindKey`) so
 position-vs-identity is a choice made in vocabulary, not re-derived
 per controller.
 
-### A9. `L.of` is one hop short, twice
+### A9 DONE (nokre `408d77b`, revision 28) — `L.of` was one hop short, twice
 - `Bound` carries only tr/trAny/fmt/fmtIn (l10n.zig:405-423);
   everything else re-unwraps: **24 × `L.of(app).locale`** feeding
   `L.chrome(...)`/`L.tag(...)`/`L.dir(...)` in both apps' state.zig.
@@ -910,8 +910,26 @@ passes bump `revision` and move all three pins.
    that legitimately re-raise a gate they know is down discard
    `begin`'s answer (`user/manage.zig` — a 428 replay, and a
    raise-then-delegate). Two sites is not obviously a verb.
-10. **A9 L completion** (Bound.tag/dir/chrome + the fmt binder or
-    mixin; the 13 wrappers and 24 unwraps delete).
+10. ~~**A9 L completion**~~ — DONE, revision 28 (nokre `408d77b`,
+    rokovski `22f4cc8e`, site `8a21bc3`). Counts again off: 16 unwraps
+    not 24 (and **zero** for `L.dir` — both apps take a local locale
+    for `setDirection`, so `Bound.dir()` ships unused), 30 `tr` shims
+    not 13, and 116 `fmtIn` tree re-passes the survey never quantified.
+
+    **`L.in(app)` won; the mixin lost on doctrine, not arithmetic.**
+    `L.mixinTr` must read `self.app`, which makes nokre assert a
+    *field name* in a consumer's struct — while `of` asserts only a
+    method contract, which is why l10n binds no App and why nokre's
+    own test can stand a two-field fake where an App goes. The 30
+    shims stay for the same reason they exist: `x.tr(.key)` has 1440
+    callers, so the shim is a real abbreviation and what is copied
+    thirty times is a declaration, not a mistake.
+
+    Six consumer helpers shed a `tree` parameter that went dead once
+    the tree stopped being re-passed. `Bound.fmtIn` now has zero
+    consumer callers but was kept — it still answers a locale source
+    with no tree of its own, which nokre's own test uses; retiring it
+    is a separate argument.
 11. **A8 posture pass** (owner decides the menu first) and **A10
     patch verbs** (owner picks leaf-id vs patch-pair shape).
 12. **A11 field-error slot** — element-set argument on its own terms,
