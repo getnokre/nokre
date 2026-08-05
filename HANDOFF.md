@@ -1,8 +1,12 @@
 # HANDOFF — the third ergonomics round (2026-08-05, evening)
 
-Status: **UNEXECUTED**, except the three Part-0 items marked FIXED,
-which are applied to the working trees (uncommitted) with nokre's
-`zig fmt` + `zig build test` green. This file succeeds the second
+Status: **EXECUTING**, one pass at a time, in Part F's order. Part 0 is
+finished: 0.1–0.3 shipped the evening this file was written, and
+0.4–0.7 shipped as passes 1–3 (revisions 16, 17, 18 — commits on each
+item's heading and in Part F). Part A begins at A1. Each item's body
+below is left as it was surveyed, so a DONE heading marks a claim that
+was true when written and a fix that has since landed; where execution
+contradicted the survey, Part F's entry says so. This file succeeds the second
 handoff (executed whole, revisions 6→15, deleted in the working tree)
 at the same home. Counts are grep-verified against the trees as of
 nokre `627ceda` (+ this worktree), rokovski `e4698e12`, site
