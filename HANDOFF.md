@@ -343,10 +343,10 @@ been a third copy.
 *(A4's migration found the matching harness gap — six reads, four on
 buttons and two on toggles, so the verb must read across element kinds
 the way `expectValue` does rather than being buttons-only like
-`expectDisabled`. Nothing spells "this
-control is busy". `expectEnabled`/`expectDisabled` read `disabled` and
-`expectValue` reads the a11y node's value, so four consumer tests still
-reach into the raw tree for `in_progress`. The verb belongs beside
+`expectDisabled`. Nothing spells "this control is busy":
+`expectEnabled`/`expectDisabled` read `disabled` and `expectValue`
+reads the a11y node's value, so those six tests reach into the raw
+tree for `in_progress`. The verb belongs beside
 `Gate`, which is the thing that produces the state — fold it into this
 pass rather than leaving app-local sugar `Gate` would orphan.)*
 `Load` is deliberately display-only; `Button.in_progress` renders
