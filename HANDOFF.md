@@ -65,7 +65,7 @@ exists — `emitStylesheet` compiles and runs the tool inside site
 assembly. The comment now says that, and keeps the correct
 `./emit-css` usage line.
 
-### 0.4 The DOM edition announces four framework-chrome names in English, always
+### 0.4 DONE (nokre `d7073e3`, revision 16) — the DOM edition announced four framework-chrome names in English, always
 `serialize.zig` hard-codes `aria-label="Back"` (:632),
 `aria-label="Close"` (:654), `Section: ` (:617) and
 `Current screen: ` (:626) — while revision 11 put the localized words
@@ -639,9 +639,14 @@ passes bump `revision` and move all three pins.
 0. **Already applied this pass (uncommitted)**: 0.1 site identity
    line (rebuild deferred to publish order), 0.2 caret clamp + test,
    0.3 emit_css comment. Gates green.
-1. **0.4 DOM chrome a11y from the catalog** (revision bump; site
-   rebuild; serialize tests re-pinned) — the guarantee fix goes
-   first.
+1. ~~**0.4 DOM chrome a11y from the catalog**~~ — DONE, revision 16
+   (nokre `d7073e3`, rokovski `599b9b2f`, site `6f76a07`). All four
+   arms read the element's own field; no new `Chrome` field and no new
+   catalog key — the colon stays markup punctuation. Tests re-pinned
+   against `app.chrome.*` plus a Turkish pass over all four arms. The
+   predicted published-page churn did not happen: this site runs the
+   default chrome, so every one of those strings is byte-identical and
+   only `data-n` moved.
 2. **0.5 routeless-notice gate** (+ the one-spelling-of-no-route
    rider) — golden regeneration in all three trees, reviewed.
 3. **0.6 + 0.7 admission sweep** — family refusal, wasm len clamp,
