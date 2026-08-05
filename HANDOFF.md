@@ -240,7 +240,7 @@ Change, two independent pieces:
    ```
    Decide scope at session start; piece 1 alone is worth the pass.
 
-### A3. Finish the sheet door: the typed half, the close verb, the confirm idiom
+### A3 DONE (nokre `3a5a6c6`, revision 22) — finish the sheet door: the typed half, the close verb, the confirm idiom
 Revision 12's tag removed the liveness mirrors; six controllers per
 app then rebuilt the *typed* layer around the raw `u32` identically:
 five hand `enum(u32)` starting at `= 1` to dodge tag 0; six
@@ -743,9 +743,37 @@ passes bump `revision` and move all three pins.
    `Action`, `Role` and `Span` are reached as `h.element.X` because
    nokre's root re-export roster omits them; the Part B sweep should
    judge that roster as a set rather than promoting one name.
-6. **A3 sheet completion** (openSheetAs/sheetTagAs/closeSheet +
-   confirmSheet + error narrowing; both apps' six-controller ritual
-   deletes in the same pass).
+6. ~~**A3 sheet completion**~~ — DONE, revision 22 (nokre `3a5a6c6`,
+   rokovski `09fb750a`, site `63f6b18`). Owner decision encoded:
+   **Cancel stays enabled while busy** — a disabled Cancel prevented
+   nothing, since the × stays live and Esc and the scrim still dismiss,
+   so it was a control that lied about what the sheet permits. 21
+   confirm sheets converted (not 17); 10 stay hand-written because
+   `confirmSheet` requires both a primary and a secondary and a receipt
+   or an explainer has only one — converting them would invent a
+   control. `closeSheet` needed no new binding: the App is the only
+   state the verb takes.
+
+   Three consumer defects fixed in the same pass: a gift code created
+   and charged but shown only if a sheet happened to still be up (now
+   in the notices ring, code in the title because notices dedup by
+   title; regression test pins it), five org failure paths invisible
+   after a gesture dismissal, and two `in_progress` flags that could
+   never draw because the handler dismissed before raising them.
+
+   **The migration disproved part of its own brief**, which is the
+   valuable part: the org failure notices *were* rendered by the screen
+   behind. The real mechanism is nokre's — see 6b.
+6b. **The three framework dismissals do not rebuild** — found by A3's
+   migration. `App.refresh` declines to rebuild behind a live sheet on
+   the stated assumption that "whatever closes the sheet rebuilds"
+   (app.zig:438-444), but only `closeSheet` does: the scrim
+   (input.zig:264), the pinned × (:387) and Esc (:592) all call
+   `dismissSheet`, which does not reload. State written while a sheet
+   was up therefore surfaces at a later unrelated reload, detached from
+   the action that caused it. An invariant stated in nokre's own
+   comment and not enforced anywhere.
+
 7. **A4 harness expect verbs** (+ riders); fixtures shrink again.
 8. **A5 driver tier** (wait.until* + shared verb names; both Devices
    collapse; org's `describe` improvement lands in the shared home).
