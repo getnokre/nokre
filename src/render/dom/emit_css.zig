@@ -3,9 +3,10 @@
 //! Build-time only, and the whole of it is `stylesheet.write` — a
 //! driver that already links nokre calls that directly. This exists for
 //! the ones that do not: a static host, a demo page, a build step in
-//! another language.
+//! another language. There is no named step for it; build.zig's
+//! `emitStylesheet` compiles and runs it inside every web-site
+//! assembly, and an outside consumer builds this file the same way.
 //!
-//!     zig build dom-css                 # zig-out/dom/style.css
 //!     ./emit-css out.css [font-dir] [.ext]
 
 const std = @import("std");

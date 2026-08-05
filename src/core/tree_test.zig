@@ -920,6 +920,21 @@ test "setContent clamps the caret to a codepoint boundary, not only to length" {
     try std.testing.expectEqual(@as(usize, 3), tree.getConst(input).?.text_input.cursor);
 }
 
+test "append clamps the caret the way setContent does" {
+    var tree = try Tree.init(std.testing.allocator);
+    defer tree.deinit();
+
+    // A caret past the end or mid-codepoint at append is the same
+    // stale-state shape setContent clamps: caught at the door, so the
+    // first keystroke after a Tab focus cannot splice from a position
+    // the value never had.
+    const past = try tree.appendId(tree.rootId(), .{ .text_input = .{ .label = "Name", .value = "hi", .cursor = 9 } });
+    try std.testing.expectEqual(@as(usize, 2), tree.getConst(past).?.text_input.cursor);
+
+    const mid = try tree.appendId(tree.rootId(), .{ .text_area = .{ .label = "Notes", .value = "héllo", .cursor = 2 } });
+    try std.testing.expectEqual(@as(usize, 1), tree.getConst(mid).?.text_area.cursor);
+}
+
 test "setContent faces the append-time contrast gate" {
     var tree = try Tree.init(std.testing.allocator);
     defer tree.deinit();

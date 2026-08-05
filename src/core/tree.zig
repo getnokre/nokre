@@ -930,12 +930,18 @@ pub const Tree = struct {
                 i.value = try dupeValid(a, i.value);
                 i.placeholder = try dupeValid(a, i.placeholder);
                 i.composition = try dupeValid(a, i.composition);
+                // The caret arrives as untrusted as the bytes: clamped
+                // to the value's codepoint boundaries at the door, like
+                // setContent's rule, or the first keystroke after a Tab
+                // focus would splice from a position the value never had.
+                i.cursor = codepointFloor(i.value, i.cursor);
             },
             .text_area => |*ta| {
                 ta.label = try dupeValid(a, ta.label);
                 ta.value = try dupeValid(a, ta.value);
                 ta.placeholder = try dupeValid(a, ta.placeholder);
                 ta.composition = try dupeValid(a, ta.composition);
+                ta.cursor = codepointFloor(ta.value, ta.cursor);
             },
             .segmented => |*s| {
                 s.label = try dupeValid(a, s.label);
