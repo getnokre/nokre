@@ -274,6 +274,11 @@ test "the id charset is the two stores' intersection, checked before any call" {
     var app = try testApp(std.testing.allocator);
     defer app.deinit();
     var shopper: Shopper = .{};
+    // `purchase` refuses a stream nobody is listening on before it looks
+    // at the id, so the wiring comes first here to leave the charset the
+    // only thing under test.
+    var wallet: Wallet = .{};
+    iap.setHandler(&app, &wallet, Wallet.onUpdate);
 
     const cases = [_][]const u8{
         "Coins.100", // uppercase: legal on Apple, rejected by the Play console
@@ -319,6 +324,26 @@ test "the query cap is Play's, enforced on every platform" {
 }
 
 // ---- the purchase stream ----
+
+test "buying with nobody listening is refused, not billed" {
+    var app = try stockedApp(std.testing.allocator, .{ .auto = .purchased });
+    defer app.deinit();
+
+    // The outcome of both verbs arrives only on the stream, so a verb
+    // called before `setHandler` is a purchase whose result has nowhere
+    // to land — the one loss shaped like money, and the reason it is an
+    // error at the call instead of a silence at delivery.
+    try std.testing.expectError(error.NoHandler, iap.purchase(.{ .app = &app, .product = "coins.100" }));
+    try std.testing.expectError(error.NoHandler, iap.restore(&app));
+    // Refused before the store heard about it.
+    try std.testing.expectEqual(@as(usize, 0), app.services.iap.purchases().len);
+    try std.testing.expectEqual(@as(usize, 0), app.services.iap.restores());
+
+    var wallet: Wallet = .{};
+    iap.setHandler(&app, &wallet, Wallet.onUpdate);
+    try iap.purchase(.{ .app = &app, .product = "coins.100" });
+    try std.testing.expectEqual(@as(usize, 1), app.services.iap.purchases().len);
+}
 
 test "a seeded purchase lands on the stream, not on the purchase call" {
     var app = try stockedApp(std.testing.allocator, .{ .auto = .purchased });
@@ -473,6 +498,8 @@ test "finish journals the disposition, because Play's two halves differ" {
 test "restore is counted, so a missing Restore control is a finding" {
     var app = try testApp(std.testing.allocator);
     defer app.deinit();
+    var wallet: Wallet = .{};
+    iap.setHandler(&app, &wallet, Wallet.onUpdate);
 
     try std.testing.expectEqual(@as(usize, 0), app.services.iap.restores());
     try iap.restore(&app);

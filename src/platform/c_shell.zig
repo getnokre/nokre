@@ -408,7 +408,6 @@ pub fn a11yAction(ctx: ?*anyopaque, target: u64, action: i32) callconv(.c) void 
     const state = stateFrom(ctx);
     const app = state.app;
     const stop = accesskit.focusFromU64(target) orelse return;
-    const el = app.tree.getConst(stop.node) orelse return;
     switch (action) {
         accesskit.action_click => {
             app.performLayout();
@@ -423,11 +422,10 @@ pub fn a11yAction(ctx: ?*anyopaque, target: u64, action: i32) callconv(.c) void 
             if (r.isEmpty()) return;
             app.tap(.{ .x = r.x + @divTrunc(r.w, 2), .y = r.y + @divTrunc(r.h, 2) }) catch return;
         },
-        accesskit.action_focus => {
-            if (stop.span == null and !el.isFocusable()) return;
-            app.focused = stop;
-            app.needs_frame = true;
-        },
+        // Assistive tech moved focus, which is the traversal case
+        // `deliver` exists for: whether the stop is one, and everything
+        // that follows from it being one, is core's to say.
+        accesskit.action_focus => app.deliver(.{ .focus = stop }) catch return,
         else => return,
     }
     if (state.view) |v| nokre_shell_request_frame(v);

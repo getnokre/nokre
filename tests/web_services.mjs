@@ -513,6 +513,30 @@ async function siteManifest() {
   assert.deepEqual(listed, expected);
 }
 
+// ---- the driver's own doors --------------------------------------
+
+/// Not a service: the seven exports that take a string take a *length*
+/// with it, and a web build is ReleaseSmall, so nothing behind the
+/// slice checks that length against the buffer the glue filled. The
+/// clamp is `scratchSlice` (live.zig) and `nokre_dom_href` is the door
+/// that hands its answer straight back out, so it is the one a harness
+/// can ask. This is the only gate where those exports run at all.
+async function scratchIsClamped() {
+  const { nk } = await page({ href: "https://app.example/" });
+  const ref = new TextEncoder().encode("home");
+  const ptr = nk.nokre_dom_scratch(ref.length);
+  new Uint8Array(nk.memory.buffer).set(ref, ptr);
+
+  // The default resolver answers "#" + the reference verbatim, so the
+  // href is one byte longer than the reference — for the bytes the glue
+  // actually wrote, however many it claims.
+  nk.nokre_dom_href(ref.length);
+  assert.equal(nk.nokre_dom_href_len(), ref.length + 1);
+  nk.nokre_dom_href(ref.length + 64);
+  assert.equal(nk.nokre_dom_href_len(), ref.length + 1);
+  done("dom driver — a length past the scratch is cut to what the glue wrote");
+}
+
 // ---- the run -----------------------------------------------------
 
 const scenarios = [
@@ -530,6 +554,7 @@ const scenarios = [
   storeMirror,
   storeSurvivesReload,
   storeWithoutStorage,
+  scratchIsClamped,
 ];
 
 for (const scenario of scenarios) {

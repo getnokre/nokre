@@ -1105,6 +1105,12 @@ sheet), a second query is
 `error.QueryInFlight` (a paywall asks for its whole catalog at once,
 because the id set is a parameter).
 
+**The stream comes first.** `purchase` and `restore` are
+`error.NoHandler` until `setHandler` has run: their entire outcome
+arrives on that stream, so a store asked before anyone is listening is
+money the app can never see. Registering inside `build` — which is
+where the contract already puts it — makes this unreachable.
+
 **Three platforms have no store, and say so.** `available` is false on
 Windows, Linux, and the web, and every other verb is `error.Unavailable`
 there. Microsoft's store needs MSIX packaging with a Store identity, which

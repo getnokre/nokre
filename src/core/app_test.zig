@@ -3676,6 +3676,33 @@ test "delivered semantics carry their origin for the ring" {
     try testing.expect(app.focus_visible);
 }
 
+test "a delivered focus is vetted here, so no seam has to" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    const btn = try app.tree.appendId(app.tree.rootId(), .{ .button = .{ .label = "Go" } });
+    const prose = try app.tree.appendId(app.tree.rootId(), .{ .text = .{ .content = "Just words." } });
+    const para = try app.tree.appendId(app.tree.rootId(), .{ .text = .{ .spans = &.{
+        .{ .text = "Read the " },
+        .{ .text = "terms", .route = "terms" },
+    } } });
+    try app.deliver(.{ .focus = .of(btn) });
+
+    // A node the shell named that this tree does not have, a paragraph
+    // that is no stop, a span index past the end, and a span that is
+    // prose rather than a link: four ways to be told a stop that is not
+    // one, and focus does not move for any of them.
+    try app.deliver(.{ .focus = .of(.{ .index = 4095, .gen = 1 }) });
+    try app.deliver(.{ .focus = .of(prose) });
+    try app.deliver(.{ .focus = .{ .node = para, .span = 7 } });
+    try app.deliver(.{ .focus = .{ .node = para, .span = 0 } });
+    try testing.expect(app.focused.?.on(btn));
+
+    // The link span in the same paragraph is a stop, and takes it.
+    try app.deliver(.{ .focus = .{ .node = para, .span = 1 } });
+    try testing.expect(app.focused.?.on(para));
+    try testing.expectEqual(@as(?u16, 1), app.focused.?.span);
+}
+
 // ---- tap-out: the gesture that puts the on-screen keyboard away ----
 
 test "a tap on nothing clears an editable's focus, and only an editable's" {

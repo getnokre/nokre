@@ -751,6 +751,19 @@ pub const App = struct {
                 try input.activateStop(self, stop);
             },
             .focus => |f| {
+                // The stop is a stranger's: a shell repeats what the OS
+                // or the browser named, and neither knows this tree. So
+                // it is vetted here, where `activateStop` vets the same
+                // shape — one home, and every seam that delivers focus
+                // gets the whole check instead of the part it thought
+                // of. A stop that is not one is dropped, not invented:
+                // `focused` pointing at a paragraph would draw a ring
+                // nothing can leave by Tab.
+                const el = self.tree.getConst(f.node) orelse return;
+                if (f.span) |i| {
+                    const spans = focus.spansOf(el.*);
+                    if (i >= spans.len or !spans[i].isLink()) return;
+                } else if (!el.isFocusable()) return;
                 // A traversal the backend handled — keyboard or
                 // assistive tech — is exactly the focus that must be
                 // seen to be followed.

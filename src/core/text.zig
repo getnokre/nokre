@@ -19,9 +19,10 @@ pub const Family = enum {
     /// The vendor sign-in marks, and nothing else
     /// (src/assets/fonts/LICENSE-Brand.txt). A closed set of trademark
     /// glyphs — five: Apple's logo and the Google G's four arcs —
-    /// reachable only from the renderer's provider-form button arm: it is
-    /// not a face consumers may set on a span or a text element, and
-    /// the element set gives them no way to name it.
+    /// reachable only from the renderer's provider-form button arm. A
+    /// span or a text element cannot name it, in the strong sense: the
+    /// style they carry is a `BodyFamily`, which has no such member, so
+    /// the misuse is a compile error rather than a rule to police.
     brand,
 };
 
@@ -33,6 +34,15 @@ comptime {
     const assert = @import("std").debug.assert;
     assert(@intFromEnum(Family.mono) == 0 and @intFromEnum(Family.brand) == 3 and @typeInfo(Family).@"enum".fields.len == 4);
 }
+
+/// The families app text may name. Two of `Family`'s four are the
+/// framework's own — `icons` is reached through the `Icon` element,
+/// which carries the decorative-vs-labeled discipline, and `brand` only
+/// through the renderer's provider-button arm — so a `Style` carries
+/// this instead of `Family` and the guarantee needs no door to enforce
+/// it: `.family = .brand` is a name that does not exist. Nothing here
+/// crosses a wire; `Family`'s ordinals are the pinned ones.
+pub const BodyFamily = enum { mono, prose };
 
 /// A concrete drawable face: family plus variant. This is what the
 /// measurer and the canvas speak — spans resolve to it, everything else
@@ -87,13 +97,19 @@ pub const Scale = enum {
 };
 
 pub const Style = struct {
-    family: Family = .prose,
+    family: BodyFamily = .prose,
     scale: Scale = .body,
     ink: @import("color.zig").Gray = .ink,
 
     /// The style's regular face; spans derive their variants from it.
+    /// The one seam between what an app may name and the full bundled
+    /// set — widening happens here or nowhere, which is what keeps the
+    /// two reserved faces the renderer's alone.
     pub fn face(self: Style) Face {
-        return .{ .family = self.family };
+        return .{ .family = switch (self.family) {
+            .mono => .mono,
+            .prose => .prose,
+        } };
     }
 };
 
@@ -140,6 +156,25 @@ test "fixed measurer counts codepoints, not bytes" {
     const w_multi = Measurer.fixed.measure(.prose, 20, "éé");
     try std.testing.expectEqual(w_ascii, w_multi);
     try std.testing.expectEqual(@as(i32, 24), w_ascii);
+}
+
+test "a style can name only the two app families" {
+    // The refusal itself is comptime — `.{ .family = .brand }` does not
+    // compile — so what runs here is the shape that makes it so: the
+    // field's type, whatever it is called, offers two members and
+    // neither is a reserved face. Widen it back to `Family` and this
+    // fails before any renderer is asked to draw a trademark as prose.
+    const Named = @FieldType(Style, "family");
+    const fields = @typeInfo(Named).@"enum".fields;
+    try std.testing.expectEqual(@as(usize, 2), fields.len);
+    inline for (fields) |f| {
+        try std.testing.expect(!std.mem.eql(u8, f.name, "icons"));
+        try std.testing.expect(!std.mem.eql(u8, f.name, "brand"));
+    }
+    // And the seam still widens what it may: both app faces reach the
+    // drawable set unchanged.
+    try std.testing.expectEqual(Face.prose, (Style{}).face());
+    try std.testing.expectEqual(Face.mono, (Style{ .family = .mono }).face());
 }
 
 test "scales are monotonic" {

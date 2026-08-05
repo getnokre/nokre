@@ -186,6 +186,15 @@ pub const Error = error{
     /// (parental restriction on Apple, no Play Store on Android). Ask
     /// `available` before drawing a paywall and this never appears.
     Unavailable,
+    /// `setHandler` was never called, so the stream both verbs answer on
+    /// has nowhere to land. Every other service that loses an event
+    /// either holds it (notification buffers what arrives before its
+    /// handler) or writes it down (deep_link journals every delivery);
+    /// this one would drop a completed purchase in silence, which is the
+    /// one loss shaped like money. Refused at the verb instead, so a
+    /// registration forgotten in `build` fails the first harness run
+    /// rather than the first paying customer.
+    NoHandler,
     /// A payment sheet is already up. One at a time by design: the sheet
     /// is modal and a person can only be buying one thing at once —
     /// oauth's `AuthInFlight` argument.
@@ -302,6 +311,7 @@ pub fn purchase(opts: PurchaseOptions) Error!void {
     checkLinked();
     const st = opts.app.services.iap.state.?;
     if (!st.can_buy) return error.Unavailable;
+    if (st.handler == null) return error.NoHandler;
     if (st.buying) return error.PurchaseInFlight;
     try validateId(opts.product);
     st.buying = true;
@@ -331,6 +341,7 @@ pub fn restore(app: *App) Error!void {
     checkLinked();
     const st = app.services.iap.state.?;
     if (!st.can_buy) return error.Unavailable;
+    if (st.handler == null) return error.NoHandler;
     try st.restoreOwned();
 }
 

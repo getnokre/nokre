@@ -219,7 +219,7 @@ fn boot(w: i32, h: i32, route_len: usize) callconv(.c) i32 {
     // — a wrong one should fail the boot loudly, not paint a screen
     // with nothing on it.
     if (route_len != 0) {
-        const reference = scratch.items[0..route_len];
+        const reference = scratchSlice(route_len);
         if (app.router.vet(reference) != null) return 0;
         app.router.switchTo(app, reference) catch return 0;
     }
@@ -239,7 +239,7 @@ fn seedBytes(len: usize) callconv(.c) void {
     // the buffer under whatever kept the first.
     if (booted) return;
     seed.clearRetainingCapacity();
-    seed.appendSlice(gpa, scratch.items[0..len]) catch return;
+    seed.appendSlice(gpa, scratchSlice(len)) catch return;
     root.nokreWebSeed(seed.items);
 }
 
@@ -347,7 +347,7 @@ fn href(len: usize) callconv(.c) [*]const u8 {
     var em: dom.Emitter = .{ .gpa = gpa, .app = app, .out = &href_out };
     defer em.deinit();
     const r: dom.Refs = refs orelse .{};
-    const dest = r.resolve(r.ctx, &em, scratch.items[0..len]) catch return href_out.items.ptr;
+    const dest = r.resolve(r.ctx, &em, scratchSlice(len)) catch return href_out.items.ptr;
     switch (dest) {
         .internal, .external => |url| href_out.appendSlice(gpa, url) catch {},
     }
@@ -369,6 +369,16 @@ fn scratchPtr(len: usize) callconv(.c) ?[*]u8 {
     return scratch.items.ptr;
 }
 
+/// The scratch as far as the glue actually filled it. Every export that
+/// reads a string is handed a length by its caller, and a web build is
+/// ReleaseSmall — there is no bounds check behind the slice — so the
+/// length is bounded here instead, once, for all seven. A length past
+/// the end is glue that miscounted; the tail is dropped rather than
+/// invented, which is `enumFromC`'s rule for an out-of-range ordinal.
+fn scratchSlice(len: usize) []const u8 {
+    return scratch.items[0..@min(len, scratch.items.len)];
+}
+
 /// One press, one call. Which element the reader meant is the only
 /// thing this driver knows better than core; the rest — the focus it
 /// moves, what activation means, the latches an input releases — is
@@ -381,9 +391,7 @@ fn press(packed_id: u32, span: i32) callconv(.c) void {
 
 fn setFocus(packed_id: u32, span: i32) callconv(.c) void {
     if (!booted) return;
-    const stop = stopOf(packed_id, span);
-    if (app.tree.getConst(stop.node) == null) return;
-    app.deliver(.{ .focus = stop }) catch {};
+    app.deliver(.{ .focus = stopOf(packed_id, span) }) catch {};
 }
 
 fn selectOption(packed_id: u32, index: u32) callconv(.c) void {
@@ -410,7 +418,7 @@ fn keyDown(key: u32, mods: u8) callconv(.c) void {
 
 fn text(len: usize) callconv(.c) void {
     if (!booted) return;
-    app.dispatch(.{ .text = .{ .bytes = scratch.items[0..len] } }) catch {};
+    app.dispatch(.{ .text = .{ .bytes = scratchSlice(len) } }) catch {};
 }
 
 // The composition protocol, on the three legs every shell sends
@@ -421,12 +429,12 @@ fn text(len: usize) callconv(.c) void {
 
 fn imeUpdate(len: usize, cursor: usize) callconv(.c) void {
     if (!booted) return;
-    app.dispatch(.{ .ime = .{ .update = .{ .composition = scratch.items[0..len], .cursor = cursor } } }) catch {};
+    app.dispatch(.{ .ime = .{ .update = .{ .composition = scratchSlice(len), .cursor = cursor } } }) catch {};
 }
 
 fn imeCommit(len: usize) callconv(.c) void {
     if (!booted) return;
-    app.dispatch(.{ .ime = .{ .commit = .{ .text = scratch.items[0..len] } } }) catch {};
+    app.dispatch(.{ .ime = .{ .commit = .{ .text = scratchSlice(len) } } }) catch {};
 }
 
 fn imeCancel() callconv(.c) void {
@@ -443,7 +451,7 @@ fn imeCancel() callconv(.c) void {
 /// never reach the router's programmer-error record (router.zig).
 fn navigate(len: usize) callconv(.c) i32 {
     if (!booted) return 0;
-    const reference = scratch.items[0..len];
+    const reference = scratchSlice(len);
     if (app.router.vet(reference) != null) return 0;
     app.router.switchTo(app, reference) catch return 0;
     return 1;

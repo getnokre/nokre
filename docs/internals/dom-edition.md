@@ -356,7 +356,11 @@ a pointer handed across is borrowed for the call and anything outliving
 it is *copied* (`slice`, never `subarray`, or a transfer drags the whole
 heap's ArrayBuffer along); and a view into wasm memory is never held
 across a call back into the module, because growing the heap detaches
-it.
+it. The module keeps a third of its own, for the same reason: a length
+that crosses in is cut to the buffer the glue actually filled
+(live.zig's `scratchSlice`, used by every export that reads a string).
+A web build is ReleaseSmall, so there is no bounds check behind the
+slice — the door has to be the check.
 
 ### The event flow inverts, and that was foreseen
 
@@ -370,8 +374,11 @@ at, and hit testing against them would answer about the wrong one.
 So the browser resolves the hit and hands core a *semantic* event —
 `App.deliver`, which takes a press, a focus move or a choice. Which
 element was meant is the **only** thing this backend knows better than
-core. Everything else an input carries — the focus a press moves, what
-activation means, the latches an input releases — stays where it
+core — and even that is checked: `deliver` vets the stop it is handed
+(the node exists; a span is in range and is a link; otherwise the
+element is focusable), so a driver that mis-hears the document moves
+nothing. Everything else an input carries — the focus a press moves,
+what activation means, the latches an input releases — stays where it
 already was, and `deliver` applies exactly what `dispatch` applies.
 
 That boundary is worth stating sharply, because getting it wrong is
