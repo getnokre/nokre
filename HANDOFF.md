@@ -998,32 +998,50 @@ passes bump `revision` and move all three pins.
     `MockState`, the IME caret stored and drawn, and
     `nokre.addGoldenTests`.
 
-13. **`TextInput.readonly`** — QUEUED, owner-requested 2026-08-05.
+13. **`TextInput.disabled`** — QUEUED, owner-requested 2026-08-05.
     Not an item in this file: it appears only as prose in A11 as "the
     flagged candidate", carried over from an earlier round with no
-    design attached. A11's execution made it the best-evidenced unbuilt
-    item on the list — **ten** refusals could not move onto their field
-    because the address input is replaced by settled text and an Edit
-    button the moment it verifies, so by the time the server refuses it
-    there is no field to attach the refusal to (4 in the org create
-    screens, 1 in the user join flow, plus siblings).
+    design attached.
 
-    **Owner decided the shape: `readonly`, not `disabled`.** The flag's
-    own name was misleading — every receipt is a settled-value case
-    ("press Edit to change it"), and in ARIA that is a different state
-    with different behaviour from disabled. Readonly stays in the focus
-    order, stays selectable and copyable, is announced read-only, and
-    refuses keystrokes; disabled leaves the focus order and cannot be
-    copied, and a disabled control carrying an error message is a
-    contradiction. Decisively: a readonly field **must still carry
-    `problem`**, which is exactly what closes the ten receipts. The
-    three-state enum was offered and declined — only the readonly half
-    has receipts, and a half that ships unused is what this round has
-    refused elsewhere.
+    **The owner set the presentation rule that decides its shape, and
+    it corrects how A11's evidence was read.** A value that is not
+    editable *and never becomes editable in that layout* must be drawn
+    as ordinary text with an Edit button opening a real editing flow —
+    that is the right pattern, not a workaround for a missing field.
+    So A11's ten unmovable refusals are **not** receipts for a new
+    element field at all; they are receipts for that rule, already
+    obeyed, and their copy belongs on the form where it is. An earlier
+    draft of this entry proposed `readonly` to "close" them, which was
+    wrong twice over: it solved a problem that is already solved, and
+    shipping it would have invited apps to replace the correct
+    text-plus-Edit pattern with a permanently readonly input.
+
+    What has no way to be expressed is the **other** case: a control
+    that toggles between editable and not *within one layout*, driven
+    by state. The receipt is direct — `user/screens/otp.zig:37-46`
+    puts a `textInput` for the code beside a button carrying
+    `.in_progress = alias_phase == .verifying`, so while the code is
+    in flight the button says busy and the field stays fully editable
+    and the user can keep typing into a value already on the wire.
+    Candidate sites: 18 screens where a text field shares a layout
+    with an in-flight control (both `create` flows, both `sign_in`s,
+    `otp`, `join`, `connect_email`, `emergency_redeem`,
+    `redeem_org_invite`, the three org create screens, `transfer`,
+    `channel_tags`, `manage_sheets`). Each needs per-site confirmation
+    that the two are genuinely simultaneous — the list is grep-derived
+    and this handoff's grep-derived counts have been wrong every time.
+
+    Shape: `disabled`, symmetric with `Button.disabled` — out of the
+    focus order, inert, announced disabled. It does **not** need to
+    carry `problem`, and the two never collide in practice: a form
+    disables on submit, the server refuses, and the field is re-enabled
+    *and* given its problem in the same frame. A disabled control
+    carrying an error message would be a contradiction, and an audit
+    rule refusing that pairing is worth considering.
 
     Element-set argument on the set's own terms, same lane as A11, and
     it owes the full `contributing.md` checklist: element, layout, DOM
     markup, a11y across AccessKit/Android/iOS, validate/audit, input
-    (keystrokes refused, focus kept), tests, golden, docs.
+    (keystrokes and focus both refused), tests, golden, docs.
 
 Part E items move only on their own owner-level arguments.
