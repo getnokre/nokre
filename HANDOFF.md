@@ -340,7 +340,10 @@ ends the two-name-per-verb split; a third edition's driver would have
 been a third copy.
 
 ### A6. One-shot in-flight gate — the mutation twin of `Load`
-*(A4's migration found the matching harness gap: nothing spells "this
+*(A4's migration found the matching harness gap — six reads, four on
+buttons and two on toggles, so the verb must read across element kinds
+the way `expectValue` does rather than being buttons-only like
+`expectDisabled`. Nothing spells "this
 control is busy". `expectEnabled`/`expectDisabled` read `disabled` and
 `expectValue` reads the a11y node's value, so four consumer tests still
 reach into the raw tree for `in_progress`. The verb belongs beside
