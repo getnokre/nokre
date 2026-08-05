@@ -124,6 +124,12 @@ idiom for "there is one". Not a builder: no `append`, no `fmt` — build
 a string in a stack buffer and `set` it once, or use `tree.fmt` for
 strings the tree will own anyway.
 
+`set` accepts a slice of the `Str`'s **own** bytes, so trimming,
+re-parsing or normalizing in place is one line
+(`field.set(field.trimmed())`) rather than a round trip through a
+scratch buffer. `Rows.fill` takes the same guarantee —
+`list.fill(list.items()[1..])` drops a head.
+
 A `set` past the ceiling truncates, and **never splits a UTF-8
 sequence**: the cut backs up to the start of the codepoint it landed
 inside, so what comes back is always something you can hand straight to

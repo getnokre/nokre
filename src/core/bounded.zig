@@ -59,10 +59,18 @@ pub fn Str(comptime cap: usize) type {
         pub const capacity = cap;
 
         /// Take a copy of `value`, replacing whatever was held.
+        ///
+        /// `value` may be a slice of this `Str`'s own bytes — trimming,
+        /// re-parsing or normalizing in place is the obvious call and
+        /// it is a legal one. `copyForwards`, not `@memcpy`, is what
+        /// makes it legal: the destination is `buf[0..]`, the lowest
+        /// address in the buffer, so an aliasing source is always at or
+        /// above it and a forward copy can never overwrite a byte it
+        /// has yet to read. Nothing here can want `copyBackwards`.
         pub fn set(self: *Self, value: []const u8) void {
             self.len = boundaryAt(value, @min(cap, value.len));
             self.truncated = self.len != value.len;
-            @memcpy(self.buf[0..self.len], value[0..self.len]);
+            std.mem.copyForwards(u8, self.buf[0..self.len], value[0..self.len]);
         }
 
         /// The bytes, borrowed from the `Str` — valid as long as it is
@@ -237,10 +245,16 @@ pub fn Rows(comptime T: type, comptime cap: usize) type {
         /// and disclosing the rest. The form for a reply that already
         /// speaks in `T`; a reply in the wire's own row type is
         /// `clear` plus a `push` loop, which discloses the same way.
+        ///
+        /// `src` may be a slice of this list's own rows — dropping a
+        /// head is `list.fill(list.items()[k..])` — for the reason
+        /// `Str.set` states: the destination starts at `rows[0]`, so an
+        /// aliasing source is never below it and a forward copy is
+        /// always correct.
         pub fn fill(self: *Self, src: []const T) void {
             self.len = @min(cap, src.len);
             self.truncated = src.len > cap;
-            @memcpy(self.rows[0..self.len], src[0..self.len]);
+            std.mem.copyForwards(T, self.rows[0..self.len], src[0..self.len]);
         }
 
         /// Drop the row at `index`, closing the gap and keeping order —
@@ -355,6 +369,43 @@ test "trimmed hands back the value without its edges; set keeps them" {
     try testing.expectEqualStrings("hello", s.trimmed());
     s.set("");
     try testing.expectEqualStrings("", s.trimmed());
+}
+
+test "a Str may be set from its own bytes" {
+    // `@memcpy` panics on aliasing arguments in a safe build, so every
+    // call below is a live tripwire, not a shape argument.
+
+    // Trim in place — the natural way to normalize a typed field.
+    var s: Str(32) = .{};
+    s.set("  hello  ");
+    s.set(std.mem.trim(u8, s.get(), " "));
+    try testing.expectEqualStrings("hello", s.get());
+
+    // The same move through the container's own verb: the shape both
+    // consumer apps had, where a parse hands back a subslice of the
+    // buffer it was given.
+    var field: Str(32) = .{};
+    field.set("\t user@example.com \n");
+    field.set(field.trimmed());
+    try testing.expectEqualStrings("user@example.com", field.get());
+
+    // Identity: same pointer, same length, still a copy that must not
+    // be undefined behavior.
+    field.set(field.get());
+    try testing.expectEqualStrings("user@example.com", field.get());
+
+    // The worst overlap there is: a source one byte above the
+    // destination, so every read is of a byte the write is about to
+    // reach. Forward order is what keeps it ahead.
+    var shift: Str(16) = .{};
+    shift.set("abcdefgh");
+    shift.set(shift.get()[1..]);
+    try testing.expectEqualStrings("bcdefgh", shift.get());
+
+    // An aliasing `set` can never truncate — the source lives in the
+    // buffer, so it is at most `cap` long — which is why the disclosure
+    // stays false through all of the above.
+    try testing.expect(!shift.truncated);
 }
 
 test "a zero-capacity Str holds nothing and reports the loss" {
@@ -473,6 +524,25 @@ test "the fill loop that replaces an undisclosed @min discloses instead" {
     try testing.expect(list.truncated);
     try testing.expectEqual(@as(usize, 2), list.items().len);
     try testing.expectEqualStrings("beta", list.items()[1].id.get());
+}
+
+test "a list may be filled from its own rows" {
+    // `fill`'s destination is `rows[0..]`, so `src` aliasing the list
+    // is the same forward-copy case `Str.set` is — and dropping a head
+    // is the shape that reaches it.
+    var list: Rows(Row, 4) = .{};
+    for (0..4) |i| list.push().?.count = @intCast(i);
+
+    list.fill(list.items()[1..]);
+    try testing.expectEqual(@as(usize, 3), list.items().len);
+    try testing.expectEqual(@as(u32, 1), list.items()[0].count);
+    try testing.expectEqual(@as(u32, 3), list.items()[2].count);
+    try testing.expect(!list.truncated);
+
+    // Identity, the degenerate alias.
+    list.fill(list.items());
+    try testing.expectEqual(@as(usize, 3), list.items().len);
+    try testing.expectEqual(@as(u32, 1), list.items()[0].count);
 }
 
 test "a zero-capacity list refuses the first push" {
