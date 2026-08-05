@@ -17,8 +17,7 @@ fn increment(state: *State) void {
     state.count += 1;
     var buf: [32]u8 = undefined;
     const label = std.fmt.bufPrint(&buf, "Pressed {d} times", .{state.count}) catch return;
-    state.app.tree.setContent(state.label_id, label) catch return;
-    state.app.invalidate();
+    state.app.patchText(state.label_id, label);
     // secure_store service: the count survives relaunch (buildHome
     // restores it). A failed write — locked keychain, Linux stub —
     // degrades silently: the store never gates the UI, and the count
@@ -89,7 +88,7 @@ fn onNotification(ctx: ?*anyopaque, event: N.Event) void {
 }
 
 fn note(state: *State, text: []const u8) void {
-    state.app.tree.setContent(state.note_id, text) catch {};
+    state.app.patchText(state.note_id, text);
 }
 
 const routes = h.Routes(State).table(&.{
@@ -119,11 +118,9 @@ fn buildHome(state: *State, app: *h.App) !void {
         state.count = std.fmt.parseInt(u32, stored, 10) catch 0;
     }
     // Formatted where it will live — the tree arena — so there is no
-    // cap to guess (tree.fmt). The id is kept for setContent, which is
-    // what the raw appendId form is for.
-    state.label_id = try app.tree.appendId(b.at, .{ .text = .{
-        .content = try app.tree.fmt("Pressed {d} times", .{state.count}),
-    } });
+    // cap to guess (tree.fmt). The id is kept for `patchText`, which is
+    // what the `...Id` twin of a leaf method is for.
+    state.label_id = try b.textId(try app.tree.fmt("Pressed {d} times", .{state.count}));
     try b.button(.{
         .label = "Increment",
         .on_press = .bind(increment, state),
@@ -136,9 +133,7 @@ fn buildHome(state: *State, app: *h.App) !void {
     try b.divider();
     if (N.available(app)) {
         N.setHandler(app, state, onNotification);
-        state.note_id = try app.tree.appendId(b.at, .{ .text = .{
-            .content = "Post a notification the OS draws, outside this window.",
-        } });
+        state.note_id = try b.textId("Post a notification the OS draws, outside this window.");
         try b.button(.{
             .label = "Notify me",
             .on_press = .bind(notify, state),

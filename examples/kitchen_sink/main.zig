@@ -170,8 +170,7 @@ pub const nokreWorkers = .{ Primes, Hasher };
 fn setText(state: *State, id: h.NodeId, comptime fmt: []const u8, args: anytype) void {
     var buf: [224]u8 = undefined;
     const msg = std.fmt.bufPrint(&buf, fmt, args) catch return;
-    state.app.tree.setContent(id, msg) catch return;
-    state.app.invalidate();
+    state.app.patchText(id, msg);
 }
 
 fn setStatus(state: *State, comptime fmt: []const u8, args: anytype) void {
@@ -193,12 +192,6 @@ fn setRunning(state: *State, pressed: h.NodeId, running: bool) void {
     state.app.invalidate();
 }
 
-fn setMeter(state: *State, id: h.NodeId, value: i32) void {
-    const el = state.app.tree.get(id) orelse return;
-    el.meter.value = value;
-    state.app.invalidate();
-}
-
 /// One reading, two renderings: the number goes into the button that
 /// started the work *and* into the standalone `meter` under it, on
 /// purpose — a compact state inside the control, and the full-width bar
@@ -206,9 +199,8 @@ fn setMeter(state: *State, id: h.NodeId, value: i32) void {
 /// neither call: it reports no progress, and would rather say nothing
 /// than invent a bar.
 fn setCountProgress(state: *State, pct: u8) void {
-    if (state.app.tree.get(state.primes_button_id)) |el| el.button.progress_percent = pct;
-    if (state.app.tree.get(state.primes_meter_id)) |el| el.meter.value = pct;
-    state.app.invalidate();
+    state.app.patchProgress(state.primes_button_id, pct);
+    state.app.patchProgress(state.primes_meter_id, pct);
 }
 
 /// A notice whose description carries the result, for the jobs long
@@ -393,13 +385,13 @@ fn onPrimesReply(ctx: ?*anyopaque, reply: Primes.Reply) void {
         // forever the first time a job yields.
         .abandoned => {
             setRunning(state, state.primes_button_id, false);
-            setMeter(state, state.primes_meter_id, 0);
+            state.app.patchProgress(state.primes_meter_id, 0);
             setStatus(state, "Count stopped before it finished.", .{});
             setText(state, state.primes_result_id, "Count stopped before it finished.", .{});
         },
         .counted => |c| {
             setRunning(state, state.primes_button_id, false);
-            setMeter(state, state.primes_meter_id, 100);
+            state.app.patchProgress(state.primes_meter_id, 100);
             setStatus(state, "{d} primes below {d}.", .{ c.count, c.below });
             setText(state, state.primes_result_id, "{d} primes below {d}.", .{ c.count, c.below });
             notifyDone(state, "Primes counted", "{d} primes below {d}.", .{ c.count, c.below });
@@ -474,11 +466,10 @@ fn chosenLocale(state: *const State) L.Locale {
 
 fn refreshL10n(state: *State) void {
     const loc = chosenLocale(state);
-    state.app.tree.setContent(state.l10n_text_id, L.tr(loc, .l10nGreeting)) catch return;
+    state.app.patchText(state.l10n_text_id, L.tr(loc, .l10nGreeting));
     var buf: [128]u8 = undefined;
     const items = L.fmt(&buf, loc, .l10nItems, .{ .count = state.l10n_count }) catch return;
-    state.app.tree.setContent(state.l10n_items_id, items) catch return;
-    state.app.invalidate();
+    state.app.patchText(state.l10n_items_id, items);
 }
 
 fn selectL10nLocale(state: *State, selected: usize) void {
@@ -576,7 +567,7 @@ fn buildHome(state: *State, app: *h.App) !void {
         .{ .text = "Sink", .strong = true },
     } } });
     try b.text("Every element nokre has. There is no hover, no animation, no color — and nothing to configure.");
-    state.status_id = try tree.appendId(b.at, .{ .text = .{ .content = "Ready.", .style = .{ .scale = .small, .ink = .dark } } });
+    state.status_id = try b.styledId("Ready.", .{ .scale = .small, .ink = .dark });
     try b.divider();
 
     try b.heading(.h2, "Type");
@@ -761,22 +752,22 @@ fn buildHome(state: *State, app: *h.App) !void {
     // Each job reports into its own nodes, right under its own button:
     // two workers running at once cannot share one bar and one line
     // without lying about which of them the numbers belong to.
-    state.primes_button_id = try tree.appendId(b.at, .{ .button = .{ .label = "Count primes", .on_press = .bind(countPrimes, state) } });
+    state.primes_button_id = try b.buttonId(.{ .label = "Count primes", .on_press = .bind(countPrimes, state) });
     // The same reading, rendered both ways on purpose: compact inside
     // the control, and full width with words beside it.
-    state.primes_meter_id = try tree.appendId(b.at, .{ .meter = .{ .label = "Prime count progress", .value = 0, .max = 100 } });
-    state.primes_result_id = try tree.appendId(b.at, .{ .text = .{ .content = "No count has run yet.", .style = .{ .scale = .small, .ink = .dark } } });
-    state.hash_button_id = try tree.appendId(b.at, .{ .button = .{ .label = "Hash 32 MB", .on_press = .bind(hashPayload, state) } });
-    state.hash_result_id = try tree.appendId(b.at, .{ .text = .{ .content = "No hash has run yet.", .style = .{ .scale = .small, .ink = .dark } } });
+    state.primes_meter_id = try b.meterId(.{ .label = "Prime count progress", .value = 0, .max = 100 });
+    state.primes_result_id = try b.styledId("No count has run yet.", .{ .scale = .small, .ink = .dark });
+    state.hash_button_id = try b.buttonId(.{ .label = "Hash 32 MB", .on_press = .bind(hashPayload, state) });
+    state.hash_result_id = try b.styledId("No hash has run yet.", .{ .scale = .small, .ink = .dark });
 
     try b.heading(.h2, "HTTP");
     try b.styled("One request out from a tap; exactly one result back on the UI thread, in the same delivery lane as worker replies. The result lands below; the second button aims at a host that cannot exist. Both wear `…` while their request is out — with no percentage, because HTTP reports none — and the failing one gives its button back too.", .{ .scale = .small, .ink = .dark });
     const http_row = try b.stack(.{ .axis = .horizontal });
     // Each button hands its own job to the request, and the job carries
     // the button back to the result.
-    state.example_job = .{ .state = state, .button_id = try tree.appendId(http_row.at, .{ .button = .{ .label = "GET example.com", .on_press = .bind(fetchExample, state) } }) };
-    state.nowhere_job = .{ .state = state, .button_id = try tree.appendId(http_row.at, .{ .button = .{ .label = "GET nowhere", .on_press = .bind(fetchNowhere, state) } }) };
-    state.http_result_id = try tree.appendId(b.at, .{ .text = .{ .content = "No request has run yet.", .style = .{ .family = .mono, .scale = .small, .ink = .dark } } });
+    state.example_job = .{ .state = state, .button_id = try http_row.buttonId(.{ .label = "GET example.com", .on_press = .bind(fetchExample, state) }) };
+    state.nowhere_job = .{ .state = state, .button_id = try http_row.buttonId(.{ .label = "GET nowhere", .on_press = .bind(fetchNowhere, state) }) };
+    state.http_result_id = try b.styledId("No request has run yet.", .{ .family = .mono, .scale = .small, .ink = .dark });
 
     try b.heading(.h2, "Localization");
     try b.styled("ARB catalogs, compiled — no codegen, no runtime parsing. Every locale must translate every key, and plural forms are validated per locale: the Russian entry below would not build without all four of its forms.", .{ .scale = .small, .ink = .dark });
@@ -790,12 +781,12 @@ fn buildHome(state: *State, app: *h.App) !void {
         },
         .on_select = .bind(selectL10nLocale, state),
     });
-    state.l10n_text_id = try tree.appendId(b.at, .{ .text = .{ .content = L.tr(chosenLocale(state), .l10nGreeting) } });
+    state.l10n_text_id = try b.textId(L.tr(chosenLocale(state), .l10nGreeting));
     // Formatted where it will live (`L.fmtIn`): no [128]u8 to size, no
     // NoSpace to answer, and the append copies it like every string.
-    state.l10n_items_id = try tree.appendId(b.at, .{ .text = .{
-        .content = try L.fmtIn(tree, chosenLocale(state), .l10nItems, .{ .count = state.l10n_count }),
-    } });
+    state.l10n_items_id = try b.textId(
+        try L.fmtIn(tree, chosenLocale(state), .l10nItems, .{ .count = state.l10n_count }),
+    );
     const l10n_row = try b.stack(.{ .axis = .horizontal });
     try l10n_row.button(.{ .label = "Add item", .on_press = .bind(addL10nItem, state) });
     try l10n_row.button(.{ .label = "Remove item", .on_press = .bind(removeL10nItem, state) });

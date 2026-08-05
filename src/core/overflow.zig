@@ -163,11 +163,13 @@ fn fieldEql(comptime T: type, a: T, b: T) bool {
     return switch (T) {
         []const u8 => std.mem.eql(u8, a, b),
         ?[]const u8 => sameOptionalString(a, b),
-        // Action identity is the ctx/fn pair plus the index it would
-        // deliver — two rows' actions may share both pointers and
-        // differ only in `index`.
+        // Action identity is the ctx/fn pair plus the datum it would
+        // deliver — two rows' actions may share every pointer and
+        // differ only in `index` or `key`, which is the ordinary case
+        // for a folded row of per-row controls.
         element_mod.Action => a.ctx == b.ctx and a.call == b.call and
-            a.call_indexed == b.call_indexed and a.index == b.index,
+            a.call_indexed == b.call_indexed and a.index == b.index and
+            a.call_keyed == b.call_keyed and std.mem.eql(u8, a.key, b.key),
         else => std.meta.eql(a, b),
     };
 }

@@ -2752,6 +2752,104 @@ test "refresh from inside a build declines quietly, with nothing on the record" 
     try testing.expect(app.router.refused == null);
 }
 
+test "patchText rewrites a held node and marks the frame" {
+    var app = try test_app.init(400, 600);
+    defer app.deinit();
+    const b = app.root();
+    const status = try b.textId("Ready");
+    app.needs_frame = false;
+    app.layout_dirty = false;
+
+    app.patchText(status, "Sending…");
+    try testing.expectEqualStrings("Sending…", app.tree.getConst(status).?.text.content);
+    // A patch is a mutation: the words changed, so the frame and the
+    // layout both have to be re-derived, which is the `invalidate` this
+    // verb absorbed from every call site.
+    try testing.expect(app.needs_frame);
+    try testing.expect(app.layout_dirty);
+}
+
+test "patchText declines a stale id instead of panicking" {
+    var app = try test_app.init(400, 600);
+    defer app.deinit();
+    const b = app.root();
+    const status = try b.textId("Ready");
+    const button = try b.buttonId(.{ .label = "Send" });
+
+    // The ordinary case, not a programmer error: a reply lands one
+    // frame after the rebuild that freed the node it recorded. The
+    // state is already on screen — the rebuild put it there — so there
+    // is nothing to report and nothing to crash over.
+    try app.tree.remove(status);
+    app.needs_frame = false;
+    app.patchText(status, "Sent");
+    try testing.expect(!app.needs_frame);
+
+    // Never-recorded and wrong-kind ids decline the same way: a button
+    // is not text-bearing, and `setContent` says so rather than
+    // writing a field that is not there.
+    app.patchText(.invalid, "Sent");
+    app.patchText(button, "Sent");
+    try testing.expect(!app.needs_frame);
+    try testing.expectEqualStrings("Send", app.tree.getConst(button).?.button.label);
+}
+
+test "patchProgress moves the two elements that carry a percentage" {
+    var app = try test_app.init(400, 600);
+    defer app.deinit();
+    const b = app.root();
+    const button = try b.buttonId(.{ .label = "Export" });
+    const bar = try b.meterId(.{ .label = "Collecting keys", .value = 0, .max = 100 });
+    const stepped = try b.meterId(.{ .label = "Steps", .value = 0, .max = 8 });
+
+    // A button's percentage and its `in_progress` are one state — the
+    // pair append refuses to see split — so the verb writes both.
+    app.patchProgress(button, 40);
+    try testing.expect(app.tree.getConst(button).?.button.in_progress);
+    try testing.expectEqual(@as(?u8, 40), app.tree.getConst(button).?.button.progress_percent);
+
+    // A meter takes the same number as a fraction of its own max, so
+    // the common max (100) is the identity and an odd one still moves.
+    app.patchProgress(bar, 40);
+    try testing.expectEqual(@as(i32, 40), app.tree.getConst(bar).?.meter.value);
+    app.patchProgress(stepped, 50);
+    try testing.expectEqual(@as(i32, 4), app.tree.getConst(stepped).?.meter.value);
+}
+
+test "patchProgress declines a stale id, a wrong element, and a value append would refuse" {
+    var app = try test_app.init(400, 600);
+    defer app.deinit();
+    const b = app.root();
+    const button = try b.buttonId(.{ .label = "Export" });
+    const glyph = try b.buttonId(.{ .label = "Close", .form = .{ .glyph = .x } });
+    const vendor = try b.buttonId(.{ .label = "Sign in with Google", .form = .{ .provider = .google } });
+    const status = try b.textId("Ready");
+
+    // Same polite decline as `patchText`, for the same reason.
+    try app.tree.remove(button);
+    app.needs_frame = false;
+    app.patchProgress(button, 40);
+    app.patchProgress(.invalid, 40);
+    // Text shows no progress; nothing is invented for it.
+    app.patchProgress(status, 40);
+    try testing.expect(!app.needs_frame);
+
+    // The two forms append refuses a percentage on stay refused: a
+    // patch is not a way around a construction gate. Both keep the
+    // state they were built with.
+    app.patchProgress(glyph, 40);
+    app.patchProgress(vendor, 40);
+    try testing.expectEqual(@as(?u8, null), app.tree.getConst(glyph).?.button.progress_percent);
+    try testing.expectEqual(@as(?u8, null), app.tree.getConst(vendor).?.button.progress_percent);
+    try testing.expect(!app.tree.getConst(vendor).?.button.in_progress);
+
+    // …and so does a number that is not a percentage.
+    const live = try b.buttonId(.{ .label = "Import" });
+    app.patchProgress(live, 101);
+    try testing.expectEqual(@as(?u8, null), app.tree.getConst(live).?.button.progress_percent);
+    try testing.expect(!app.needs_frame);
+}
+
 test "tap on the scrim dismisses the sheet; background is not hittable" {
     var counter: PressCounter = .{};
     var app = try test_app.init(400, 600);

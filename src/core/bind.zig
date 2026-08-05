@@ -72,10 +72,11 @@ pub fn bindAs(comptime Callback: type, comptime f: anytype, state: anytype) Call
 }
 
 /// `bindAs` with the function field named. Not re-exported from
-/// `nokre.zig`: `Action` carries a second pair (`call_indexed`) and so is
-/// the one type in reach with two, which is a fact about the element set
-/// rather than a generality worth putting in the public surface (see the
-/// module doc).
+/// `nokre.zig`: `Action` carries two further pairs (`call_indexed`,
+/// `call_keyed`) and so is the one type in reach with more than one,
+/// which is a fact about the element set — a row's action delivers the
+/// row, by position or by identity — rather than a generality worth
+/// putting in the public surface (see the module doc).
 pub fn bindField(
     comptime Callback: type,
     comptime call_field: []const u8,

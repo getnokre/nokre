@@ -179,6 +179,12 @@ state the line after. Every consumer
 used to compose all of this by hand, per controller; the survey found
 22 copies.
 
+The two things that are wrong to rebuild for — a status line's words
+and a control's percentage, both moving while work runs — are patched
+onto their node instead, and decline on a stale id in the same spirit
+(`App.patchText` / `App.patchProgress`; [elements.md](elements.md),
+"Patching one node instead of rebuilding").
+
 `reload` from inside a route builder is different: the deliberate verb
 has no polite decline, so tearing down the half-built screen to run its
 builder again — which would duplicate the screen — is **refused and

@@ -10,7 +10,10 @@
 //! and the copy validates: the tree stores only well-formed UTF-8, with
 //! invalid sequences replaced by U+FFFD (`dupeValid`), so every scan
 //! downstream (wrapping, bidi, cursor motion) may trust sequence
-//! lengths instead of re-checking them.
+//! lengths instead of re-checking them. One string is copied verbatim
+//! instead, and it is not text: a keyed action's `key` is an identity
+//! nothing renders, and substitution would merge two of them
+//! (`dupeActionKeys`).
 //! That duplication rule governs everything a consumer appends. The
 //! framework's own chrome words are the boundary: the ones it installs
 //! from `App.Chrome` — `sheet_close`, `back` and `more`'s labels, the
@@ -511,16 +514,16 @@ pub const Tree = struct {
             .scroll_region => |r| if (r.content_height != 0) return error.LayoutOwnedField,
             else => {},
         }
-        // An action names one function between `call` and
-        // `call_indexed`. Both set is ambiguity refused rather than
-        // resolved — `invoke` would have to pick — the same rule a
+        // An action names one function among `call`, `call_indexed` and
+        // `call_keyed`. More than one set is ambiguity refused rather
+        // than resolved — `invoke` would have to pick — the same rule a
         // link's two destinations get.
         switch (element) {
-            .button => |b| if (bothCalls(b.on_press)) return error.ActionHasOneCall,
-            .tile => |t| if (bothCalls(t.on_press)) return error.ActionHasOneCall,
-            .text_input => |t| if (bothCalls(t.on_submit)) return error.ActionHasOneCall,
-            .toggle => |t| if (bothCalls(t.on_toggle)) return error.ActionHasOneCall,
-            .checkbox => |c| if (bothCalls(c.on_toggle)) return error.ActionHasOneCall,
+            .button => |b| if (manyCalls(b.on_press)) return error.ActionHasOneCall,
+            .tile => |t| if (manyCalls(t.on_press)) return error.ActionHasOneCall,
+            .text_input => |t| if (manyCalls(t.on_submit)) return error.ActionHasOneCall,
+            .toggle => |t| if (manyCalls(t.on_toggle)) return error.ActionHasOneCall,
+            .checkbox => |c| if (manyCalls(c.on_toggle)) return error.ActionHasOneCall,
             else => {},
         }
         switch (element) {
@@ -825,10 +828,19 @@ pub const Tree = struct {
         };
     }
 
-    /// `anytype` because `Action` and `ToggleAction` share the rule
-    /// but not a type: one function between `call` and `call_indexed`.
-    fn bothCalls(action: anytype) bool {
-        return action.call != null and action.call_indexed != null;
+    /// `anytype` because `Action` and `ToggleAction` share the rule but
+    /// not a type: one function among the ones that type has. Only
+    /// `Action` carries a keyed form (element.zig says why the toggle
+    /// does not), so the third is counted where it exists rather than
+    /// assumed on both.
+    fn manyCalls(action: anytype) bool {
+        var named: usize = 0;
+        if (action.call != null) named += 1;
+        if (action.call_indexed != null) named += 1;
+        if (comptime @hasField(@TypeOf(action), "call_keyed")) {
+            if (action.call_keyed != null) named += 1;
+        }
+        return named > 1;
     }
 
     /// The fill a child of `id` is drawn on: the nearest ancestor box
@@ -1001,7 +1013,45 @@ pub const Tree = struct {
             },
             else => {},
         }
+        try dupeActionKeys(a, &e);
         return e;
+    }
+
+    /// The identity a keyed action carries (`Action.bindKey`), copied
+    /// like every other string a consumer passes in — and the copy is
+    /// load-bearing, not bookkeeping: the natural key is a field of the
+    /// row it names, so a borrowed one would still point into that row
+    /// when the list is refilled, at which moment the pressed row's key
+    /// has quietly become its successor's. That is the wrong-row
+    /// failure `bindKey` exists to remove, so the copy is what makes
+    /// the guarantee true.
+    ///
+    /// **Reflective, where its neighbour above is a hand-written
+    /// switch.** An arm forgotten there is a string rendered from the
+    /// consumer's memory — visible, and caught by the first test that
+    /// mutates after append. An arm forgotten *here* is a key that is
+    /// right until a reply lands, which is precisely the bug this pass
+    /// closes, so the safe thing is to leave no arm to forget: an
+    /// element that grows an action gets the copy by existing.
+    ///
+    /// Verbatim (`dupe`), not `dupeValid`: a key is an identity, not
+    /// text. Nothing measures, wraps, renders or announces it — it goes
+    /// from `bindKey` to the handler and nowhere else — while U+FFFD
+    /// substitution maps distinct byte strings onto one, which for an
+    /// identity is a collision, and a collision is exactly a press
+    /// landing on the wrong row.
+    fn dupeActionKeys(a: std.mem.Allocator, e: *Element) !void {
+        switch (e.*) {
+            inline else => |*payload| {
+                const Payload = @TypeOf(payload.*);
+                if (comptime @typeInfo(Payload) != .@"struct") return;
+                inline for (@typeInfo(Payload).@"struct".fields) |fld| {
+                    if (comptime fld.type != element_mod.Action) continue;
+                    const action = &@field(payload, fld.name);
+                    if (action.key.len != 0) action.key = try a.dupe(u8, action.key);
+                }
+            },
+        }
     }
 
     /// The option list of a `segmented`, `radio_group`, or `select`:

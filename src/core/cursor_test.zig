@@ -124,6 +124,46 @@ test "every interactive method appends the element it names" {
     try expectLast(&tree, root_id, .copyable);
 }
 
+test "the four id twins append exactly their twins, and hand back that node" {
+    var tree = try Tree.init(std.testing.allocator);
+    defer tree.deinit();
+    const root = rootCursor(&tree);
+    const root_id = tree.rootId();
+
+    // Each is its twin's append plus the id — same element, same
+    // validation, nothing else. A twin that appended something else,
+    // or handed back a node that is not the one it made, would be a
+    // second truth about the tree, which is the one thing the cursor
+    // may not be.
+    const status = try root.textId("Ready");
+    try std.testing.expectEqual(lastChild(&tree, root_id), status);
+    try std.testing.expectEqualStrings("Ready", tree.getConst(status).?.text.content);
+
+    const caption = try root.styledId("Signed out", .{ .scale = .small, .ink = .dark });
+    try std.testing.expectEqual(lastChild(&tree, root_id), caption);
+    try std.testing.expectEqual(
+        text_mod.Style{ .scale = .small, .ink = .dark },
+        tree.getConst(caption).?.text.style,
+    );
+
+    const button = try root.buttonId(.{ .label = "Export" });
+    try std.testing.expectEqual(lastChild(&tree, root_id), button);
+    try std.testing.expectEqualStrings("Export", tree.getConst(button).?.button.label);
+
+    const bar = try root.meterId(.{ .label = "Collecting", .value = 0, .max = 100 });
+    try std.testing.expectEqual(lastChild(&tree, root_id), bar);
+    try expectLast(&tree, root_id, .meter);
+
+    // The ids are what the patch verbs take, which is the whole reason
+    // the twins exist: hold one, move one node, leave the screen alone.
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    const b = app.root();
+    const held = try b.textId("Ready");
+    app.patchText(held, "Sending…");
+    try std.testing.expectEqualStrings("Sending…", app.tree.getConst(held).?.text.content);
+}
+
 test "every container method appends the element it names" {
     var tree = try Tree.init(std.testing.allocator);
     defer tree.deinit();

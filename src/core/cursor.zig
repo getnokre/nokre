@@ -5,13 +5,20 @@
 //! copy, every contrast gate runs exactly as it does for a raw append,
 //! because the cursor *is* that call. The raw `Tree` API stays public
 //! and legitimate: it is the substrate, and the one form for the rare
-//! call the cursor does not carry (holding a leaf's `NodeId`, spanned
-//! headings).
+//! call the cursor does not carry (a spanned *heading*, and a leaf's
+//! `NodeId` outside the four the twins below cover).
 //!
 //! Shape rules, derived from the element set:
 //! - A leaf method takes its element struct and returns nothing, as
 //!   `Tree.append` does — most children are leaves nobody addresses
-//!   again.
+//!   again. The few that *are* addressed again have an `...Id` twin
+//!   returning the node — `textId`, `styledId`, `buttonId`, `meterId`,
+//!   and no others. The set is receipts, not symmetry: those four are
+//!   the leaves the two real consumers hold ids to (19 sites, all of
+//!   them a status line or a control whose progress must move without
+//!   rebuilding the screen under the user's fingers), and a twin for a
+//!   leaf nobody addresses is a second way to spell the same append.
+//!   A leaf that earns one later adds it then.
 //! - A container method returns the child cursor, so parent threading
 //!   is the return value instead of a variable the caller carries.
 //!   A container's own id, where a caller needs it, is `.at`.
@@ -22,7 +29,10 @@
 //! The set is closed exactly as the element set is: a new element adds
 //! its method in the same pass (docs/internals/contributing.md), and
 //! the comptime check at the bottom of this file refuses to compile a
-//! union member the cursor cannot spell.
+//! union member the cursor cannot spell. That check is over the
+//! *element* methods; the `...Id` twins are a separate, smaller set
+//! answering a separate question, so nothing here demands one per
+//! element.
 
 const std = @import("std");
 const element_mod = @import("element.zig");
@@ -143,6 +153,46 @@ pub const Cursor = struct {
 
     pub fn tile(c: Cursor, t: element_mod.Tile) !void {
         try c.tree.append(c.at, .{ .tile = t });
+    }
+
+    // ---- the leaves a caller addresses again ----
+    //
+    // Same appends as their twins above and below — the id is the only
+    // difference, because the id is the only thing the callers wanted
+    // and could not have without dropping to `tree.appendId(b.at, …)`.
+    // What that drop cost was not a line: it was the cursor, so the
+    // element literal came back (`.{ .text = .{ .content = … } }`) at
+    // exactly the sites whose whole business is a mid-flight patch.
+    //
+    // Each is the receipt for `App.patchText` / `App.patchProgress`: a
+    // status line whose words change while a request is out, a control
+    // whose percentage climbs while a worker runs. Hold the id, patch
+    // it, and never rebuild a screen the user is holding.
+
+    /// `text`, returning the node — for the status line a callback
+    /// rewrites with `App.patchText`.
+    pub fn textId(c: Cursor, content: []const u8) !NodeId {
+        return c.tree.appendId(c.at, .{ .text = .{ .content = content } });
+    }
+
+    /// `styled`, returning the node. Present because the status lines
+    /// in reach are split between the two: half are body copy, half are
+    /// the small dark caption under a heading, and a caller who has to
+    /// give up the style to get the id has been handed the wrong door.
+    pub fn styledId(c: Cursor, content: []const u8, style: text_mod.Style) !NodeId {
+        return c.tree.appendId(c.at, .{ .text = .{ .content = content, .style = style } });
+    }
+
+    /// `button`, returning the node — for the control that carries its
+    /// own progress (`App.patchProgress`).
+    pub fn buttonId(c: Cursor, b: element_mod.Button) !NodeId {
+        return c.tree.appendId(c.at, .{ .button = b });
+    }
+
+    /// `meter`, returning the node — the other half of the same job:
+    /// a bar that moves while the work it measures runs.
+    pub fn meterId(c: Cursor, m: element_mod.Meter) !NodeId {
+        return c.tree.appendId(c.at, .{ .meter = m });
     }
 
     // ---- containers: the child cursor is the return value ----

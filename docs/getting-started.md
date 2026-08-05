@@ -204,8 +204,7 @@ pub const State = struct {
         state.count += 1;
         var buf: [32]u8 = undefined;
         const label = std.fmt.bufPrint(&buf, "Pressed {d} times", .{state.count}) catch return;
-        state.app.tree.setContent(state.label_id, label) catch return;
-        state.app.invalidate();
+        state.app.patchText(state.label_id, label);
     }
 };
 
@@ -216,7 +215,7 @@ pub const routes = h.Routes(State).table(&.{
 pub fn buildHome(state: *State, app: *h.App) !void {
     const b = app.root();
     try b.heading(.h1, "Notes");
-    state.label_id = try app.tree.appendId(b.at, .{ .text = .{ .content = "Pressed 0 times" } });
+    state.label_id = try b.textId("Pressed 0 times");
     try b.button(.{
         .label = "Increment",
         .on_press = .bind(State.increment, state),
@@ -255,21 +254,24 @@ Things worth noticing, because they generalize:
   outside a table, text without enough contrast where it sits — all
   rejected at the call site with a named error. If the tree built, the
   screen is valid; an automatic audit covers what construction can't
-  see. The rules are in [accessibility.md](accessibility.md). The raw
-  `Tree` API stays public as the substrate — `appendId` above is its
-  form for the node you address again (`setContent` needs the id).
+  see. The rules are in [accessibility.md](accessibility.md). Four leaf
+  methods have an `...Id` twin handing back the node — `textId` above,
+  plus `styledId`, `buttonId`, `meterId` — for the one you address
+  again; the raw `Tree` API stays public as the substrate for anything
+  past those.
 - **Actions are typed methods, bound.** `.bind(State.increment, state)`
   pairs a method on your state type with the pointer it runs against —
   nokre never allocates a closure. Every interactive element takes its
   action the same way (`on_press`, `on_toggle`, `on_change`,
   `on_select`; the latter three hand the method their payload), and a
-  list row's action can carry the row: `.bindAt(State.accept, state, i)`
-  delivers the position back at press time ([elements.md](elements.md),
-  "Actions").
-- **You mutate, then `invalidate()`.** Nothing renders until state
-  changes and you say so; an app at rest costs zero CPU. Mutate the tree
-  in place (as here, `setContent`) or rebuild a whole screen — Part 3
-  adds that second style.
+  list row's action can carry the row — `.bindAt(State.accept, state, i)`
+  delivers the position back at press time, `.bindKey(State.accept,
+  state, row.id)` the identity ([elements.md](elements.md), "Actions").
+- **You mutate, then say the frame is stale.** Nothing renders until
+  state changes and you say so; an app at rest costs zero CPU. Patch one
+  node (as here, `patchText` — content plus `invalidate`, and a no-op if
+  the node is gone) or rebuild a whole screen — Part 3 adds that second
+  style. `app.invalidate()` is the bare form underneath both.
 - **Focus, keyboard access, and the a11y tree came for free.** None of
   that was written above, and none of it can be forgotten.
 

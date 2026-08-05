@@ -34,24 +34,47 @@ pub const HeadingLevel = enum(u8) {
 
 /// A context+function pair. nokre never allocates closures.
 ///
-/// A list row's action carries the row: set `index` at append and
-/// receive it in `call_indexed`. The alternative is a comptime table of
+/// A list row's action carries the row, in one of two currencies:
+/// **where it was** (`index`, set by `bindAt`, delivered to
+/// `call_indexed`) or **which one it is** (`key`, set by `bindKey`,
+/// delivered to `call_keyed`). Either way the datum is on the element,
+/// exactly as fresh as the tree it rides in — never a comptime table of
 /// generated functions, one per possible row, baking a position into
-/// code — the index here is data on the element, exactly as fresh as
-/// the tree it rides in (the same reason `PickerItem` carries its
-/// `index` on the node rather than in a callback). A press can still
-/// land after the list it named has moved, and that check belongs to
-/// the receiver, who alone knows the list — the contract's home is
-/// docs/elements.md, "Actions". `call` and `call_indexed` name one
-/// function between them; both set is refused at append.
+/// code (the same reason `PickerItem` carries its `index` on the node
+/// rather than in a callback).
+///
+/// A press can still land after the list it named has moved, and what
+/// happens then is the whole difference between the two. An index is
+/// answered by *whatever now stands there*, so a stale one is a live
+/// row — the wrong one — and only a bounds check stands between a
+/// screen and acting on it. A key is answered by nothing at all once
+/// its row is gone, so the failure mode is a lookup that misses. Both
+/// checks belong to the receiver, who alone knows the list; the
+/// contract's home is docs/elements.md, "Actions".
+///
+/// `call`, `call_indexed` and `call_keyed` name one function between
+/// them; more than one set is refused at append.
 pub const Action = struct {
     ctx: ?*anyopaque = null,
     call: ?*const fn (ctx: ?*anyopaque) void = null,
-    /// Handed to `call_indexed` at dispatch. Meaningless to `call`.
+    /// Handed to `call_indexed` at dispatch. Meaningless to the others.
     index: usize = 0,
     call_indexed: ?*const fn (ctx: ?*anyopaque, index: usize) void = null,
+    /// Handed to `call_keyed` at dispatch. Meaningless to the others.
+    ///
+    /// Copied into the tree at append like every other string a
+    /// consumer passes in (tree.zig, `dupeActionKeys`), and that copy
+    /// is the point rather than a formality: the natural key is a field
+    /// of the row it names, and a *borrowed* one would still be
+    /// pointing at that row's bytes when the list is refilled — at
+    /// which moment the key silently becomes the new occupant's
+    /// identity, which is the wrong-row bug wearing an identity's
+    /// clothes. The tree's copy cannot be overwritten by a reply.
+    key: []const u8 = "",
+    call_keyed: ?*const fn (ctx: ?*anyopaque, key: []const u8) void = null,
 
     pub fn invoke(self: Action) void {
+        if (self.call_keyed) |f| return f(self.ctx, self.key);
         if (self.call_indexed) |f| return f(self.ctx, self.index);
         if (self.call) |f| f(self.ctx);
     }
@@ -59,7 +82,7 @@ pub const Action = struct {
     /// Whether any function is named — the thing `invoke` treats as
     /// something to do.
     pub fn wired(self: Action) bool {
-        return self.call != null or self.call_indexed != null;
+        return self.call != null or self.call_indexed != null or self.call_keyed != null;
     }
 
     /// Synthesizes the `ctx`+`call` pair from a typed method, so the
@@ -80,12 +103,55 @@ pub const Action = struct {
     /// `bind` for the `call_indexed` shape: `f(state, index)`, the row
     /// arriving as data per the `index` contract above.
     ///
-    /// The one pair in reach with two functions in it, so it is the one
-    /// that has to name which — `bindAs` binds `call`, this binds
-    /// `call_indexed` and sets the datum that rides with it.
+    /// The one pair in reach with more than one function in it, so it
+    /// is the one that has to name which — `bindAs` binds `call`, this
+    /// binds `call_indexed` and sets the datum that rides with it.
+    ///
+    /// Position is the right currency exactly when **the row is the
+    /// position**: a fixed comptime list of settings, a table of steps,
+    /// a segmented control's options. When the rows come from a reply,
+    /// the row is not the position and `bindKey` is the form.
     pub fn bindAt(comptime f: anytype, state: anytype, index: usize) Action {
         var out = bind_mod.bindField(Action, "call_indexed", f, state);
         out.index = index;
+        return out;
+    }
+
+    /// `bind` for the `call_keyed` shape: `f(state, key)`, the row
+    /// arriving as the identity it already has — a row id, a code, a
+    /// tag — rather than as the slot it happened to occupy when the
+    /// screen was built.
+    ///
+    /// ```zig
+    /// .on_press = .bindKey(State.removeAdmin, state, row.user_id.get())
+    ///
+    /// // in State — the counterpart of bindAt's bounds check:
+    /// pub fn removeAdmin(self: *State, key: []const u8) void {
+    ///     const row = self.findAdmin(key) orelse return; // gone: decline
+    ///     ...
+    /// }
+    /// ```
+    ///
+    /// **What happens when the row is gone is the whole point.** A
+    /// handler holding a key holds no way to index, so there is no
+    /// "the row that is there now" for it to reach: the lookup either
+    /// finds the row the user pressed or finds nothing, and nothing is
+    /// a no-op — the polite decline `App.refresh` and the patch verbs
+    /// already spell. The one way that guarantee could be lost is a key
+    /// that aliases the list it names, which is why the tree copies it
+    /// (see `key`).
+    ///
+    /// nokre cannot do the lookup: it knows the tree, not your data. A
+    /// key it has never seen is a key it hands back verbatim.
+    ///
+    /// An empty key is legal and means the row had no identity to give
+    /// — a server row with a blank id. It is handed over as-is, matches
+    /// nothing, and so declines, which is the correct answer for a row
+    /// nobody can name. Refusing it at append instead would turn one
+    /// bad field in a reply into a screen that will not build.
+    pub fn bindKey(comptime f: anytype, state: anytype, key: []const u8) Action {
+        var out = bind_mod.bindField(Action, "call_keyed", f, state);
+        out.key = key;
         return out;
     }
 };
@@ -110,6 +176,17 @@ pub const ToggleAction = struct {
 
     /// Same contract as `Action.bindAt`; `f(state, index, checked)` —
     /// the payload keeps its dispatch position, after the index.
+    ///
+    /// **No `bindKey` twin, and that is a decision, not a gap.** Every
+    /// keyed form costs a third function pointer and a string on a
+    /// struct every element embeds, and the argument for paying it is a
+    /// row whose identity outlives its position. Toggles in the two
+    /// real consumers are the opposite case — a fixed comptime list of
+    /// settings, where the row *is* the position and a key would be a
+    /// number spelled as a word. The day a switch rides a row that came
+    /// from a reply, this gains the twin `Action` has, three lines and
+    /// one field; until then it would be surface with nothing behind
+    /// it.
     pub fn bindAt(comptime f: anytype, state: anytype, index: usize) ToggleAction {
         var out = bind_mod.bindField(ToggleAction, "call_indexed", f, state);
         out.index = index;
@@ -1933,6 +2010,33 @@ test "bindAt forwards the element's index as data" {
     try std.testing.expectEqual(@as(usize, 3), r.last);
     seventh.invoke();
     try std.testing.expectEqual(@as(usize, 7), r.last);
+}
+
+test "bindKey forwards the element's key as data, and wires like the others" {
+    // Same shape as `bindAt` above, in the other currency: the identity
+    // rides the element, so two bindings of one method dispatch with
+    // their own rows.
+    const Roster = struct {
+        last: []const u8 = "",
+        fn pick(self: *@This(), key: []const u8) void {
+            self.last = key;
+        }
+    };
+    var r: Roster = .{};
+    const ada: Action = .bindKey(Roster.pick, &r, "u_ada");
+    const grace: Action = .bindKey(Roster.pick, &r, "u_grace");
+    try std.testing.expect(ada.wired());
+    ada.invoke();
+    try std.testing.expectEqualStrings("u_ada", r.last);
+    grace.invoke();
+    try std.testing.expectEqualStrings("u_grace", r.last);
+
+    // An empty key is a row with no identity: handed over as-is, so the
+    // receiver's lookup is what declines. Nothing here silently turns
+    // into a position.
+    const nameless: Action = .bindKey(Roster.pick, &r, "");
+    nameless.invoke();
+    try std.testing.expectEqualStrings("", r.last);
 }
 
 test "payload-carrying binds forward their payloads" {

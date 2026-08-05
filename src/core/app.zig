@@ -487,6 +487,93 @@ pub const App = struct {
         self.layout_dirty = true;
     }
 
+    // ---- mid-flight patches ----
+    //
+    // The third way state reaches the screen, beside `reload` (the
+    // deliberate gesture) and `refresh` (the polite rebuild): change
+    // one node and leave the rest of the tree exactly where the user
+    // left it. It exists because a rebuild is the wrong answer for the
+    // two things that move *while* work is running — a status line's
+    // words and a control's percentage — where the screen the user is
+    // reading, scrolled, and possibly typing into must not be rebuilt
+    // twenty times a second to move a bar.
+    //
+    // Both verbs take a `NodeId` a builder kept (`Cursor.textId`,
+    // `styledId`, `buttonId`, `meterId`) and both **decline on a stale
+    // one**. That is the same posture `refresh` established and it is
+    // not politeness for its own sake: a recorded id outlives its node
+    // by construction — every rebuild frees the tree the id names, and
+    // a reply landing one frame later is the ordinary case, not a
+    // programmer error. What the caller wanted was for the state to be
+    // on screen; the rebuild that took the node put it there already.
+    //
+    // Nothing reports, for the same reason `refresh` reports nothing:
+    // there is no action a callback could take on the answer.
+
+    /// Replaces a text-bearing node's content and marks the frame —
+    /// `tree.setContent` plus `invalidate`, which is every call site
+    /// there was. Silent on a stale or non-text id.
+    ///
+    /// The content is copied like every append's (and re-runs the
+    /// contrast gate, since new words may be the first visible ones the
+    /// ink has had), so a caller may hand it a scratch buffer.
+    ///
+    /// ```zig
+    /// // in the builder:
+    /// state.status_id = try b.textId(state.statusCopy());
+    ///
+    /// // in the callback, with the user mid-form:
+    /// state.app.patchText(state.status_id, state.statusCopy());
+    /// ```
+    pub fn patchText(self: *App, id: NodeId, content: []const u8) void {
+        // `setContent` refuses a bad id and a non-text element the same
+        // way, and its other failure — a refused ink/fill pair, or the
+        // arena — leaves the element untouched. Nothing is half-written
+        // either way, so one `catch` covers all of them and the frame
+        // is only marked when something actually changed.
+        self.tree.setContent(id, content) catch return;
+        self.invalidate();
+    }
+
+    /// Moves the progress a node shows, 0–100, and marks the frame.
+    /// Silent on a stale id, and on an element with no progress to
+    /// show.
+    ///
+    /// Two elements answer this, because two elements in the set carry
+    /// a percentage:
+    /// - `button` — sets `progress_percent` and, with it, `in_progress`.
+    ///   The two are one state (a percentage on a button that is not
+    ///   working means nothing, and append rejects that pair), so the
+    ///   verb writes the state rather than half of it. The two forms
+    ///   append refuses a percentage on — the 24px glyph, which has
+    ///   nowhere to read one, and the vendor sign-in pill, whose
+    ///   artwork is not nokre's to draw a track across — are refused
+    ///   here too: a value that could not have entered through append
+    ///   does not get in through a patch.
+    /// - `meter` — sets `value` to that percentage of its own `max`,
+    ///   truncating. With the default `max = 100` it is the number
+    ///   itself. A meter counting *things* ("3 of 7") is not what this
+    ///   is for: its label changes with its value, and words are a
+    ///   rebuild.
+    ///
+    /// Percent, not the element's own units, because the callers are
+    /// worker progress — a fraction of a job — and one meaning across
+    /// both elements beats a parameter that means two things.
+    pub fn patchProgress(self: *App, id: NodeId, percent: u8) void {
+        if (percent > 100) return;
+        const el = self.tree.get(id) orelse return;
+        switch (el.*) {
+            .button => |*b| {
+                if (b.form == .glyph or b.form == .provider) return;
+                b.in_progress = true;
+                b.progress_percent = percent;
+            },
+            .meter => |*m| m.value = @divTrunc(@as(i32, percent) * m.max, 100),
+            else => return,
+        }
+        self.invalidate();
+    }
+
     /// The active focus layer: the topmost open modal layer
     /// (`layout.topModalLayer`), or the whole tree.
     pub fn focusScope(self: *const App) NodeId {

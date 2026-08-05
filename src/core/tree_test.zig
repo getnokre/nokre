@@ -13,6 +13,7 @@ const Role = element_mod.Role;
 
 fn noopPress(_: ?*anyopaque) void {}
 fn noopPressIndexed(_: ?*anyopaque, _: usize) void {}
+fn noopPressKeyed(_: ?*anyopaque, _: []const u8) void {}
 fn noopToggleIndexed(_: ?*anyopaque, _: usize, _: bool) void {}
 
 test "append builds sibling chains in order" {
@@ -429,17 +430,26 @@ test "append holds a tile to exactly one destination, as it holds a link" {
     } });
 }
 
-test "append holds an action to one function between call and call_indexed" {
+test "append holds an action to one function among call, call_indexed and call_keyed" {
     var tree = try Tree.init(std.testing.allocator);
     defer tree.deinit();
     const root = tree.rootId();
 
-    // Both set is ambiguity — `invoke` would have to pick which
+    // Two set is ambiguity — `invoke` would have to pick which
     // function the press meant — refused at the door like a link's two
-    // destinations.
+    // destinations. Every pairing, because the rule is "one", not "not
+    // these two".
     try std.testing.expectError(error.ActionHasOneCall, tree.append(root, .{ .button = .{
         .label = "Accept",
         .on_press = .{ .call = noopPress, .call_indexed = noopPressIndexed },
+    } }));
+    try std.testing.expectError(error.ActionHasOneCall, tree.append(root, .{ .button = .{
+        .label = "Accept",
+        .on_press = .{ .call = noopPress, .call_keyed = noopPressKeyed },
+    } }));
+    try std.testing.expectError(error.ActionHasOneCall, tree.append(root, .{ .button = .{
+        .label = "Accept",
+        .on_press = .{ .call_indexed = noopPressIndexed, .call_keyed = noopPressKeyed },
     } }));
     try std.testing.expectError(error.ActionHasOneCall, tree.append(root, .{ .toggle = .{
         .label = "Weekly digest",
@@ -460,6 +470,103 @@ test "append holds an action to one function between call and call_indexed" {
         .label = "Weekly digest",
         .on_toggle = .{ .call_indexed = noopToggleIndexed, .index = 1 },
     } });
+    try tree.append(root, .{ .button = .{
+        .label = "Remove",
+        .on_press = .{ .call_keyed = noopPressKeyed, .key = "u_ada" },
+    } });
+}
+
+test "a keyed action cannot act on the row that took its place" {
+    // The whole argument for `bindKey`, run against a real tree and a
+    // real list: the screen is built from three rows, the middle one is
+    // removed by a reply that lands before any rebuild, and both
+    // pressable forms of the *same* button are then invoked.
+    //
+    // The indexed one is answered by whoever now stands in slot 1 —
+    // Carol, who the user never pressed and whose removal is silent
+    // because the index is in range. The keyed one is answered by
+    // nobody, because Bob is gone, and declining is the only thing left
+    // to do with a name that matches nothing.
+    const Roster = struct {
+        rows: [3][]const u8 = .{ "u_ada", "u_bob", "u_carol" },
+        len: usize = 3,
+        removed: []const u8 = "",
+
+        fn removeAt(self: *@This(), index: usize) void {
+            if (index >= self.len) return; // the bindAt contract, honored
+            self.removed = self.rows[index];
+        }
+        fn removeKey(self: *@This(), key: []const u8) void {
+            for (self.rows[0..self.len]) |row| {
+                if (std.mem.eql(u8, row, key)) {
+                    self.removed = row;
+                    return;
+                }
+            }
+            // Gone. Declining is the point: there is no row to fall
+            // back to, because a key is not a slot.
+        }
+    };
+
+    var tree = try Tree.init(std.testing.allocator);
+    defer tree.deinit();
+    const root = tree.rootId();
+    var roster: Roster = .{};
+
+    const by_slot = try tree.appendId(root, .{ .button = .{
+        .label = "Remove Bob (by slot)",
+        .on_press = .bindAt(Roster.removeAt, &roster, 1),
+    } });
+    const by_name = try tree.appendId(root, .{ .button = .{
+        .label = "Remove Bob (by name)",
+        .on_press = .bindKey(Roster.removeKey, &roster, roster.rows[1]),
+    } });
+
+    // The reply lands: Bob is gone and Carol slides up. The tree is
+    // untouched — a screen the user is holding is exactly the case
+    // `App.refresh` politely declines to rebuild, which is why the two
+    // buttons above are still on screen and still pressable.
+    roster.rows = .{ "u_ada", "u_carol", "" };
+    roster.len = 2;
+
+    tree.get(by_slot).?.button.on_press.invoke();
+    try std.testing.expectEqualStrings("u_carol", roster.removed); // the wrong admin
+
+    roster.removed = "";
+    tree.get(by_name).?.button.on_press.invoke();
+    try std.testing.expectEqualStrings("", roster.removed); // nobody
+
+    // And a key that still names a live row still finds it, so the
+    // decline above is staleness and not inertness.
+    const ada = try tree.appendId(root, .{ .button = .{
+        .label = "Remove Ada",
+        .on_press = .bindKey(Roster.removeKey, &roster, "u_ada"),
+    } });
+    tree.get(ada).?.button.on_press.invoke();
+    try std.testing.expectEqualStrings("u_ada", roster.removed);
+}
+
+test "the tree owns a keyed action's key, so refilling the row cannot rewrite it" {
+    // The copy `dupeActionKeys` makes is what the test above rests on.
+    // The natural key is a field of the row it names — here a fixed
+    // buffer, as `Str(cap)` is in both real consumers — so a *borrowed*
+    // key would still be pointing at that buffer when the reply
+    // overwrites it, and the press would carry the new occupant's
+    // identity under the old row's label. That is the wrong-row bug
+    // with extra steps, and this pins that it cannot happen.
+    var tree = try Tree.init(std.testing.allocator);
+    defer tree.deinit();
+
+    var row_id: [8]u8 = "u_bob\x00\x00\x00".*;
+    const id = try tree.appendId(tree.rootId(), .{ .button = .{
+        .label = "Remove",
+        .on_press = .{ .call_keyed = noopPressKeyed, .key = row_id[0..5] },
+    } });
+    const stored = tree.getConst(id).?.button.on_press.key;
+
+    @memcpy(row_id[0..5], "u_zoe");
+    try std.testing.expectEqualStrings("u_bob", stored);
+    try std.testing.expect(stored.ptr != @as([*]const u8, &row_id));
 }
 
 test "append holds a tile group to all marks or none" {

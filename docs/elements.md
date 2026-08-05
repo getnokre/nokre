@@ -28,12 +28,49 @@ try row.button(.{ .label = "Refresh", .on_press = .bind(State.refresh, state) })
 
 Every method **is** a `tree.append` call — same validation, same string
 copy, same contrast gates; there is no second truth about the tree. The
-raw `Tree` API stays public as the substrate, and is the form for the
-two things the cursor does not carry: keeping a leaf's `NodeId`
-(`tree.appendId(b.at, …)` — a container's own id is `b.at`) and a
-spanned *heading*. A sheet builder starts from
+raw `Tree` API stays public as the substrate, and is the form for what
+the cursor does not carry: a spanned *heading*, and a leaf's `NodeId`
+outside the four twins below (`tree.appendId(b.at, …)` — a container's
+own id is `b.at`). A sheet builder starts from
 `app.at(try app.presentSheet(title))`, the cursor standing on the node
 the framework handed back.
+
+### Patching one node instead of rebuilding
+
+Most screens are rebuilt from state: `app.reload()` for a gesture the
+user made, `app.refresh(.{})` for a reply that landed (see
+[routing.md](routing.md)). Two things are wrong to rebuild for, because
+they move *while* work is running and the screen underneath is being
+read, scrolled, or typed into — a status line's words, and a control's
+percentage. For those, hold the node and patch it:
+
+```zig
+// in the builder — the leaf methods that hand their node back:
+state.status_id = try b.textId(state.statusCopy());
+state.button_id = try b.buttonId(.{ .label = tr(.exportKeys), .on_press = … });
+
+// in the callback, with the user mid-form:
+app.patchText(state.status_id, state.statusCopy());
+app.patchProgress(state.button_id, percent);
+```
+
+`textId`, `styledId`, `buttonId` and `meterId` are the four leaves that
+hand back a `NodeId` — the ones real screens address again, not one per
+element. `patchText` replaces a text-bearing node's content;
+`patchProgress` takes 0–100 and moves either a `button`'s
+`progress_percent` (setting `in_progress` with it, since that pair is
+one state) or a `meter`'s `value` as that fraction of its own `max`.
+Both mark the frame, so the `invalidate()` that used to follow every
+one of these is gone.
+
+**Both decline on a stale id, silently.** A recorded id outlives its
+node by construction — every rebuild frees the tree it named — so a
+reply arriving one frame late is the ordinary case, not a programmer
+error, and the state it wanted on screen is already there: the rebuild
+put it there. Nothing reports, for the same reason `refresh` reports
+nothing. A patch also cannot get a value past a gate `append` would
+have refused (a percentage on a glyph or vendor button, a number over
+100); those decline too.
 
 ### The load gate
 
@@ -1745,31 +1782,61 @@ The payload-carrying actions hand their payload to the bound method —
 .on_select = .bind(State.chooseScheme, state) // fn (self: *State, selected: usize)
 ```
 
-A list row's action carries the row. `bindAt` sets the element's
-`index` when the row is appended and the method receives it at
-dispatch:
+### A row's action carries the row
+
+Two forms do that, and choosing between them is the one decision this
+part of the API asks you to make: **where the row was** or **which row
+it is**.
 
 ```zig
-.on_press = .bindAt(State.accept, state, i)
-
-// in State:
-pub fn accept(self: *State, index: usize) void { ... }
+.on_press = .bindAt(State.accept, state, i)          // fn (self, index: usize)
+.on_press = .bindKey(State.remove, state, row.id.get()) // fn (self, key: []const u8)
 ```
 
-(`ToggleAction`'s indexed form adds the index *before* the checked
-state: `fn (self, index, checked)`.) An action names one function:
-setting both `call` and `call_indexed` is refused at `append`.
+Both put the datum on the element, so it is exactly as fresh as the
+tree it rides in — rebuilt with the screen, never baked into code.
+(`ToggleAction` has the indexed form only, and adds the index *before*
+the checked state: `fn (self, index, checked)`. It has no keyed twin
+until a real toggle row needs one; see `element.zig`.) An action names
+one function: setting more than one of `call`, `call_indexed` and
+`call_keyed` is refused at `append`.
 
-The index is data on the element, so it is exactly as fresh as the tree
-it rides in — rebuilt with the screen, never baked into code. What it
-is **not** is a claim about the present: a press is delivered against
-the tree the user saw, and the list that tree was built from may have
-moved by the time the handler runs. So the contract is one sentence:
-**the receiver bounds-checks.** The handler (or the controller it
-calls) owns the list, so it alone can tell a live index from a stale
-one — check it against the list's current length once, where the list
-lives, and treat a miss as a no-op. nokre cannot do this for you; it
-knows the tree, not your data.
+Neither form is a claim about the present. A press is delivered against
+the tree the user *saw*, and the list that tree was built from may have
+moved by the time the handler runs — a reply landed, a row was removed,
+the screen was not rebuilt because the user was holding it. What
+differs is what a stale one can do:
+
+- **`bindAt` hands back a position, and a position is always occupied
+  by somebody.** A stale index that is still in range names a live row
+  — the wrong one — so the contract is one sentence: **the receiver
+  bounds-checks**, and a check that passes is not proof the row is the
+  one that was pressed.
+- **`bindKey` hands back an identity, and an identity that is gone
+  matches nothing.** There is no index to index with, so the handler's
+  only move is to look the key up; the lookup finds the row the user
+  pressed or it finds nothing, and nothing is a no-op. There is no
+  wrong row to land on.
+
+```zig
+pub fn remove(self: *State, key: []const u8) void {
+    const row = self.findByKey(key) orelse return; // gone: decline
+    ...
+}
+```
+
+nokre does neither check for you — it knows the tree, not your data —
+and it never interprets a key: whatever bytes you bind come back
+verbatim. It does **copy** them at append, like every other string an
+element carries, and that copy is what makes the guarantee hold: the
+natural key is a field of the row it names, so a borrowed one would
+still be pointing into that row when a reply refills the list, at which
+moment the pressed row's key has quietly become its successor's.
+
+Use `bindAt` where the row *is* the position — a fixed comptime list of
+settings, a table of steps, options that cannot reorder. Use `bindKey`
+where the rows came from a reply. An empty key is legal and means the
+row had no identity to give; it matches nothing, so it declines.
 
 ### Binding callbacks nokre never sees
 
