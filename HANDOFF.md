@@ -339,7 +339,7 @@ or `bindAs` (A2) covers it. Deletes ~700+ duplicated driver lines and
 ends the two-name-per-verb split; a third edition's driver would have
 been a third copy.
 
-### A6. One-shot in-flight gate — the mutation twin of `Load`
+### A6 DONE (nokre `8efaba4`, revision 27) — one-shot in-flight gate, the mutation twin of `Load`
 *(A4's migration found the matching harness gap — six reads, four on
 buttons and two on toggles, so the verb must read across element kinds
 the way `expectValue` does rather than being buttons-only like
@@ -372,7 +372,7 @@ Doesn't reopen load.zig's non-goal (no phases, no staleness — a
 latch, not a machine). The vocabulary win is half the point: seven
 names collapse into one.
 
-### A7. `loadGate` has no ready-but-empty branch
+### A7 DONE (nokre `8efaba4`, revision 27) — `loadGate` had no ready-but-empty branch
 30 empty-state sites across the apps render **six visual variants**
 of "nothing here" (org: plain `b.text`; user: four screens styled
 small+dark, three plain). Strongest convergent evidence in the
@@ -867,8 +867,49 @@ passes bump `revision` and move all three pins.
    `error.InProgress` and fell back to focus-and-Enter, but Enter on a
    busy control is refused — so the fallback pressed nothing and the
    scenario passed anyway.
-9. **A6 Gate + A7 empty branch** (one pass — both are loadGate-family
-   vocabulary).
+9. ~~**A6 Gate + A7 empty branch**~~ — DONE, revision 27 (nokre
+   `8efaba4`, rokovski `2b40331d`, site `edbe752`). The survey said 22
+   flags under one name plus 10 under seven; it is **42 latches under
+   27 distinct names**, with 48 raises against 90 lowerings — nearly
+   two exits per entry, which is the wedged-screen shape itself.
+
+   Two things the call sites settled. **No defer-friendly form**: one
+   raise in fifty-two has its lowering in the same function, because
+   the work is dispatched rather than performed, so `defer` composes
+   with the wrong lifetime — the eight-return-path receipt is eight
+   *callback arms*, not eight scope exits. And **`begin` goes last in
+   a compound guard**, or the `or` short-circuits past the other
+   condition and leaves the gate up forever; doc'd and test-pinned,
+   and the migration found two more sites where a precondition had to
+   move above the gate entirely.
+
+   A7 shipped as a sibling `emptyGate`, not a `LoadGate.empty` field,
+   decided by measuring the distance from each gate to its empty
+   check: of 27 sites only 17 are adjacent, six are detached by a
+   heading and a whole tile group, and four have no gate at all. It
+   takes the phase again on purpose — the empty line stands past the
+   gate that admitted it. The blessed line is plain `text`; the apps
+   split 14 plain against 13 small-and-dark, so it was argued rather
+   than discovered, and 10 user sites changed visually.
+
+   `Harness.expectBusy` reads across buttons, toggles and checkboxes
+   through the driver's one progress switch. No `Device` twin: the
+   harness owns the clock so busy is a state a unit test *holds*, while
+   against a live server it is a transient — the flake A5's audit just
+   ended. Cheap to overrule if wanted (`wait.untilBusy` + a mirror).
+
+   **Left as evidence for the section-idiom decision**: `emptyGate`
+   returns one bool folding "not ready" into "ready and empty", so the
+   four sites that append a hint or a control *only* in the empty case
+   cannot use it. A three-state answer would serve them — but each
+   composes something different afterwards, so it saves the phase check
+   and not the composition. That belongs with the owner's call on the
+   full section idiom below, not ahead of it.
+
+   Also left: `Gate` has `end` but no bare `raise`, so the two paths
+   that legitimately re-raise a gate they know is down discard
+   `begin`'s answer (`user/manage.zig` — a 428 replay, and a
+   raise-then-delegate). Two sites is not obviously a verb.
 10. **A9 L completion** (Bound.tag/dir/chrome + the fmt binder or
     mixin; the 13 wrappers and 24 unwraps delete).
 11. **A8 posture pass** (owner decides the menu first) and **A10
