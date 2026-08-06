@@ -1037,11 +1037,9 @@ you cannot build from outside: a message appended beside a field is
 prose that happens to sit nearby, and prose carries no relation — no
 `aria-describedby`, no `aria-invalid`, nothing an assistive technology
 can follow from the control to the reason. Both editions state the
-pair (`aria-invalid` plus a reference on the web, AccessKit's `invalid`
-and description natively, `setContentInvalid`/`setError` on Android),
-and it is announced after the name and the value, which is where a
-reason belongs: what the control is, what it holds, then why that is
-not accepted.
+pair; how each backend spells it, and where the reason falls in the
+announcement, is
+[accessibility.md](accessibility.md#derivation).
 
 A field with a problem is **not disabled and not busy**. It takes every
 keystroke it took before — a control the user cannot edit is a control
