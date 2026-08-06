@@ -207,6 +207,289 @@ test "a title with markup in it is escaped, and so is every id" {
     try testing.expectEqual(@as(usize, 0), std.mem.count(u8, html, "<script>"));
 }
 
+// ------------------------------------------- canonical, OG, the card
+
+/// A `Meta` with the two required halves and nothing else, so each test
+/// below names only what it is about.
+fn sited(path: ?[]const u8) document.Meta {
+    return .{ .origin = "https://example.com", .path = path };
+}
+
+test "og:url is the canonical URL because there is one field behind both" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    var doc = plain("Accessibility — nokre");
+    doc.description = "The a11y contract.";
+    doc.meta = sited("/accessibility/");
+    const html = try write(&app, doc);
+    defer testing.allocator.free(html);
+
+    try expectContains(html, "<link rel=\"canonical\" href=\"https://example.com/accessibility/\">");
+    try expectContains(html, "<meta property=\"og:url\" content=\"https://example.com/accessibility/\">");
+    // Both absolute, and both the same URL — asserted as the property
+    // rather than as two literals, since the whole claim is that no
+    // second field exists to drift.
+    const canonical = html[std.mem.indexOf(u8, html, "rel=\"canonical\" href=\"").? + "rel=\"canonical\" href=\"".len ..];
+    const c_url = canonical[0..std.mem.indexOfScalar(u8, canonical, '"').?];
+    const og = html[std.mem.indexOf(u8, html, "og:url\" content=\"").? + "og:url\" content=\"".len ..];
+    const o_url = og[0..std.mem.indexOfScalar(u8, og, '"').?];
+    try testing.expectEqualStrings(c_url, o_url);
+    try testing.expect(std.mem.startsWith(u8, c_url, "https://"));
+
+    // The description falls through from the document rather than being
+    // stated twice, and the title likewise.
+    try expectContains(html, "<meta property=\"og:description\" content=\"The a11y contract.\">");
+    try expectContains(html, "<meta property=\"og:title\" content=\"Accessibility — nokre\">");
+}
+
+test "a page with no URL of its own claims none, and cannot be made to" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    var doc = plain("Not found — nokre");
+    doc.description = "No page here.";
+    doc.meta = sited(null);
+    const html = try write(&app, doc);
+    defer testing.allocator.free(html);
+
+    // The 404 body is served at whatever address missed. A canonical or
+    // an `og:url` here would name a URL nobody is meant to arrive at,
+    // and `null` is the only way to say it — the string and the flag
+    // that would let a driver keep one is not a shape this type has.
+    try expectLacks(html, "canonical");
+    try expectLacks(html, "og:url");
+    // Everything that is *about the page* rather than about where it
+    // lives still goes out: a shared 404 is still a preview.
+    try expectContains(html, "<meta property=\"og:title\" content=\"Not found — nokre\">");
+    try expectContains(html, "<meta property=\"og:description\" content=\"No page here.\">");
+    try expectContains(html, "twitter:card");
+}
+
+test "the preview headline may differ from the tab's, and the site name is beside it" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    var doc = plain("Accessibility — nokre");
+    doc.description = "The tab sentence.";
+    var m = sited("/accessibility/");
+    m.site_name = "nokre";
+    m.title = "Accessibility";
+    m.description = "The card sentence.";
+    m.kind = "article";
+    doc.meta = m;
+    const html = try write(&app, doc);
+    defer testing.allocator.free(html);
+
+    // The card already shows the site's name, so the `<title>` suffix
+    // there would be the site named twice.
+    try expectContains(html, "<meta property=\"og:site_name\" content=\"nokre\">");
+    try expectContains(html, "<meta property=\"og:title\" content=\"Accessibility\">");
+    try expectContains(html, "<meta property=\"og:description\" content=\"The card sentence.\">");
+    try expectContains(html, "<meta property=\"og:type\" content=\"article\">");
+    // …and the `<title>` and the description meta are untouched by it.
+    try expectContains(html, "<title>Accessibility — nokre</title>");
+    try expectContains(html, "<meta name=\"description\" content=\"The tab sentence.\">");
+}
+
+test "no description anywhere writes no empty tag" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    var doc = plain("Hello");
+    doc.meta = sited("/");
+    const html = try write(&app, doc);
+    defer testing.allocator.free(html);
+    try expectLacks(html, "og:description");
+    try expectLacks(html, "og:site_name");
+    // The type has a default because `website` is Open Graph's own, not
+    // a preference of this library's.
+    try expectContains(html, "<meta property=\"og:type\" content=\"website\">");
+}
+
+test "a site with no artwork gets a text card, which is the only card it can get" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    var doc = plain("Hello");
+    doc.meta = sited("/");
+    const html = try write(&app, doc);
+    defer testing.allocator.free(html);
+    try expectLacks(html, "og:image");
+    // `summary_large_image` with no image is a card with a blank frame.
+    // It is unstatable here: the shape lives on the picture.
+    try expectContains(html, "<meta name=\"twitter:card\" content=\"summary\">");
+    try expectLacks(html, "twitter:image");
+}
+
+test "the image is a URL in a tag, absolute against the same origin" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    var doc = plain("Hello");
+    var m = sited("/");
+    m.image = .{
+        .path = "/og-image.png",
+        .alt = "Rokovski — anonymous feedback that matters.",
+        .shape = .banner,
+        .size = .{ .w = 1200, .h = 630 },
+    };
+    doc.meta = m;
+    const html = try write(&app, doc);
+    defer testing.allocator.free(html);
+
+    try expectContains(html, "<meta property=\"og:image\" content=\"https://example.com/og-image.png\">");
+    try expectContains(html, "<meta property=\"og:image:alt\" content=\"Rokovski — anonymous feedback that matters.\">");
+    try expectContains(html, "<meta property=\"og:image:width\" content=\"1200\">");
+    try expectContains(html, "<meta property=\"og:image:height\" content=\"630\">");
+    // A banner is the one thing `twitter:card` says that Open Graph
+    // does not.
+    try expectContains(html, "<meta name=\"twitter:card\" content=\"summary_large_image\">");
+    // The alt is written twice on purpose: Twitter documents an `og:`
+    // fallback for the title, the description and the image, and none
+    // for the alternative text.
+    try expectContains(html, "<meta name=\"twitter:image:alt\" content=\"Rokovski — anonymous feedback that matters.\">");
+    // …and nothing else of Twitter's, because every one of those four
+    // is a second copy of a string already on this page.
+    try expectLacks(html, "twitter:title");
+    try expectLacks(html, "twitter:description");
+    try expectLacks(html, "<meta name=\"twitter:image\" ");
+}
+
+test "a square mark is a thumbnail, and says so" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    var doc = plain("Hello");
+    var m = sited("/");
+    m.image = .{ .path = "/mark.png", .shape = .thumbnail };
+    doc.meta = m;
+    const html = try write(&app, doc);
+    defer testing.allocator.free(html);
+    try expectContains(html, "<meta property=\"og:image\" content=\"https://example.com/mark.png\">");
+    try expectContains(html, "<meta name=\"twitter:card\" content=\"summary\">");
+    // No dimensions stated is no dimensions written, rather than zeros.
+    try expectLacks(html, "og:image:width");
+    try expectLacks(html, "og:image:alt");
+}
+
+test "Open Graph is property and Twitter is name, which is the pair a head gets wrong" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    var doc = plain("Hello");
+    var m = sited("/");
+    m.site_name = "nokre";
+    m.image = .{ .path = "/og.png", .shape = .banner };
+    doc.meta = m;
+    const html = try write(&app, doc);
+    defer testing.allocator.free(html);
+    // Every `og:` is RDFa's `property`; every `twitter:` is a plain
+    // `name`. Asserted as a sweep rather than tag by tag, so a tag added
+    // later cannot arrive with the wrong one.
+    var it = std.mem.splitScalar(u8, html, '\n');
+    var og: usize = 0;
+    var tw: usize = 0;
+    while (it.next()) |line| {
+        if (std.mem.indexOf(u8, line, "\"og:") != null) {
+            og += 1;
+            try testing.expect(std.mem.startsWith(u8, line, "<meta property=\"og:"));
+        }
+        if (std.mem.indexOf(u8, line, "\"twitter:") != null) {
+            tw += 1;
+            try testing.expect(std.mem.startsWith(u8, line, "<meta name=\"twitter:"));
+        }
+    }
+    try testing.expect(og >= 5);
+    try testing.expect(tw >= 1);
+}
+
+test "no meta is a document that is not a page on a site" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    var doc = plain("Hello");
+    doc.description = "A page";
+    const html = try write(&app, doc);
+    defer testing.allocator.free(html);
+    // An app shell booting into an empty body has no URL, no card and
+    // nothing to preview. The description meta is the document's own and
+    // stays.
+    try expectLacks(html, "canonical");
+    try expectLacks(html, "og:");
+    try expectLacks(html, "twitter:");
+    try expectContains(html, "<meta name=\"description\" content=\"A page\">");
+}
+
+test "a relative origin or an unrooted path fails the build, before a byte is written" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+
+    const cases = [_]struct { m: document.Meta, want: anyerror }{
+        .{ .m = .{ .origin = "example.com", .path = "/" }, .want = error.OriginNotAbsolute },
+        .{ .m = .{ .origin = "", .path = "/" }, .want = error.OriginNotAbsolute },
+        .{ .m = .{ .origin = "https://example.com/", .path = "/" }, .want = error.OriginEndsInSlash },
+        .{ .m = .{ .origin = "https://example.com", .path = "accessibility/" }, .want = error.PathNotRooted },
+        // The empty path is the same mistake: it would name the origin
+        // itself, which is a real URL and the wrong one.
+        .{ .m = .{ .origin = "https://example.com", .path = "" }, .want = error.PathNotRooted },
+        .{
+            .m = .{ .origin = "https://example.com", .image = .{ .path = "og.png", .shape = .banner } },
+            .want = error.PathNotRooted,
+        },
+    };
+    for (cases) |c| {
+        var doc = plain("Hello");
+        doc.meta = c.m;
+        var out: std.ArrayList(u8) = .empty;
+        defer out.deinit(testing.allocator);
+        var em: serialize.Emitter = .{ .gpa = testing.allocator, .app = &app, .out = &out };
+        defer em.deinit();
+        try testing.expectError(c.want, document.document(&em, doc));
+        // Nothing on disk and nothing in the buffer: the check runs
+        // before the doctype, so a failed build leaves no half-file.
+        try testing.expectEqual(@as(usize, 0), out.items.len);
+    }
+}
+
+test "every string in the head takes the attribute escape, destinations included" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    var doc = plain("Hello");
+    var m: document.Meta = .{
+        .origin = "https://example.com",
+        .path = "/a\"b/",
+        .site_name = "a<b",
+        .kind = "we\"bsite",
+        .title = "a&b",
+        .description = "x<y",
+    };
+    m.image = .{ .path = "/o\"g.png", .alt = "a\"lt", .shape = .banner };
+    doc.meta = m;
+    const html = try write(&app, doc);
+    defer testing.allocator.free(html);
+    // A quote in any of these would close the attribute and leave the
+    // rest of the URL as markup — the injection a `print` with `{s}`
+    // ships, which is why every one of them goes through `text`.
+    try expectContains(html, "href=\"https://example.com/a&quot;b/\"");
+    try expectContains(html, "og:url\" content=\"https://example.com/a&quot;b/\"");
+    try expectContains(html, "og:site_name\" content=\"a&lt;b\"");
+    try expectContains(html, "og:type\" content=\"we&quot;bsite\"");
+    try expectContains(html, "og:title\" content=\"a&amp;b\"");
+    try expectContains(html, "og:description\" content=\"x&lt;y\"");
+    try expectContains(html, "og:image\" content=\"https://example.com/o&quot;g.png\"");
+    try expectContains(html, "og:image:alt\" content=\"a&quot;lt\"");
+    try expectContains(html, "twitter:image:alt\" content=\"a&quot;lt\"");
+}
+
+test "the meta block is nokre's, so it precedes the driver's seam" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    var doc = plain("Hello");
+    doc.meta = sited("/");
+    doc.head = "<link rel=\"icon\" href=\"/favicon.svg\">\n";
+    const html = try write(&app, doc);
+    defer testing.allocator.free(html);
+    const charset = std.mem.indexOf(u8, html, "<meta charset=").?;
+    const canonical = std.mem.indexOf(u8, html, "rel=\"canonical\"").?;
+    const seam = std.mem.indexOf(u8, html, "rel=\"icon\"").?;
+    const head_end = std.mem.indexOf(u8, html, "</head>").?;
+    try testing.expect(charset < canonical);
+    try testing.expect(canonical < seam);
+    try testing.expect(seam < head_end);
+}
+
 // ----------------------------------------------------------- the body
 
 test "the skip link names the content mount, and the sheet has a rule for it" {

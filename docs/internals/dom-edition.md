@@ -278,7 +278,13 @@ try dom.document(&em, .{
     .title = "Accessibility — nokre",
     .description = "The a11y contract…",
     .stylesheet = "/style.css",
-    .head = head.items,          // canonical, alternates, JSON-LD, a preload
+    .meta = .{                   // canonical, Open Graph, the card
+        .origin = "https://getnokre.github.io",
+        .path = "/accessibility/",   // null on a 404: no URL of its own
+        .site_name = "nokre",
+        .title = "Accessibility",
+    },
+    .head = head.items,          // structured data, a preload, a favicon
     .chrome_id = "chrome",
     .content_id = "content",
     .content_class = "page",
@@ -368,6 +374,46 @@ structure around them.
 - **The charset first, the seam last.** A browser stops looking for the
   charset after the first bytes, so nokre's own head tags are written
   before `head`, whose length is the driver's business.
+- **What the page says about itself** — `Document.meta`, and it is the
+  one place in this call where the boundary needed stating rather than
+  applying. [audit.zig](../../src/testing/audit.zig)'s `Options.skip`
+  had already written the rule: *a document destination is the site
+  resolver's to honor*, and a canonical URL is exactly that. It still
+  is. **Every destination in `Meta` is a required field with no default
+  and no derivation** — the origin is config nokre cannot know, the path
+  is the resolver's answer nokre does not compute, and no route name is
+  read anywhere in the block. What moved into the library is not the
+  destinations but what a driver gets *wrong* about them:
+
+  - `og:url` **is** the canonical, because `path` is one field written
+    twice. Not two fields that ought to match.
+  - Both are absolute, because both are `origin ++ path` and the origin
+    is checked for a scheme before the doctype is written.
+  - A page with no URL of its own — the 404 body, served at whatever
+    address missed — has `path = null` and gets neither tag. The
+    string-plus-flag shape that lets a `/notfound/` canonical survive a
+    flipped boolean does not exist here.
+  - Open Graph is `property=`; Twitter is `name=`. One is RDFa and one
+    is not, and a hand-written head mixes them.
+  - The set is complete. A page carrying Open Graph gets a
+    `twitter:card`, so no site ships a preview on one network and a bare
+    link on the other. It is the **only** `twitter:` tag written, save
+    the image's alt: Twitter documents an `og:` fallback for the title,
+    the description and the image, so the usual four are four more
+    copies of strings already on the page — and it documents none for
+    the alternative text, which is why that one is written twice.
+  - `og:image` is a URL in a tag and nothing else. It is nested as
+    `Meta.Image` rather than exported beside it, so `dom.Image` — which
+    would read like an image *element* — does not exist. Its `shape`
+    (`banner` or `thumbnail`) is stated by the driver rather than
+    guessed from the pixel size: which crop an asset survives is
+    editorial, and a document with no image is a `summary` card and
+    cannot be made into anything else.
+
+  What is deliberately absent: `og:locale`. The page's language is a
+  fact this file holds — it is on `<html lang>` — but Open Graph's
+  locale is `language_TERRITORY`, and a BCP 47 tag need not carry a
+  territory; turning `fa` into `fa_IR` is inventing one.
 - **The skip link, with its rule.** Words from the driver, target from
   `content_id`, class from `class_names.skip` — and the CSS from the
   same sheet, because a driver that wrote the anchor and forgot the rule

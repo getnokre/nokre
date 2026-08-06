@@ -216,6 +216,16 @@ destinations, they are facts about the text nokre itself put on the page.
 Whatever doc this round writes should start from that sentence rather than
 re-derive it.
 
+**How the two items it cut at actually resolved, which is what item 10 should
+write from.** Neither overruled it. A3 shipped as `Emitter.json` — an escape,
+not a graph, so no `@id` is nokre's. A2 and A4 shipped as `Document.meta` with
+**every destination a required field carrying no default and no derivation**: the
+library took the *relationships between* destinations (the canonical is the
+`og:url`; both are absolute; a page with no URL has neither) and left the
+destinations themselves exactly where that sentence put them. The rule the round
+found is therefore sharper than "the generator owns destinations" — it is **the
+generator states them; the library is what keeps them from disagreeing.**
+
 The consuming site states the boundary in the plainest words either repo has for
 it — `getnokre.github.io/src/main.zig`'s module doc comment: "Everything below is
 the *driver*: which screens exist, what a reference resolves to, and the document
@@ -260,35 +270,11 @@ A1b is also the weaker of the two on its own merits: the shell page is a boot
 stub with no prose in it, so `lang` there is nearly decorative. It is cheap, and
 it is not urgent.
 
-### A2. Canonical, Open Graph, Twitter card
-
-**Receipt.** All of it lives in `main.zig`'s `writeDocument`: canonical with a
-**hardcoded origin**, under an `if (p.kind != .not_found)` guard carrying a
-comment that explains it (*"a canonical (or og:url) naming /notfound/ would
-claim a URL nobody is meant to arrive at"*); `og:type`; `og:site_name`; `og:url`,
-under the same guard; `og:title`; `og:description`; plus `theme-color` for both
-schemes, read from `nok.Gray.paper`. **No `og:image`. No Twitter card.**
-
-**For the library.** These tags are mechanical, their invariants are easy to get
-wrong (`og:url` must equal canonical; canonical must be absolute; both must be
-absent on a 404), and the second driver will re-derive all of them. The reference
-driver already had to learn "skip canonical on 404" — a second driver gets to
-learn it again, or not.
-
-**Against.** It is eight `print` calls. A library that emits `<meta>` tags on the
-app's behalf is a website framework, which nokre is not. And the origin is
-necessarily config, so the app is in the loop regardless.
-
-**Already solved if:** `packaging.zig` grew a head-writer the survey did not find.
-
-### A4. `og:image`
-
-The reference site emits none. The consumer has one (`/og-image.png`) referenced
-only from `<meta>` — no on-page imagery, which costs nothing because the Astro
-site has none either. **This is not an image-element request** and must not be
-read as one; nokre has no image element and that is settled (Part D).
-
-It is a URL in a tag. It rides on whatever A2 decides.
+(A2 and A4 have since shipped whole and their sections are deleted: revision 37
+put canonical, Open Graph, the Twitter card and `og:image` behind `Document.meta`
+while leaving every destination in it a required driver-supplied field. The entry
+in Landed is where the boundary argument came out, and it is the one to read
+before item 7 adds alternates to the same struct.)
 
 ---
 
@@ -698,11 +684,12 @@ sharper test than it first looks:
 **What it would cost here**, verified: ~20 page titles are hardcoded English —
 the `.title` field of every entry in `src/pages.zig`'s `all` — and would become
 catalog keys against a one-locale
-bundle; the origin is hardcoded at **four** sites (in `src/main.zig`:
+bundle; the origin was hardcoded at **four** sites (in `src/main.zig`:
 `writeDocument`'s canonical and `og:url`, and `writeExtras`'s sitemap `<loc>`
-and `robots.txt`) and wants one constant whatever
-else happens; and the site today has no l10n surface at all, so the bundle is
-new. Nothing else moves.
+and `robots.txt`) and wanted one constant whatever
+else happens — **done in item 5**, `main.zig`'s `origin`, which also records why
+`content.zig`'s `qr` example is a fifth occurrence and not a fifth copy; and the
+site today has no l10n surface at all, so the bundle is new. Nothing else moves.
 
 **Be honest about which half this proves.** A one-locale dogfood exercises the
 axis, the loop, the path-scheme boundary, `lang` on a generated document, and
@@ -719,7 +706,8 @@ must not be read as a validated API for them.
 constant and `lang="en"` on the generated document are worth doing on this site
 whether or not nokre grows a single SSG export — the first is four copies of one
 string, and the second is the attribute a serialized page needs regardless of
-who ends up owning it.
+who ends up owning it. *(Both have since landed: `lang` in item 2, the origin
+constant in item 5.)*
 
 ---
 
@@ -816,15 +804,13 @@ Ten items, strictly sequential, one commit each. Contract changes bump
 `nokre.revision` and move all three pins in the same pass. Each item is deleted
 from this file as it lands, with its outcome recorded.
 
-5. **Canonical, Open Graph, Twitter card, `og:image`** — A2 and A4. All of it is
-   in the reference driver's head seam now (`main.zig`'s `writeHead`), which is
-   where to read what it currently does — including the `p.kind != .not_found`
-   guard on both destination tags. **`theme-color` is already nokre's** and is
-   not part of this item: it is `Gray.paper` in both ramps, a fact the library
-   holds, written by `document.zig`.
 6. **The locale axis** — the generation loop, prefix-all output paths, sniffing
    stubs. B1 and B4.
 7. **hreflang, `x-default`, sitemap alternates** — B2 and B3, one derivation.
+   The head half composes with item 5's `Document.meta`, which already holds the
+   origin every alternate is joined to and already checks it; alternates are a
+   field there rather than a second struct with a second origin. The sitemap is
+   not a document and wants a home of its own.
 8. **`webIndexHtml`'s `lang`** — A1b. **Check first whether `dom.document`
    should simply write that page**, which item 2 left open deliberately: the
    shell page is a title, a stylesheet link, a body with one mount point and a
@@ -841,6 +827,109 @@ from this file as it lands, with its outcome recorded.
 
 One entry per finished item, with the ground for anything that changed shape.
 The queue above shrinks as this grows.
+
+### 5. Canonical, Open Graph, the Twitter card, `og:image` — SHIPPED, revision 37
+
+**`Document.meta: ?Meta`**, written by `document.zig`'s `metaTags` into the head
+before the driver's seam. A2 and A4, one struct.
+
+**The objection was honoured, not overruled, and this is the whole design.**
+`audit.zig`'s `Options.skip` says a document destination is the site resolver's;
+F.2 says nokre grows the document shell. Both hold, because **nokre took the
+invariants and left every destination a required field with no default and no
+derivation**. `Meta.origin` is config this library cannot know or guess;
+`Meta.path` is the resolver's answer, copied; `Meta.Image.path` likewise. The
+word "route" does not appear in the block, no path is computed from anything,
+and grepping nokre for the reference site's host still returns zero. What the
+library owns is the four things a driver gets *wrong* about destinations it
+supplied:
+
+- **`og:url` is the canonical**, because `path` is one field written twice.
+  There is no second field to keep in step, so "they must match" is not a rule
+  anybody can break.
+- **Both are absolute**, because both are `origin ++ path` — and `checkMeta`
+  runs *before the doctype*, so a missing scheme, a trailing slash on the origin
+  or an unrooted path is `MetaError` and an empty buffer rather than a
+  half-written file.
+- **A page with no URL of its own has neither tag.** `path: ?[]const u8`, and
+  the shape is the point: a string with an `indexable` flag beside it is exactly
+  how a 404 keeps claiming `/notfound/` after somebody flips the boolean and
+  leaves the string. Here there is nothing left to leave.
+- **`property=` for Open Graph, `name=` for Twitter**, asserted as a sweep over
+  the finished head so a tag added later cannot arrive with the wrong one.
+
+Enforced by construction: the identity, the absence, the vocabulary, and
+"no image ⇒ `summary`" (the shape lives *on* the image, so a large-image card
+with an empty frame is unstatable). Enforced by check: the origin's scheme and
+the paths' leading slash. Enforced by documentation only: that the path a driver
+supplies is the one the site actually publishes — which is the resolver's
+authority and stays there.
+
+**The Twitter card is one tag, and that is the finding.** Twitter documents an
+Open Graph fallback for `twitter:title`, `twitter:description` and
+`twitter:image`, so the four-tag block every hand-rolled head carries — the
+incoming consumer's `Base.astro` included — is four more copies of strings
+already on the page, and the copy is the defect. `twitter:card` has no `og:`
+twin and is the reason a card renders at all, so it is written whenever Open
+Graph is. The one exception is `twitter:image:alt`: Twitter documents no `og:`
+fallback for the alternative text, and a reader who cannot see the picture being
+told nothing is not a trade this library makes to save a line.
+
+**`og:image` is `Meta.Image`, nested deliberately.** A4 insisted this is not an
+image-element request; `dom.Image` at the edition's surface would have read like
+exactly that, so the type is reachable only as `Meta.Image` and `dom.zig` says
+why. Its `shape` (`banner` / `thumbnail`) is stated rather than derived from
+`size` — which crop an asset survives is editorial, and a threshold on the aspect
+ratio would be this library guessing at someone else's artwork. `size` is one
+optional `Pixels` pair rather than two numbers, so a width without a height is
+not statable; it exists because a crawler that has fetched neither the file nor
+the dimensions can show a first share with no picture at all, and losing it would
+have been the migration losing something Astro expresses.
+
+**`og:locale` was considered and refused, on a nokre-shaped ground.** The page's
+language is a fact `document.zig` already holds — it is on `<html lang>` four
+lines up — so this looked like A10.4's surviving half. It is not: Open Graph's
+locale is `language_TERRITORY`, and a BCP 47 tag need not carry a territory, so
+`fa` would have to become `fa_IR` or `fa_AF` and picking is inventing a fact
+nobody stated. `og:locale:alternate` would have been item 7's anyway.
+
+**Consumer migrated in the same pass, and the head seam is now two lines.**
+`writeHead` is a favicon and a font preload; the canonical, the four `og:` tags
+and the `not_found` guard went into the `dom.document` call. The site gained a
+Twitter card it never had (`summary`) and **no `og:image`**, which is the honest
+answer and worth having as a proof: the favicon is a 32px SVG and no card
+renderer draws one, so `image = null` is the API expressing "this site has no
+artwork" rather than a gap.
+
+**Part G's count of four is right, and there is a fifth occurrence that is not
+one.** `const origin` in `main.zig` now serves the canonical, the `og:url`, the
+sitemap `<loc>` and robots.txt's `Sitemap:` — four copies collapsed, taken here
+because `Meta.origin` needed one anyway. `content.zig`'s `qr` example also
+carries the string: that draws a QR code *of* this site on the elements page,
+which is content a reader points a camera at and not a destination the document
+claims. It is deliberately not wired to the constant, and there is a comment at
+the constant saying so.
+
+**Considered and left out: `noindex` on a path-less page.** It is derivable from
+`path == null` and it is the natural companion — but a robots directive is
+crawling policy, which is the site resolver's in exactly the sense the rule
+protects, and this item was not asked for it. Filed here rather than skipped
+silently.
+
+**Site numbers.** 32 screens, 798 references (797 → 798, the one new link being
+this pass's citation of `audit.zig` in dom-edition.md), 1,041,550 bytes of markup
+(1,036,655 → 1,041,550). Every byte accounted for: **+45 on all 32 pages**
+(`<meta name="twitter:card" content="summary">` plus its newline) and a head
+reordering with no additions or removals, since nokre's block now precedes the
+driver's seam; **+3,489** on the dom-edition page and **+2,770** on its copied
+Markdown, which is this pass's own documentation; **+28** on the colophon's
+provenance stamp; and NodeId-derived values shifting on `gallery` — the radio
+groups' `name="c…"` and the select's `field-…` ids — because a longer doc moves
+the pool's generation for the pages built after it. Normalizing those three
+classes leaves a diff of exactly the colophon stamp and the dom-edition content.
+`404.html` gained the card and **neither** destination tag, which is the
+`path = null` branch read out of the published file. `sitemap.xml`, `robots.txt`
+and `favicon.svg` are byte-identical.
 
 ### 4. `Emitter.json` — SHIPPED, revision 36
 

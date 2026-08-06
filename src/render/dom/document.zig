@@ -90,6 +90,154 @@ pub const Boot = struct {
     seed: []const u8 = "",
 };
 
+/// What the page says about *itself* to something that is not a
+/// browser: a crawler, a link preview, a share sheet.
+///
+/// **The line, and it is the one `audit.zig`'s `Options.skip` drew.**
+/// That doc comment says a document destination belongs to the site's
+/// resolver and that nokre stands down where the generator is the
+/// stricter authority — which is an argument against this type owning
+/// any URL, and it is honoured rather than overruled: **every
+/// destination here is a field with no default and no derivation.**
+/// nokre does not know where a site is published, does not turn a route
+/// into a path, and cannot invent either. What it owns is what a driver
+/// gets *wrong* about them, which is a different list:
+///
+/// - `og:url` is the canonical URL. Not "should equal" — there is one
+///   `path` and two writes of it, so no second field exists to disagree.
+/// - Both are absolute, because both are `origin ++ path` and `origin`
+///   is checked for a scheme before a byte is written.
+/// - A page with no URL of its own has neither. `path` is `null` and
+///   there is nothing to write; the flag-plus-string shape that lets a
+///   404 keep claiming `/notfound/` is not statable.
+/// - Open Graph is `property=`, Twitter is `name=`. Two vocabularies,
+///   one of them RDFa, and a head written by hand mixes them.
+/// - The set is complete: a page with Open Graph on it gets a
+///   `twitter:card`, because a driver that emits the first and forgets
+///   the second has a preview on one network and a bare link on the
+///   other.
+///
+/// Absent (`Document.meta` is `null`) writes none of it — a page that
+/// is not a page on a site, which is what an app shell booting into an
+/// empty body is.
+pub const Meta = struct {
+    /// Scheme and host, no trailing slash — `"https://example.com"`.
+    ///
+    /// Config, and required: this library has no idea where anything is
+    /// published and no default that could stand in. One field, spent
+    /// by every URL below and by item-7's alternates after them, so a
+    /// document cannot come to carry two origins.
+    origin: []const u8,
+
+    /// This document's own path on that origin, leading slash included
+    /// — the site resolver's answer, copied and never computed. `"/"`
+    /// for a home page.
+    ///
+    /// **`null` is a document with no URL of its own**, and the reason
+    /// this is one nullable field rather than a string with a boolean
+    /// beside it. The 404 body is served at whatever address missed, so
+    /// a canonical or an `og:url` naming `/notfound/` claims a URL
+    /// nobody is meant to arrive at — and a driver holding the pair
+    /// writes exactly that the first time it flips the flag and leaves
+    /// the string. Here there is nothing left to leave.
+    path: ?[]const u8 = null,
+
+    /// `og:site_name` — what the *site* is called, beside what the page
+    /// is called. Omitted when empty.
+    site_name: []const u8 = "",
+
+    /// `og:type`. The vocabulary is Open Graph's and open-ended
+    /// (`website`, `article`, `profile`, and namespaced verticals past
+    /// them), which is why it is a string: which one a page is, is the
+    /// site's content, and this library has no opinion about content —
+    /// the same verdict `Emitter.json` reached about graph types.
+    kind: []const u8 = "website",
+
+    /// `og:title`, when the preview's headline is not the tab's.
+    /// Empty takes `Document.title`.
+    ///
+    /// They legitimately differ: a `<title>` usually carries the site's
+    /// name as a suffix, and a card already shows `site_name` beside
+    /// the headline, so the suffix there is the site's name twice.
+    title: []const u8 = "",
+
+    /// `og:description`. Empty takes `Document.description`, which is
+    /// the usual case — and if that is empty too, no description tag is
+    /// written at all rather than an empty one.
+    description: []const u8 = "",
+
+    /// The card's picture. Absent is a real answer and a common one:
+    /// a site with no artwork gets a text card rather than a broken
+    /// one.
+    image: ?Image = null,
+
+    /// The preview image, which is **not an image element** and does
+    /// not become one. nokre has no image element, that refusal is
+    /// settled, and this type is nested inside `Meta` so that
+    /// `dom.Image` — which would read like the opposite — does not
+    /// exist. It is a URL in a `<meta>` tag.
+    pub const Image = struct {
+        /// A path on `Meta.origin`, leading slash included. Joined here
+        /// for the reason `Meta.path` is: Open Graph requires an
+        /// absolute URL and a relative one is the mistake that ships,
+        /// because it renders fine in every browser and only a crawler
+        /// ever notices.
+        path: []const u8,
+        /// What a reader who cannot see the picture is told about it —
+        /// `og:image:alt`. Empty writes no alt, which is honest for a
+        /// picture that is the site's wordmark and nothing else.
+        alt: []const u8 = "",
+        /// How the picture wants to be shown, which is the one thing
+        /// `twitter:card` says that Open Graph does not.
+        ///
+        /// Stated rather than derived from `size`: the choice is
+        /// editorial — a banner is cropped to 2:1 and a thumbnail to a
+        /// square, and which one an asset survives is something only
+        /// whoever drew it knows. A threshold on the aspect ratio would
+        /// be this library guessing at someone else's artwork.
+        shape: Shape,
+        /// The picture's pixel dimensions, if the driver knows them —
+        /// `og:image:width` and `og:image:height`. One optional pair
+        /// rather than two numbers, so a width without a height is not
+        /// statable.
+        ///
+        /// Worth stating: a crawler that has not fetched the file yet
+        /// lays the card out from these, and one that has neither may
+        /// show the first share with no picture at all.
+        size: ?Pixels = null,
+
+        pub const Shape = enum {
+            /// Across the top of the card, cropped to about 2:1 —
+            /// `twitter:card: summary_large_image`. The 1200×630 house
+            /// style.
+            banner,
+            /// Beside the text, cropped square — `twitter:card:
+            /// summary`.
+            thumbnail,
+        };
+
+        /// Not `geometry.Size`: that type is layout's, it is signed,
+        /// and a negative pixel count has no meaning here.
+        pub const Pixels = struct { w: u32, h: u32 };
+    };
+};
+
+/// What a driver can get wrong about `Meta`, checked before the
+/// document writes a byte rather than as it goes — a half-written file
+/// is worse than none, and a generator's answer to any of these is to
+/// fail the build (docs/internals/dom-edition.md).
+pub const MetaError = error{
+    /// `Meta.origin` carries no scheme, so nothing joined to it is an
+    /// absolute URL.
+    OriginNotAbsolute,
+    /// `Meta.origin` ends in `/`, which every path here begins with.
+    OriginEndsInSlash,
+    /// A path in `Meta` — the document's or the image's — does not
+    /// begin with `/`, so joining it to the origin would produce
+    /// something that is not the URL anybody meant.
+    PathNotRooted,
+};
+
 /// Everything the driver invented, and nothing it did not.
 pub const Document = struct {
     /// The `<title>`, escaped here. A driver that wants a suffix joins
@@ -102,11 +250,16 @@ pub const Document = struct {
     /// (`stylesheet.write`). Required: a page that does not link it is
     /// unstyled markup, and no check anywhere would say so.
     stylesheet: []const u8,
-    /// Markup spliced at the end of `<head>` — the head seam. Canonical,
-    /// alternates, structured data, a preload, a favicon: everything
-    /// whose destination is the site's. Written after the tags above so
-    /// the charset stays in the first bytes, where a browser stops
-    /// looking for it.
+    /// What this page tells a crawler, a link preview and a share sheet
+    /// — canonical, Open Graph, the Twitter card. `null` writes none of
+    /// it. Every destination inside is the driver's; what is nokre's is
+    /// that they cannot disagree (`Meta`).
+    meta: ?Meta = null,
+    /// Markup spliced at the end of `<head>` — the head seam. Structured
+    /// data, a preload, a favicon: everything whose destination is the
+    /// site's and whose *shape* nokre has no element and no opinion for.
+    /// Written after the tags above so the charset stays in the first
+    /// bytes, where a browser stops looking for it.
     head: []const u8 = "",
     /// The id of the element the framework's layers mount into
     /// (`mount({ into })`).
@@ -137,6 +290,11 @@ pub const Document = struct {
 /// The chrome goes first, before the content, because the nav leads the
 /// focus order — a property of the tree, not of where CSS puts the bar.
 pub fn document(em: *Emitter, doc: Document) !void {
+    // Before a byte, not as it goes: a document that fails halfway
+    // leaves a truncated file behind, and every one of these is a
+    // config mistake a build should die on rather than publish.
+    if (doc.meta) |m| try checkMeta(m);
+
     // One read of the app's locale, spent twice: the attribute a
     // browser, a screen reader and a hyphenation table act on, and the
     // tag the boot script pins so the module that lands on this file
@@ -207,6 +365,7 @@ pub fn document(em: *Emitter, doc: Document) !void {
         Gray.paper.byte(.light), Gray.paper.byte(.light), Gray.paper.byte(.light),
         Gray.paper.byte(.dark),  Gray.paper.byte(.dark),  Gray.paper.byte(.dark),
     });
+    if (doc.meta) |m| try metaTags(em, doc, m);
     try em.raw(doc.head);
     try em.raw("</head>\n<body>\n");
 
@@ -282,6 +441,119 @@ pub fn langTag(app: *const App) []const u8 {
 fn fallbackTag(chosen: []const u8) []const u8 {
     if (chosen.len != 0) return chosen;
     return element_mod.default_chrome_tag;
+}
+
+fn checkMeta(m: Meta) MetaError!void {
+    if (std.mem.indexOf(u8, m.origin, "://") == null) return error.OriginNotAbsolute;
+    if (std.mem.endsWith(u8, m.origin, "/")) return error.OriginEndsInSlash;
+    if (m.path) |p| {
+        if (!std.mem.startsWith(u8, p, "/")) return error.PathNotRooted;
+    }
+    if (m.image) |img| {
+        if (!std.mem.startsWith(u8, img.path, "/")) return error.PathNotRooted;
+    }
+}
+
+/// Canonical, Open Graph and the Twitter card, in one pass so the
+/// things that must agree are written from one value.
+///
+/// **What is deliberately not here: `og:locale`.** The page's language
+/// is a fact this file already holds — it is on `<html lang>` four
+/// lines up — and it still does not become a tag, because Open Graph's
+/// locale is `language_TERRITORY` and a BCP 47 tag need not carry a
+/// territory at all. `fa` would have to become `fa_IR` or `fa_AF`, and
+/// picking is inventing a fact about the reader nobody stated. The tag
+/// a machine can act on is `lang`, and it is written correctly.
+fn metaTags(em: *Emitter, doc: Document, m: Meta) !void {
+    // The canonical and `og:url` come from this one optional, which is
+    // the whole of "they cannot disagree": there is no second string to
+    // keep in step and no flag to leave behind.
+    if (m.path) |p| {
+        try em.raw("<link rel=\"canonical\" href=\"");
+        try url(em, m.origin, p);
+        try em.raw("\">\n");
+    }
+    // `property`, not `name`: Open Graph is RDFa, and a head written by
+    // hand mixes the two vocabularies about as often as not.
+    try em.raw("<meta property=\"og:type\" content=\"");
+    try em.text(m.kind);
+    try em.raw("\">\n");
+    if (m.site_name.len != 0) {
+        try em.raw("<meta property=\"og:site_name\" content=\"");
+        try em.text(m.site_name);
+        try em.raw("\">\n");
+    }
+    try em.raw("<meta property=\"og:title\" content=\"");
+    try em.text(if (m.title.len != 0) m.title else doc.title);
+    try em.raw("\">\n");
+    const desc = if (m.description.len != 0) m.description else doc.description;
+    if (desc.len != 0) {
+        try em.raw("<meta property=\"og:description\" content=\"");
+        try em.text(desc);
+        try em.raw("\">\n");
+    }
+    if (m.path) |p| {
+        try em.raw("<meta property=\"og:url\" content=\"");
+        try url(em, m.origin, p);
+        try em.raw("\">\n");
+    }
+    if (m.image) |img| {
+        try em.raw("<meta property=\"og:image\" content=\"");
+        try url(em, m.origin, img.path);
+        try em.raw("\">\n");
+        if (img.alt.len != 0) {
+            try em.raw("<meta property=\"og:image:alt\" content=\"");
+            try em.text(img.alt);
+            try em.raw("\">\n");
+        }
+        if (img.size) |px| {
+            try em.print(
+                \\<meta property="og:image:width" content="{d}">
+                \\<meta property="og:image:height" content="{d}">
+                \\
+            , .{ px.w, px.h });
+        }
+    }
+    // The card, and **only** the card. Twitter's own documentation
+    // states the fallback: with no `twitter:title`, `twitter:description`
+    // or `twitter:image`, its crawler reads `og:title`, `og:description`
+    // and `og:image`. So the other four tags every hand-rolled head
+    // carries are four more copies of strings already on this page, and
+    // the copy is the bug — a driver that edits one description and not
+    // its twin ships two.
+    //
+    // This one has no `og:` twin, which is why it is written at all:
+    // whether the picture is a banner or a thumbnail is a distinction
+    // Open Graph does not make, and a network told nothing shows a bare
+    // link. A document with no image is `summary` and cannot be
+    // anything else, because the choice lives on the image.
+    const card = if (m.image) |img| switch (img.shape) {
+        .banner => "summary_large_image",
+        .thumbnail => "summary",
+    } else "summary";
+    try em.print("<meta name=\"twitter:card\" content=\"{s}\">\n", .{card});
+    // The one duplicate the fallback does not cover. Twitter documents
+    // `og:` fallbacks for the title, the description and the image and
+    // none for the picture's alternative text — so a reader who cannot
+    // see it would be told nothing on that network, which is not a
+    // trade this library makes to save a line.
+    if (m.image) |img| {
+        if (img.alt.len != 0) {
+            try em.raw("<meta name=\"twitter:image:alt\" content=\"");
+            try em.text(img.alt);
+            try em.raw("\">\n");
+        }
+    }
+}
+
+/// One absolute URL out of the two halves the driver stated: config,
+/// and the resolver's answer. Concatenation is the whole function — the
+/// origin is not parsed, the path is not rewritten, and nothing here
+/// knows what a route is. `checkMeta` has already established that the
+/// join lands on a scheme and exactly one slash.
+fn url(em: *Emitter, origin: []const u8, path: []const u8) !void {
+    try em.text(origin);
+    try em.text(path);
 }
 
 fn bootScript(em: *Emitter, doc: Document, b: Boot, chosen: []const u8) !void {

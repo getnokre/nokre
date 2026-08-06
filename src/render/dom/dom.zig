@@ -88,6 +88,16 @@ pub const document = document_mod.document;
 pub const Document = document_mod.Document;
 pub const Boot = document_mod.Boot;
 pub const Addressing = document_mod.Addressing;
+/// What the page says about itself to a crawler, a link preview and a
+/// share sheet: canonical, Open Graph, the Twitter card. Every
+/// destination in it is the driver's; what is nokre's is that they
+/// cannot disagree. `Meta.Image` is nested rather than exported beside
+/// this — `dom.Image` would read like an image *element*, which this
+/// library does not have and will not grow.
+pub const Meta = document_mod.Meta;
+/// What a driver can get wrong about a `Meta`, returned by `document`
+/// before it writes a byte.
+pub const MetaError = document_mod.MetaError;
 /// The document's language tag: the app's chosen locale, or the language
 /// nokre's own words are in when nothing has been chosen.
 pub const langTag = document_mod.langTag;
