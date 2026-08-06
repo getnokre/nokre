@@ -265,20 +265,99 @@ ruler at all; *where* the lines then break is `flex-wrap`'s, which is the
 reader's own metrics in the reader's own window. The fold needs a
 measurement a generator does not have. Wrapping needs none.
 
-What the host document owes, and what it keeps:
+#### The document is the library's; the names in it are the driver's
 
-- **Its own `<main>`.** `mount({ into, content })` patches the
-  framework's layers into one element and the screen into another — the
-  same seam `chrome` / `content` are split at above — so a generated page
-  keeps the id its skip link names and the class its stylesheet caps.
-  What it does not write is nokre's own class list: that comes from
-  `dom.rootClass` ("The seams" below) and stands beside the page's. The
-  live driver keeps the conditional half of it true after boot, toggling
-  the bottom reserve as the screen changes underneath.
-- **The route.** `mount({ route })`, delivered as a *boot* argument
+This used to be a list of what a host document *owed*, and every static
+consumer paid it by hand. It is now a list of what
+[document.zig](../../src/render/dom/document.zig) writes, because the
+first driver got some of it wrong and a second one was about to write
+the same file again:
+
+```zig
+try dom.document(&em, .{
+    .title = "Accessibility — nokre",
+    .description = "The a11y contract…",
+    .stylesheet = "/style.css",
+    .head = head.items,          // canonical, alternates, JSON-LD, a preload
+    .chrome_id = "chrome",
+    .content_id = "content",
+    .content_class = "page",
+    .skip = "Skip to content",
+    .body_end = footer.items,
+    .boot = .{ .wasm = "/app.wasm", .addressing = .documents, .seed = "/md/…" },
+});
+```
+
+That call writes the whole file — doctype, `<html>`, both mount points,
+the screen and the chrome inside them, and the boot script. **What the
+driver supplies is every name and destination it invented**: the mount
+ids, the URLs it published things at, the addressing mode, the words on
+its skip link. That line is the one round two drew when it declined a
+document helper that would have owned ids and an addressing mode
+belonging to the consumer, and it did not move — what moved is the
+structure around them.
+
+**The library's half is the facts it already holds.**
+
+- **`lang` and `dir`.** The root element carries the locale the screen
+  was built in: `App.locale()`, or — for an app that never chose —
+  `element.default_chrome_tag`, the language nokre's own nav bar and
+  close control are actually in, since `""` is not something a browser,
+  a screen reader or a hyphenation table can act on. The direction is
+  `App.direction`, and it is **two** attributes. `dir` is what browsers
+  and assistive tech read; `data-direction` is the only thing the
+  sheet's one mirroring rule matches, so a page stamping one of them is
+  announced correctly and laid out backwards, or the reverse.
+
+  The live driver stamps `data-direction` and deliberately never `dir`
+  (live.js's `syncRoot`, which also does the appearance): an app mounted
+  in someone else's document may claim nokre's own surfaces and not the
+  page around them. Here there is no page around them — nokre wrote the
+  file — which is the same refusal read from the other side rather than
+  a hole in it. There is no media query for direction the way there is
+  for appearance, so before this a serialized Persian page stayed
+  left-to-right until, and unless, a driver booted over it.
+- **`data-appearance`, and only when the app pinned one.** The other
+  page-level fact core owns. The sheet's dark ramp is written under a
+  media query *and* under this attribute, and the query already stands
+  down when the attribute appears (`:root:not([data-appearance])`) — so
+  a `Scheme.auto` app stamps nothing and keeps the fallback
+  stylesheet.zig's `write` describes, where the query and the app would
+  answer alike anyway. An app that *pinned* light or dark is the case
+  the query gets wrong: it was answering a question the app had already
+  answered, and answering it differently. `App.appearance()` resolves
+  the pin, so the attribute is core's own answer.
+- **The class list, the paper and the module.** `rootClass` on the
+  content mount ("The seams" below), `Gray.paper` in the two
+  `theme-color` metas, and `driver_files.entry` in the boot script's
+  import — so the one file name that ever leaves the driver set is not
+  re-typed either.
+- **The charset first, the seam last.** A browser stops looking for the
+  charset after the first bytes, so nokre's own head tags are written
+  before `head`, whose length is the driver's business.
+- **The skip link, with its rule.** Words from the driver, target from
+  `content_id`, class from `class_names.skip` — and the CSS from the
+  same sheet, because a driver that wrote the anchor and forgot the rule
+  ships a permanent link across the top of every page and no build
+  anywhere says so. Empty words write no link: an app shell whose body
+  is one mount point has nothing to skip past.
+- **The route.** `mount({ route })` comes from `Router.current`, not
+  from a second copy the driver holds, and it is a *boot* argument
   rather than a navigation afterwards: the file already shows that
-  screen, and switching to it after the first frame would build and paint
-  some other screen on the way past.
+  screen, and switching to it after the first frame would build and
+  paint some other screen on the way past.
+
+**The two seams are bytes, not hooks.** `head` and `body_end` are markup
+the driver already built, spliced where their names say. `Emitter.raw`
+writes wherever the emitter is currently pointed and nothing in the type
+distinguishes "into `<head>`" from "into the body" — a field does. A
+`fn (em)` hook would have said it too, and would have handed the driver
+`em.out`, which is the door `Refs`'s signature closed. To build those
+bytes with the same escaping the document gets, point a second emitter
+at a buffer of your own: `em.fragment(&out)`.
+
+What the driver still owes when it boots over the page it wrote:
+
 - **The seed.** `mount({ seed })` fetches the bytes the page was
   generated from and hands them over through `nokre_dom_seed` before
   boot, for the reason the locale tag arrives before boot: the app reads
@@ -292,6 +371,9 @@ What the host document owes, and what it keeps:
   page into a URL the site publishes nothing at. One mapping, stated
   once, spent by both drivers — and `nokre_dom_href` asks it again for
   the address bar, so the bar and the links cannot disagree.
+- **The class list after boot.** The live driver keeps the conditional
+  half of `rootClass` true as the screen changes underneath, toggling
+  the bottom reserve on the same element the file wrote it on.
 
 And what it hands back: with `addressing: "documents"` a link is the
 browser's. It has a file behind it, so intercepting it would take the one
@@ -580,6 +662,16 @@ try dom.chrome(&em);    // notice, nav, sheet, picker
   paint order. Split because a driver decides where a page's document
   structure puts them — the nav leads the focus order, and a driver that
   wants it first in the markup can have it.
+- **`document`.** The two above with the whole file around them, for a
+  driver publishing one page per screen — doctype, `lang` and `dir`, the
+  head and its seam, both mount points, the skip link and the boot
+  script. What it takes and what it refuses to invent is "The document
+  is the library's; the names in it are the driver's" above; `content`
+  and `chrome` stay separately callable for a driver placing them
+  itself, which is what the live one does.
+- **`Emitter.fragment`.** A second emitter over a buffer of the caller's
+  own — how the bytes `Document.head` and `Document.body_end` take get
+  the escaping the rest of the document gets.
 - **Node ids.** With `Emitter.Options.node_ids`, every focus stop carries its
   `NodeId` as `data-n` (and an inline link its span as `data-s`) — the
   live driver's way of naming the node the reader meant. A page written

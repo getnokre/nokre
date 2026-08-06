@@ -17,8 +17,15 @@
 //! prose (docs/internals/dom-edition.md). The one consumer that
 //! re-typed this list shipped two of the four.
 
+/// The one of them a page names: the module a boot script imports
+/// `mount` from. The other three are reached from inside it, so this is
+/// the only file name that ever leaves the set — `document.zig` writes
+/// it into every generated page's boot script, and a driver joining it
+/// to its own directory never types it.
+pub const entry = "live.js";
+
 pub const driver_files: []const []const u8 = &.{
-    "live.js",
+    entry,
     "live-worker.js",
     "services.js",
     "sw.js",

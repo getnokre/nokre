@@ -1,11 +1,12 @@
-//! The two class names the edition's root element carries, as data.
+//! The class names this edition's markup and its stylesheet both name,
+//! as data.
 //!
-//! One pair, four writers: [stylesheet.zig](stylesheet.zig) selects on
-//! them, [live.zig](live.zig)'s `buildFrame` writes them onto the
-//! `<main>` it emits, [live.js](live.js) toggles the modifier from the
-//! browser side, and a host document that wrote its own `<main>` writes
-//! them a fourth time — outside this compile, where no compiler reads
-//! them at all.
+//! The root pair, four writers: [stylesheet.zig](stylesheet.zig)
+//! selects on them, [live.zig](live.zig)'s `buildFrame` writes them onto
+//! the `<main>` it emits, [live.js](live.js) toggles the modifier from
+//! the browser side, and a host document that wrote its own `<main>`
+//! writes them a fourth time — outside this compile, where no compiler
+//! reads them at all.
 //!
 //! That fourth writer is why the names are data rather than prose. A
 //! class list nothing in the sheet matches is not a build error: with
@@ -13,8 +14,11 @@
 //! the modifier written alone — the compound selector wants both on the
 //! one element — a screen carrying bottom chrome silently loses the
 //! clear space the nav stands in. Neither fails anywhere near where it
-//! was typed (docs/internals/dom-edition.md, "What the host document
-//! owes"). So the pair is exported, and exported only as the finished
+//! was typed (docs/internals/dom-edition.md, "The document is the
+//! library's; the names in it are the driver's" — a driver taking the
+//! whole file from `document.zig` never writes the list at all, and one
+//! placing `content` itself still does). So the pair is exported, and
+//! exported only as the finished
 //! class list: `serialize.zig`'s `rootClass` picks the branch from the
 //! same predicate both editions ask, so a consumer never assembles a
 //! list and never chooses the wrong one.
@@ -28,6 +32,13 @@ pub const root = "nokre";
 /// The bottom reserve, conditional on `layout.hasBottomChrome`. Written
 /// beside `root` on the same element, never alone.
 pub const has_chrome = "has-chrome";
+
+/// The skip link's, on the anchor `document.zig` writes past the chrome
+/// to the content mount. Unlike the pair above it has one writer inside
+/// this compile and one rule in the sheet — it is here because the two
+/// are in different files and a name that lives in only one of them is
+/// how the pair above got into trouble.
+pub const skip = "skip";
 
 comptime {
     // The browser half cannot import a Zig constant, so it is checked

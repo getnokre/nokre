@@ -959,16 +959,37 @@ Ten items, strictly sequential, one commit each. Contract changes bump
 `nokre.revision` and move all three pins in the same pass. Each item is deleted
 from this file as it lands, with its outcome recorded.
 
-2. **The document shell** — doctype, `lang`, `dir`, head and body, with ids and
-   addressing as driver-supplied parameters (F.1's test).
 3. **Hydration reads the document's locale** — A1a's lead argument: the silent
-   wrong-locale boot, and `mount`'s missing locale channel.
-4. **The head seam and a `</script>`-safe JSON string writer** — A3's residue.
-5. **Canonical, Open Graph, Twitter card, `og:image`** — A2 and A4.
+   wrong-locale boot, and `mount`'s missing locale channel. **Note what item 2
+   already changed here:** the boot script is `document.zig`'s now, so `mount`'s
+   new option gets exactly one writer on the static path — `Boot` — and the
+   document's `lang` is derived from the same `App.locale()` the channel has to
+   carry. The site is the reproduction Part G promised: its pages say
+   `lang="en"` and its `mount` call says nothing about a locale.
+4. **A `</script>`-safe JSON string writer** — A3's residue, **minus the head
+   seam, which shipped with item 2** (`Document.head`, bytes not a hook). What
+   is left is the escaper. `document.zig`'s private `js` is the seed and the
+   argument in one place: `Emitter.text` is the *wrong* escape inside a
+   `<script>`, whose contents are raw text, and `<` as `\x3C` closes
+   `</script>`, `<!--` and `<script` in one rule. A JSON writer needs the same
+   treatment on the same ground; decide whether it takes `js` public, or grows
+   beside it.
+5. **Canonical, Open Graph, Twitter card, `og:image`** — A2 and A4. All of it is
+   in the reference driver's head seam now (`main.zig`'s `writeHead`), which is
+   where to read what it currently does — including the `p.kind != .not_found`
+   guard on both destination tags. **`theme-color` is already nokre's** and is
+   not part of this item: it is `Gray.paper` in both ramps, a fact the library
+   holds, written by `document.zig`.
 6. **The locale axis** — the generation loop, prefix-all output paths, sniffing
    stubs. B1 and B4.
 7. **hreflang, `x-default`, sitemap alternates** — B2 and B3, one derivation.
-8. **`webIndexHtml`'s `lang`** — A1b.
+8. **`webIndexHtml`'s `lang`** — A1b. **Check first whether `dom.document`
+   should simply write that page**, which item 2 left open deliberately: the
+   shell page is a title, a stylesheet link, a body with one mount point and a
+   boot, which is `Document` with `skip = ""` and no `body_end`. Two obstacles,
+   both real and neither large: `webIndexHtml` writes its page with no `App` in
+   hand (`document` takes an `Emitter`, which is an App and an `out`), and the
+   shell boots into `document.body` where `Document` requires two mount ids.
 9. **Part G** — `getnokre.github.io` onto all of it.
 10. **The boundary doc** — F.5, written from what shipped.
 
@@ -978,6 +999,114 @@ from this file as it lands, with its outcome recorded.
 
 One entry per finished item, with the ground for anything that changed shape.
 The queue above shrinks as this grows.
+
+### 2. The document shell — SHIPPED, revision 34
+
+**`dom.document(em, Document)`**, a new leaf module
+`src/render/dom/document.zig`, writes the whole file: doctype, `<html>` with
+`lang` and *both* direction attributes, the head, the two mount points with
+`chrome` and `content` inside them, the skip link, and the boot script. Under
+F.2 this is a driver, not a helper — the reference site's `writeDocument` went
+from ~80 lines of markup to one call plus the two seams' worth of bytes it
+actually invented.
+
+**What stayed the driver's, and it is exactly F.1's list.** Every name and every
+destination the consumer invented is a field: `chrome_id`, `content_id`,
+`content_class`, `stylesheet` (the URL it published the sheet at), `title`,
+`description`, `skip`'s words, `Boot.wasm`, `Boot.driver_dir`,
+`Boot.addressing`, `Boot.seed`. None of them has a default with an opinion —
+`addressing` defaults to `.fragments` because that is `mount`'s own default in
+`live.js`, not because nokre prefers it. What nokre writes is the structure and
+the facts it holds: the locale, the direction, `rootClass`, `Gray.paper`,
+`Router.current` for the boot route, and `driver_files.entry` for the module
+name.
+
+**`lang` and `dir`, derived.** `lang` is `App.locale()`. That is `""` until an
+app calls `setLocale`, so the fallback is new and is named:
+`element.default_chrome_tag = "en"`, beside the existing `default_chrome` — the
+language nokre's own nav bar, close control and notices pane are actually in on
+a page that never localized. It is a fact about `Chrome`'s defaults, not an
+invented default. The reference site (no locale surface until item 9) therefore
+still emits `lang="en"`, and now says why.
+
+`dir` is `App.direction`, and **it is two attributes**. `dir` is what browsers
+and assistive tech read; `data-direction` is the only thing
+`:root[data-direction="rtl"]` matches, so a page stamping one is announced right
+and laid out backwards, or the reverse. There is no media query for direction
+the way there is for appearance, which is A1a's second argument and is now
+answered.
+
+**A claim in the brief was wrong.** The design note said *"`live.js`'s
+`syncRoot` stamps both on `documentElement` and is the model."* It does not:
+`syncRoot` stamps `data-appearance` and `data-direction`, and **`live.js` never
+writes `dir` or `lang` at all** — grep either in that file and there are zero
+hits. So there was no model to copy, and the asymmetry is sharper than F.3
+stated: the mount case stamps `data-direction` *only*, because `dir` on
+`documentElement` turns the host's whole document around and `data-direction`
+reaches nokre's own surfaces and nothing else. The static path stamps both
+because there is no host. That is now a comment at the write site and a
+paragraph in dom-edition.md.
+
+**The head seam is a field of bytes, not a hook** — `Document.head`, with
+`Document.body_end` as its twin below the screen. A `fn (em)` hook was refused
+on `Refs`'s stated ground (*"a hook that writes `em.out` is re-opening the door
+this signature closed"*), and bytes answer A3's actual complaint better anyway:
+the complaint was that *nothing in the type distinguishes "into `<head>`" from
+"into the body"*, and a named field is that distinction. To build those bytes
+with the same escaping the document gets, **`Emitter.fragment(&out)`** returns a
+second emitter over a buffer of the caller's own — same app, same allocator,
+different `out`.
+
+**The skip link came with its rule, and that was the interesting call.** nokre
+writes the anchor (words from the driver, target from `content_id`, class from
+the new `class_names.skip`) *and* the sheet now parks it — because an anchor
+with no rule behind it is a permanent link across the top of every page, which
+is precisely the silent failure `class_names.zig` exists to prevent, and half a
+seam is worse than none. Alongside it the sheet gained the only other
+document-level rules it has: `@media print` hiding `.nav` and `.skip` and
+dropping the chromed root's bottom reserve, which the reference site had been
+writing for itself — including one rule that re-typed nokre's `#content` reserve
+by id. The modal layers are deliberately left printable.
+
+**`driver_files.entry`** names `live.js` as the one member of the set a page
+imports, and the list is built from it. Same argument as the set itself: the one
+file name that leaves the library is not re-typed by a fifth writer.
+
+**One thing found by writing it.** The boot script's route was going through
+`Emitter.text` in the reference driver — HTML escaping, inside a `<script>`,
+where a `&amp;` is five characters of nothing and `</script>` in any of those
+strings ends the block. Route names are ASCII identifiers so it never bit, but
+the ids and URLs beside it are arbitrary driver bytes. `document.zig` has a
+private `js` writer instead: `\\`, `\"`, and `<` as `\x3C`, which closes
+`</script>`, `<!--` and `<script` in one rule. Item 4's JSON writer wants the
+same treatment and should decide whether to take this public.
+
+**Consumer migrated in the same pass**, per standing practice, and it kept
+everything it owns: `#chrome`/`#content`, `addressing: "documents"`, its skip
+target, its footer, its `page` class. Every byte of the generated diff is
+accounted for: `+31` per page (`dir="ltr" data-direction="ltr"`), a head
+reordering with no additions or removals (nokre's fixed tags now precede the
+seam so the charset stays in the first bytes), and `+27` on the colophon from
+its own provenance stamp. 32 screens before and after; references 791 → 792, the
+one new link being this file's own citation of `document.zig` in dom-edition.md.
+`docs/style.css` moved exactly the `.skip` block and the two print rules across
+the boundary, with `- 16px` becoming `- var(--page-pad)` (same value, now
+derived).
+
+**`data-appearance` came along, on the owner's call, and the reasoning is worth
+keeping.** It was first filed here as out of scope; it is the same defect as the
+direction one, found in the same place, and fixing one and not the other would
+have been arbitrary. It is stamped **only when `App.scheme` is not `.auto`**.
+The sheet's dark ramp already stands down when the attribute is present
+(`:root:not([data-appearance])`), so an `auto` app stamps nothing and keeps the
+fallback `stylesheet.zig`'s `write` designed — *"the media query is all a page
+with no app behind it has to go on"* — while an app that pinned light or dark
+stops having the query overrule it. Both branches are covered, including that
+the attribute's spelling is the sheet's own selector rather than a literal
+agreeing with itself.
+
+**One carried forward.** `Document` requires both mount ids, which is what
+stands between it and `webIndexHtml` (item 8).
 
 ### 1. Small exports and stale docs — SHIPPED, revision 33
 

@@ -34,6 +34,7 @@
 
 pub const serialize = @import("serialize.zig");
 pub const stylesheet = @import("stylesheet.zig");
+const document_mod = @import("document.zig");
 
 pub const Emitter = serialize.Emitter;
 pub const Refs = serialize.Refs;
@@ -78,3 +79,15 @@ pub const content = serialize.content;
 pub const chrome = serialize.chrome;
 /// One node and its subtree, for a driver that places things itself.
 pub const node = serialize.node;
+
+/// The whole file around a screen: doctype, `lang` and `dir`, the head,
+/// the two mount points, the skip link and the boot script
+/// (document.zig). `content` and `chrome` above are what a driver
+/// reaches for when it is placing them itself.
+pub const document = document_mod.document;
+pub const Document = document_mod.Document;
+pub const Boot = document_mod.Boot;
+pub const Addressing = document_mod.Addressing;
+/// The document's language tag: the app's chosen locale, or the language
+/// nokre's own words are in when nothing has been chosen.
+pub const langTag = document_mod.langTag;

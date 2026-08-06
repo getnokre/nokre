@@ -1120,6 +1120,16 @@ pub const Chrome = struct {
 /// named rather than blank.
 pub const default_chrome: Chrome = .{};
 
+/// Which language that is, as a BCP 47 tag. The words above are English
+/// and nothing else says so in a form anything can read: `App.locale()`
+/// answers `""` until an app chooses, and `""` is not a language a
+/// browser, a screen reader or a hyphenation table can act on. The one
+/// reader is the DOM edition's document writer, which needs a `lang` for
+/// a page an app never localized (`render/dom/document.zig`'s `langTag`)
+/// — and the honest answer for that page is the language its nav bar,
+/// its close control and its notices pane are actually in.
+pub const default_chrome_tag = "en";
+
 /// Modal bottom sheet, installed via `App.presentSheet`. While one is
 /// open the rest of the tree is inert: focus, taps, and scrolling stay
 /// inside. It appears and disappears instantly — there is no transition

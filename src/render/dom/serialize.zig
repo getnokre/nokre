@@ -164,6 +164,26 @@ pub const Emitter = struct {
         return out;
     }
 
+    /// A second emitter over a buffer of the caller's own.
+    ///
+    /// This is how a driver builds the bytes the document's seams take
+    /// (`document.zig`'s `Document.head` and `body_end`) with the same
+    /// escape the document itself gets. Those seams are *bytes* rather
+    /// than a `fn (em)` hook on purpose — a hook writing `em.out` is the
+    /// door `Refs`'s signature closed — so the driver needs somewhere
+    /// else to write, and this is it: same app, same allocator, a
+    /// different `out`.
+    ///
+    /// It carries the options along, so a fragment resolves references
+    /// the way the document does. What it does not carry is the heading
+    /// roster: ids are deduplicated per emitter, so a fragment that
+    /// emitted headings would mint ids the document does not know about
+    /// and `takeAnchors` would not report. Fragments are for the markup
+    /// around the screen, which has none.
+    pub fn fragment(self: *const Emitter, out: *std.ArrayList(u8)) Emitter {
+        return .{ .gpa = self.gpa, .app = self.app, .out = out, .options = self.options };
+    }
+
     pub fn raw(self: *Emitter, s: []const u8) !void {
         try self.out.appendSlice(self.gpa, s);
     }

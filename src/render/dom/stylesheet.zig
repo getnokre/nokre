@@ -1830,4 +1830,51 @@ const sheet =
     \\.picker-item:focus-visible,
     \\.picker-item:focus-visible + .picker-item { box-shadow: none; }
     \\
+    \\/* ---- the document ------------------------------------------------ */
+    \\
+    \\/* Two rules that are about the *page*, not about an element, and the
+    \\   only two: they exist because `document.zig` writes a page. An
+    \\   edition mounted into someone else's document still emits them and
+    \\   they still match nothing there — a host that wrote no skip link
+    \\   has no `.skip`, and print has always been allowed to say a fixed
+    \\   bar is not on paper. Neither reaches `body` or `:root`, which is
+    \\   where restyling a host would start. */
+    \\
+    \\/* The skip link: off-screen until it is focused, then the first
+    \\   thing on the page. It is the library's element (`document.zig`)
+    \\   and therefore the library's rule — a driver that wrote the anchor
+    \\   and forgot the CSS ships a permanent link across the top of every
+    \\   page, which is a failure nothing in a build would catch. Its
+    \\   parked position is one target plus the page margin above the top
+    \\   edge, both read rather than guessed, so a taller target cannot
+    \\   leave a sliver of it showing. */
+++ "\n." ++ class_names.skip ++ " {\n" ++
+    \\  position: absolute;
+    \\  inset-inline-start: var(--page-pad);
+    \\  top: calc(-1 * var(--touch) - var(--page-pad));
+    \\  /* Above every framework layer: the bars sit at 2 and the modal
+    \\     surfaces with their scrims at 3, and a skip link the nav covers
+    \\     is a skip link that does not exist. */
+    \\  z-index: 5;
+    \\  padding: var(--button-pad-v) var(--button-pad-h);
+    \\  border-radius: var(--radius);
+    \\  background: var(--ink);
+    \\  color: var(--paper);
+    \\  text-decoration: none;
+    \\}
+++ "\n." ++ class_names.skip ++ ":focus { top: var(--page-pad); }\n" ++
+    \\
+    \\/* Print. Nothing `position: fixed` belongs on paper — it lands on
+    \\   the first sheet over the content and on no other sheet at all —
+    \\   so the nav goes, and the reserve the screen kept for it goes with
+    \\   it or every printout ends in an inch of nothing. The skip link
+    \\   goes because there is no keyboard on paper. The modal layers are
+    \\   deliberately left: a sheet that is open is content the reader is
+    \\   looking at, and a printout that dropped it would be printing a
+    \\   screen nobody is on. */
+    \\@media print {
+++ "\n  .nav, ." ++ class_names.skip ++ " { display: none; }\n" ++
+    "  " ++ root_sel_chromed ++ " { padding-bottom: var(--pad); }\n" ++
+    \\}
+    \\
 ;
