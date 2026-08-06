@@ -7,24 +7,58 @@ This file succeeds the third ergonomics round (executed whole; recoverable at
 revision 32 plus `TextInput.disabled`. What was still open there is carried
 forward in Part E below, one line each, with pointers rather than copies.
 
-**Verification basis.** The findings below were grep- and read-verified against
-nokre `7934318` *plus its working tree* — which has since been committed through
-`3855adf` — and against the site at `8db26a7`. Two consequences: line numbers in
-`serialize.zig`, `stylesheet.zig` and `element.zig` may have moved under the
-`TextInput.disabled` pass, and `nokre.revision` was 32 when surveyed. Check both
-before quoting either. Downstream consumer facts come from the rokovski tree as
-of `eea6de1a`.
+**Verification basis.** Citations here are by **symbol and section, never by
+line number** — deliberately, so they survive the next pass moving code. A code
+fact is named by its file plus the narrowest symbol containing it; a doc fact by
+its file plus its heading, or by a quoted sentence distinctive enough to grep.
+Counts and commit hashes stay as written: both are facts, not coordinates. Line
+numbers were tried for two rounds and re-resolving them cost more than they
+bought — about sixty of them moved in a single day.
 
-**Corrected 2026-08-06** against nokre `682b839` (revision is still 32) and the
-site at `b93a2d4`. Every line number below has been re-resolved against those
-two trees; several claims were wrong outright, not merely stale. Where a reading
-changed, the old one is named in place — a reader who saw the first version
-needs to know what moved, and there is deliberately no changelog section to
-consult instead.
+Everything below was grep- and read-verified against nokre `682b839`
+(`nokre.revision` is 32) and the site at `b93a2d4`; downstream consumer facts
+come from the rokovski tree as of `eea6de1a`. Every symbol name used as a
+citation was re-resolved against nokre `63a837c`, the site at `b93a2d4`, and
+rokovski `e4db89c0` — a symbol that does not exist is a wrong claim, not a stale
+pointer, so check the name before quoting the fact. Several claims in the first
+version were wrong outright, not merely stale. Where a reading changed, the old
+one is named in place — a reader who saw the first version needs to know what
+moved, and there is deliberately no changelog section to consult instead.
 
-Execution protocol is the standing one: **one item per pass, owner review
-between, never chain.** Contract changes bump `revision` and move all three pins
-in the same pass.
+**Execution protocol.** Contract changes bump `revision` and move all three pins
+in the same pass. Beyond that:
+
+**Default: keep going.** Finish an item, verify it, commit it, take the next
+one. Do not stop to report good news, and do not stop to ask permission for
+something the code or a recorded doctrine already answers.
+
+**Batch the human decisions up front.** Part F is the set of questions only the
+owner can answer. Answer those *first, together*, before execution starts — then
+run the whole queue without further pauses. That is the one interruption this
+round plans for.
+
+**Stop only when one of these is true.** This list is the whole test, and it is
+closed:
+
+1. A decision changes *what gets built*, two shapes are both defensible, and
+   neither the code nor a recorded doctrine picks between them.
+2. The work would reverse a recorded owner decision or violate a stated refusal.
+3. The step is irreversible or outward-facing — publishing, deleting, anything a
+   reader outside the repo would see before review.
+4. A discovery invalidates the premise of the remaining queue, so continuing
+   would build on something known to be wrong.
+
+**Do not stop for** — these are the expensive false positives — a stale
+reference, a wrong count, a receipt that has rotted, an item that turns out
+already solved, an item that turns out wrong (kill it on the recorded ground and
+continue), or a proposed shape the code argues against (take the better shape,
+record why, continue).
+
+**What replaces the pause is the record.** Every item's outcome — shipped,
+killed, already-solved, reshaped — gets written down with its ground at the
+moment it is decided, so the owner reviews a finished trail rather than gating
+each step. A killed item with no recorded reason is the one thing that must not
+happen: it is exactly what forces the next round to re-derive it.
 
 ---
 
@@ -45,8 +79,10 @@ Specifically:
   ground, and the ground should be written down where the next round can find it.
 - **If an item is right but the shape proposed is wrong, propose the better
   shape.** Every sketch below is illustrative. None is a design.
-- **Do not chain items to "finish the theme."** The value of most of these is
-  independent; the cost of a wrong one is a contract that consumers build on.
+- **Do not adopt items as a package to "finish the theme."** The value of most
+  of these is independent; the cost of a wrong one is a contract that consumers
+  build on. Judge each on its own merits — which is not the same as pausing
+  between them.
 
 The single most likely failure mode for this round is an agent reading it as a
 list of features to add and adding all of them. Most of the argument's weight is
@@ -82,14 +118,14 @@ reproduced three nokre-internal contract strings. Checked today:
 
 | cited string | who owns it | verdict |
 |---|---|---|
-| `class="nokre has-chrome"` | nokre writes it (`live.zig:313`) and styles it (`stylesheet.zig:601`) | **real duplication** |
+| `class="nokre has-chrome"` | nokre writes it (`live.zig`'s `buildFrame`) and styles it (`stylesheet.zig`'s `sheet`, the `.nokre.has-chrome` rule) | **real duplication** |
 | `#chrome` / `#content` / `.page` | nokre: **zero hits** | the site's own |
 | `addressing: "documents"` | nokre: **zero hits** | the site's own |
 
 Two of the three are the *driver's* inventions that nokre has never heard of. A
 helper owning "mount points" would have made nokre own ids and an addressing
-mode belonging to the consumer — the precise boundary
-`stylesheet.zig:535-543` states and this file quotes approvingly. The owner was
+mode belonging to the consumer — the precise boundary `stylesheet.zig`'s `sheet`
+states in its mirrored-chrome comment and this file quotes approvingly. The owner was
 declining to move that boundary on evidence that half the reason offered for
 moving it was not true.
 
@@ -152,18 +188,20 @@ belong to the framework or the app — **the survey said "three times by instanc
 there is a fourth, and it is the most rule-like of them**, which changes where
 this round should start:
 
-1. `docs/internals/dom-edition.md:268` — *"What the host document owes, and what
-   it keeps"*, then an enumeration. Says what the app owes; does not generalise.
-2. `src/render/dom/stylesheet.zig:535-543` — *"the attribute is the driver's to
-   stamp, but the page around an embedded app is not this edition's to turn
-   around"* (`:542-543`; the survey cited `:541-543`). Closest thing to a rule
-   among the three, and it is about `data-direction`.
-3. `docs/localization.md:400-403`, on a neighbouring question, is the sharpest
-   phrasing of the instinct: *"Downloadable translations are a distribution
-   feature with a cache, a version skew story, and a failure mode on first
-   launch — that is an app, not a GUI library."*
-4. **`src/testing/audit.zig:212-219`** — the `Options.skip` doc, which names the
-   static-site generator by name and then says what it is entitled to:
+1. `docs/internals/dom-edition.md`, *"What the host document owes, and what it
+   keeps"*, then an enumeration. Says what the app owes; does not generalise.
+2. `src/render/dom/stylesheet.zig`'s `sheet` — the mirrored-chrome comment
+   above the `:root[data-direction="rtl"]` rule, closing on *"the attribute is
+   the driver's to stamp, but the page around an embedded app is not this
+   edition's to turn around"*. Closest thing to a rule among the three, and it
+   is about `data-direction`.
+3. `docs/localization.md`, "The refusals" — its *no runtime catalog loading*
+   bullet, on a neighbouring question, is the sharpest phrasing of the instinct:
+   *"Downloadable translations are a distribution feature with a cache, a
+   version skew story, and a failure mode on first launch — that is an app, not
+   a GUI library."*
+4. **`src/testing/audit.zig`'s `Options.skip`** — its doc comment, which names
+   the static-site generator by name and then says what it is entitled to:
    *"The known case is a static-site generator skipping `unresolvable_route`:
    there a document destination is the* site resolver's *to honor, not the route
    table's, and that resolver already fails the build harder than this rule
@@ -180,9 +218,9 @@ Whatever doc this round writes should start from that sentence rather than
 re-derive it.
 
 The consuming site states the boundary in the plainest words either repo has for
-it — `getnokre.github.io/src/main.zig:5-7` (the survey cited `:4-7`): "Everything
-below is the *driver*: which screens exist, what a reference resolves to, and the
-document a browser needs around a screen. The markup and the stylesheet are the
+it — `getnokre.github.io/src/main.zig`'s module doc comment: "Everything below is
+the *driver*: which screens exist, what a reference resolves to, and the document
+a browser needs around a screen. The markup and the stylesheet are the
 library's." The emphasis on *driver* is the source's own.
 
 **Whatever this round decides, the outcome belongs in a doc.** A rule that lives
@@ -209,19 +247,21 @@ and in the mount signature, and both are about the library's own machinery
 failing rather than about a crawler's opinion. Lead with these.
 
 **Lead: hydration boots the wrong locale, silently, and the diff succeeds.**
-`mount({ wasm, into, worker, content, route, seed, addressing })`
-(`src/render/dom/live.js:57`) has no locale option. The only locale that reaches
-a wasm app in a browser is the device's: `live.js:613-618` pours
-`navigator.language` through the scratch/seed pair strictly before boot, and
-`src/services/locale/web.zig` is where it lands and what `App.init`'s install
-fires with. The driver entry points have no channel either — the reference
-site's `nokreWebBuild(gpa)` (`getnokre.github.io/src/web.zig:73`) takes an
+`mount({ wasm, into, worker, content, route, seed, addressing })` —
+`src/render/dom/live.js`'s `mount` — has no locale option. The only locale that
+reaches a wasm app in a browser is the device's: `mount`'s boot section pours
+`navigator.language` through the `nokre_locale_scratch` / `nokre_locale_seed`
+pair strictly before boot, and `src/services/locale/web.zig` is where it lands
+and what `App.init`'s install fires with. The driver entry points have no
+channel either — the reference site's `nokreWebBuild(gpa)`
+(`getnokre.github.io/src/web.zig`) takes an
 allocator and nothing else; `route`, `seed` and `addressing` are the whole of
 what `mount` carries per page. So a `/fa/…` page opened in an `en` browser
 hydrates **English over Persian markup**.
 
 And it does so without a single visible fault, because the hydration match is
-tag plus `data-n` (`docs/internals/dom-edition.md:587-592`): *"two nodes are the
+tag plus `data-n` (`docs/internals/dom-edition.md`, "The seams", the **Node
+ids** bullet): *"two nodes are the
 same node when they are the same kind of thing carrying the same id."* Nothing
 in that rule looks at text. The tree the app rebuilds in English has the same
 shape and the same ids as the tree the generator wrote in Persian, so the diff
@@ -235,34 +275,39 @@ static+hydrate pair Part D calls *"real, documented, and shipping"* — not a
 metadata item.
 
 **Second: appearance has a designed static fallback and direction has none.**
-`stylesheet.zig:201-208` states the design out loud — *"The media query is all a
-page with no app behind it — a screen serialized to a file — has to go on"* —
-and `live.js:174-176` says the same thing from the other side. So the sheet is
+`stylesheet.zig`'s `write` states the design out loud, in the comment above the
+`prefers-color-scheme` block — *"The media query is all a page with no app
+behind it — a screen serialized to a file — has to go on"* — and `live.js`'s
+`mount` says the same thing from the other side, in the comment introducing
+`syncRoot`. So the sheet is
 built to answer appearance for a page with no app behind it. **No media query
 can answer direction.** Only the attribute can, and on a serialized page nothing
-writes it, so `:root[data-direction="rtl"]` (`stylesheet.zig:544`) never matches
+writes it, so `:root[data-direction="rtl"]` (`stylesheet.zig`'s `sheet`) never matches
 and the mirroring never happens. A file nokre wrote for a Persian reader stays
 LTR until — and unless — a driver boots over it. That is nokre's own note
 describing the static case as a case it serves, next to the one axis where it
 does not.
 
 **Receipt, corrected.** The survey said *"Nothing stamps `data-direction`."*
-**That is false.** `src/render/dom/live.js:184` does
+**That is false.** `src/render/dom/live.js`'s `syncRoot` does
 `if (root.dataset.direction !== direction) root.dataset.direction = direction;`
-on `documentElement` (`:177`), backed by the `nokre_dom_direction` export
-(`src/render/dom/live.zig:171`) — a literal-string grep for `data-direction`
+on the `documentElement` `mount` takes as `root`, backed by the
+`nokre_dom_direction` export (`src/render/dom/live.zig`'s `direction`, exported
+in that file's `comptime` block) — a literal-string grep for `data-direction`
 missed it because JS spells it camelCase through `dataset`. The true claim is
 narrower and is the one above: **nothing stamps it on a statically serialized
 page.** The live driver stamps both attributes, in the same three lines.
 
 What stands from the original receipt: `serialize.zig` emits no `lang`, no `dir`
-and no document at all. `getnokre.github.io/src/main.zig:420` hardcodes
-`<html lang="en">` (the survey said `:372`; `writeDocument` is `:413-487` now).
-The rest of RTL is complete — `App.direction` (`src/core/app.zig:69`),
-`App.setDirection` (`:767`), `L.dir(loc)` (`src/l10n/l10n.zig:302`) and
-`l10n.directionOfTag` (`:1106`) — the survey had those two the wrong way round —
+and no document at all. `getnokre.github.io/src/main.zig`'s `writeDocument`
+hardcodes `<html lang="en">`.
+The rest of RTL is complete — `App.direction` and `App.setDirection`
+(`src/core/app.zig`), `L.dir(loc)` and
+`l10n.directionOfTag` (`src/l10n/l10n.zig`) — the survey had those two the wrong
+way round —
 and the serializer flips chevrons off `em.app.direction`
-(`src/render/dom/serialize.zig:693,903`), which is the one piece of mirroring a
+(`src/render/dom/serialize.zig`: `node`'s back-button case, and `tile`), which is
+the one piece of mirroring a
 static page *does* get, since it is markup rather than CSS.
 
 **For the library.** Nokre knows the locale and the direction; it wrote the
@@ -271,8 +316,10 @@ fallback and the one the boot handover cannot recover. A Persian page served as
 `lang="en"` is also wrong for screen readers, browser translation, hyphenation
 and search engines, but that is now the fourth reason, not the first.
 
-**Against.** `stylesheet.zig:535-543` states the refusal deliberately: an
-embedded app must not turn the page around it. And `docs/localization.md:155-158`
+**Against.** `stylesheet.zig`'s `sheet` states the refusal deliberately, in the
+mirrored-chrome comment: an
+embedded app must not turn the page around it. And `docs/localization.md`,
+"Right-to-left",
 takes a stronger line — *"There is no `dir` attribute and no per-locale direction
 flag in ARB — a Persian string in an English locale and an English string in a
 Persian locale each lay out correctly on their own evidence. This never depends
@@ -296,10 +343,11 @@ path, which is the item.)
 
 **The survey filed this as the same item as A1a. It is not, and merging them
 hides that they have different answers.** `webIndexHtml`
-(`src/packaging/packaging.zig:1008`, the `lang="en"` at `:1017`) is the
+(`src/packaging/packaging.zig`; the `lang="en"` is a literal in its opening
+`<!doctype html>` block) is the
 **app-shell page `addWebSite` emits** — one document, for a wasm app that boots
 into an empty body. A static generator writes its own document
-(`getnokre.github.io/src/main.zig:413-487`) and never calls `webIndexHtml`;
+(`getnokre.github.io/src/main.zig`'s `writeDocument`) and never calls `webIndexHtml`;
 nothing in the site tree imports `packaging` at all.
 
 So: parameterising `webIndexHtml`'s `lang` does nothing for 4,250 static pages,
@@ -314,13 +362,12 @@ it is not urgent.
 
 ### A2. Canonical, Open Graph, Twitter card
 
-**Receipt.** The reference driver emits canonical with a **hardcoded origin**
-(`main.zig:440`, under the 404 guard at `:439` — the survey cited `:436-438`,
-which is the comment explaining the guard), `og:type` (`:452`), `og:site_name`
-(`:453`), `og:url` (`:460`, under the same guard at `:459`), `og:title`
-(`:462`), `og:description` (`:464`), plus `theme-color` for both schemes at
-`:450-451`, read from `nok.Gray.paper` at `:445`. **No `og:image`. No Twitter
-card.**
+**Receipt.** All of it lives in `main.zig`'s `writeDocument`: canonical with a
+**hardcoded origin**, under an `if (p.kind != .not_found)` guard carrying a
+comment that explains it (*"a canonical (or og:url) naming /notfound/ would
+claim a URL nobody is meant to arrive at"*); `og:type`; `og:site_name`; `og:url`,
+under the same guard; `og:title`; `og:description`; plus `theme-color` for both
+schemes, read from `nok.Gray.paper`. **No `og:image`. No Twitter card.**
 
 **For the library.** These tags are mechanical, their invariants are easy to get
 wrong (`og:url` must equal canonical; canonical must be absolute; both must be
@@ -341,10 +388,10 @@ necessarily config, so the app is in the loop regardless.
 
 **The survey then asked for two things and only one of them is missing.** It
 closed with *"already solved if the emitter can express a raw `<script>` block
-safely today"* — **it can, and does.** `Emitter.raw`
-(`src/render/dom/serialize.zig:166`) and `Emitter.print` (`:170`) are public and
+safely today"* — **it can, and does.** `Emitter.raw` and `Emitter.print`
+(`src/render/dom/serialize.zig`) are public and
 write straight through to `out` with no escaping whatever; `Emitter.text`
-(`:177`) is the *single* escape in the type, and it is opt-in per call. A driver
+is the *single* escape in the type, and it is opt-in per call. A driver
 can emit a `<script type="application/ld+json">` block today, with nothing new
 in the library and nothing bypassed. The reference driver already does exactly
 this for its whole head — every `<meta>` in A2's receipt is a `raw` or a `print`.
@@ -355,7 +402,7 @@ stated as two separate residues:
 1. **A `</script>`-safe JSON string writer.** `std.json` escapes JSON, which is
    not the same question: `</script>` is legal JSON and fatal inside a `<script>`
    block. This is the same class of problem as the CSP `connect-src` injection
-   this repo swept 0–255 for (`packaging_test.zig:448-485`, *"no byte a consumer
+   this repo swept 0–255 for (`packaging_test.zig`'s test *"no byte a consumer
    supplies can smuggle a directive"*), and it has the same failure mode — a
    consumer building the string by hand gets it right until one statement's text
    carries the wrong bytes. Statement text is user-adjacent content in three
@@ -402,25 +449,27 @@ tractable at all.
 
 `4876c99` changed `RouteDef.title` to
 `Title = union(enum) { fixed: []const u8, of_locale: *const fn([]const u8) []const u8 }`
-(`src/core/router.zig:213-230`), resolved through `Title.text(locale_tag)`
-(`:224`), and gave the App the chosen locale — `App.setLocale`
-(`src/core/app.zig:737`), `App.locale()` (`:758`), `Options.locale` declared at
-`:236` and consumed by `init` at `:345` (the survey cited only `:345`).
+(`src/core/router.zig`'s `Title`), resolved through `Title.text(locale_tag)`,
+and gave the App the chosen locale — `App.setLocale`, `App.locale()`, and
+`Options.locale`, a declared field on `App.OptionsRelease` (what `App.Options`
+aliases) consumed by `App.init` (`src/core/app.zig`); the survey knew only the
+`init` half.
 `setRouteTitles` and `Router.retitle` retired. `128ef2b` added `L.of(app)`
-(`src/l10n/l10n.zig:450`), `trAny` for runtime keys, and `L.chrome(locale)`
+(`src/l10n/l10n.zig`), `trAny` for runtime keys, and `L.chrome(locale)`
 deriving one reserved key per `Chrome` field at comptime — so a missing chrome
 word is a compile error rather than shipped English. `408d77b` added
-`Bound.tag()/.dir()/.chrome()` and `L.in(app)` (`:482`).
+`Bound.tag()/.dir()/.chrome()` and `L.in(app)`.
 
-**And the bundle already owns the locale *set*, at comptime.** `L.Locale`
-(`src/l10n/l10n.zig:282`) is an exhaustive enum over the bundled locales,
-`L.tag(loc)` (`:292`) gives each one its BCP 47 tag, `L.dir(loc)` (`:302`) its
-direction, `L.default_locale` (`:289`) the template, and `L.resolve(tag)`
-(`:390`) maps a device tag onto them. This is load-bearing for B1 below and the
+**And the bundle already owns the locale *set*, at comptime.** In
+`src/l10n/l10n.zig`: `L.Locale` is an exhaustive enum over the bundled locales,
+`L.tag(loc)` gives each one its BCP 47 tag, `L.dir(loc)` its
+direction, `L.default_locale` the template, and `L.resolve(tag)`
+maps a device tag onto them. This is load-bearing for B1 below and the
 survey did not have it.
 
-**An earlier line in `src/core/router.zig:56` reading "Comptime, and a locale is
-not" is gone.** A consumer-side brief quoted it as current doctrine last week; it
+**An earlier sentence in `RouteDef.title`'s doc comment (`src/core/router.zig`)
+reading "Comptime, and a locale is not" is gone** — `4876c99` deleted it. A
+consumer-side brief quoted it as current doctrine last week; it
 was already false. Worth knowing that this area moved recently and quickly.
 
 ### What is still missing
@@ -461,7 +510,7 @@ shape. If a generator needs the set, it needs `L.Locale`, not a literal.
 
 **`.origin` and `.path` are the app's, and they are real** — but note the URL
 half of B1 is *already expressible*. `Refs.resolve` returns a `Dest`
-(`src/render/dom/serialize.zig:65-93`), and a driver's resolver can return
+(`Refs` and `Dest`, `src/render/dom/serialize.zig`), and a driver's resolver can return
 `/fa/…` for any route today; that is precisely what the reference site's
 `Resolver` does with its own scheme. Nothing in the library stands between a
 driver and a locale-prefixed href.
@@ -508,10 +557,9 @@ driver callback and gets the same set, so the two cannot disagree.
 
 ### B3. Sitemap alternates
 
-**Receipt.** `main.zig:688-704` (`writeExtras`) emits a flat `<urlset>` of
-`<loc>` only — the `<loc>` line is `:698` — with no `lastmod`, no `changefreq`
-and no `<xhtml:link>` alternates. `robots.txt` at `:706-709`. (The survey cited
-`:692-702` and `:707-708`.)
+**Receipt.** `main.zig`'s `writeExtras` emits a flat `<urlset>` of
+`<loc>` only, with no `lastmod`, no `changefreq`
+and no `<xhtml:link>` alternates; it writes `robots.txt` in the same function.
 
 For a multi-locale site the sitemap should carry `<xhtml:link rel="alternate">`
 per locale per URL. Same derivation as B2 from the same inputs — and under B2's
@@ -522,8 +570,8 @@ end up on opposite sides of the boundary.
 ### B4. The output-path scheme
 
 The reference driver maps home → `index.html`, 404 → `404.html`, else
-`<route>/index.html` (`outPath`, `main.zig:393-400`; the survey cited `:345-357`,
-which now lands inside `failOnStale`). A locale axis
+`<route>/index.html` (`main.zig`'s `outPath`; the survey pointed at
+`failOnStale` instead). A locale axis
 multiplies that, and the default-locale question (`/en/…` versus bare) is a real
 fork the consumer has already answered one way (Astro's
 `prefixDefaultLocale: true`).
@@ -534,12 +582,13 @@ stub at `/` must say, which the consumer already has two of.
 
 ### B5. Route references are ASCII-only — a constraint the survey did not find
 
-**Receipt.** `validIdent` (`src/core/router.zig:261-268`) permits exactly
+**Receipt.** `validIdent` (`src/core/router.zig`) permits exactly
 `[A-Za-z0-9_.-]`; `Router.writeRef` refuses everything else with
-`error.RouteArgCharset` (`:462`), and `resolve` refuses the same set on the way
-back in (`:626`). `arg_separator` is `'~'` (`:241`) and `max_ref_bytes` is 256
-(`:246`). The rule is stated on purpose — *"an argument is an identifier and not
-a payload. Free text is a URL, which is deep_link's business"* (`:255-260`).
+`error.RouteArgCharset`, and `Router.resolve` refuses the same set on the way
+back in, as `.arg_charset`. `arg_separator` is `'~'` and `max_ref_bytes` is 256.
+The rule is stated on purpose, in `validIdent`'s own doc comment — *"an argument
+is an identifier and not a payload. Free text is a URL, which is deep_link's
+business"*.
 
 **Benign for the incoming consumer as built.** Its generated paths are ASCII
 even under `/fa/` — the locale prefix is a BCP 47 tag and the statement slugs
@@ -573,24 +622,26 @@ wrong:
 - `4044e66` — `dom.driver_files` became the library's statement of the file set.
   The survey quoted this as *"this site once re-typed two of the four and shipped
   a service-worker registration that 404ed on every page load"*; that sentence is
-  nowhere in the repo. The real lines are `driver_files.zig:11-18`: sw.js is
+  nowhere in the repo. The real words are `driver_files.zig`'s module doc
+  comment: sw.js is
   registered *by URL*, so *"a missing one is a silent 404 at runtime, not a build
   error, which is exactly why the set is data rather than prose"*, closing with
   *"The one consumer that re-typed this list shipped two of the four."* Same
   argument; it is worth having it in the words the repo actually uses.
 - `Refs.write` → `Refs.resolve` returning `Dest` — because *"closing `href="` by
   hand to smuggle attributes in was the sharpest bypass any consumer had, and
-  this shape is what removes it"* (`serialize.zig:49-51` — this one the survey
+  this shape is what removes it"* (`Refs`'s doc comment, `serialize.zig` — this
+  one the survey
   quoted accurately, just clipped). The signature's other half is the harder
-  rule: *"a hook that writes `em.out` is re-opening the door this signature
-  closed"* (`:63-64`).
+  rule, at the close of that same comment: *"a hook that writes `em.out` is
+  re-opening the door this signature closed"*.
 - `86e73e6` — `Router.ref` replaced ~20 hand-rolled reference formatters. **It is
-  `Router.writeRef` now** (`src/core/router.zig:457`), renamed by `627ceda`'s
-  vocabulary sweep; anyone grepping for `Router.ref` on this line will find
+  `Router.writeRef` now** (`src/core/router.zig`), renamed by `627ceda`'s
+  vocabulary sweep; anyone grepping for `Router.ref` will find
   nothing.
 - `92ef0ba` — `testing.shell` shipped: *"The shell a driver links instead of
   writing… Before this module every driver wrote the same block by hand"*
-  (`src/testing/shell.zig:1-9`), and a static-site generator is one of the
+  (`src/testing/shell.zig`'s module doc comment), and a static-site generator is one of the
   drivers it names. **The survey attributed to this commit a quote — "a generator
   is a platform shell and gets its shell from nokre" — that appears nowhere in
   the repo.** The commit is real and the direction is right; the sentence was
@@ -601,23 +652,25 @@ wrong:
 `dom.driver_sources` among them. That one is real but it is not from that round:
 it landed in **`e1e9f43`**, the closing sweep of the round *this file succeeds*
 (the driver JS `@embedFile`d, so a generator stops joining a checkout path to
-find bytes a stale copy could outlive — `dom.zig:51-69`). It strengthens the
+find bytes a stale copy could outlive — `dom.zig`'s `driver_sources`). It strengthens the
 pattern; it does not belong in that round's tally.
 
 **The survey then said the previous handoff's own Part C carried two more that
 "remain open." Both shipped, and the Part E it pointed at never listed them.**
-The site calls `app.router.current()` (`getnokre.github.io/src/links.zig:141-142`,
-under a comment saying *"the router has already answered the question"*), and
-`packaging.web_page_files` (`src/packaging/packaging.zig:867`) is the one
-statement of the pkg-web quartet, consumed exhaustively at
-`build.zig:1609-1619` with a `@compileError` for any name lacking a writer;
-`build.zig:764` re-types nothing. There is no live item here — only a dangling
+The site calls `app.router.current()` (`getnokre.github.io/src/links.zig`'s
+`currentPage`, under a doc comment saying *"the router has already answered the
+question"*), and
+`packaging.web_page_files` (`src/packaging/packaging.zig`) is the one
+statement of the pkg-web quartet, consumed exhaustively in `build.zig`'s
+`addPkgTree` with a `@compileError` for any name lacking a writer. Nothing in
+`build.zig` re-types it: `addWebSite` appends that same list into
+`site.manifest`. There is no live item here — only a dangling
 pointer, now removed.
 
 **The counter-argument deserves equal weight**, and it is the one that killed
 this before: a GUI library that emits sitemaps and structured data has stopped
-being a GUI library. `docs/localization.md:400` already refuses a smaller thing
-on exactly this ground. The document a browser needs around a screen is a
+being a GUI library. `docs/localization.md`, "The refusals", already refuses a
+smaller thing on exactly this ground. The document a browser needs around a screen is a
 publishing concern, and publishing concerns have opinions — about origins,
 redirects, canonicalisation, indexing policy — that a framework should not hold.
 
@@ -638,43 +691,50 @@ Verified present. An item proposing any of these is a survey miss.
 
 - **The static+hydrate pair is real, documented, and shipping.**
   `nokreWebRefs` exists precisely for pages pre-published as files
-  (`live.zig:50-54`, wired `:226`); the site declares all three decls
-  (`web.zig:67,73,94` — `nokreWebSeed` is `:67`, not `:66`). The hydration
-  contract is explicit — `dom-edition.md:581-592`: match is tag + `data-n`
-  (`:587-592`), *"the ids are a hydration contract, not decoration"*, and it
-  carries scroll, focus and caret through the handover. `dom-edition.md:79`
+  (`live.zig`'s module doc comment states it; `live.zig`'s `boot` installs it);
+  the site declares all three decls — `nokreWebSeed`, `nokreWebBuild` and
+  `nokreWebRefs`, in `web.zig`. The hydration
+  contract is explicit — `dom-edition.md`, "The seams", the **Node ids**
+  bullet: match is tag + `data-n`,
+  *"the ids are a hydration contract, not decoration"*, and it
+  carries scroll, focus and caret through the handover. `dom-edition.md`, "Two
+  drivers, one walk",
   calls a static page *"the useful degenerate case of the pair."* The consumer's
   two interactive surfaces need exactly this.
 
   **Two qualifications the survey's "no new mechanism is required" glosses
   over.** First, A1a: the pair carries no locale, and the same `data-n` match
   quoted above is what makes booting the wrong one silent. Second, **the seed
-  costs a network fetch per page** — `live.js:83` does
-  `fetch(seed).then((r) => r.text())`, a URL, not inline bytes. That is the right
+  costs a network fetch per page** — `live.js`'s `mount` builds its `seeding`
+  promise as `fetch(seed).then((r) => r.text())`, a URL, not inline bytes. That is the right
   trade for two interactive surfaces and for a doc site handing over its
   Markdown; it is not free at 4,250 pages, and a consumer reading "no new
   mechanism is required" should know which mechanism it is getting.
-- **Build-time gates**: a11y audit per screen (`main.zig:140-154`, now with
-  `audit.collect` `Options{skip}` — the survey cited `:141-152`),
-  broken-reference check including `#anchor` targets (`:184-216`, anchors via
-  `em.takeAnchors` at `:179`), icon-subset/tofu (`:244-255`), stale-output
-  (`failOnStale` `:348-382`). These are stronger than the Astro site's
+- **Build-time gates**, all four reached from `main.zig`'s `main`: the a11y
+  audit per screen, inside its "every screen" loop, now calling `audit.collect`
+  with `Options{ .skip = &.{.unresolvable_route} }`; the "link check" banner's
+  pass over broken references including `#anchor` targets, whose anchors are
+  harvested per page with `em.takeAnchors`; the "icon check" banner's
+  subset/tofu coverage; and stale output, in `failOnStale`. These are stronger than the Astro site's
   equivalents and are a reason to migrate, not a gap to fill.
 - **Heading anchors already handle Persian and Arabic, deliberately** — so
-  nobody should propose slug work for the RTL locale. `serialize.zig:1276-1290`
+  nobody should propose slug work for the RTL locale. `serialize.zig`'s
+  `headingId`
   keeps Unicode word characters byte-wise, because *"dropping these bytes would
   slug every Persian or Arabic heading to 'section' — one anchor for a whole
   document"*, with only General Punctuation (U+2000–U+206F) carved out to match
   what GitHub's slug drops. A three-locale docs collection gets working
   per-heading anchors in all three with nothing asked for.
-- **Colour is refused, permanently.** Thirteen grays — the `Gray` enum at
-  `src/core/color.zig:23`, `g0`–`g12` at `:24-36` — and `docs/elements.md:792`.
+- **Colour is refused, permanently.** Thirteen grays — `src/core/color.zig`'s
+  `Gray`, `g0` through `g12` — and `docs/elements.md`, in the Google button's
+  paragraph on its G: *"your app remains grayscale-only"*.
   The consumer has been told; it is a brand decision on their side, not a request
   on yours.
-- **No image element.** Settled: `Role` (`src/core/element.zig:1467-1511`) has
+- **No image element.** Settled: `Role` (`src/core/element.zig`) has
   forty-three members and none of them is an image. A4 is a `<meta>` URL and
-  nothing more. One stale line to fix while someone is nearby, though:
-  `docs/introduction.md:180` still describes the closed set as *"static text and
+  nothing more. One stale sentence to fix while someone is nearby, though:
+  `docs/introduction.md`, "The vocabulary", still describes the closed set in its
+  **Elements** bullet as *"static text and
   images"* — the one place in the consumer-facing docs that promises an element
   that does not exist, on the exact question a site migration will ask.
 - **Locale-aware route titles, App-owned locale, `L.of`/`L.in`/`Bound`, and the
@@ -691,9 +751,10 @@ read:
 of the reference driver's own resolution policy, which has never existed in
 nokre. Listing it under "already yours" in a brief addressed to nokre's owner
 reads as an offer of something nokre does not have. What nokre ships is `Refs`
-and `Dest` (`src/render/dom/serialize.zig:65-93`, about thirty lines including
+and `Dest` (`src/render/dom/serialize.zig`, about thirty lines including
 the doc comment) — the seam; the 417 lines are what a driver writes against it.
-`Live` is at `links.zig:111`, not `:118` (`:118` is `Live.refs`).
+The quote's second citation lands on `Live.refs`, the method, rather than on
+`Live` itself.
 
 The bullet's closing sentence is right and worth keeping on those terms: **one
 resolver spent by both the generator and the wasm build is the pattern the
@@ -716,10 +777,12 @@ carried bullets contradicted it.
 What is genuinely still open:
 
 - **Part D — performance.** Untouched; Part F item 12 of the old round did not
-  scope it. Verified still true at HEAD: `shim/nokre_skia.cpp:276` still
+  scope it. Verified still true at HEAD: `shim/nokre_skia.cpp`'s
+  `hsk_surface_pixels` still
   `readPixels` the whole surface into a persistent buffer every frame
   (~15 MB/frame at 1200×800@2×) where a CPU raster surface can hand its pixels
-  out directly, and `src/render/dom/services.js:351-355`'s measure cache is
+  out directly, and the `widths` cache behind `src/render/dom/services.js`'s
+  `measure` is
   still cleared only on `loadingdone`, so a long editing session grows it
   without bound. Plus the DOM edition ignoring `needs_frame`, and `hsk_dither`
   rebuilding a 2×2 bitmap and shader per scrim call.
@@ -760,7 +823,8 @@ were deleted. Full receipts at `git show 3855adf:HANDOFF.md`:
 - **Two consumer-side defects**, both flagged and neither fixed: org `Invites`
   serves two routes and resets its notice only on organization change, so a
   failure leaks across navigation and is reported out of context; and org
-  `organizations_sheets.zig:13`'s join-code sheet carries `.error_copy` but no
+  `organizations_sheets.zig`'s `render` builds the join-code sheet with
+  `.error_copy` but no
   `.busy`, so its submit has no in-flight representation where its sibling does.
 
 ---
@@ -796,10 +860,12 @@ sharper test than it first looks:
   link and every cross-doc fragment in `docs/` breaks, and the round would be
   paying it to learn nothing it could not learn from the identity mapping.
 
-**What it would cost here**, verified: ~20 page titles are hardcoded English in
-`src/pages.zig:64,71,78,…` and would become catalog keys against a one-locale
-bundle; the origin is hardcoded at **four** sites (`src/main.zig:440` canonical,
-`:460` `og:url`, `:698` sitemap, `:708` robots) and wants one constant whatever
+**What it would cost here**, verified: ~20 page titles are hardcoded English —
+the `.title` field of every entry in `src/pages.zig`'s `all` — and would become
+catalog keys against a one-locale
+bundle; the origin is hardcoded at **four** sites (in `src/main.zig`:
+`writeDocument`'s canonical and `og:url`, and `writeExtras`'s sitemap `<loc>`
+and `robots.txt`) and wants one constant whatever
 else happens; and the site today has no l10n surface at all, so the bundle is
 new. Nothing else moves.
 
@@ -850,7 +916,7 @@ who ends up owning it.
    brief that triggered this round asserted the opposite of the code and was
    believed, because instances and an analogy are not a rule. There are four
    instances, not the three the survey found, and the fourth
-   (`src/testing/audit.zig:212-219`) is already written as a rule — so the
+   (`src/testing/audit.zig`'s `Options.skip` doc comment) is already written as a rule — so the
    question is narrower than it looked: does that sentence get promoted out of a
    test helper's doc comment into a place a consumer reads?
 
