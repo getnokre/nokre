@@ -368,13 +368,13 @@ const SessionCtx = struct {
         }
         const root = app.tree.rootId();
         if (self.signed_in) {
-            try app.tree.append(root, .{ .heading = .{ .content = "Inbox", .level = .h1 } });
+            try app.tree.setTitle("Inbox");
             if (self.save_failed) {
                 try app.tree.append(root, .{ .text = .{ .content = "Signed in — couldn't save your session" } });
             }
             try app.tree.append(root, .{ .button = .{ .label = "Sign out", .on_press = .{ .ctx = self, .call = onSignOut } } });
         } else {
-            try app.tree.append(root, .{ .heading = .{ .content = "Welcome", .level = .h1 } });
+            try app.tree.setTitle("Welcome");
             try app.tree.append(root, .{ .button = .{ .label = "Sign in", .on_press = .{ .ctx = self, .call = onSignIn } } });
         }
     }
@@ -438,7 +438,7 @@ test "harness: init boots a routed app reading the seeded store inside its route
                 "Signed in"
             else
                 "Signed out";
-            try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = label, .level = .h1 } });
+            try app.tree.setTitle(label);
         }
     };
     var h = try Harness.init(std.testing.allocator, .{ .w = 320, .h = 240 }, .{
@@ -465,7 +465,7 @@ test "harness: init refuses an ambiguous shape, loudly" {
 test "harness: seedStore, expectStored, expectStoredAbsent" {
     const Minimal = struct {
         fn build(_: ?*anyopaque, app: *App) anyerror!void {
-            try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Home", .level = .h1 } });
+            try app.tree.setTitle("Home");
         }
     };
     var h = try Harness.init(std.testing.allocator, .{ .w = 320, .h = 240 }, .{ .build = Minimal.build });

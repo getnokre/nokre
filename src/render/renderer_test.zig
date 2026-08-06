@@ -429,7 +429,7 @@ test "no frame without a Google button carries a colored op" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
     const root = app.tree.rootId();
-    try app.tree.append(root, .{ .heading = .{ .content = "Sign in", .level = .h1 } });
+    try app.tree.setTitle("Sign in");
     try app.tree.append(root, .{ .button = .{ .label = "Sign in with Apple", .form = .{ .provider = .apple } } });
     try app.tree.append(root, .{ .button = .{ .label = "Continue", .form = .{ .filled = .chevron_right } } });
 
@@ -1719,7 +1719,7 @@ test "a spanned heading draws every run bold at the heading scale" {
     // weight while adding the slant.
     // Short enough to stay on one line, so each span is exactly one
     // draw call and the faces can be checked run by run.
-    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .level = .h1, .spans = &.{
+    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .level = .h2, .spans = &.{
         .{ .text = "Sync " },
         .{ .text = "failed", .strong = true },
         .{ .text = " now", .emphasis = true },
@@ -1731,7 +1731,7 @@ test "a spanned heading draws every run bold at the heading scale" {
     var n: usize = 0;
     var texts = rec.opsOf(.draw_text);
     while (texts.next()) |t| {
-        try testing.expectEqual(@import("../core/text.zig").Scale.h1.px(), t.size_px);
+        try testing.expectEqual(@import("../core/text.zig").Scale.h2.px(), t.size_px);
         try testing.expect(t.face.bold);
         try testing.expectEqual(std.mem.eql(u8, t.bytes, " now"), t.face.italic);
         n += 1;

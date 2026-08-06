@@ -760,8 +760,7 @@ test "harness: settleWorkers is the moment async work lands" {
         handle: workers.Handle(Doubler) = undefined,
         fn build(ctx: ?*anyopaque, app: *App) !void {
             _ = ctx;
-            const root = app.tree.rootId();
-            try app.tree.append(root, .{ .heading = .{ .content = "Search", .level = .h1 } });
+            try app.tree.setTitle("Search");
         }
     };
     var ctx: Ctx = .{ .sink = .{ .gpa = gpa } };

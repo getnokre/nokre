@@ -75,6 +75,10 @@ pub const Cursor = struct {
         try c.tree.append(c.at, .{ .text = .{ .spans = spans } });
     }
 
+    /// A section heading, `h2` and deeper. The page's own top is not a
+    /// heading a builder writes — it is what the screen is called, said
+    /// once (`App.setTitle`) and drawn above all of this — so `.h1` here
+    /// is `error.HeadingAtTitleLevel`.
     pub fn heading(c: Cursor, level: element_mod.HeadingLevel, content: []const u8) !void {
         try c.tree.append(c.at, .{ .heading = .{ .level = level, .content = content } });
     }
@@ -329,11 +333,17 @@ pub const Cursor = struct {
     /// never nokre's), and every field defaults to "append nothing" —
     /// the gate's floor is a bare `phase == .ready` check.
     pub const LoadGate = struct {
-        /// An `h1` opening the loading and failed states, for screens
-        /// that gate their whole body: the ready branch usually heads
-        /// itself with a loaded value (a row's own name), so the
-        /// placeholder title belongs to the not-ready states alone.
-        /// Appended before the copy, never on ready.
+        /// The screen's title while the value is not ready, for screens
+        /// whose real one is the loaded value (a row's own name): the
+        /// ready branch states that itself, so the placeholder belongs
+        /// to the not-ready states alone.
+        ///
+        /// It states the title rather than appending a heading
+        /// (`Tree.setTitle`), so a routed screen with no placeholder to
+        /// offer keeps the route's title standing instead of losing its
+        /// top while it loads — which is why null means "leave it",
+        /// not "draw nothing". `""` is how a gate says the screen has
+        /// no title yet.
         title: ?[]const u8 = null,
         /// Body copy while the value is `.idle` or `.loading` — the two
         /// phases render identically everywhere (an `ensure*`-on-build
@@ -376,12 +386,12 @@ pub const Cursor = struct {
     pub fn loadGate(c: Cursor, phase: load_mod.Load, g: LoadGate) !bool {
         switch (phase) {
             .idle, .loading => {
-                if (g.title) |t| try c.heading(.h1, t);
+                if (g.title) |t| try c.tree.setTitle(t);
                 if (g.loading) |copy| try c.text(copy);
                 return false;
             },
             .failed => {
-                if (g.title) |t| try c.heading(.h1, t);
+                if (g.title) |t| try c.tree.setTitle(t);
                 if (g.failed) |copy| try c.text(copy);
                 if (g.retry) |r| try c.button(.{
                     .label = r.label,

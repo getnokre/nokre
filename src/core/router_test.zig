@@ -138,6 +138,7 @@ fn argApp(data: *CtxData) !App {
 fn pushedTitle(app: *App) []const u8 {
     var it = app.tree.children(app.tree.rootId());
     _ = it.next(); // .back
+    _ = it.next(); // the screen's title, drawn from the route's
     return app.tree.getConst(it.next().?).?.label();
 }
 
@@ -623,7 +624,8 @@ test "reload from inside a route builder is a refused no-op" {
     // refused over — which is what the audit fails the test on
     // (audit_test.zig proves that half).
     try testing.expectEqual(@as(u32, 1), data.built);
-    try testing.expectEqual(@as(usize, 1), app.tree.childCount(app.tree.rootId()));
+    // The screen's title and the one element the fixture appends.
+    try testing.expectEqual(@as(usize, 2), app.tree.childCount(app.tree.rootId()));
     try testing.expectEqual(.reload_in_build, app.router.refused.?.reason);
     try testing.expectEqualStrings("loader", app.router.refused.?.ref());
 
@@ -634,7 +636,7 @@ test "reload from inside a route builder is a refused no-op" {
     app.router.refused = null;
     try app.reload();
     try testing.expectEqual(@as(u32, 2), data.built);
-    try testing.expectEqual(@as(usize, 1), app.tree.childCount(app.tree.rootId()));
+    try testing.expectEqual(@as(usize, 2), app.tree.childCount(app.tree.rootId()));
 }
 
 test "an argument is an identifier, not a payload" {

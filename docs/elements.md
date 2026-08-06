@@ -21,7 +21,7 @@ cursor, so nesting is the return value:
 
 ```zig
 const b = app.root();
-try b.heading(.h1, "Inbox");
+try b.heading(.h2, "Unread");
 const row = try b.stack(.{ .axis = .horizontal });
 try row.button(.{ .label = "Refresh", .on_press = .bind(State.refresh, state) });
 ```
@@ -98,10 +98,11 @@ shows `.idle` for at most one frame, and distinct words for it would
 flash. Every option defaults to appending nothing, so each state keeps
 only what the screen actually says: drop `.retry` where retrying can't
 help (a revoked invite), drop `.failed` where the failure is silent,
-drop both copies and the gate is a bare phase check. `.title` adds an
-`h1` over the loading and failed states alone, for screens that gate
-their whole body and head the ready state with a loaded value (a row's
-own name). The retry renders as a secondary-form button — recovery
+drop both copies and the gate is a bare phase check. `.title` states
+the screen's title over the loading and failed states alone, for
+screens whose real one is the loaded value (a row's own name); null
+leaves whatever is standing, so a routed screen keeps its route's title
+while it loads. The retry renders as a secondary-form button — recovery
 beside the failure copy, never the screen's primary act. All copy is
 the app's: nokre ships no words it would then have to translate.
 A phase switch whose states say more than this (styled copy, extra
@@ -375,12 +376,18 @@ all read the same geometry walk, so what you see underlined is exactly
 what you can tap.
 
 ### `heading`
-`h1` through `h6`, mapped to fixed sizes on the type scale. Headings are
+`h2` through `h6`, mapped to fixed sizes on the type scale. Headings are
 structure, not styling — the a11y audit fails if you skip levels.
+
+`h1` is not a builder's to write (`error.HeadingAtTitleLevel`): the
+page's top is what the screen is called, stated once and drawn by the
+library — `RouteDef.title`, or `App.setTitle` where the two differ
+([routing.md](routing.md)). So a screen's sections start at `h2`, which
+is the level field's default.
 
 | Level | px | Level | px |
 | --- | --- | --- | --- |
-| `h1` | 32 | `h4` | 18 |
+| `h1` (the title) | 32 | `h4` | 18 |
 | `h2` | 24 | `h5` | 16 (body) |
 | `h3` | 20 | `h6` | 12 (small) |
 
@@ -1368,11 +1375,12 @@ to literal source text, and how links resolve are all
 [markdown.md](markdown.md)'s — its one home.
 
 `label` is the document's accessible name and is mandatory.
-`base_level` is where its outline starts: `.h1` for a body that is the
-page, `.h2` for one under a title the screen already drew. Left at the
-default under a title, a body publishes an `h1` per section — the
-rebase that makes the field necessary, and the two audit rules that
-check the answer, are [markdown.md](markdown.md)'s too.
+`base_level` is how deep the body hangs under the page's title: `.h2`,
+the default, for a body appended to the screen; deeper for one that
+belongs to a section rather than to the page. `.h1` is refused — a body
+cannot be the page's top. The rebase that makes the field necessary,
+and the audit rule that checks a base too deep, are
+[markdown.md](markdown.md)'s too.
 
 ### `segmented`
 An exclusive choice among 2+ fixed options — radiogroup semantics, not

@@ -74,16 +74,59 @@ The title is *declared*, and nothing derives it. Not from `name`, which
 is an identifier and reads like one (`sign_in`). Not from the screen's
 first heading, which is **content**: a builder may lead with anything,
 may localize it, may not have a heading at all, and nothing obliges the
-one it has to still be there after the next edit. A heading is written
-for the page; a title is declared for the chrome. Neither is the other's
-source, and a screen is free to show both — the way a nav item's title
-already sits beside that section's own heading.
+one it has to still be there after the next edit.
 
 It names the *route*, not the screen: `note~42` and `note~43` are both
 "Note". A `.of_locale` title is a function of the app's chosen locale
 and of nothing else — never of the reference — so a per-instance title
 stays refused: that would be a callback asking the router to find out
 per screen what to draw.
+
+### The page says what the screen is called
+
+That refusal holds, and the arrow now runs the other way. The router
+draws this title as the page's `h1`, above everything the builder
+appends and below the back control that shares its line:
+
+```zig
+.{ .name = "notes", .title = .{ .fixed = "Notes" }, .build = buildNotes },
+```
+
+```zig
+fn buildNotes(state: *State, app: *nokre.App) !void {
+    const b = app.root();
+    try b.text("Nothing yet.");   // the "Notes" heading is already there
+}
+```
+
+Deriving a *declaration* from *content* was the mistake the paragraph
+above refuses. Drawing content from a declaration is the opposite, and
+it is what a declaration is for: the roster, the collapsed chip, the
+off-roster marker and the top of the page now say one thing, and a
+builder writing the same words again as an `h1` would be the second
+copy of a fact the app already answered.
+
+An `h1` is therefore not a builder's to write —
+`error.HeadingAtTitleLevel`, [accessibility.md](accessibility.md) — and
+a screen's sections start at `h2`.
+
+Two screens want something else, and both say so:
+
+```zig
+try app.setTitle(note.name);   // "Note" to the chrome, its own name to the reader
+try app.setTitle("");          // this screen draws no title
+```
+
+`App.setTitle` states a fact about the screen rather than appending an
+element, so it may be called at any point in the build — including
+after the load that produced the words — and the title still lands
+where a page's title goes. A second call restates the words in the node
+already standing. The chrome goes on naming the *route*, because a
+roster of destinations whose builders have not run has nothing else to
+name them by.
+
+Like every other word a builder writes, the drawn title follows a
+rebuild rather than `setLocale`.
 
 A title is the words themselves or the words as a function of the
 app's **chosen locale**: `.{ .fixed = "Notes" }` for an app in one

@@ -31,7 +31,7 @@ const TodoCtx = struct {
 fn buildTodo(ctx: ?*anyopaque, app: *App) anyerror!void {
     const data: *TodoCtx = @ptrCast(@alignCast(ctx.?));
     const root = app.tree.rootId();
-    try app.tree.append(root, .{ .heading = .{ .content = "Todo", .level = .h1 } });
+    try app.tree.setTitle("Todo");
     try app.tree.append(root, .{ .text_input = .{
         .label = "New item",
         .placeholder = "What needs doing?",
@@ -208,7 +208,7 @@ const ChoiceCtx = struct {
 fn buildChoices(ctx: ?*anyopaque, app: *App) anyerror!void {
     const data: *ChoiceCtx = @ptrCast(@alignCast(ctx.?));
     const root = app.tree.rootId();
-    try app.tree.append(root, .{ .heading = .{ .content = "Preferences", .level = .h1 } });
+    try app.tree.setTitle("Preferences");
     try app.tree.append(root, .{ .segmented = .{
         .label = "View",
         .options = &.{ "List", "Grid", "Compact" },
@@ -353,8 +353,10 @@ test "e2e: the notice verbs fail loudly when the title is not pending" {
 test "e2e: harness rejects screens that fail the audit" {
     const bad = struct {
         fn build(_: ?*anyopaque, app: *App) anyerror!void {
-            // Skipped heading level: h2 with no h1 before it.
+            // Skipped heading level: the outline opens at h2, so an h4
+            // under it has no h3 to hang from.
             try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Section", .level = .h2 } });
+            try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Deeper", .level = .h4 } });
         }
     };
     diag.quiet = true;

@@ -65,8 +65,19 @@ pub const RouteDef = struct {
     /// identifier and reads like one (`sign_in`), or from the screen's
     /// first heading, which is *content* — a builder may lead with
     /// anything, may localize it, may not have one at all, and nothing
-    /// obliges it to still be there after the next edit. A title is
-    /// declared; a heading is written. Neither derives from the other.
+    /// obliges it to still be there after the next edit.
+    ///
+    /// That refusal held, and the arrow now runs the other way: the
+    /// page's `h1` is drawn from this title (`Router.rebuild`,
+    /// `Tree.setTitle`) rather than this title being read off the page.
+    /// Deriving a declaration from content was the mistake; drawing
+    /// content from a declaration is what a declaration is for. So the
+    /// nav's roster, the collapsed chip, the off-roster marker and the
+    /// top of the page all say one thing, and a screen whose reader-
+    /// facing title is per-reference restates only that one
+    /// (`App.setTitle`) — the chrome goes on naming the *route*, which
+    /// is what a roster of destinations whose builders have not run can
+    /// name at all.
     ///
     /// It names the route, not the screen: `note~42` and `note~43` are
     /// both "Note". A `.of_locale` function is a function of the app's
@@ -703,12 +714,22 @@ pub const Router = struct {
         app.ack = null;
         // A pushed screen always has a way back, and the framework
         // installs it — consumers never wire their own. It leads the
-        // content, sharing the first element's line (a heading, by
-        // convention). At depth 1 (a section root) there is nothing
-        // to go back to and no control.
+        // content, sharing the screen title's line. At depth 1 (a
+        // section root) there is nothing to go back to and no control.
         if (self.stack.items.len > 1) {
             try app.tree.append(app.tree.rootId(), .{ .back = .{ .label = app.chrome.back } });
         }
+        // The page's top, drawn before the builder rather than left to
+        // it. The screen is already named — a route with no title is a
+        // refusal at the table — so making a builder write the same
+        // words again as an `h1` would be a second copy of a fact the
+        // app already answered, and the second copy is the one that
+        // goes stale. A screen whose real title is per-reference
+        // (`note~42` is "Note" to the chrome and the note's own name to
+        // the reader) restates it with `App.setTitle`, which finds this
+        // node rather than adding a second; `setTitle("")` takes it
+        // away.
+        try app.tree.setTitle(def.title.text(app.locale()));
         try def.build(app.ctx, app);
         // After the builder and before the invalidate, so the restored
         // offsets are what the rebuilt screen's *first* layout sees and

@@ -759,6 +759,36 @@ pub const App = struct {
         return self.locale_buf[0..self.locale_len];
     }
 
+    /// States what this screen is called, and draws it as the page's
+    /// `h1` above everything the builder appends (`Tree.setTitle`).
+    ///
+    /// A routed screen already has one: the router draws
+    /// `RouteDef.title` before the builder runs, so an app that says
+    /// nothing here still publishes a page with a top. This is for the
+    /// screen whose title is not the route's — `note~42` is "Note" to
+    /// the chrome and "Meeting notes" to the reader — and for the one
+    /// that wants no visible title at all, which is `setTitle("")` and
+    /// nothing else.
+    ///
+    /// It is a screen's fact, not a builder's element, so it may be
+    /// said at any point in the build and lands in the same place
+    /// either way — which is what lets a screen state the title it only
+    /// learns from a load it just finished.
+    ///
+    /// Content, not chrome: like every other word a builder writes, the
+    /// drawn title follows a rebuild rather than `setLocale`.
+    pub fn setTitle(self: *App, words: []const u8) !void {
+        try self.tree.setTitle(words);
+        self.invalidate();
+    }
+
+    /// What this screen is called (`setTitle`) — `""` when it draws no
+    /// title. A static driver reads it for the `<title>` it would
+    /// otherwise be made to restate (docs/static-sites.md).
+    pub fn title(self: *const App) []const u8 {
+        return self.tree.title();
+    }
+
     /// Sets the chrome direction, mirroring the layout when it changes.
     /// Pair it with the locale — `app.setDirection(L.dir(loc))` beside
     /// `setLocale` — or with a raw tag via `l10n.directionOfTag`. This mirrors

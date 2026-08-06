@@ -560,18 +560,21 @@ fn buildHome(state: *State, app: *h.App) !void {
     const tree = &app.tree;
     const b = app.root();
 
-    // A spanned *heading* is the one shape the cursor does not carry
-    // (`spanned` is text's); the raw form is the substrate for it.
-    try tree.append(b.at, .{ .heading = .{ .level = .h1, .spans = &.{
-        .{ .text = "Kitchen " },
-        .{ .text = "Sink", .strong = true },
-    } } });
+    // The route calls this screen "Home"; the page calls itself
+    // something else, which is the whole of what `setTitle` is for. It
+    // is words, not spans — every title in nokre is.
+    try app.setTitle("Kitchen Sink");
     try b.text("Every element nokre has. There is no hover, no animation, no color — and nothing to configure.");
     state.status_id = try b.styledId("Ready.", .{ .scale = .small, .ink = .dark });
     try b.divider();
 
     try b.heading(.h2, "Type");
-    try b.heading(.h3, "Subheading (h3)");
+    // A spanned *heading* is the one shape the cursor does not carry
+    // (`spanned` is text's); the raw form is the substrate for it.
+    try tree.append(b.at, .{ .heading = .{ .level = .h3, .spans = &.{
+        .{ .text = "Subheading, " },
+        .{ .text = "spanned", .strong = true },
+    } } });
     try b.text("Body prose wraps greedily at word boundaries and never hyphenates.");
     try b.styled("const answer = 42; // mono", .{ .family = .mono });
     try b.spanned(&.{
@@ -877,7 +880,8 @@ fn buildHome(state: *State, app: *h.App) !void {
 
 fn buildDetails(_: *State, app: *h.App) !void {
     const b = app.root();
-    try b.heading(.h1, "Details");
+    // "Details" is the route's title, already drawn above this, with
+    // the Back control sharing its line.
     try b.text("A second screen. Navigation is a stack; there are no transitions. The nav below is app chrome: it survives every route change.");
     try b.link(.{ .label = "Back home", .route = "home" });
 
@@ -899,7 +903,9 @@ fn buildDetails(_: *State, app: *h.App) !void {
 fn buildTicket(_: *State, app: *h.App) !void {
     const b = app.root();
     const id = app.routeArg(0) orelse "?";
-    try b.heading(.h1, try app.tree.fmt("Ticket {s}", .{id}));
+    // The route is "Ticket" to the chrome; the page names the one it
+    // is showing. `setTitle` restates the heading the router drew.
+    try app.setTitle(try app.tree.fmt("Ticket {s}", .{id}));
     try b.text("One route, one builder, one argument. The stack entry owns that argument, so popping back to a sibling ticket still knows which one it was.");
 }
 

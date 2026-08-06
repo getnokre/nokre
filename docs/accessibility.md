@@ -193,6 +193,9 @@ after the fact would mean the bad state existed:
 - a `more` control anywhere but on a horizontal stack, or a second one on
   the same row — the folded tail of a row of actions is the framework's
   to install (`error.MoreOutsideButtonRow`, `error.MultipleMoreControls`)
+- a heading at level 1, or a `document` whose `base_level` is `.h1` —
+  the page's top is the screen's title, stated once and drawn by the
+  library (`error.HeadingAtTitleLevel`, below)
 - choice controls (segmented, radio group, select) with fewer than two
   options, empty option labels, or a selection out of range
 - empty badges, valueless copyables, wordless or out-of-range meters,
@@ -205,6 +208,36 @@ after the fact would mean the bad state existed:
 - text that would be a glare source: the same pair must also stay at or
   below 16:1. True ink on true paper is 21:1, which is past the point
   where contrast buys legibility — `error.ExcessiveTextContrast`
+
+#### One page, one top — and it is stated, not found
+
+A page's outline starts at its title, and nokre asks for that title
+rather than looking for it. A routed screen already stated it once, at
+the route table, so the library draws it (`RouteDef.title`,
+[routing.md](routing.md)); a screen whose reader-facing title is
+per-reference restates it with `App.setTitle`, and `setTitle("")` says
+this screen draws none. Every other append at level 1 is
+`error.HeadingAtTitleLevel`.
+
+This replaced an audit rule, `multiple_h1`, and the trade is worth
+recording so it is not re-litigated:
+
+- **What the old rule enforced is not normative.** HTML5's sectioning
+  permits several `h1`s, and nothing in WCAG says otherwise — unlike
+  the citations on this page for focus (2.1.2), contrast, and target
+  size (2.5.5/2.5.8). Its basis was screen-reader outline navigation
+  and the outline a search engine builds. Failing a build over a
+  convention, while presenting it beside cited rules, was the defect.
+- **So it stopped being a rule about your content.** It is now a
+  consequence of the library owning the page's top: you are never told
+  you wrote two tops, because you were never able to write one.
+  nokre's position — one page, one top — is unchanged and is still
+  nokre's own, but it is now the shape of the API instead of a lint.
+- **A page with no visible top became statable.** Under the old rule
+  the outline started at whatever `h1` was found, and
+  `heading_level_skipped` counted from 0, so a page whose first heading
+  was `h2` failed as well: "no title at all" was not an available
+  shape. It is now, and it is said out loud rather than worked around.
 
 Structure is refused; encoding is repaired. Every string entering
 tree-owned memory — append fields and spans, choice options,
@@ -254,13 +287,10 @@ init and after every driver action — there is nothing to remember. It
 fails on:
 
 - `heading_level_skipped` — a heading more than one level deeper than
-  the previous heading (h1 → h3 with no h2 between)
-- `multiple_h1` — a second top-level heading, reported at the second and
-  every one after it. A screen has one top or none; two tell everything
-  that navigates by heading level that the page is two documents. The
-  producer to watch for is a `document` left at the default
-  `base_level` under a title the screen already drew, which mints one
-  `h1` per section of fetched content ([markdown.md](markdown.md))
+  the previous heading (h2 → h4 with no h3 between). The sequence
+  starts at level 1 whether or not a title is drawn, because level 1 is
+  the screen's either way, so a page opens at `h2` and a page that
+  opens at `h3` has skipped one
 - `duplicate_interactive_label` — two enabled interactive elements with
   the same accessible name are ambiguous to voice control, to screen
   reader users, and to test queries alike. Judged within the active

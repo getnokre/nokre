@@ -21,8 +21,12 @@
 //! the `heading_level_skipped` audit on content the app cannot fix.
 //! Rebasing keeps the real outline and leaves the rule intact for
 //! app-authored trees. Where that sequence *starts* is the one thing a
-//! rebased source can no longer say, so the element says it —
-//! `Document.base_level`, `h1` unless the screen already drew one.
+//! rebased source can no longer say — and it was never the source's to
+//! say, because the page's top is the screen's title (`Tree.setTitle`),
+//! not the first `#` in bytes nobody here reviewed. So the element says
+//! only how far under that title this body hangs:
+//! `Document.base_level`, `h2` unless the body belongs to a section
+//! rather than to the page.
 //!
 //! Pure Zig, no dependencies, integer-only — `core/qr.zig` is the
 //! precedent for a content module living in core.
@@ -87,11 +91,11 @@ const State = struct {
     heading_stack: [max_heading_stack]u8 = undefined,
     heading_len: usize = 0,
     /// Where the document's own top heading lands (`element.Document`).
-    base_level: element_mod.HeadingLevel = .h1,
+    base_level: element_mod.HeadingLevel = .h2,
 
     const max_heading_stack = 6;
     /// The deepest level HTML and `HeadingLevel` both have. A base past
-    /// `h1` spends part of the ladder before the document's first
+    /// `h2` spends more of the ladder before the document's first
     /// heading, so a deep source flattens onto `h6` sooner — the same
     /// deterministic flattening a 7-deep source already takes, and the
     /// only alternative is refusing content the app cannot fix.

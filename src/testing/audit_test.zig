@@ -41,7 +41,7 @@ fn navApp(w: i32, h: i32) !App {
 test "audit passes a well-formed screen" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Home", .level = .h1 } });
+    try app.tree.setTitle("Home");
     try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Section", .level = .h2 } });
     try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Act" } });
     try audit(&app);
@@ -187,12 +187,10 @@ test "audit flags skipped heading levels" {
 test "audit tracks the previous heading, not the deepest ever seen" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    // h1,h2,h3 walks down legally; coming back up to h2 resets the
-    // outline, so the h4 after it skips h3 even though an h3 already
-    // appeared. The reset is shown from h2 rather than from a second
-    // h1, which is a violation of its own now (`multiple_h1`) and would
-    // put a second finding in the list this one counts.
-    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "A", .level = .h1 } });
+    // The title's h1, then h2,h3 walks down legally; coming back up to
+    // h2 resets the outline, so the h4 after it skips h3 even though an
+    // h3 already appeared.
+    try app.tree.setTitle("A");
     try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "B", .level = .h2 } });
     try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "C", .level = .h3 } });
     try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "D", .level = .h2 } });
@@ -209,7 +207,7 @@ test "audit tracks the previous heading, not the deepest ever seen" {
 test "audit allows ascending any distance between headings" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "A", .level = .h1 } });
+    try app.tree.setTitle("A");
     try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "B", .level = .h2 } });
     try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "C", .level = .h3 } });
     try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "D", .level = .h4 } });
@@ -222,50 +220,37 @@ test "audit allows ascending any distance between headings" {
     try testing.expectEqual(@as(usize, 0), violations.items.len);
 }
 
-test "audit flags a second h1 and leaves the first alone" {
+test "a page whose top is stated needs no h1 in its content" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Title", .level = .h1 } });
-    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Section", .level = .h2 } });
-    const second = try app.tree.appendId(app.tree.rootId(), .{ .heading = .{ .content = "Also a title", .level = .h1 } });
+    // What used to be `multiple_h1`, from the other side: a body of
+    // rebased `##` sections under a drawn title lands on h2 by the
+    // element's own default and the page has exactly one top. The rule
+    // is gone because the shape it caught is now unbuildable — the
+    // refusal is `tree_test.zig`'s.
+    try app.tree.setTitle("Title");
+    try app.tree.append(app.tree.rootId(), .{ .document = .{
+        .label = "Body",
+        .source = "## One\n\n## Two\n",
+    } });
 
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(testing.allocator);
     try collect(&app, &violations, .{});
-    try testing.expectEqual(@as(usize, 1), violations.items.len);
-    try testing.expectEqual(Violation.Rule.multiple_h1, violations.items[0].rule);
-    try testing.expectEqual(second, violations.items[0].id);
+    try testing.expectEqual(@as(usize, 0), violations.items.len);
 }
 
-test "audit flags the h1 a document's default base level mints under a title" {
+test "a screen that draws no title still opens its outline at h2" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    // The screen drew the title; the fetched body's sections are ##.
-    // Rebasing lands every one of them on h1, and the page now claims
-    // two tops — the defect `base_level` exists to let a driver state
-    // its way out of.
-    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Title", .level = .h1 } });
-    try app.tree.append(app.tree.rootId(), .{ .document = .{
-        .label = "Body",
-        .source = "## One\n\n## Two\n",
-    } });
+    // The shape that had no way to exist: no title, sections at h2.
+    // The sequence starts at 1 whether or not a title was drawn, so
+    // this is an outline with its top left unsaid rather than a skip.
+    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "One", .level = .h2 } });
+    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Two", .level = .h2 } });
 
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(testing.allocator);
-    try collect(&app, &violations, .{});
-    try testing.expectEqual(@as(usize, 2), violations.items.len);
-    for (violations.items) |v| try testing.expectEqual(Violation.Rule.multiple_h1, v.rule);
-
-    // Stating the depth the body starts at clears it, with no other
-    // rule disturbed.
-    try app.tree.clearChildren(app.tree.rootId());
-    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Title", .level = .h1 } });
-    try app.tree.append(app.tree.rootId(), .{ .document = .{
-        .label = "Body",
-        .source = "## One\n\n## Two\n",
-        .base_level = .h2,
-    } });
-    violations.clearRetainingCapacity();
     try collect(&app, &violations, .{});
     try testing.expectEqual(@as(usize, 0), violations.items.len);
 }
@@ -273,10 +258,10 @@ test "audit flags the h1 a document's default base level mints under a title" {
 test "audit flags a document whose base level skips a level" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    // h1 then a body starting at h3: the gap the driver stated, caught
-    // by the rule that was already there. A base too deep and a base
-    // too shallow are both findings, so no wrong base is silent.
-    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Title", .level = .h1 } });
+    // The title's h1 then a body starting at h3: the gap the driver
+    // stated. Too deep is still a finding; too shallow is no longer
+    // reachable, since `.h1` is refused at the append.
+    try app.tree.setTitle("Title");
     try app.tree.append(app.tree.rootId(), .{ .document = .{
         .label = "Body",
         .source = "## One\n",

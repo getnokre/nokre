@@ -12,6 +12,14 @@ pub const Axis = enum { vertical, horizontal };
 /// the deeper levels descend to body and small and lean on the weight
 /// every heading carries (see `Heading.base_face`) to stay distinct from
 /// the prose around them.
+///
+/// `h1` is the screen's title's and no one else's: it arrives through
+/// `Tree.setTitle` and every other append at that level is refused
+/// (`error.HeadingAtTitleLevel`). Content therefore opens at `h2`, which
+/// is what both defaults below say. The enum keeps all six because the
+/// title is a heading like any other once it is in the tree — layout,
+/// the a11y bridge and both editions read `level` and none of them needs
+/// to know which one the library wrote.
 pub const HeadingLevel = enum(u8) {
     h1 = 1,
     h2 = 2,
@@ -313,7 +321,11 @@ pub const Text = struct {
 
 pub const Heading = struct {
     content: []const u8 = "",
-    level: HeadingLevel = .h1,
+    /// `h2` because the page's top is already spoken for
+    /// (`Tree.setTitle`): the first heading a builder writes is the
+    /// first *section*, and a default of `h1` would be a level the same
+    /// append then refuses.
+    level: HeadingLevel = .h2,
     /// As on `Text`; the base face is always `base_face`, the base ink
     /// `.ink`.
     spans: []const Span = &.{},
@@ -930,26 +942,27 @@ pub const Document = struct {
     /// The level the document's own top heading renders at; the rebase
     /// counts down from here (markdown.zig).
     ///
-    /// A field because the source cannot state it and the tree cannot
-    /// derive it. Rebasing means the source's own numbering is gone —
-    /// `#` and `##` both open at the top — so a body embedded under a
-    /// title the screen already drew had no way to say it was
-    /// subordinate, and rendered a second `h1` per section. The tree
-    /// cannot answer it either: headings here are flat, so "one deeper
-    /// than the heading before me" would make a document that is a
-    /// *sibling* of the preceding section into its child. Where the
-    /// body sits in the page's outline is editorial, and editorial is
-    /// the app's.
+    /// It no longer says where the page's outline starts — the screen's
+    /// title says that (`Tree.setTitle`) — it says how deep *this body*
+    /// hangs under it. `.h2` is the answer for a document appended to
+    /// the screen, which is nearly all of them, and it is a fact about
+    /// nokre rather than a guess about the page: level 1 is the title's,
+    /// so the first thing below it is level 2.
     ///
-    /// What stays the library's is every relationship around it: levels
-    /// still may not skip, and a page still gets one `h1` at most, both
-    /// checked by the audit — a base too deep is `heading_level_skipped`
-    /// and a base of `.h1` under a title is `multiple_h1`, so a wrong
-    /// answer fails a test rather than shipping.
+    /// The field survives the one case that stays editorial. A body
+    /// under an `h2` section is that section's, and wants `.h3`; the
+    /// tree cannot tell, because headings here are flat, so "one deeper
+    /// than the heading before me" would file a document that is a
+    /// *sibling* of the preceding section as its child. Rebasing has
+    /// already erased the source's own opinion — `#` and `##` both open
+    /// at the top — so the app is the only one left who knows.
     ///
-    /// `.h1` because a document with nothing above it *is* the outline;
-    /// a deeper default would be a guess about a page nokre cannot see.
-    base_level: HeadingLevel = .h1,
+    /// `.h1` is unstatable (`error.HeadingAtTitleLevel`): a body cannot
+    /// be the page's top, because a page's top is stated, not written
+    /// into content nobody here reviewed. Too *deep* is still the
+    /// audit's — `heading_level_skipped` — so a base that skips a level
+    /// fails a test rather than shipping.
+    base_level: HeadingLevel = .h2,
 };
 
 /// An attributed quotation: words that belong to someone other than the

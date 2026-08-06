@@ -29,7 +29,7 @@ fn renderGolden(harness: *h.testing.Harness, comptime name: []const u8) !void {
 fn buildElements(_: ?*anyopaque, app: *h.App) !void {
     const tree = &app.tree;
     const root = tree.rootId();
-    try tree.append(root, .{ .heading = .{ .content = "Elements", .level = .h1 } });
+    try tree.setTitle("Elements");
     try tree.append(root, .{ .heading = .{ .content = "Section", .level = .h2 } });
     try tree.append(root, .{ .heading = .{ .content = "Subsection", .level = .h3 } });
     try tree.append(root, .{ .text = .{ .content = "Prose text that is long enough to wrap onto a second line inside this viewport." } });
@@ -51,7 +51,7 @@ test "golden: elements screen" {
 fn buildForm(_: ?*anyopaque, app: *h.App) !void {
     const tree = &app.tree;
     const root = tree.rootId();
-    try tree.append(root, .{ .heading = .{ .content = "Form", .level = .h1 } });
+    try tree.setTitle("Form");
     try tree.append(root, .{ .text_input = .{ .label = "Name", .placeholder = "Your name" } });
     try tree.append(root, .{ .text_input = .{ .label = "City", .value = "Berlin", .cursor = 6 } });
     try tree.append(root, .{ .button = .{ .label = "Submit" } });
@@ -60,7 +60,9 @@ fn buildForm(_: ?*anyopaque, app: *h.App) !void {
 fn buildSpans(_: ?*anyopaque, app: *h.App) !void {
     const tree = &app.tree;
     const root = tree.rootId();
-    try tree.append(root, .{ .heading = .{ .level = .h1, .spans = &.{
+    // A spanned *heading*, at the level a builder may write: a title
+    // is plain words (`Tree.setTitle`), like every other title here.
+    try tree.append(root, .{ .heading = .{ .level = .h2, .spans = &.{
         .{ .text = "Rokovski " },
         .{ .text = "Feedback", .strong = true },
     } } });
@@ -117,7 +119,7 @@ test "golden: form with focused input caret" {
 fn buildFieldProblem(_: ?*anyopaque, app: *h.App) !void {
     const tree = &app.tree;
     const root = tree.rootId();
-    try tree.append(root, .{ .heading = .{ .content = "Sign up", .level = .h1 } });
+    try tree.setTitle("Sign up");
     // Refused *and* focused, in one picture: the outline is focus's to
     // change and the words are the problem's, so the two states have to
     // be legible at the same time.
@@ -146,7 +148,7 @@ test "golden: a refused field carries its reason under the outline" {
 fn buildFieldDisabled(_: ?*anyopaque, app: *h.App) !void {
     const tree = &app.tree;
     const root = tree.rootId();
-    try tree.append(root, .{ .heading = .{ .content = "Verify", .level = .h1 } });
+    try tree.setTitle("Verify");
     // The submit-in-flight form, whole: the fields are standing down
     // and the button that sent them says so. What the picture has to
     // settle is the split — the label and the outline take the disabled
@@ -183,7 +185,7 @@ test "golden: a field whose submission is in flight stands its affordance down" 
 fn buildPassword(_: ?*anyopaque, app: *h.App) !void {
     const tree = &app.tree;
     const root = tree.rootId();
-    try tree.append(root, .{ .heading = .{ .content = "Sign in", .level = .h1 } });
+    try tree.setTitle("Sign in");
     try tree.append(root, .{ .text_input = .{
         .label = "Passphrase",
         .value = "hunter2",
@@ -202,7 +204,7 @@ test "golden: obscured input draws a bullet run with the caret after it" {
 fn buildGlyphButtons(_: ?*anyopaque, app: *h.App) !void {
     const tree = &app.tree;
     const root = tree.rootId();
-    try tree.append(root, .{ .heading = .{ .content = "Cycle", .level = .h1 } });
+    try tree.setTitle("Cycle");
     const pager = try tree.appendId(root, .{ .stack = .{ .axis = .horizontal } });
     try tree.append(pager, .{ .button = .{ .label = "Previous month", .form = .{ .glyph = .chevron_left } } });
     try tree.append(pager, .{ .text = .{ .content = "March" } });
@@ -220,7 +222,7 @@ test "golden: glyph-form buttons flanking words, focused and disabled" {
 fn buildButtonForms(_: ?*anyopaque, app: *h.App) !void {
     const tree = &app.tree;
     const root = tree.rootId();
-    try tree.append(root, .{ .heading = .{ .content = "Emphasis", .level = .h1 } });
+    try tree.setTitle("Emphasis");
     const pair = try tree.appendId(root, .{ .stack = .{ .axis = .horizontal } });
     try tree.append(pair, .{ .button = .{ .label = "Save" } });
     try tree.append(pair, .{ .button = .{ .label = "Cancel", .form = .{ .secondary = null } } });
@@ -256,7 +258,7 @@ test "golden: the ring around a filled button keeps its gap" {
 fn buildActionRow(_: ?*anyopaque, app: *h.App) !void {
     const tree = &app.tree;
     const root = tree.rootId();
-    try tree.append(root, .{ .heading = .{ .content = "Draft", .level = .h1 } });
+    try tree.setTitle("Draft");
     const row = try tree.appendId(root, .{ .stack = .{ .axis = .horizontal } });
     for ([_][]const u8{ "Publish", "Save draft", "Duplicate", "Archive", "Delete" }) |label| {
         try tree.append(row, .{ .button = .{ .label = label } });
@@ -279,7 +281,7 @@ test "golden: an overflowing button row folds its tail behind More" {
 fn buildInProgressButtons(_: ?*anyopaque, app: *h.App) !void {
     const tree = &app.tree;
     const root = tree.rootId();
-    try tree.append(root, .{ .heading = .{ .content = "At work", .level = .h1 } });
+    try tree.setTitle("At work");
     // A resting pill beside a running one: same form, same fill, same
     // full-strength ink — busy is not unavailable, and the only
     // difference is the words standing down for the `…`.
@@ -318,7 +320,7 @@ test "golden: buttons at work — the ellipsis in every form, each holding its s
 fn buildAuthButtons(_: ?*anyopaque, app: *h.App) !void {
     const tree = &app.tree;
     const root = tree.rootId();
-    try tree.append(root, .{ .heading = .{ .content = "Sign in", .level = .h1 } });
+    try tree.setTitle("Sign in");
     // The words are the app's on both — nokre ships the mark and no
     // translation of the vendor's string, so every sign-in button names
     // its own wording.
@@ -362,7 +364,7 @@ test "golden: the filled sign-in button inverts with the appearance" {
 fn buildLists(_: ?*anyopaque, app: *h.App) !void {
     const tree = &app.tree;
     const root = tree.rootId();
-    try tree.append(root, .{ .heading = .{ .content = "Steps", .level = .h1 } });
+    try tree.setTitle("Steps");
 
     // Ordered from 9, so the marker column has to widen for "10." and
     // every item's words still start on the same x.
@@ -397,7 +399,7 @@ test "golden: ordered and unordered lists with a shared marker column" {
 fn buildCodeBlock(_: ?*anyopaque, app: *h.App) !void {
     const tree = &app.tree;
     const root = tree.rootId();
-    try tree.append(root, .{ .heading = .{ .content = "Verbatim", .level = .h1 } });
+    try tree.setTitle("Verbatim");
     // Fits: no clip, no indicator, indentation preserved.
     try tree.append(root, .{ .code_block = .{
         .content = "fn main() !void {\n    log(\"hi\");\n}",
@@ -419,7 +421,7 @@ test "golden: a code block that fits, and one that bleeds and clips" {
 fn buildBlockquote(_: ?*anyopaque, app: *h.App) !void {
     const tree = &app.tree;
     const root = tree.rootId();
-    try tree.append(root, .{ .heading = .{ .content = "Quoted", .level = .h1 } });
+    try tree.setTitle("Quoted");
     const quote = try tree.appendId(root, .{ .blockquote = .{} });
     try tree.append(quote, .{ .text = .{ .content = "Everything should be made as simple as possible, but no simpler." } });
     // The attribution is words inside the quote, not a field on it.
@@ -438,7 +440,7 @@ test "golden: a blockquote's leading rule spans everything it quotes" {
 /// (`unresolvable_route`), so a fixture that links somewhere needs the
 /// somewhere to exist.
 fn buildUnvisited(_: ?*anyopaque, app: *h.App) !void {
-    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Unvisited", .level = .h1 } });
+    try app.tree.setTitle("Unvisited");
 }
 
 const inline_link_routes = [_]h.RouteDef{
@@ -450,7 +452,7 @@ const inline_link_routes = [_]h.RouteDef{
 fn buildInlineLinks(_: ?*anyopaque, app: *h.App) !void {
     const tree = &app.tree;
     const root = tree.rootId();
-    try tree.append(root, .{ .heading = .{ .content = "Consent", .level = .h1 } });
+    try tree.setTitle("Consent");
     try tree.append(root, .{ .text = .{ .spans = &.{
         .{ .text = "By continuing you accept the " },
         .{ .text = "terms of service", .route = "terms" },
@@ -472,6 +474,10 @@ fn buildDocument(_: ?*anyopaque, app: *h.App) !void {
     // Legal content fetched at runtime: opens at `##`, jumps to `####`,
     // and mixes every part of the subset. The app hands over bytes it
     // did not write and gets ordinary elements back.
+    //
+    // This screen states no title, which is a shape a page may have:
+    // the body carries its own heading, and the outline opens at h2 —
+    // one below the level a title would have held.
     try app.tree.append(app.tree.rootId(), .{ .document = .{
         .label = "Terms of Service",
         .source =
@@ -502,7 +508,7 @@ test "golden: a fetched Markdown document expands into ordinary elements" {
 fn buildBadges(_: ?*anyopaque, app: *h.App) !void {
     const tree = &app.tree;
     const root = tree.rootId();
-    try tree.append(root, .{ .heading = .{ .content = "Badges", .level = .h1 } });
+    try tree.setTitle("Badges");
     const row = try tree.appendId(root, .{ .stack = .{ .axis = .horizontal } });
     try tree.append(row, .{ .badge = .{ .label = "Active" } });
     try tree.append(row, .{ .badge = .{ .label = "3 pending" } });
@@ -522,7 +528,7 @@ fn buildMarkedBadges(_: ?*anyopaque, app: *h.App) !void {
     // a band — so the row is 20px per chip wider and nothing else moved.
     const tree = &app.tree;
     const root = tree.rootId();
-    try tree.append(root, .{ .heading = .{ .content = "Tags", .level = .h1 } });
+    try tree.setTitle("Tags");
     const row = try tree.appendId(root, .{ .stack = .{ .axis = .horizontal } });
     try tree.append(row, .{ .badge = .{ .label = "Istanbul", .icon = .map_pin } });
     try tree.append(row, .{ .badge = .{ .label = "Coffee", .icon = .sparkles } });
@@ -593,7 +599,7 @@ test "golden: a wrapped row mirrors, filling each line from the right" {
 fn buildCheckboxes(_: ?*anyopaque, app: *h.App) !void {
     const tree = &app.tree;
     const root = tree.rootId();
-    try tree.append(root, .{ .heading = .{ .content = "Consent", .level = .h1 } });
+    try tree.setTitle("Consent");
     try tree.append(root, .{ .checkbox = .{ .label = "I agree to the terms", .checked = true } });
     try tree.append(root, .{ .checkbox = .{ .label = "Email me updates" } });
     try tree.append(root, .{ .button = .{ .label = "Continue" } });
@@ -610,7 +616,7 @@ test "golden: checkboxes checked, unchecked, and focused" {
 fn buildSwitchesAtWork(_: ?*anyopaque, app: *h.App) !void {
     const tree = &app.tree;
     const root = tree.rootId();
-    try tree.append(root, .{ .heading = .{ .content = "Notifications", .level = .h1 } });
+    try tree.setTitle("Notifications");
     // A resting switch above a busy one: same row height, words in the
     // same place, and only the track standing down for the `…` — the new
     // value is not a fact until the server says so.
@@ -634,7 +640,7 @@ test "golden: switches at work — the ellipsis in the control's slot, the row u
 fn buildMeters(_: ?*anyopaque, app: *h.App) !void {
     const tree = &app.tree;
     const root = tree.rootId();
-    try tree.append(root, .{ .heading = .{ .content = "Cycle", .level = .h1 } });
+    try tree.setTitle("Cycle");
     try tree.append(root, .{ .meter = .{ .label = "12 of 30 days", .value = 12, .max = 30 } });
     // Empty and full pin the fill's edge cases against the track border.
     try tree.append(root, .{ .meter = .{ .label = "0 of 30 days", .value = 0, .max = 30 } });
@@ -650,7 +656,7 @@ test "golden: meters at empty, partial, and full fill" {
 fn buildQr(_: ?*anyopaque, app: *h.App) !void {
     const tree = &app.tree;
     const root = tree.rootId();
-    try tree.append(root, .{ .heading = .{ .content = "Invite", .level = .h1 } });
+    try tree.setTitle("Invite");
     try tree.append(root, .{ .qr = .{ .label = "Invite link", .value = "https://example.com/invite/XKCD-1234" } });
     try tree.append(root, .{ .copyable = .{ .label = "Or copy it", .value = "https://example.com/invite/XKCD-1234" } });
 }
@@ -671,7 +677,7 @@ test "golden: qr code stays ink-on-paper in dark appearance" {
 fn buildTiles(_: ?*anyopaque, app: *h.App) !void {
     const tree = &app.tree;
     const root = tree.rootId();
-    try tree.append(root, .{ .heading = .{ .content = "Circle", .level = .h1 } });
+    try tree.setTitle("Circle");
     const group = try tree.appendId(root, .{
         .tile_group = .{
             // Long enough to wrap at this viewport: pins the multi-line
@@ -709,7 +715,7 @@ fn buildMarkedTiles(_: ?*anyopaque, app: *h.App) !void {
     // and a mark centred on the *row* rather than on the title's line.
     const tree = &app.tree;
     const root = tree.rootId();
-    try tree.append(root, .{ .heading = .{ .content = "Settings", .level = .h1 } });
+    try tree.setTitle("Settings");
     const group = try tree.appendId(root, .{ .tile_group = .{} });
     try tree.append(group, .{ .tile = .{ .label = "Members", .detail = "12 people", .route = "members", .icon = .users } });
     try tree.append(group, .{ .tile = .{ .label = "Invites", .route = "invites", .icon = .mail } });
@@ -731,7 +737,7 @@ test "golden: a tile group's marks share one leading band" {
 fn buildRadioGroup(_: ?*anyopaque, app: *h.App) !void {
     const tree = &app.tree;
     const root = tree.rootId();
-    try tree.append(root, .{ .heading = .{ .content = "Choices", .level = .h1 } });
+    try tree.setTitle("Choices");
     try tree.append(root, .{ .radio_group = .{
         .label = "Delivery",
         .options = &.{ "Email", "SMS", "None" },
@@ -742,7 +748,7 @@ fn buildRadioGroup(_: ?*anyopaque, app: *h.App) !void {
 fn buildIcons(_: ?*anyopaque, app: *h.App) !void {
     const tree = &app.tree;
     const root = tree.rootId();
-    try tree.append(root, .{ .heading = .{ .content = "Icons", .level = .h1 } });
+    try tree.setTitle("Icons");
     const row = try tree.appendId(root, .{ .stack = .{ .axis = .horizontal } });
     try tree.append(row, .{ .icon = .{ .name = .accessibility, .label = "Accessibility" } });
     try tree.append(row, .{ .icon = .{ .name = .activity } });
@@ -772,7 +778,7 @@ test "golden: radio group with focus ring" {
 fn buildSelect(_: ?*anyopaque, app: *h.App) !void {
     const tree = &app.tree;
     const root = tree.rootId();
-    try tree.append(root, .{ .heading = .{ .content = "Preferences", .level = .h1 } });
+    try tree.setTitle("Preferences");
     try tree.append(root, .{ .select = .{
         .label = "Language",
         .options = &.{ "English", "Deutsch", "Français" },
@@ -795,7 +801,7 @@ test "golden: select field and its open picker" {
 fn buildCountrySelect(_: ?*anyopaque, app: *h.App) !void {
     const tree = &app.tree;
     const root = tree.rootId();
-    try tree.append(root, .{ .heading = .{ .content = "Shipping", .level = .h1 } });
+    try tree.setTitle("Shipping");
     try tree.append(root, .{ .select = .{
         .label = "Country",
         .options = &.{ "Argentina", "Australia", "Austria", "Brazil", "Canada", "Denmark", "Germany", "Iceland", "Ireland" },
@@ -818,7 +824,7 @@ test "golden: long select picker carries a filter that narrows the rows" {
 fn buildCopyable(_: ?*anyopaque, app: *h.App) !void {
     const tree = &app.tree;
     const root = tree.rootId();
-    try tree.append(root, .{ .heading = .{ .content = "Emergency codes", .level = .h1 } });
+    try tree.setTitle("Emergency codes");
     try tree.append(root, .{ .copyable = .{ .label = "Recovery code", .value = "XKCD-1234-QRST" } });
     try tree.append(root, .{ .copyable = .{ .label = "Invite link", .value = "nokre.app/i/9f3k2" } });
     // Wider than the field: pins the middle elision and the glyph's
@@ -844,7 +850,7 @@ test "golden: copyable fields with mono value, copy glyph, and focus ring" {
 fn buildComposing(_: ?*anyopaque, app: *h.App) !void {
     const tree = &app.tree;
     const root = tree.rootId();
-    try tree.append(root, .{ .heading = .{ .content = "Compose", .level = .h1 } });
+    try tree.setTitle("Compose");
     // A committed prefix and suffix around the caret, so the pre-edit is
     // visibly spliced into the value rather than appended to it.
     try tree.append(root, .{ .text_input = .{
@@ -879,7 +885,7 @@ test "golden: the IME caret sits where the IME put it inside the pre-edit" {
 fn buildTextArea(_: ?*anyopaque, app: *h.App) !void {
     const tree = &app.tree;
     const root = tree.rootId();
-    try tree.append(root, .{ .heading = .{ .content = "Feedback", .level = .h1 } });
+    try tree.setTitle("Feedback");
     try tree.append(root, .{ .text_area = .{
         .label = "Comments",
         .value = "First line.\nA second line long enough to wrap onto another row of the field.",
@@ -949,7 +955,7 @@ test "golden: 2x integer scale is pixel-doubled" {
 fn buildNavScreen(_: ?*anyopaque, app: *h.App) anyerror!void {
     const tree = &app.tree;
     const root = tree.rootId();
-    try tree.append(root, .{ .heading = .{ .content = "Library", .level = .h1 } });
+    try tree.setTitle("Library");
     try tree.append(root, .{ .segmented = .{
         .label = "View",
         .options = &.{ "List", "Grid" },
@@ -985,7 +991,7 @@ test "golden: narrow viewport gives the bottom pane the full width" {
 fn buildLongNavScreen(_: ?*anyopaque, app: *h.App) anyerror!void {
     const tree = &app.tree;
     const root = tree.rootId();
-    try tree.append(root, .{ .heading = .{ .content = "Library", .level = .h1 } });
+    try tree.setTitle("Library");
     for (0..12) |i| {
         var buf: [32]u8 = undefined;
         const line = try std.fmt.bufPrint(&buf, "Line {d} of the long page.", .{i + 1});
@@ -1144,7 +1150,7 @@ test "golden: the off-roster marker mirrors under RTL chrome" {
 fn buildSegmentedOverflow(_: ?*anyopaque, app: *h.App) !void {
     const tree = &app.tree;
     const root = tree.rootId();
-    try tree.append(root, .{ .heading = .{ .content = "Months", .level = .h1 } });
+    try tree.setTitle("Months");
     try tree.append(root, .{ .segmented = .{
         .label = "Month",
         .options = &.{ "January", "February", "March", "April", "May", "June" },
@@ -1170,7 +1176,7 @@ test "golden: the focused track's ring clears the fill and the selected chip" {
 fn buildSheetScreen(_: ?*anyopaque, app: *h.App) !void {
     const tree = &app.tree;
     const root = tree.rootId();
-    try tree.append(root, .{ .heading = .{ .content = "Behind", .level = .h1 } });
+    try tree.setTitle("Behind");
     try tree.append(root, .{ .text = .{ .content = "Content under the scrim: dimmed by the checkerboard, still legible as context." } });
     const sheet = try app.presentSheet("Sheet");
     try tree.append(sheet, .{ .toggle = .{ .label = "A choice", .on = true } });
@@ -1185,7 +1191,7 @@ test "golden: modal sheet over a dithered scrim" {
 fn buildNoticeScreen(_: ?*anyopaque, app: *h.App) !void {
     const tree = &app.tree;
     const root = tree.rootId();
-    try tree.append(root, .{ .heading = .{ .content = "Content", .level = .h1 } });
+    try tree.setTitle("Content");
     try tree.append(root, .{ .text = .{ .content = "Flows above the banner, never under it." } });
     app.notify(.{ .title = "Sync failed", .description = "Changes are kept locally.", .route = "library", .icon = .cloud_off, .important = true });
 }
@@ -1204,7 +1210,7 @@ test "golden: notice banner in the bottom pane" {
 fn buildRoutelessNoticeScreen(_: ?*anyopaque, app: *h.App) !void {
     const tree = &app.tree;
     const root = tree.rootId();
-    try tree.append(root, .{ .heading = .{ .content = "Content", .level = .h1 } });
+    try tree.setTitle("Content");
     try tree.append(root, .{ .text = .{ .content = "Flows above the banner, never under it." } });
     // The ordinary notice: it reports, and has nowhere to send anyone.
     // The take beside `notice-banner` is where the missing open control
@@ -1227,7 +1233,7 @@ test "golden: a routeless notice banner, with no open control to offer" {
 fn buildNoticesPaneScreen(_: ?*anyopaque, app: *h.App) !void {
     const tree = &app.tree;
     const root = tree.rootId();
-    try tree.append(root, .{ .heading = .{ .content = "Content", .level = .h1 } });
+    try tree.setTitle("Content");
     try tree.append(root, .{ .text = .{ .content = "Muted under the scrim while the pane is open." } });
     app.notify(.{ .title = "Sync failed", .description = "Changes are kept locally.", .route = "library", .icon = .cloud_off, .important = true });
     app.notify(.{ .title = "Update ready", .description = "Restart to apply.", .route = "library" });
@@ -1247,8 +1253,7 @@ test "golden: notices pane lists every pending notice" {
 
 fn buildCrowdedNoticesPaneScreen(_: ?*anyopaque, app: *h.App) !void {
     const tree = &app.tree;
-    const root = tree.rootId();
-    try tree.append(root, .{ .heading = .{ .content = "Content", .level = .h1 } });
+    try tree.setTitle("Content");
     for ([_][2][]const u8{
         .{ "Settings saved", "This notice stays until dismissed or minimized." },
         .{ "Sync failed", "Changes are kept locally. Open to review them." },
@@ -1278,7 +1283,7 @@ test "golden: a notices pane past its cap scrolls instead of clipping its rows" 
 fn buildIndicatorScreen(_: ?*anyopaque, app: *h.App) !void {
     const tree = &app.tree;
     const root = tree.rootId();
-    try tree.append(root, .{ .heading = .{ .content = "Content", .level = .h1 } });
+    try tree.setTitle("Content");
     try tree.append(root, .{ .text = .{ .content = "Minimized notices wait behind the indicator." } });
     app.notify(.{ .title = "Sync failed", .description = "Changes are kept locally.", .route = "library" });
     app.minimizeNotices();
@@ -1312,7 +1317,7 @@ fn buildBackHome(_: ?*anyopaque, app: *h.App) !void {
 
 fn buildBackDetail(_: ?*anyopaque, app: *h.App) !void {
     const root = app.tree.rootId();
-    try app.tree.append(root, .{ .heading = .{ .content = "Detail", .level = .h1 } });
+    try app.tree.setTitle("Detail");
     try app.tree.append(root, .{ .text = .{ .content = "A pushed screen: the framework installed the back control beside the title." } });
 }
 
@@ -1346,7 +1351,7 @@ test "golden: the back gesture past its threshold draws the control engaged" {
 fn buildPersian(_: ?*anyopaque, app: *h.App) !void {
     const tree = &app.tree;
     const root = tree.rootId();
-    try tree.append(root, .{ .heading = .{ .content = "سلام دنیا", .level = .h1 } });
+    try tree.setTitle("سلام دنیا");
     // The l10n course's greeting: Arabic script with a ZWNJ join
     // (می‌آید), a Latin acronym mid-sentence, and Latin punctuation —
     // the full reordering surface in one paragraph.
@@ -1384,7 +1389,7 @@ fn buildPersianRtl(_: ?*anyopaque, app: *h.App) !void {
     app.setDirection(.rtl);
     const tree = &app.tree;
     const root = tree.rootId();
-    try tree.append(root, .{ .heading = .{ .content = "تنظیمات", .level = .h1 } });
+    try tree.setTitle("تنظیمات");
     try tree.append(root, .{ .text_input = .{ .label = "نام", .value = "دریوش" } });
     try tree.append(root, .{ .toggle = .{ .label = "اعلان‌ها", .on = true } });
     try tree.append(root, .{ .segmented = .{ .label = "نما", .options = &.{ "فهرست", "شبکه" }, .selected = 0 } });

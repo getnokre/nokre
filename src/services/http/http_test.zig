@@ -363,8 +363,7 @@ test "harness: fulfillHttp and failHttp land the result at the call" {
     const Ctx = struct {
         sink: Sink,
         fn build(_: ?*anyopaque, app: *App) !void {
-            const root = app.tree.rootId();
-            try app.tree.append(root, .{ .heading = .{ .content = "Fetch", .level = .h1 } });
+            try app.tree.setTitle("Fetch");
         }
     };
     var ctx: Ctx = .{ .sink = .{ .gpa = gpa } };
@@ -395,8 +394,7 @@ test "harness: onHttp is the fake server; settleHttp answers to quiescence" {
         chained: bool = false,
 
         fn build(_: ?*anyopaque, app: *App) !void {
-            const root = app.tree.rootId();
-            try app.tree.append(root, .{ .heading = .{ .content = "Fetch", .level = .h1 } });
+            try app.tree.setTitle("Fetch");
         }
 
         // First response in hand, the app asks a follow-up question —
@@ -453,8 +451,7 @@ test "harness: answering by path echoes each request's own tag, and the journal 
     const Ctx = struct {
         sink: Sink,
         fn build(_: ?*anyopaque, app: *App) !void {
-            const root = app.tree.rootId();
-            try app.tree.append(root, .{ .heading = .{ .content = "Fetch", .level = .h1 } });
+            try app.tree.setTitle("Fetch");
         }
     };
     var ctx: Ctx = .{ .sink = .{ .gpa = gpa } };
@@ -496,8 +493,7 @@ const Observed = struct {
     t: harness_mod.Harness = undefined,
 
     fn build(_: ?*anyopaque, app: *App) !void {
-        const root = app.tree.rootId();
-        try app.tree.append(root, .{ .heading = .{ .content = "Fetch", .level = .h1 } });
+        try app.tree.setTitle("Fetch");
     }
 
     fn init(self: *Observed) !void {

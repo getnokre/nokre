@@ -546,7 +546,7 @@ test "the content mount carries nokre's class list and the driver's beside it" {
 test "a mount holds the frame's bytes and no whitespace of the file's own" {
     const Screens = struct {
         fn build(_: ?*anyopaque, app: *App) anyerror!void {
-            try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Library", .level = .h1 } });
+            try app.tree.setTitle("Library");
         }
     };
     var app = try App.init(testing.allocator, .{
@@ -607,7 +607,7 @@ test "a mount holds the frame's bytes and no whitespace of the file's own" {
 test "chrome comes before content, because the nav leads the focus order" {
     const Screens = struct {
         fn build(_: ?*anyopaque, app: *App) anyerror!void {
-            try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Library", .level = .h1 } });
+            try app.tree.setTitle("Library");
         }
     };
     var app = try App.init(testing.allocator, .{
@@ -657,7 +657,7 @@ test "a document with no boot is a whole document" {
 test "the boot script names the mount points, the route, and the module the edition ships" {
     const Screens = struct {
         fn build(_: ?*anyopaque, app: *App) anyerror!void {
-            try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Docs", .level = .h1 } });
+            try app.tree.setTitle("Docs");
         }
     };
     var app = try App.init(testing.allocator, .{
@@ -786,7 +786,7 @@ test "a boot script cannot be closed by a string a driver put in it" {
 test "two runs over one tree are byte-identical" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Docs", .level = .h1 } });
+    try app.tree.setTitle("Docs");
     var doc = plain("Docs");
     doc.skip = "Skip to content";
     doc.boot = .{ .wasm = "/app.wasm", .addressing = .documents };
@@ -887,7 +887,7 @@ test "the script's data is the bundle's tags and the driver's destinations" {
 test "the stub carries no screen, no boot and no ids" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Docs", .level = .h1 } });
+    try app.tree.setTitle("Docs");
     const html = try writeStub(&app, plainStub());
     defer testing.allocator.free(html);
     try expectLacks(html, "Docs");

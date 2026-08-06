@@ -88,7 +88,7 @@ test "the root's children come through in tree order" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
     const root = app.tree.rootId();
-    try app.tree.append(root, .{ .heading = .{ .content = "Notes", .level = .h1 } });
+    try app.tree.setTitle("Notes");
     try app.tree.append(root, .{ .text = .{ .content = "One" } });
     try app.tree.append(root, .{ .divider = .{} });
 
@@ -109,7 +109,7 @@ test "a title and a body that states its depth emit h1 then h2" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
     const root = app.tree.rootId();
-    try app.tree.append(root, .{ .heading = .{ .content = "Trust", .level = .h1 } });
+    try app.tree.setTitle("Trust");
     try app.tree.append(root, .{ .document = .{
         .label = "Body",
         .source = "## Scope\n\n### Data\n\n## Contact\n",
@@ -133,7 +133,7 @@ test "the walk is deterministic: two runs over one tree are identical" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
     const root = app.tree.rootId();
-    try app.tree.append(root, .{ .heading = .{ .content = "Same", .level = .h1 } });
+    try app.tree.setTitle("Same");
     try app.tree.append(root, .{ .heading = .{ .content = "Same", .level = .h2 } });
     try app.tree.append(root, .{ .button = .{ .label = "Go" } });
 
@@ -154,7 +154,7 @@ test "non-ASCII headings keep their words in the slug" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
     const root = app.tree.rootId();
-    try app.tree.append(root, .{ .heading = .{ .content = "معرفی نکته", .level = .h1 } });
+    try app.tree.setTitle("معرفی نکته");
     try app.tree.append(root, .{ .heading = .{ .content = "مقدمة", .level = .h2 } });
     // …but Unicode PUNCTUATION goes the way "&" does: GitHub slugs the
     // em dash out, and every TOC written against its anchors says so.
@@ -271,7 +271,7 @@ test "a stated address joins the anchor roster" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
     const root = app.tree.rootId();
-    try app.tree.append(root, .{ .heading = .{ .content = "Privacy", .level = .h1 } });
+    try app.tree.setTitle("Privacy");
     try app.tree.append(root, .{ .heading = .{ .content = "Your rights", .level = .h2, .anchor = "delete-account" } });
 
     var out: std.ArrayList(u8) = .empty;
@@ -297,7 +297,7 @@ test "turning the derivation off does not drop a stated address" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
     const root = app.tree.rootId();
-    try app.tree.append(root, .{ .heading = .{ .content = "Privacy", .level = .h1 } });
+    try app.tree.setTitle("Privacy");
     try app.tree.append(root, .{ .heading = .{ .content = "Your rights", .level = .h2, .anchor = "delete-account" } });
 
     var out: std.ArrayList(u8) = .empty;
@@ -993,7 +993,7 @@ test "element fields are written; styling is not" {
 test "chrome is separable from content, and the nav names where you are" {
     const Screens = struct {
         fn build(_: ?*anyopaque, app: *App) anyerror!void {
-            try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Library", .level = .h1 } });
+            try app.tree.setTitle("Library");
         }
     };
     var app = try App.init(testing.allocator, .{
@@ -1050,7 +1050,7 @@ test "a mark costs its glyph; only the icon element takes the square box" {
 test "the notices indicator stands in the nav's row, not beside it" {
     const Screens = struct {
         fn build(_: ?*anyopaque, app: *App) anyerror!void {
-            try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Library", .level = .h1 } });
+            try app.tree.setTitle("Library");
         }
     };
     var app = try App.init(testing.allocator, .{

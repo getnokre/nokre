@@ -49,7 +49,7 @@ const State = struct {
 fn buildHome(state: *State, app: *nok.App) !void {
     state.app = app;
     const root = app.tree.rootId();
-    try app.tree.append(root, .{ .heading = .{ .content = "Dev store", .level = .h1 } });
+    try app.tree.setTitle("Dev store");
 
     var buf: ss.ValueBuf = undefined;
     const stored = ss.get(app, key, &buf) catch null;

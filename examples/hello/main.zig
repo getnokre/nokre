@@ -92,12 +92,13 @@ fn note(state: *State, text: []const u8) void {
 }
 
 const routes = h.Routes(State).table(&.{
-    .{ .name = "home", .title = .{ .fixed = "Home" }, .build = buildHome },
+    .{ .name = "home", .title = .{ .fixed = "Hello, nokre" }, .build = buildHome },
 });
 
 fn buildHome(state: *State, app: *h.App) !void {
     const b = app.root();
-    try b.heading(.h1, "Hello, nokre");
+    // No heading here: the route says what this screen is called and
+    // the library draws it as the page's h1 (docs/routing.md).
     try b.text("Two bundled text fonts. One proportional, one mono. Press Tab, then Enter.");
     try b.divider();
 

@@ -1422,6 +1422,8 @@ test "tab reaches an inline link and Enter navigates" {
     try app.navigate("home");
     app.performLayout();
     var kids = app.tree.children(app.tree.rootId());
+    // Past the screen's title, which the router drew from the route's.
+    _ = kids.next();
     const para = kids.next().?;
 
     try app.dispatch(.{ .key_down = .{ .key = .tab } });
@@ -3504,6 +3506,8 @@ test "navigating away leaves no acknowledgement behind" {
     try app.navigate("home");
     app.performLayout();
     var kids = app.tree.children(app.tree.rootId());
+    // Past the screen's title, which the router drew from the route's.
+    _ = kids.next();
     const c = kids.next().?;
     try app.tap(app.tree.rectOf(c).center());
     try testing.expect(app.ack != null);

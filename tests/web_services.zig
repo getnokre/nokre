@@ -223,7 +223,7 @@ fn buildHome(state: *State, app: *h.App) !void {
     // From the catalog, so the *rendered* words are what a scenario
     // reads back: the failure this gate exists for is a page whose text
     // is silently in the other language.
-    try app.tree.append(root, .{ .heading = .{ .content = L.of(app).tr(.title), .level = .h1 } });
+    try app.tree.setTitle(L.of(app).tr(.title));
     try app.tree.append(root, .{ .text = .{ .content = "The harness drives this app through the shipped live.js." } });
     try app.tree.append(root, .{ .button = .{
         .label = "Sign in",
@@ -243,9 +243,10 @@ fn buildHome(state: *State, app: *h.App) !void {
 /// at all in the *chrome* mount — which is half of what a page with two
 /// of them is for.
 fn buildSecond(_: *State, app: *h.App) !void {
-    try app.tree.append(app.tree.rootId(), .{
-        .heading = .{ .content = "Second", .level = .h1 },
-    });
+    // Nothing at all, and the page still has a top: the router drew
+    // this screen's title from the route's before the builder ran
+    // (`Tree.setTitle`).
+    _ = app;
 }
 
 const routes = h.Routes(State).table(&.{

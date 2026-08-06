@@ -25,28 +25,31 @@ pub const Violation = struct {
         /// Interactive elements must keep a non-empty accessible label.
         /// Append rejects empty ones; this catches later mutation.
         unlabeled_interactive,
-        /// Heading levels must not skip (h1 → h3 with no h2 before it).
+        /// Heading levels must not skip: a heading more than one level
+        /// deeper than the one before it (h2 → h4 with no h3 between).
+        ///
+        /// The sequence starts at level 1 whether or not a title is
+        /// drawn, because level 1 is the screen's either way
+        /// (`Tree.setTitle`) — so a page opens at `h2` and a page that
+        /// opens at `h3` has skipped one. It used to start at 0, which
+        /// made "no title at all" an unavailable shape rather than a
+        /// stated one.
+        ///
+        /// Whole-tree, and unlike the duplicate-label rule it takes no
+        /// layer boundary: layers decide what can be *invoked*, and an
+        /// outline is not about invoking anything. A sheet over a
+        /// screen is one document to the markup and to the outline, so
+        /// a sheet's headings are read in the same sequence as the
+        /// page's.
+        ///
+        /// Its former companion `multiple_h1` is gone, and not because
+        /// the rule was wrong: a page still has one top. It is that the
+        /// top is now *stated*, so a second one is not a content
+        /// mistake to report after the fact — `Tree.append` refuses
+        /// every `h1` but the title's
+        /// (`error.HeadingAtTitleLevel`), and an invalid tree cannot be
+        /// built.
         heading_level_skipped,
-        /// A screen has one top-level heading or none. A second `h1`
-        /// says the page has two tops, and every reader that navigates
-        /// by heading level — screen readers first, then the outline a
-        /// search engine builds — is told the second section starts a
-        /// second document.
-        ///
-        /// The producer worth naming is not a hand-built tree, where
-        /// the mistake is visible in the code that made it: it is a
-        /// `document` still carrying the default `base_level` under a
-        /// title the screen already drew, which renders one `h1` *per
-        /// section* of fetched content. That is what makes the field's
-        /// answer checkable at all — a base too deep is
-        /// `heading_level_skipped`, a base too shallow is this, and
-        /// between them no wrong base is silent.
-        ///
-        /// Whole-tree, like `heading_level_skipped` and unlike the
-        /// duplicate-label rule: layers decide what can be *invoked*,
-        /// and this is not about invoking anything. A sheet over a
-        /// screen is one document to the markup and to the outline.
-        multiple_h1,
         /// Two interactive elements with the same accessible label are
         /// ambiguous to voice control and to test queries alike. Judged
         /// within the active layer only (`App.focusScope`): everything
@@ -248,8 +251,10 @@ pub fn collect(app: *App, out: *std.ArrayList(Violation), options: Options) !voi
     // The clipping rule reads laid-out rects; at harness init nothing
     // has laid out yet. Cheap when clean.
     app.performLayout();
-    var prev_heading_level: u8 = 0;
-    var seen_h1 = false;
+    // The screen's title's level, drawn or not: the top of every page's
+    // outline is 1, so content opens at 2 and nothing has to look for
+    // where the sequence began.
+    var prev_heading_level: u8 = 1;
     // Each first-seen label with its route destination (null for
     // anything but a pure route navigation) — the destination is what
     // decides whether a later holder of the same label is a collision
@@ -305,19 +310,11 @@ pub fn collect(app: *App, out: *std.ArrayList(Violation), options: Options) !voi
                 const level = @intFromEnum(h.level);
                 // Against the *previous* heading, not the deepest level
                 // ever seen: the outline position resets as levels come
-                // back up, so h1,h2,h3 then h1,h3 skips h2 even though
-                // an h3 appeared earlier. Descending may only go one
+                // back up, so h2,h3,h4 then h2,h4 skips h3 even though
+                // an h4 appeared earlier. Descending may only go one
                 // step; ascending any distance is fine.
                 if (level > prev_heading_level + 1) {
                     try out.append(app.gpa, .{ .id = id, .rule = .heading_level_skipped });
-                }
-                // Reported at the *second* h1 and every one after it:
-                // the first is the page's top and the innocent party,
-                // and a driver reading the node label wants the one
-                // that has to move.
-                if (level == 1) {
-                    if (seen_h1) try out.append(app.gpa, .{ .id = id, .rule = .multiple_h1 });
-                    seen_h1 = true;
                 }
                 prev_heading_level = level;
             },

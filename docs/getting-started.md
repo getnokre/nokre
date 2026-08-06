@@ -209,12 +209,11 @@ pub const State = struct {
 };
 
 pub const routes = h.Routes(State).table(&.{
-    .{ .name = "home", .title = .{ .fixed = "Home" }, .build = buildHome },
+    .{ .name = "home", .title = .{ .fixed = "Notes" }, .build = buildHome },
 });
 
 pub fn buildHome(state: *State, app: *h.App) !void {
     const b = app.root();
-    try b.heading(.h1, "Notes");
     state.label_id = try b.textId("Pressed 0 times");
     try b.button(.{
         .label = "Increment",
@@ -241,9 +240,17 @@ pub fn main() !void {
 }
 ```
 
-**Checkpoint:** `zig build run` opens a window titled Notes. Tab reaches
-the button, Enter presses it, the label counts. (`State` and `buildHome`
-are `pub` because Part 2's tests import them.)
+**Checkpoint:** `zig build run` opens a window titled Notes, with
+**Notes** drawn across the top of the screen. Tab reaches the button,
+Enter presses it, the label counts. (`State` and `buildHome` are `pub`
+because Part 2's tests import them.)
+
+Nothing in `buildHome` drew that heading. The route already says what
+this screen is called, so the library draws it as the page's `h1` and
+the builder starts below it — which is why `heading` takes `h2` and
+deeper and refuses level 1. A screen whose title is not the route's
+says so with `app.setTitle(…)`, and `app.setTitle("")` says it draws
+none ([routing.md](routing.md)).
 
 Things worth noticing, because they generalize:
 
@@ -376,7 +383,8 @@ and in `main`:
 ```
 
 (Rename `buildHome` to `buildNotes`, and stub `buildNote` /
-`buildSettings` with a lone `h1` heading each for now.) The rules, all
+`buildSettings` with empty bodies for now — each route's title is
+already the heading its screen shows.) The rules, all
 framework-enforced:
 
 - `setNav` installs the app-level nav, called once before the first
@@ -388,10 +396,14 @@ framework-enforced:
   contract, not the app's:
   [elements.md](elements.md#navigation-chrome) specifies it once.
 - Every route carries a `title`, and the field has no default — omitting
-  it will not compile. It is what chrome calls that screen — the nav
-  labels its destinations from it, and it also covers the screens that
-  are *not* destinations. The title is declared, never derived — your
-  builder's `h1` is content and may say something else entirely.
+  it will not compile. It is what this screen is called everywhere at
+  once: the nav labels its destinations from it, the marker for an
+  off-roster screen takes it, and the page draws it as its own `h1`.
+  The title is declared, never derived from content — and the page is
+  drawn *from* the declaration, which is the opposite arrow. A screen
+  whose reader-facing title is per-reference (`note~42` is "Note" to
+  the chrome and the note's own name to the reader) restates that one
+  with `app.setTitle(…)`.
 - `app.navigate("note~42")` pushes a screen, and a pushed screen
   automatically gets a Back control (accessible name "Back") — you
   cannot build a screen with no way back. `link` elements and
@@ -514,7 +526,6 @@ pub const State = struct {
 
 fn buildSignIn(state: *State, app: *h.App) !void {
     const b = app.root();
-    try b.heading(.h1, "Notes");
     try b.spanned(&.{
         .{ .text = "Welcome. The passphrase is " },
         .{ .text = "letmein", .code = true },
@@ -782,10 +793,12 @@ The signed-in half of `buildNotes`:
 
 ```zig
     const b = app.root();
-    const title_row = try b.stack(.{ .axis = .horizontal });
-    try title_row.heading(.h1, "Notes");
+    // The "Notes" heading is the route's title, already drawn. A badge
+    // cannot ride its line — the top of the page is the library's — so
+    // the status stands on a row of its own beneath it.
     if (state.offline) {
-        try title_row.badge(.{ .label = "Offline" });
+        const status_row = try b.stack(.{ .axis = .horizontal });
+        try status_row.badge(.{ .label = "Offline" });
     }
 
     const actions = try b.stack(.{ .axis = .horizontal });
@@ -1236,9 +1249,9 @@ pub fn buildNote(state: *State, app: *h.App) !void {
     // to draw then.
     const note = state.notes.at(index) orelse return;
     const b = app.root();
-    // The framework's Back control shares this heading's line — a pushed
-    // screen without a way back cannot exist.
-    try b.heading(.h1, "Note");
+    // The route's title is drawn above everything here, and the
+    // framework's Back control shares its line — a pushed screen
+    // without a way back cannot exist.
     try b.text(note.get());
     try b.divider();
     try b.copyable(.{ .label = "Copy this note", .value = note.get() });
@@ -1315,7 +1328,6 @@ arrow keys, immediately — and a `toggle`, the switch that applies now
 ```zig
 pub fn buildSettings(state: *State, app: *h.App) !void {
     const b = app.root();
-    try b.heading(.h1, "Settings");
 
     try b.segmented(.{
         .label = "Appearance",
@@ -1481,12 +1493,10 @@ fn loc(a: *const h.App) L.Locale {
 ```
 
 In `buildNotes`' signed-in half, the literals become lookups. The
-heading and the empty state are `tr` — messages with no placeholders,
-returned as constant slices, no buffer:
-
-```zig
-    try title_row.heading(.h1, L.tr(loc(app), .notesTitle));
-```
+screen's heading needs no line at all — the route's title is
+`.{ .of_locale = … }`, so the `h1` the library draws follows the
+locale with it. The empty state is `tr` — a message with no
+placeholders, returned as a constant slice, no buffer:
 
 ```zig
     if (state.notes.len == 0) {

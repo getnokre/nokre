@@ -212,7 +212,7 @@ fn onFetch(state: *State) void {
 fn buildHome(state: *State, app: *nok.App) !void {
     state.app = app;
     const root = app.tree.rootId();
-    try app.tree.append(root, .{ .heading = .{ .content = "Stress", .level = .h1 } });
+    try app.tree.setTitle("Stress");
     state.status = try app.tree.appendId(root, .{ .text = .{ .content = "Idle" } });
     try app.tree.append(root, .{ .button = .{
         .label = "Fetch",

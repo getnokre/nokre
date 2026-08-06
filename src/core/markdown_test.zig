@@ -12,9 +12,11 @@ const NodeId = tree_mod.NodeId;
 const testing = std.testing;
 
 /// Renders a parsed document as an indented outline: the shape the
-/// tests assert on, and the shape a reviewer can read.
+/// tests assert on, and the shape a reviewer can read. `.h2` is the
+/// element's own default: level 1 is the screen's title's, so a body
+/// appended to a page opens one below it.
 fn outline(gpa: std.mem.Allocator, source: []const u8) ![]u8 {
-    return outlineAt(gpa, .h1, source);
+    return outlineAt(gpa, .h2, source);
 }
 
 /// The same, for a document that states where its outline starts.
@@ -104,7 +106,7 @@ test "blocks: headings, paragraphs, rules, quotes, code, lists, tables" {
     );
     defer testing.allocator.free(got);
     try testing.expectEqualStrings(
-        \\heading h1 "Title"
+        \\heading h2 "Title"
         \\text "A paragraph wrapped over two source lines."
         \\divider
         \\blockquote
@@ -131,33 +133,11 @@ test "blocks: headings, paragraphs, rules, quotes, code, lists, tables" {
 }
 
 test "heading levels rebase onto a gapless sequence" {
-    // Fetched Markdown opens at ## and jumps ## -> ####. Rebased, the
-    // outline is h1/h2/h3/h1 — real structure, and the
-    // heading_level_skipped audit stays intact for app-authored trees.
+    // Fetched Markdown opens at ## and jumps ## -> ####. Rebased from
+    // the default base, the outline is h2/h3/h4/h2 — real structure
+    // under the page's own title, and the heading_level_skipped audit
+    // stays intact for app-authored trees.
     const got = try outline(testing.allocator,
-        \\## Opening
-        \\
-        \\#### Jumped
-        \\
-        \\##### Deeper
-        \\
-        \\## Back up
-    );
-    defer testing.allocator.free(got);
-    try testing.expectEqualStrings(
-        \\heading h1 "Opening"
-        \\heading h2 "Jumped"
-        \\heading h3 "Deeper"
-        \\heading h1 "Back up"
-        \\
-    , got);
-}
-
-test "a stated base level moves the whole outline down, still gapless" {
-    // The page's own title is the h1; this body is subordinate to it.
-    // The source's numbering is irrelevant — it is rebased either way —
-    // so the depth it starts at can only come from the element.
-    const got = try outlineAt(testing.allocator, .h2,
         \\## Opening
         \\
         \\#### Jumped
@@ -172,6 +152,30 @@ test "a stated base level moves the whole outline down, still gapless" {
         \\heading h3 "Jumped"
         \\heading h4 "Deeper"
         \\heading h2 "Back up"
+        \\
+    , got);
+}
+
+test "a stated base level moves the whole outline down, still gapless" {
+    // The default already puts a body under the page's title; this is
+    // the case that stays editorial — a body subordinate to a *section*
+    // rather than to the page. The source's numbering cannot say it,
+    // being rebased either way, so the element does.
+    const got = try outlineAt(testing.allocator, .h3,
+        \\## Opening
+        \\
+        \\#### Jumped
+        \\
+        \\##### Deeper
+        \\
+        \\## Back up
+    );
+    defer testing.allocator.free(got);
+    try testing.expectEqualStrings(
+        \\heading h3 "Opening"
+        \\heading h4 "Jumped"
+        \\heading h5 "Deeper"
+        \\heading h3 "Back up"
         \\
     , got);
 }
@@ -294,7 +298,7 @@ test "inline: a run at the end of the source still closes an open style" {
     );
     defer testing.allocator.free(got);
     try testing.expectEqualStrings(
-        \\heading h1 "Status Important"
+        \\heading h2 "Status Important"
         \\text "The field is required" strong("required")
         \\table
         \\  row
@@ -574,7 +578,7 @@ test "a document copies its source, so the app may free it at once" {
     const got = try dump(testing.allocator, &tree, doc);
     defer testing.allocator.free(got);
     try testing.expectEqualStrings(
-        \\heading h1 "Title"
+        \\heading h2 "Title"
         \\text "Some words."
         \\
     , got);

@@ -201,13 +201,44 @@ level deeper — but headings here are flat, so a body that is a
 an invention, which is question 3, and the invention would be silent.
 
 Question 2 is where it lands: the driver states the depth its body
-starts at (`Document.base_level`), and the library keeps both
-relationships around the value — a base too deep is
-`heading_level_skipped`, a base too shallow is `multiple_h1`, a rule
-added with the field because a field nokre cannot check is not a field
-at all. Structure is not automatically the library's; a value it can
-only guess and can fully check is the driver's, whatever the value
-describes.
+starts at (`Document.base_level`), and the library keeps the
+relationship it can check — a base too deep is
+`heading_level_skipped`, added with the field because a field nokre
+cannot check is not a field at all. Structure is not automatically the
+library's; a value it can only guess and can fully check is the
+driver's, whatever the value describes.
+
+### And then question 1 turned out to have an answer
+
+The round after that put the same three questions to the *page's own
+title* — the visible top of the outline, which the pages above were
+drawing as an `h1` and the audit was finding by counting. Question 1 is
+the one that answers, and it answers loudly: **nokre already holds what
+the screen is called.** `RouteDef.title` is required, has no default,
+is localized, and is what every piece of chrome already names the
+screen by. A driver drawing an `h1` beside it was restating a fact the
+app had answered, and the second copy is the one that goes stale.
+
+So the library draws it, and asks where it cannot know: `App.setTitle`
+for a screen whose reader-facing title is per-reference, `setTitle("")`
+for one that draws none ([routing.md](routing.md)). Level 1 became the
+library's — `error.HeadingAtTitleLevel` on every other append — which
+retired `multiple_h1` outright: the shape it reported is now
+unbuildable ([accessibility.md](accessibility.md)).
+
+The lesson worth keeping is about question 1, not about headings.
+Twice in a row it was read as "does nokre hold the tree?" and answered
+*yes* when the real question is the one the procedure states: **is it
+about the app?** The tree is a rendering; the route table is the app.
+Reading a value off the rendering is derivation, and derivation was
+never what question 1 asks about.
+
+And `base_level` survived the change with its job narrowed rather than
+its field removed: it no longer says where the outline starts, only how
+far under the title a body hangs. That is question 2 doing what it is
+supposed to — the part nokre can check stayed the library's, and the
+part it could only guess stayed the driver's, even as the value around
+them moved sides.
 
 ## A default is not an opinion about your site
 

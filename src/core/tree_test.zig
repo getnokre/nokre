@@ -1272,3 +1272,85 @@ test "fmt formats into the arena: tree-lifetime bytes, no cap to guess" {
     const badge = try tree.appendId(root, .{ .badge = .{ .label = label } });
     try std.testing.expectEqualStrings("Delete — 42", tree.getConst(badge).?.badge.label);
 }
+
+// ---------------------------------------------------------- screen title
+
+test "level 1 is the screen title's, and only setTitle may write one" {
+    var tree = try Tree.init(std.testing.allocator);
+    defer tree.deinit();
+    const root = tree.rootId();
+    // The shape the audit used to report after the fact. It is not a
+    // finding any more; it is a tree that cannot be built.
+    try std.testing.expectError(error.HeadingAtTitleLevel, tree.append(root, .{
+        .heading = .{ .content = "Also a top", .level = .h1 },
+    }));
+    // And no back door through a document: a body cannot be the page.
+    try std.testing.expectError(error.HeadingAtTitleLevel, tree.append(root, .{ .document = .{
+        .label = "Body",
+        .source = "## One\n",
+        .base_level = .h1,
+    } }));
+    // Nothing was left behind by either refusal.
+    try std.testing.expectEqual(@as(usize, 0), tree.childCount(root));
+
+    try tree.setTitle("Notes");
+    try std.testing.expectEqualStrings("Notes", tree.title());
+    try std.testing.expectEqual(element_mod.HeadingLevel.h1, tree.getConst(tree.titleId().?).?.heading.level);
+    // Still refused with a title standing: one page, one top.
+    try std.testing.expectError(error.HeadingAtTitleLevel, tree.append(root, .{
+        .heading = .{ .content = "Another", .level = .h1 },
+    }));
+}
+
+test "the title is a screen's fact, so restating it moves no node and stating none removes it" {
+    var tree = try Tree.init(std.testing.allocator);
+    defer tree.deinit();
+    const root = tree.rootId();
+    try tree.setTitle("Draft");
+    const id = tree.titleId().?;
+    try tree.append(root, .{ .text = .{ .content = "body" } });
+
+    // A second call restates the words in the node already standing —
+    // a builder that only learns its title from a load it finished
+    // does not get a second heading for saying so late.
+    try tree.setTitle("Meeting notes");
+    try std.testing.expectEqual(id, tree.titleId().?);
+    try std.testing.expectEqualStrings("Meeting notes", tree.title());
+    try std.testing.expectEqual(@as(usize, 2), tree.childCount(root));
+
+    // The words are copied like every other string here.
+    var buf: [32]u8 = undefined;
+    const borrowed = try std.fmt.bufPrint(&buf, "{s} {d}", .{ "Note", 42 });
+    try tree.setTitle(borrowed);
+    @memset(&buf, 0);
+    try std.testing.expectEqualStrings("Note 42", tree.title());
+
+    // "" is a real answer: this screen draws no title.
+    try tree.setTitle("");
+    try std.testing.expectEqual(@as(?NodeId, null), tree.titleId());
+    try std.testing.expectEqualStrings("", tree.title());
+    try std.testing.expectEqual(@as(usize, 1), tree.childCount(root));
+}
+
+test "the title seats itself above the content and below the chrome that leads it" {
+    var tree = try Tree.init(std.testing.allocator);
+    defer tree.deinit();
+    const root = tree.rootId();
+    // The order a pushed screen is built in: chrome first, then the
+    // back control, then whatever the builder appends.
+    _ = try tree.insertFirst(root, .{ .nav = .{} });
+    try tree.append(root, .{ .back = .{ .label = "Back" } });
+    try tree.append(root, .{ .text = .{ .content = "body" } });
+
+    // Stated last, and still the first thing under the back control —
+    // which is the line it shares.
+    try tree.setTitle("Ticket");
+    var it = tree.children(root);
+    try std.testing.expectEqual(Role.nav, tree.getConst(it.next().?).?.role());
+    try std.testing.expectEqual(Role.back, tree.getConst(it.next().?).?.role());
+    const title = it.next().?;
+    try std.testing.expectEqual(Role.heading, tree.getConst(title).?.role());
+    try std.testing.expectEqualStrings("Ticket", tree.getConst(title).?.label());
+    try std.testing.expectEqual(Role.text, tree.getConst(it.next().?).?.role());
+    try std.testing.expectEqual(@as(?NodeId, null), it.next());
+}

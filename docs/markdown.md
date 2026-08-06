@@ -27,9 +27,9 @@ applies to parsed content for free. **The parser's error path is
 `append`'s.** A document the tree refuses fails at the call site, whole,
 leaving nothing half-built behind.
 
-The label is explicit and mandatory. Deriving a name from the first `h1`
-fails on documents that do not open with one, and legal text often does
-not. The source is copied like every other string ([tree.zig](../src/core/tree.zig)
+The label is explicit and mandatory. Deriving a name from the source's
+first heading fails on documents that do not open with one, and legal
+text often does not. The source is copied like every other string ([tree.zig](../src/core/tree.zig)
 never borrows consumer memory), so an app may free its response buffer
 the moment `append` returns.
 
@@ -140,14 +140,14 @@ not control must never be able to raise:
 
 The first heading depth in a document becomes the document's
 `base_level`, and each distinct deeper depth the next level. With the
-default base of `h1`:
+default base of `h2`:
 
 | Source | Rendered |
 | --- | --- |
-| `## Opening` | `h1` |
-| `#### Jumped` | `h2` |
-| `##### Deeper` | `h3` |
-| `## Back up` | `h1` |
+| `## Opening` | `h2` |
+| `#### Jumped` | `h3` |
+| `##### Deeper` | `h4` |
+| `## Back up` | `h2` |
 
 Fetched Markdown routinely opens at `##` or jumps `h2` → `h4`, which
 would trip the `heading_level_skipped` audit rule
@@ -156,34 +156,44 @@ Rebasing preserves the real outline and leaves the rule intact for
 app-authored trees — it is not a loophole, because it only applies
 inside a `document`.
 
-### Where the outline starts is yours
+### The page's top is not the source's to claim
 
-A body under a title the screen already drew is subordinate to it, and
-rebasing is exactly what makes the source unable to say so: `#` and
-`##` both open at the top, so no editing of the Markdown changes the
-answer. `Document.base_level` states it:
+A `document` never renders an `h1`, and `.base_level = .h1` is refused
+at `append` (`error.HeadingAtTitleLevel`). Level 1 belongs to what the
+screen is called — stated once, drawn by the library above everything
+the builder appends ([routing.md](routing.md), "The page says what the
+screen is called"). A body is what hangs under that, so the default
+base is `h2`, and the ordinary case needs no field at all:
 
 ```zig
-try b.heading(.h1, article.title);
-try b.document(.{ .label = article.title, .source = body, .base_level = .h2 });
+try app.setTitle(article.title);   // or nothing: the route's title stands
+try b.document(.{ .label = article.title, .source = body });
 ```
 
-The sections come out `h2`, their subsections `h3`, and the page has
-one `h1` — the title's. Left at the default, that page publishes one
-`h1` **per section**, which is what the audit now says out loud
-(`multiple_h1`).
+Sections come out `h2`, their subsections `h3`, and the page has one
+top. **This is what the old `multiple_h1` audit rule was for**, and why
+that rule is gone: a fetched body used to rebase every `##` onto `h1`
+and mint one top per section, which the audit reported after the fact.
+Now the shape cannot be built.
 
-nokre does not derive the base from the tree, and the reason is worth
+`base_level` survives for the one case that is still editorial: a body
+that belongs to a *section* rather than to the page.
+
+```zig
+try b.heading(.h2, "Appendix");
+try b.document(.{ .label = "Schedule A", .source = body, .base_level = .h3 });
+```
+
+nokre does not derive that from the tree, and the reason is worth
 keeping: headings here are flat, so "one deeper than the heading before
 me" would file a document that is a *sibling* of the preceding section
-as its child. Where a body sits in the page's outline is editorial.
-What the library keeps is both relationships around the value — a base
-too deep is `heading_level_skipped`, a base too shallow is
-`multiple_h1` — so a wrong base fails a test rather than shipping.
+as its child. The library keeps the relationship it can check — a base
+too deep is `heading_level_skipped`, so a base that skips a level fails
+a test rather than shipping; a base too shallow is no longer statable.
 
 Past `h6` there is no ladder left: a base of `h4` renders `h4`, `h5`,
 `h6`, then `h6` for everything deeper. That is the same flattening a
-seven-level source already takes from `h1`, and it never skips.
+seven-level source already takes from `h2`, and it never skips.
 
 ## Destinations: routes, and the external allowlist
 

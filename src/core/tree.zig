@@ -92,6 +92,12 @@ pub const Tree = struct {
     nodes: std.ArrayList(Node),
     free_list: std.ArrayList(u20),
     root: NodeId,
+    /// Open only while `setTitle` writes the screen's own heading. It is
+    /// what makes `h1` the library's level rather than a level a
+    /// consumer picks: every other path through `validateAppend` refuses
+    /// one (`error.HeadingAtTitleLevel`), so a page cannot grow a second
+    /// top and the audit has no counting to do.
+    titling: bool = false,
 
     pub fn init(gpa: std.mem.Allocator) !Tree {
         var tree: Tree = .{
@@ -191,6 +197,82 @@ pub const Tree = struct {
         self.nodePtrUnchecked(parent).first_child = id;
         try self.expandLinked(id, element);
         return id;
+    }
+
+    /// States what this screen is called, and draws it: the page's own
+    /// `h1`, at the top of the content, above everything the builder
+    /// appends and below the chrome that leads it.
+    ///
+    /// The one door to level 1. A page's top is not content — it is the
+    /// thing the content hangs under — so it is *stated* here rather
+    /// than found among the headings a builder happened to write, and
+    /// every other append at `h1` is refused
+    /// (`error.HeadingAtTitleLevel`). What that buys is not tidiness:
+    /// "which heading is this page's top" stops being a question with a
+    /// heuristic answer, so `heading_level_skipped` knows where the
+    /// outline starts and `multiple_h1` has nothing left to catch
+    /// (docs/accessibility.md).
+    ///
+    /// Order-independent, deliberately. The title is a fact about the
+    /// screen, not an element in a sequence, so a builder may state it
+    /// last — after the load it needed to know the words — and it still
+    /// lands where a page's title goes. A second call restates the
+    /// words in place; `""` says this screen draws no title, which is a
+    /// real answer and the only way to say it.
+    ///
+    /// The words are copied like every other string here, so a caller
+    /// may state a formatted or fetched title and free it at once.
+    pub fn setTitle(self: *Tree, words: []const u8) !void {
+        if (self.titleId()) |id| {
+            if (words.len == 0) return self.remove(id);
+            return self.setContent(id, words);
+        }
+        if (words.len == 0) return;
+        self.titling = true;
+        defer self.titling = false;
+        const el: Element = .{ .heading = .{ .content = words, .level = .h1 } };
+        if (self.titleSeat()) |after| {
+            _ = try self.insertAfter(after, el);
+        } else {
+            _ = try self.insertFirst(self.root, el);
+        }
+    }
+
+    /// What this screen is called (`setTitle`) — `""` when it draws no
+    /// title. Read by a static driver for the `<title>` it would
+    /// otherwise restate.
+    pub fn title(self: *const Tree) []const u8 {
+        const id = self.titleId() orelse return "";
+        return self.getConst(id).?.heading.content;
+    }
+
+    /// The title's node, or null. Found rather than remembered: there
+    /// is at most one `h1` in a tree and only `setTitle` can have put
+    /// it there, so nothing has to be invalidated when a rebuild takes
+    /// the content out from under it.
+    pub fn titleId(self: *const Tree) ?NodeId {
+        var it = self.children(self.root);
+        while (it.next()) |id| {
+            const el = self.getConst(id) orelse continue;
+            if (el.* == .heading and el.heading.level == .h1) return id;
+        }
+        return null;
+    }
+
+    /// The last of the leading children the title goes *after*: the
+    /// chrome layers the framework installs, and the back control that
+    /// shares the title's line. Null when the content starts at the
+    /// first child. Only the leading run is scanned — the modal layers
+    /// arrive after the content and must not push the title down.
+    fn titleSeat(self: *const Tree) ?NodeId {
+        var seat: ?NodeId = null;
+        var it = self.children(self.root);
+        while (it.next()) |id| {
+            const role = (self.getConst(id) orelse continue).role();
+            if (!role.isChromeLayer() and role != .back) break;
+            seat = id;
+        }
+        return seat;
     }
 
     fn createDetached(self: *Tree, parent: NodeId, element: Element) !NodeId {
@@ -532,6 +614,12 @@ pub const Tree = struct {
             // rejected rather than silently resolved.
             .text => |t| try self.validateSpans(parent, t.content, t.spans, t.style.ink),
             .heading => |h| {
+                // Level 1 is the screen's title's, and `setTitle` is
+                // the only door to it. A builder that could write one
+                // would be back to a page whose top has to be guessed
+                // at — and to the two-tops defect the audit used to
+                // report after the fact.
+                if (h.level == .h1 and !self.titling) return error.HeadingAtTitleLevel;
                 try self.validateSpans(parent, h.content, h.spans, .ink);
                 // A stated anchor faces its grammar here, at
                 // construction, exactly as an external link faces
@@ -693,7 +781,16 @@ pub const Tree = struct {
             // The label is the document's accessible name, as a sheet's
             // title is: derived names fail on content that does not
             // open with a heading, and legal text often does not.
-            .document => |d| if (d.label.len == 0) return error.UntitledDocument,
+            .document => |d| {
+                if (d.label.len == 0) return error.UntitledDocument;
+                // Where a body hangs, held to the rule its headings
+                // are: the expansion would raise this at the first `#`
+                // anyway, but a source with no heading in it would take
+                // a base of `.h1` in silence and mean nothing by it. So
+                // it is refused at the document, where the field is
+                // written.
+                if (d.base_level == .h1) return error.HeadingAtTitleLevel;
+            },
             // A copyable's value is the whole point; an empty one is a
             // control that copies nothing.
             .copyable => |c| if (c.value.len == 0) return error.EmptyCopyable,

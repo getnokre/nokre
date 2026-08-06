@@ -745,14 +745,15 @@ test "a document is a named landmark over ordinary parsed elements" {
     const d = snap.find(doc).?;
     try testing.expectEqual(A11yRole.document, d.role);
     // Explicit, never derived: legal text often does not open with a
-    // heading, so the first h1 is not a name.
+    // heading, and the page's top is the screen's title anyway.
     try testing.expectEqualStrings("Terms of Service", d.label);
 
     // Everything inside is an ordinary element — nothing in the a11y
-    // tree knows Markdown was involved, and the rebased "## " is an h1.
+    // tree knows Markdown was involved, and the rebased "## " is an h2,
+    // one below the level the screen's title holds.
     const heading = snap.findByLabel("Your data").?;
     try testing.expectEqual(A11yRole.heading, heading.role);
-    try testing.expectEqual(@as(u8, 1), heading.heading_level);
+    try testing.expectEqual(@as(u8, 2), heading.heading_level);
     const link = snap.findByLabel("minimum").?;
     try testing.expectEqual(A11yRole.link, link.role);
     try testing.expect(link.focusable);

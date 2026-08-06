@@ -15,7 +15,7 @@ const L = h.l10n.Bundle(&.{
 // picks the catalog.
 const loc = L.resolve(app.locale());
 const b = app.root();
-try b.heading(.h1, L.tr(loc, .inboxTitle));
+try b.heading(.h2, L.tr(loc, .inboxTitle));
 try b.text(try L.fmtIn(&app.tree, loc, .nUnread, .{ .count = unread }));
 ```
 
