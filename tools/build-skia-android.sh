@@ -5,12 +5,14 @@
 #
 # Same pinned source tag as every other platform, reusing the
 # deps/skia-ios-src checkout (the directory name predates the non-Apple
-# builds; the tag itself is platform-neutral). Android takes the wasm
-# profile, not the Apple one: there is no CoreText, and the system
-# fontmgr would drag in expat and per-device font files — so this is
-# another FreeType-from-memory build (SkFontMgr_New_Custom_Empty,
-# docs/internals/skia-build.md). Pixels match the web and Windows
-# builds, not yet the CoreText platforms.
+# builds; the tag itself is platform-neutral). Android takes the
+# FreeType-from-memory profile, not the Apple one: there is no
+# CoreText, and the system fontmgr would drag in expat and per-device
+# font files — so the faces come from the embedded bytes alone
+# (SkFontMgr_New_Custom_Empty, docs/internals/skia-build.md). Pixels
+# match the Windows and Linux builds, which take the same FreeType
+# path, and not the CoreText platforms — the intended shape, not a gap
+# waiting to close (docs/internals/pixel-model.md).
 #
 # Requires an NDK (ANDROID_NDK_ROOT, or auto-detected under the SDK's
 # ndk/ directory) and python3. A few minutes per ABI on Apple Silicon.
@@ -57,8 +59,8 @@ python3 bin/fetch-gn
 python3 bin/fetch-ninja
 
 # FreeType and its build-graph companions at the revisions Skia's DEPS
-# pins for this tag — the same trio the wasm build clones and for the
-# same reasons (freetype2 hard-depends on libpng, which needs zlib).
+# pins for this tag. All three, because Skia's freetype2 target
+# hard-depends on libpng, which in turn needs zlib.
 for ext in freetype zlib libpng; do
   EXT_DIR="third_party/externals/${ext}"
   [ -d "${EXT_DIR}" ] && continue
@@ -74,16 +76,17 @@ EOF
   git -C "${EXT_DIR}" checkout --quiet "${SPEC##*@}"
 done
 
-# CPU raster only — the wasm args with the emscripten bits swapped for
-# the NDK toolchain. fontmgr_android must be off explicitly (its
+# CPU raster only — the same minimal profile build-skia-ios.sh
+# compiles, on the NDK toolchain and with FreeType where that one has
+# CoreText. fontmgr_android must be off explicitly (its
 # target_os="android" default is on and would require expat plus
-# /system/etc/fonts at runtime); custom_empty on for the embedded faces.
-# One divergence from wasm: non-wasm targets get the freetype-android
-# config, whose ftoption.h enables PNG color glyphs, so libpng must
-# really be in the archive — and official builds default to a *system*
-# libpng Android does not have (only wasm defaults it off), hence the
-# explicit skia_use_system_libpng=false. Bundled libpng pulls the
-# bundled zlib along, exactly the wasm archive's shape.
+# /system/etc/fonts at runtime); custom_empty on for the embedded
+# faces. The two libpng args are the wrinkle: the FreeType config Skia
+# hands this target defines FT_CONFIG_OPTION_USE_PNG (color bitmap
+# glyphs), so libpng must really be in the archive — and Skia's
+# skia_use_system_libpng defaults *on* in an official build, meaning a
+# system libpng Android does not ship, hence setting it false here.
+# Bundled libpng pulls the bundled zlib along.
 common_args() {
   local cpu="$1"
   cat <<EOF

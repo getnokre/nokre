@@ -982,24 +982,21 @@ const is_android = builtin.abi.isAndroid();
 
 // Emit the Android shell's nokre_* exports: main never touches nokre
 // there (the Activity boots the app through them instead), so nothing
-// else pulls the shell into the build. The web has the same problem and
-// nokre forces it there itself, because on that platform *which* shell
-// is a build-time declaration — the canvas one or the DOM edition's
-// live driver (docs/internals/dom-edition.md), and an example has no
-// business choosing.
+// else pulls the shell into the build.
 comptime {
     if (is_android) _ = h.platform.backend;
-    // The web's exports are nokre's to emit — which shell or edition
-    // they belong to is a build-time declaration there, not a decision
-    // an example makes. What an app still owes is the reference itself:
-    // `main` never runs on the web, so without this nothing pulls the
-    // library into the build at all.
+    // The web needs the same reference for a broader reason: `main`
+    // never runs there at all, so without this nothing pulls the
+    // library into the build. Which exports get emitted is not an
+    // example's concern either way — src/nokre.zig forces the DOM
+    // edition's live driver into every wasm build itself.
     if (is_wasm) _ = h;
 }
 
 pub fn main() if (is_wasm) void else anyerror!void {
     if (comptime is_wasm) {
-        // The browser never calls main — nokre_boot builds the app via
+        // The browser never calls main — the page drives the module's
+        // `nokre_dom_boot` export, which builds the app via
         // nokreWebBuild below — but zig's start code still wraps main
         // on wasm, and a void return keeps its error-logging io (not
         // freestanding-safe) out of the build.
@@ -1038,10 +1035,11 @@ pub fn nokreAndroidBuild(gpa: std.mem.Allocator) !*h.App {
     return nokreWebBuild(gpa);
 }
 
-/// Web entry: the browser owns the event loop, so the wasm shell builds
-/// the app from nokre_boot (src/platform/web/web.zig) instead of `main`,
-/// which never runs there. Everything lives on the heap — no enclosing
-/// stack frame outlives this call.
+/// Web entry: the browser owns the event loop, so the DOM edition's
+/// live driver calls this from its `nokre_dom_boot` export
+/// (src/render/dom/live.zig) instead of `main`, which never runs there.
+/// Everything lives on the heap — no enclosing stack frame outlives
+/// this call.
 pub fn nokreWebBuild(gpa: std.mem.Allocator) !*h.App {
     const state = try gpa.create(State);
     errdefer gpa.destroy(state);

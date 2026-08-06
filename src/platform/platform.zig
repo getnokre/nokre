@@ -1,4 +1,4 @@
-//! One platform contract, six thin shells. The shell's whole job:
+//! One platform contract, five thin shells. The shell's whole job:
 //! create a surface, deliver input events, blit the CPU-rendered frame.
 //! Everything intelligent lives above this line.
 

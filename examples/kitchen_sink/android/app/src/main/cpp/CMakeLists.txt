@@ -1,8 +1,7 @@
 # Links libnokre_app.so — the one artifact the APK carries. The NDK
 # toolchain compiles every line of C/C++ (JNI shell, Skia shim,
-# qrcodegen) so the object world matches the NDK-built Skia archive,
-# the same one-toolchain rule the web build follows with emcc; the Zig
-# world arrives as the static library `zig build` produced (the
+# qrcodegen) so the object world matches the NDK-built Skia archive;
+# the Zig world arrives as the static library `zig build` produced (the
 # zigBuild task in ../../../build.gradle).
 cmake_minimum_required(VERSION 3.22)
 project(nokre_app C CXX)

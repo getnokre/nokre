@@ -62,7 +62,7 @@ pub const DriverSource = struct { name: []const u8, bytes: []const u8 };
 /// as the list, so a stale copy cannot outlive the binary that publishes
 /// it — the argument icons.zig makes for embedding the subset script.
 /// It costs nothing where it is not named: a `pub const` nothing
-/// references is never analyzed, so the six shells and every app carry
+/// references is never analyzed, so the five shells and every app carry
 /// none of this.
 pub const driver_sources: []const DriverSource = blk: {
     var list: [driver_files.len]DriverSource = undefined;

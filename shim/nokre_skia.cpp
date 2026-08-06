@@ -69,16 +69,17 @@ sk_sp<SkFontMgr> fontMgr() {
 #if defined(__APPLE__)
     static sk_sp<SkFontMgr> mgr = SkFontMgr_New_CoreText(nullptr);
 #elif defined(__EMSCRIPTEN__) || defined(_WIN32) || defined(__ANDROID__) || defined(__linux__)
-    // FreeType rasterizes the embedded faces from memory alone: on the
-    // web there are no system fonts (skia_enable_fontmgr_custom_empty in
-    // tools/build-skia-wasm.sh; tools/build-skia-android.sh does the
-    // same, skipping the system fontmgr and its expat dependency); on
-    // Windows the prebuilt compiles FreeType in, and using it instead
-    // of DirectWrite keeps one text stack per
+    // FreeType rasterizes the embedded faces from memory alone: Android
+    // builds it that way on purpose (skia_enable_fontmgr_custom_empty in
+    // tools/build-skia-android.sh, skipping the system fontmgr and its
+    // expat dependency); on Windows the prebuilt compiles FreeType in,
+    // and using it instead of DirectWrite keeps one text stack per
     // docs/internals/skia-build.md; desktop Linux (Wayland shell) takes
-    // the same FreeType path — one text stack, pixels matching the web
-    // build, not yet the CoreText platforms. RefEmpty() below cannot make
-    // a typeface from the embedded font bytes, so it must never be Linux.
+    // the same FreeType path. One text stack across the three, and
+    // pixels that match each other and not the CoreText platforms —
+    // chosen, not pending (docs/internals/pixel-model.md). RefEmpty()
+    // below cannot make a typeface from the embedded font bytes, so it
+    // must never be Linux.
     static sk_sp<SkFontMgr> mgr = SkFontMgr_New_Custom_Empty();
 #else
     static sk_sp<SkFontMgr> mgr = SkFontMgr::RefEmpty();

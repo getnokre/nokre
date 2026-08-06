@@ -9,8 +9,9 @@
 //!
 //! It links no Skia and no emscripten. `wasm32-freestanding` and
 //! `std.heap.wasm_allocator` are the entire platform requirement, which
-//! is what makes the bundle a fraction of the canvas shell's — the
-//! rasterizer this edition needs is the one already in the browser.
+//! is what makes the bundle a fraction of the size of the canvas shell
+//! this edition replaced — the rasterizer this edition needs is the one
+//! already in the browser.
 //!
 //! ## The event flow is inverted, deliberately
 //!

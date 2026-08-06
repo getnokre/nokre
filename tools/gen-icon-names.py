@@ -55,10 +55,10 @@ FONT = os.path.join(ROOT, "src", "assets", "fonts", "lucide.ttf")
 def font_codepoints(path):
     """The codepoints the bundled font maps, from its (3,1) format 4 cmap.
 
-    Hand-parsed rather than via fonttools: every tool here is stdlib-only
-    (see make-brand-font.py, which builds a TTF the same way), and the
-    subset needed is one BMP subtable — Lucide's glyphs live in the
-    private use area, so nothing here reaches past U+FFFF.
+    Hand-parsed rather than via fontTools: the subset needed is one BMP
+    subtable — Lucide's glyphs live in the private use area, so nothing
+    here reaches past U+FFFF — and reading it inline keeps this script
+    runnable with nothing installed.
     """
     with open(path, "rb") as f:
         data = f.read()

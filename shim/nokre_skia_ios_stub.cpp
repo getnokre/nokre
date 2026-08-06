@@ -1,6 +1,6 @@
 // Linked only into the iOS build. (The codec-free SkPngEncoder stub the
 // iOS link also needs lives in nokre_skia_nocodec_stub.cpp, shared
-// with wasm.)
+// with the Android NDK build.)
 //
 // _dyld_get_image_header_containing_address: referenced by Zig's stack
 // -trace symbolization (start code and panic plumbing), but the iOS SDK
