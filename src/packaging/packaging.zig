@@ -39,6 +39,15 @@ pub const icon = @import("icon.zig");
 /// compiles it.
 pub const apple_icon = @import("apple_icon.zig");
 
+/// The one file name the web driver's set lets out: the module a boot
+/// script imports `mount` from (render/dom/driver_files.zig). The page
+/// this file emits boots one, so it is the fifth reader of that set and
+/// re-typing the name here is exactly the drift the set is data to
+/// prevent. Importable from a build-time-only module because it is that
+/// module's stated shape — a leaf with no imports, since build.zig reads
+/// it too.
+const driver_entry = @import("../render/dom/driver_files.zig").entry;
+
 /// App identity as build.zig declares it (the `pkg_*` options alias
 /// this struct). Packaging consumes the declaration directly, never the
 /// package_info service, so manifests can exist for an app that links
@@ -209,6 +218,38 @@ pub const Web = struct {
     /// inside a policy is a string that could end the directive it landed
     /// in and start a friendlier one.
     connect_src: []const []const u8 = &.{},
+
+    /// The `lang` on the shell page's root element.
+    ///
+    /// **A field because there is nothing here to derive it from.**
+    /// A generated document reads the tag off the app that rendered it
+    /// (render/dom/document.zig's `langTag`); this page has no app and
+    /// never will — it is written out of the declaration by the build
+    /// script, before anything is compiled — so the declaration is the
+    /// only place the fact can come from. It is also the only locale
+    /// attribute here: direction is stamped at boot by `live.js`'s
+    /// `syncRoot` (`data-direction`, and deliberately never `dir`),
+    /// and `lang` is the one that driver writes nowhere.
+    ///
+    /// **The default is `element.default_chrome_tag`'s claim and not a
+    /// wider one.** "en" is not "the app is English": it is the
+    /// language nokre's own nav bar, close control and notices pane are
+    /// in on an app that never localized — the narrowest true statement
+    /// a page with no app behind it can make, and the same stand-in
+    /// `langTag` takes for an empty tag. The constant itself is not
+    /// imported: build.zig reads this file, so packaging imports
+    /// nothing that reaches the library (driver_files.zig states the
+    /// rule), and the two values are held equal by a test instead.
+    ///
+    /// **Where it is silently wrong, which is `langTag`'s case seen
+    /// from the other side.** This page pins no locale into `mount`, so
+    /// the app boots on the device lane — right, because there is no
+    /// generated markup for it to disagree with — and a Persian browser
+    /// then gets a Persian app under whatever this attribute says. One
+    /// shell serves every reader, so no single value is right for all
+    /// of them; what this field buys is that the choice is the
+    /// declaring app's rather than this file's.
+    lang: []const u8 = "en",
 };
 
 /// The first `connect_src` entry a page will not carry, or null when
@@ -917,21 +958,37 @@ pub const web_page_css: []const u8 =
 /// run one inline script could run the one an injection wrote. The name
 /// is escaped as a JSON string because JSON's escapes are JavaScript's,
 /// and a module name is a consumer's string.
+///
+/// **It is the second writer of a boot call, and the differences are
+/// each a fact about a file rather than a drift.** document.zig's
+/// `bootScript` writes the same call inline, and escapes through a
+/// private `js` that spells `<` as `\x3C` — because a `<script>` block
+/// ends at the first `</script>` in its raw text. This one is a module
+/// *file*, where those bytes are three characters of nothing, so the
+/// JSON escape is the whole of what a string literal owes. What is not
+/// a difference is the module name: it is `driver_files.entry` in both,
+/// since that set is data precisely so nobody types it twice.
+///
+/// The call also pins no `locale`, and that is the one page where an
+/// absent one is right — `mount` reads absence as "follow the device",
+/// and this page has no generated screen for the device to disagree
+/// with (`Web.lang`, docs/internals/dom-edition.md).
 pub fn webBootJs(gpa: std.mem.Allocator, web: Web) error{OutOfMemory}![]u8 {
     const wasm_js = try jsonEscapedAlloc(gpa, web.module_wasm);
     defer gpa.free(wasm_js);
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(gpa);
     try out.print(gpa,
-        \\import {{ mount }} from "./live.js";
+        \\import {{ mount }} from "./{s}";
         \\await mount({{ wasm: "./{s}", into: document.getElementById("app") }});
         \\
-    , .{wasm_js});
+    , .{ driver_entry, wasm_js });
     return out.toOwnedSlice(gpa);
 }
 
 /// The whole web host page, so a consumer authors no HTML at all: the
-/// title and the manifest come from the declaration, and the two files
+/// title, the language (`Web.lang`) and the manifest come from the
+/// declaration, and the two files
 /// beside it — `page.css` and `boot.js`, emitted above — carry the
 /// column and the mount. The driver files (`dom.driver_files` states
 /// the set as data), style.css and the fonts ride along in the same
@@ -1008,13 +1065,23 @@ pub fn webBootJs(gpa: std.mem.Allocator, web: Web) error{OutOfMemory}![]u8 {
 pub fn webIndexHtml(gpa: std.mem.Allocator, decl: Decl, web: Web) error{OutOfMemory}![]u8 {
     const name_html = try xmlEscapedAlloc(gpa, decl.name);
     defer gpa.free(name_html);
+    // Escaped like every other declared string that lands in an
+    // attribute: a tag is `[a-zA-Z0-9-]` and a consumer's value is
+    // whatever they typed.
+    const lang_html = try xmlEscapedAlloc(gpa, web.lang);
+    defer gpa.free(lang_html);
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(gpa);
+    try out.appendSlice(gpa, "<!doctype html>\n<html lang=\"");
+    try out.appendSlice(gpa, lang_html);
     // First in the head, before anything it governs: a policy only ever
-    // applies to what the parser meets after it.
+    // applies to what the parser meets after it. Which is also what
+    // keeps this page a second writer rather than a `Document` with the
+    // screen left out — that type's one head seam is spliced at the
+    // *end* of the head, after the stylesheet link this policy has to
+    // reach (render/dom/document.zig's `Document.head`).
     try out.appendSlice(gpa,
-        \\<!doctype html>
-        \\<html lang="en">
+        \\">
         \\<head>
         \\<meta charset="utf-8">
         \\<meta http-equiv="Content-Security-Policy" content="

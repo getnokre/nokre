@@ -347,6 +347,20 @@ structure around them.
   no screen in it yet ([packaging.zig](../../src/packaging/packaging.zig)'s
   `webIndexHtml`, whose `mount` call pins nothing).
 
+  That page is the other side of this whole arrangement and the reason
+  it is a second writer rather than a `Document` with the screen left
+  out. It has no `App` to read a locale off — the build script emits it
+  out of the declaration, and packaging imports nothing that reaches the
+  library — so its `lang` is a declared field (`packaging.Web.lang`,
+  defaulting to the same `element.default_chrome_tag` stand-in) rather
+  than a derivation. Its head order settles it independently: the CSP
+  meta has to precede the stylesheet link it governs, and `Document`'s
+  one head seam splices at the *end* of the head. Its boot call is the
+  set's second writer too, and the differences there are facts about a
+  file rather than drift — a `.js` module needs no `\x3C`, where an
+  inline `<script>` does — with the module name itself derived from
+  `driver_files.entry` in both.
+
   Resolution stays where it was. Nothing in the driver maps a tag to a
   catalog: the pinned tag lands in the `locale` service exactly where
   the device tag landed ([services.md](../services.md)), and the app's

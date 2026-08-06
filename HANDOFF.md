@@ -241,43 +241,6 @@ in Part A.
 
 ---
 
-## Part A — the document shell
-
-Each item: the claim, the receipt, the argument for the library, the strongest
-argument against, and what "already solved" would look like.
-
-### A1b. `webIndexHtml`'s hardcoded `lang` — a different ask, and a smaller one
-
-**The survey filed this as the same item as A1a. It is not, and merging them
-hides that they have different answers.** `webIndexHtml`
-(`src/packaging/packaging.zig`; the `lang="en"` is a literal in its opening
-`<!doctype html>` block) is the
-**app-shell page `addWebSite` emits** — one document, for a wasm app that boots
-into an empty body. A static generator writes its own document
-(`getnokre.github.io/src/main.zig`'s `writeDocument`) and never calls `webIndexHtml`;
-nothing in the site tree imports `packaging` at all.
-
-So: parameterising `webIndexHtml`'s `lang` does nothing for 4,250 static pages,
-and stamping the static path does nothing for a wasm app shell. **Two items,
-two verdicts**, and they can legitimately differ — A1b is a `Decl` field on a
-page nokre wholly owns, with no consumer boundary anywhere near it; A1a is the
-question of whether nokre writes into a document the driver authored. (A1a has
-since shipped whole and its section is deleted: revision 34 stamped the static
-document, revision 35 carried the same locale across the boot handover. Both are
-in Landed.)
-
-A1b is also the weaker of the two on its own merits: the shell page is a boot
-stub with no prose in it, so `lang` there is nearly decorative. It is cheap, and
-it is not urgent.
-
-(A2 and A4 have since shipped whole and their sections are deleted: revision 37
-put canonical, Open Graph, the Twitter card and `og:image` behind `Document.meta`
-while leaving every destination in it a required driver-supplied field. The entry
-in Landed is where the boundary argument came out; revision 39 then added
-alternates to that same struct without a second origin.)
-
----
-
 ## Part B — per-locale generation
 
 **The owner has flagged this as the part that most needs real support.** It is
@@ -766,13 +729,6 @@ Ten items, strictly sequential, one commit each. Contract changes bump
 `nokre.revision` and move all three pins in the same pass. Each item is deleted
 from this file as it lands, with its outcome recorded.
 
-8. **`webIndexHtml`'s `lang`** — A1b. **Check first whether `dom.document`
-   should simply write that page**, which item 2 left open deliberately: the
-   shell page is a title, a stylesheet link, a body with one mount point and a
-   boot, which is `Document` with `skip = ""` and no `body_end`. Two obstacles,
-   both real and neither large: `webIndexHtml` writes its page with no `App` in
-   hand (`document` takes an `Emitter`, which is an App and an `out`), and the
-   shell boots into `document.body` where `Document` requires two mount ids.
 9. **Part G** — `getnokre.github.io` onto all of it. **What items 6 and 7 left
    ready for it:** the ~20 stubs are `dom.localeStub` calls over a single-locale
    bundle, and the identity case needs no special branch — the self-address guard
@@ -788,6 +744,90 @@ from this file as it lands, with its outcome recorded.
 ---
 
 ## Landed
+
+### 8. `webIndexHtml`'s `lang` — SHIPPED as `Web.lang`, revision 40. Unification refused.
+
+**The open question is answered no, and the ground is layering rather than
+taste.** `webIndexHtml` is not called from an app or a driver — it is called
+from **build.zig itself** (`addPkgTree`), which does
+`const packaging = @import("src/packaging/packaging.zig")` and runs it in the
+build runner. `driver_files.zig`'s own module doc already states the rule that
+follows: *"a leaf module with no imports because build.zig is one of the readers
+— the build script cannot import anything that reaches the rest of the
+library."* `document.zig` imports `core/app.zig`, `serialize.zig`, `color.zig`,
+`class_names.zig` and `element.zig`. Unifying would put the whole core+render
+stack inside the build script.
+
+**The "no `App` in hand" obstacle is not an obstacle, it is the shape of the
+thing.** `Emitter` holds an `*App`; `App.init` wants a text measurer, a `Router`
+over a route table, a `workers.Runtime` with threads, and a `Services`. There is
+no App to be had at build-graph time and no honest null one to make, and
+`document` then calls `serialize.chrome`/`serialize.content` over it — so
+`Document` would need a no-screen mode on top of a one-mount mode, which is
+exactly *"a shape that exists only to serve a page with no screen in it."*
+
+**A third obstacle the queue entry did not name, and on its own it is
+decisive.** The shell page's whole reason for existing is a
+Content-Security-Policy that must precede everything it governs — including the
+two `<link rel="stylesheet">` tags. `Document`'s one head seam is spliced at the
+*end* of the head, after `headOpen` writes the title and the stylesheet link,
+and it is documented that way for the charset-first rule. Unifying would mean a
+second head seam whose only user is this page.
+
+**Precedent, already recorded in the file itself.** `document.zig`'s module doc
+explains why `localeStub` — a page far *closer* to `Document`, sharing
+`headOpen` and holding a real `Emitter` — is *"a second writer instead of a flag
+on `Document`."* The shell is one step further out.
+
+**The boot script had drifted, and finding that was worth more than the
+`lang`.** `webIndexHtml` writes no boot script — the CSP forbids inline
+`<script>`, so it links `boot.js`, which `webBootJs` writes. That file typed
+`"./live.js"` by hand, which is precisely the failure `driver_files.entry` is
+data to prevent (*"the only file name that ever leaves the set… a driver joining
+it to its own directory never types it"*). It now imports `driver_files.zig` —
+legal exactly because that module is the documented zero-import leaf build.zig
+already reads. The emitted bytes do not move.
+
+**What is *not* drift, checked and recorded:** `webBootJs` escapes through
+`jsonEscapedAlloc` where `document.zig` uses its private `js` with `\x3C`. That
+difference is correct — `boot.js` is a module *file*, where `</script>` is three
+characters of nothing; the `<` rule exists for an inline block. And the call
+pins no `locale`, `content`, `route` or `addressing`: all four are right for a
+one-mount page with no screen in it.
+
+**The device-lane check: item 3's claim holds, verified in `live.js`.**
+`const pinned = typeof locale === "string"` — an absent `locale` reads
+`navigator.language`, and the `languagechange` listener is installed only on
+that lane. The shell boots into an empty body, so there is no generated markup
+for the device to disagree with, and following the reader is right. The
+*residual* is the attribute, not the boot: `syncRoot` stamps `data-appearance`
+and `data-direction` and never `lang` (zero hits in that file), so a static
+`lang` cannot follow a boot that resolved elsewhere. One shell serves every
+reader; no single value is right for all of them. That is stated at the field.
+
+**`lang` lives on `Web`, not `Decl`.** `Decl` is the cross-platform identity
+twelve emitters read; a language tag would be a field eleven of them ignore.
+`Web` is already *"the web half of the declaration, as packaging reads it."*
+`build.zig`'s `AppOptions` gains `web_lang`, whose default is
+`(packaging.Web{}).lang` rather than a third literal.
+
+**The default is `element.default_chrome_tag`'s claim, not a second answer.**
+`"en"` here means what `langTag` says it means — the language nokre's own nav
+bar, close control and notices pane are in on an app that never localized —
+which is the narrowest true statement a page with no app behind it can make.
+The constant cannot be imported (build.zig reads packaging), so the two
+spellings are held equal by a test that can see both, the way `class_names.zig`
+handles a fact the compiler cannot follow. The value is escaped through
+`xmlEscapedAlloc` like `Decl.name` beside it.
+
+**Every HANDOFF claim in the item checked out**, including "nothing in the site
+tree imports `packaging`" and "no rokovski app reaches it" — the only hit in
+either tree is the word "packaging" in one of the site's own blurbs. The
+emitted `zig-out/web/index.html` and `boot.js` are byte-identical to the
+previous revision, which is what a default that changes nothing should look
+like. Three tests added: the default against core's constant, a declared tag
+that moves exactly one line of the page, and an attribute-closing tag that does
+not escape it.
 
 ### 7. hreflang, `x-default`, sitemap alternates — SHIPPED, revision 39
 

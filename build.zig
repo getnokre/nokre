@@ -132,6 +132,14 @@ pub const AppOptions = struct {
     /// docs/getting-started.md, the policy it joins is
     /// docs/internals/dom-edition.md).
     web_connect_src: []const []const u8 = &.{},
+    /// Web only: the `lang` on the generated shell page. The default is
+    /// the language nokre's own chrome words are in, which is the
+    /// narrowest claim a page with no app behind it can make; a
+    /// localized app says its own. The whole argument — including the
+    /// one case where any single value here is wrong — is
+    /// `packaging.Web.lang`, and the default comes from there rather
+    /// than being typed a second time.
+    web_lang: []const u8 = (packaging.Web{}).lang,
 };
 
 pub const App = struct {
@@ -363,9 +371,14 @@ fn appPkgTree(hb: *std.Build, options: AppOptions) ?std.Build.LazyPath {
 }
 
 /// The web half of the declaration, as packaging reads it: the module's
-/// name in the site and the hosts the app is allowed to reach from it.
+/// name in the site, the hosts the app is allowed to reach from it, and
+/// the language its shell page claims.
 fn appWeb(options: AppOptions) packaging.Web {
-    return .{ .module_wasm = options.web_wasm, .connect_src = options.web_connect_src };
+    return .{
+        .module_wasm = options.web_wasm,
+        .connect_src = options.web_connect_src,
+        .lang = options.web_lang,
+    };
 }
 
 /// secure_store without an identity cannot link (the id is the store's

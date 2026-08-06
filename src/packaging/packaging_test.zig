@@ -326,6 +326,63 @@ test "web index.html is byte-exact" {
     try std.testing.expectEqualStrings(@embedFile("testdata/index.html"), actual);
 }
 
+test "the shell page's default language is the one nokre's own words are in" {
+    // Two spellings of one fact, and the second one exists for a
+    // reason: build.zig imports this module, so packaging imports
+    // nothing that reaches the library (driver_files.zig states the
+    // rule) and `element.default_chrome_tag` cannot be read from here.
+    // A test binary can see both, so the agreement is checked where it
+    // is checkable rather than asserted in a comment.
+    try std.testing.expectEqualStrings(
+        @import("../core/element.zig").default_chrome_tag,
+        (packaging.Web{}).lang,
+    );
+}
+
+test "the declared language is the root element's, and moves nothing else" {
+    const actual = try packaging.webIndexHtml(std.testing.allocator, fixture, .{ .lang = "fa" });
+    defer std.testing.allocator.free(actual);
+    const plain = try packaging.webIndexHtml(std.testing.allocator, fixture, .{});
+    defer std.testing.allocator.free(plain);
+
+    // The golden above is the page an app that declared nothing gets;
+    // this is the property that golden exists for. A declared language
+    // is one attribute — a page has no other place a locale belongs,
+    // and this page in particular has no prose in it to move.
+    var declared = std.mem.splitScalar(u8, actual, '\n');
+    var none = std.mem.splitScalar(u8, plain, '\n');
+    var line_no: usize = 0;
+    while (none.next()) |line| : (line_no += 1) {
+        const other = declared.next().?;
+        if (line_no == 1) {
+            try std.testing.expectEqualStrings("<html lang=\"en\">", line);
+            try std.testing.expectEqualStrings("<html lang=\"fa\">", other);
+            continue;
+        }
+        try std.testing.expectEqualStrings(line, other);
+    }
+    try std.testing.expectEqual(null, declared.next());
+}
+
+test "a declared language is escaped as the attribute it lands in" {
+    // `lang` is a tag in every honest use, and a consumer's string in
+    // every possible one: the bytes that would close the attribute and
+    // open an element get the same treatment `Decl.name` gets one line
+    // below it.
+    const html = try packaging.webIndexHtml(std.testing.allocator, fixture, .{
+        .lang = "en\"><script>alert(1)</script",
+    });
+    defer std.testing.allocator.free(html);
+    try std.testing.expect(std.mem.indexOf(
+        u8,
+        html,
+        "<html lang=\"en&quot;&gt;&lt;script&gt;alert(1)&lt;/script\">",
+    ) != null);
+    // The page still loads exactly one script, and it is the boot
+    // module the policy names.
+    try std.testing.expectEqual(1, std.mem.count(u8, html, "<script"));
+}
+
 test "declared hosts join connect-src and no other directive" {
     const actual = try packaging.webIndexHtml(std.testing.allocator, fixture, .{
         .connect_src = &.{ "https://api.example.com", "wss://live.example.com" },
@@ -488,6 +545,15 @@ test "web boot.js is byte-exact" {
     const actual = try packaging.webBootJs(std.testing.allocator, .{});
     defer std.testing.allocator.free(actual);
     try std.testing.expectEqualStrings(@embedFile("testdata/boot.js"), actual);
+
+    // And the module it imports is the driver set's own entry rather
+    // than a fifth typing of that name — the golden above would pin a
+    // stale one just as happily (driver_files.zig, `entry`).
+    try std.testing.expect(std.mem.indexOf(
+        u8,
+        actual,
+        "\"./" ++ @import("../render/dom/driver_files.zig").entry ++ "\"",
+    ) != null);
 }
 
 test "a module name is escaped as the JavaScript string it lands in" {

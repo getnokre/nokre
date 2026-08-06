@@ -63,7 +63,11 @@ nothing.
 `setLocale` is also what a *generated* page says it is in: the third
 line above is where the `lang` attribute on a serialized document comes
 from, so an app that renders pages without it publishes them claiming a
-language it may not be speaking.
+language it may not be speaking. The one page it does *not* answer for
+is the web app's shell — that one is written by the build before any app
+exists, boots into an empty body and follows the reader's own device, so
+its `lang` is declared instead: `.web_lang`
+([getting-started.md](getting-started.md)).
 
 A static site that publishes every locale runs those same lines once per
 `L.Locale` and writes its tree again inside the loop — the loop, the

@@ -2032,6 +2032,25 @@ covers every response rather than one document. One thing not to add:
 `require-trusted-types-for 'script'` breaks the live driver, which
 patches each frame in by parsing markup off-document.
 
+**The one other thing on the page that is yours is its language.** The
+shell page has no prose in it — a title and an empty mount point — but
+its root element still has to claim a tag, and the default is the
+language nokre's own chrome words are in:
+
+```zig
+        .web_lang = "fa",
+```
+
+It is a declaration rather than a derivation because the page is written
+by your build, out of the declaration alone, before an app exists to
+ask. And it is the page's only locale attribute: the driver stamps the
+direction itself at boot, and there is exactly one shell for every
+reader — so if your app is localized, this is one value standing for all
+of them, and the honest choice of which is yours rather than nokre's.
+(Every *generated* page — the static route pages a site emits — takes
+its `lang` from the app that rendered it and needs no option:
+[localization.md](localization.md).)
+
 Everything carries over: keyboard, scrolling, the software keyboard,
 dark mode from the OS, and an accessibility tree that is not mirrored
 anywhere, because it is the page. Three things do not, and they are the
