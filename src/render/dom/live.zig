@@ -310,7 +310,11 @@ fn buildFrame(em: *dom.Emitter, wrap: i32) !struct { chrome_bytes: usize, reserv
     // unconditionally left every plain screen ending in 96px of
     // nothing.
     const chromed_screen = layout.hasBottomChrome(&app.tree);
-    if (wrap != 0) try em.raw(if (chromed_screen) "<main class=\"nokre has-chrome\">" else "<main class=\"nokre\">");
+    // The class list comes from `rootClass` rather than being spelled
+    // here: it is the same string a host document that wrote its own
+    // `<main>` gets, and two spellings of it is the failure the export
+    // exists to remove (class_names.zig).
+    if (wrap != 0) try em.print("<main class=\"{s}\">", .{dom.rootClass(em)});
     try dom.content(em);
     if (wrap != 0) try em.raw("</main>");
     return .{ .chrome_bytes = chrome_len, .reserve = chromed_screen };
@@ -328,6 +332,13 @@ fn chromeLen() callconv(.c) usize {
 /// `has-chrome` class, for a host document that wrote the `<main>` this
 /// driver would otherwise have put it on. The answer is layout's either
 /// way; only who writes it down changes.
+///
+/// This is the *browser's* copy of that question, and it is why the
+/// class has two answerers rather than one: a Zig driver asks
+/// `dom.rootClass` once, at emission, and is handed the finished class
+/// list; live.js asks this every frame, across a boundary no Zig
+/// constant crosses, because the screen it is patching can gain or lose
+/// its chrome under it.
 fn chromed() callconv(.c) i32 {
     return @intFromBool(reserve);
 }

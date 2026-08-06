@@ -1,6 +1,10 @@
 # HANDOFF — what a static, multi-locale site needs from nokre (2026-08-06)
 
-Status: **SURVEY. Nothing here is executed, and nothing here is settled.**
+Status: **IN EXECUTION.** Part F was answered whole on 2026-08-06 — the round's
+premises are settled and recorded there; read it before anything else. The
+survey's *claims* are still claims and still want checking, but its open
+*questions* are closed. The execution queue is at the foot of this file, and
+items are deleted from it as they land.
 
 This file succeeds the third ergonomics round (executed whole; recoverable at
 `git show 3855adf:HANDOFF.md`). Parts 0 and A of that round are done through
@@ -134,13 +138,8 @@ moving it was not true.
 1. **Parts A and B are not re-proposals of a killed item.** They are new
    questions about a question that was deferred. Refusing them on adjacency
    grounds would be refusing something that was never refused.
-2. **The kill's surviving half is a real, still-live item, and it is small.**
-   `nokre has-chrome` is a genuine shared contract string that a host document
-   must write and nokre never exports — `dom.zig` exports `driver_files`,
-   `driver_sources`, `Emitter`, `Refs`, `Dest`, `content`, `chrome`, `node`, and
-   no class name at all. Both static consumers will retype it. That is one
-   exported constant, not a document shell, and it is worth doing whatever else
-   this round decides.
+2. ~~**The kill's surviving half is a real, still-live item, and it is small.**~~
+   **SHIPPED, revision 33 — as a function, not a constant.** See "Landed" below.
 3. **The precedent to honour is the *shape* of that kill, not its verdict.**
    Round two killed a document helper because two thirds of what it proposed to
    own belonged to the driver. Any Part A item that asks nokre to own something
@@ -580,32 +579,14 @@ Worth deciding alongside B1 rather than after: it determines whether the
 canonical for the home page is `/` or `/en/`, which determines what the redirect
 stub at `/` must say, which the consumer already has two of.
 
-### B5. Route references are ASCII-only — a constraint the survey did not find
+### B5. Route references are ASCII-only
 
-**Receipt.** `validIdent` (`src/core/router.zig`) permits exactly
-`[A-Za-z0-9_.-]`; `Router.writeRef` refuses everything else with
-`error.RouteArgCharset`, and `Router.resolve` refuses the same set on the way
-back in, as `.arg_charset`. `arg_separator` is `'~'` and `max_ref_bytes` is 256.
-The rule is stated on purpose, in `validIdent`'s own doc comment — *"an argument
-is an identifier and not a payload. Free text is a URL, which is deep_link's
-business"*.
-
-**Benign for the incoming consumer as built.** Its generated paths are ASCII
-even under `/fa/` — the locale prefix is a BCP 47 tag and the statement slugs
-below it are ASCII identifiers. Nothing about the migration hits this today.
-
-**It kills one thing outright, and quietly.** Any *localized-slug* scheme — a
-Persian or Turkish route argument, the obvious next ask for a content-SEO
-surface in three languages — refuses at `writeRef` rather than degrading. And
-**`docs/localization.md` never mentions it**: the doc that tells a consumer how
-to be multi-locale has nothing to say about the one place a locale's own script
-is rejected. Whatever this round decides about Parts A and B, that omission is
-worth one sentence in that file regardless, because it is where someone will
-look.
-
-Note this is a real refusal with a stated ground, not an oversight — the
-argument for it is the same argument `Refs`/`Dest` makes, that a reference is a
-name and not bytes. The item is documenting it, not relaxing it.
+**SHIPPED, revision 33** — documented, not relaxed. See "Landed" below. The
+constraint itself stands exactly as it was: a route argument is an identifier
+and not a payload, and that does not move for a locale. Still binding on
+everything below — a locale prefix is a BCP 47 tag and therefore ASCII, so the
+locale axis does not hit it, but any *localized-slug* proposal is already
+answered.
 
 ---
 
@@ -731,12 +712,9 @@ Verified present. An item proposing any of these is a survey miss.
   The consumer has been told; it is a brand decision on their side, not a request
   on yours.
 - **No image element.** Settled: `Role` (`src/core/element.zig`) has
-  forty-three members and none of them is an image. A4 is a `<meta>` URL and
-  nothing more. One stale sentence to fix while someone is nearby, though:
-  `docs/introduction.md`, "The vocabulary", still describes the closed set in its
-  **Elements** bullet as *"static text and
-  images"* — the one place in the consumer-facing docs that promises an element
-  that does not exist, on the exact question a site migration will ask.
+  forty-three members and none of them is an image — the count is right, checked
+  member by member. A4 is a `<meta>` URL and nothing more. The stale sentence in
+  `docs/introduction.md` that promised one is fixed (revision 33).
 - **Locale-aware route titles, App-owned locale, `L.of`/`L.in`/`Bound`, and the
   bundled locale set itself.** See Part B's opening.
 
@@ -888,37 +866,173 @@ who ends up owning it.
 
 ---
 
-## Part F — questions only the owner can answer
+## Part F — ANSWERED 2026-08-06. These are the round's premises.
 
-1. ~~**Does the original static-site-driver kill still stand?**~~ **Answered
-   2026-08-06 — see "The killed item, recovered" above, and re-read this
-   question in its light.** There was no static-site-driver kill: round two
-   logged the full driver as an undecided owner call and killed only A10.4, a
-   narrow document-shell helper, because two thirds of what it proposed to own
-   were the driver's own inventions. So Parts A and B do **not** collapse on
-   that ground, and the question that is actually left is 2 below. What the
-   recovered kill supplies is a *test* rather than a verdict: an item asking
-   nokre to own something the consumer invents dies the way A10.4 died; an item
-   where nokre already owns the fact and merely fails to export it is the
-   opposite case.
-2. **Where is the line** — full driver, derivations-only (Part C's middle
-   position), or nothing?
-3. **Is `lang`/`dir` on a generated document the same refusal as `data-direction`
-   on an embedded app,** or a different question that the embedded-app refusal
-   was never about? Note the refusal's own note says the media query is what a
-   serialized page *"has to go on"* — for appearance. Direction has no such
-   fallback, and the boot handover has no locale channel at all (A1a). Ask this
-   about the static path only; the app-shell page (A1b) is a separate and much
-   smaller question.
-4. **Default-locale path scheme** — `/en/…` or bare? It cascades into canonical,
-   redirects and the sitemap.
-5. **Does the framework-vs-app boundary get a doc this round?** The consumer-side
-   brief that triggered this round asserted the opposite of the code and was
-   believed, because instances and an analogy are not a rule. There are four
-   instances, not the three the survey found, and the fourth
-   (`src/testing/audit.zig`'s `Options.skip` doc comment) is already written as a rule — so the
-   question is narrower than it looked: does that sentence get promoted out of a
-   test helper's doc comment into a place a consumer reads?
+Every question below is closed. Nothing in Parts A–D or G reopens one; an item
+that appears to is misreading a decision, not finding a gap.
+
+1. ~~**Does the original static-site-driver kill still stand?**~~ **No such kill
+   existed** — see "The killed item, recovered" above. Round two logged the full
+   driver as an undecided owner call and killed only A10.4, a narrow
+   document-shell helper, because two thirds of what it proposed to own were the
+   driver's own inventions. What that kill supplies is a *test*, not a verdict:
+   an item asking nokre to own something the consumer invents dies the way A10.4
+   died; an item where nokre already owns the fact and merely fails to export it
+   is the opposite case. **That test still binds even under 2 below** — a full
+   driver may own the document, but mount-point ids, an addressing mode and a
+   path scheme are still driver-supplied *parameters*, never nokre's inventions.
+
+2. **Where is the line? — FULL STATIC-SITE DRIVER.** nokre grows the per-route
+   loop, the document shell, meta/canonical/OG emission, the locale axis,
+   hreflang and sitemap alternates. Part C's middle position was considered and
+   declined; the derivations-only split is not this round's shape. The
+   counter-argument in Part C — that a GUI library emitting sitemaps has stopped
+   being a GUI library — was heard and overruled, and the ground is Part C's own
+   evidence: five moves in one round, all one direction, every one justified by a
+   driver having gotten it wrong. The second consumer is not going to get 4,250
+   pages of hreflang right by hand either.
+
+3. **`lang`/`dir` on a generated document — a DIFFERENT question, and nokre
+   stamps BOTH.** The embedded-app refusal (`stylesheet.zig`'s `sheet`,
+   mirrored-chrome comment) is unchanged and still binds: an app must not turn
+   its host around. A generated document has no host — nokre wrote the whole
+   file — so Part A's asymmetry note is the resolution, not a loophole.
+   `docs/localization.md`'s "Right-to-left" line stands as written about runs of
+   text; it was never about a document nokre authored end to end.
+
+4. **Default-locale path scheme — PREFIX ALL, including the default**, plus a
+   sniffing stub at every unprefixed path. Settled after checking what a prefix
+   actually costs deep links, which is **nothing on the static web path**: the
+   web leg of `deep_link` is fragment-only (`src/services/deep_link/web.zig`'s
+   `nokre_deep_link_receive`, fired from `live.js` at load and on `hashchange`),
+   and under `addressing: "documents"` `live.js`'s `hashchange` handler returns
+   immediately — *"a fragment there names a heading on the page the reader is
+   already on."* The path is the screen and it comes from the driver's `Refs`.
+   The rules, in full:
+
+   - Every page lives at `/{locale}/…`. No bare-default variant exists.
+   - **A prefixed URL is never redirected.** `/en/x` stays English in a Persian
+     browser. Anything else means one URL shows different content to different
+     readers, which breaks sharing and canonicalisation both.
+   - **An unprefixed path gets a sniffing stub**: resolve `navigator.language`
+     against the bundled locale set (`L.resolve`, the same function `mount`'s
+     boot already runs the device tag through), fall back to `L.default_locale`,
+     `location.replace`. Static hosting can neither read `Accept-Language` nor
+     serve a 301 — GitHub Pages has no redirect rules — so the stub is a page,
+     not a header.
+   - The stub renders plain per-locale links behind the script, so a reader with
+     no JS is offered a choice rather than stranded on a blank page.
+   - `x-default` points at the stub.
+   - **Native App Links are the one place a prefix does bite**, and the answer is
+     consumer-side: rokovski's handler strips a leading locale segment and
+     honours it via `App.setLocale`, falling back to the device locale when
+     absent, so a shared link opens in the sharer's language in the app exactly
+     as it does on the web. No nokre change; `L.resolve` already exists.
+
+   The deciding argument is that hreflang and canonical *require* one URL per
+   locale variant. A locale-less URL for 4,250 statement pages has nothing to
+   alternate with.
+
+5. **Yes — the boundary rule gets a consumer-facing doc.** `src/testing/audit.zig`'s
+   `Options.skip` doc comment already states it as a rule; it gets promoted out
+   of a test helper and restated beside what this round actually shipped. Written
+   last, describing built code rather than intent.
+
+**Part E is out of scope for this round** — both groups. Round three's
+performance work and the residue bullets stay filed as evidence, untouched. They
+are not deferred *by* this round's decisions; they simply were not taken up.
+
+**Part G runs, with the URL move.** Decision 4's sniffing stubs dissolve Part G's
+one stated cost — the objection was that *"every inbound link and every cross-doc
+fragment in `docs/` breaks"*, and a stub at each old unprefixed path means none
+of them do; they land on the right locale instead. So `getnokre.github.io` takes
+a locale axis of one, its pages move to `/en/…`, and ~20 stubs preserve the old
+paths. Part G's honest-about-which-half paragraph still stands: this exercises
+the axis, the loop, the path scheme, `lang` on a generated document and A1a's
+hydration handover, and it exercises **neither** real alternates nor RTL.
+
+---
+
+## The execution queue
+
+Ten items, strictly sequential, one commit each. Contract changes bump
+`nokre.revision` and move all three pins in the same pass. Each item is deleted
+from this file as it lands, with its outcome recorded.
+
+2. **The document shell** — doctype, `lang`, `dir`, head and body, with ids and
+   addressing as driver-supplied parameters (F.1's test).
+3. **Hydration reads the document's locale** — A1a's lead argument: the silent
+   wrong-locale boot, and `mount`'s missing locale channel.
+4. **The head seam and a `</script>`-safe JSON string writer** — A3's residue.
+5. **Canonical, Open Graph, Twitter card, `og:image`** — A2 and A4.
+6. **The locale axis** — the generation loop, prefix-all output paths, sniffing
+   stubs. B1 and B4.
+7. **hreflang, `x-default`, sitemap alternates** — B2 and B3, one derivation.
+8. **`webIndexHtml`'s `lang`** — A1b.
+9. **Part G** — `getnokre.github.io` onto all of it.
+10. **The boundary doc** — F.5, written from what shipped.
+
+---
+
+## Landed
+
+One entry per finished item, with the ground for anything that changed shape.
+The queue above shrinks as this grows.
+
+### 1. Small exports and stale docs — SHIPPED, revision 33
+
+**Reshaped, and the reshaping is the interesting part.** The class name went out
+as **`dom.rootClass(em)`, a function returning the finished attribute value** —
+not the one-or-two exported constants this file proposed. Two bare names fail
+the criterion they were meant to serve: the sheet's selector is *compound*
+(`.nokre.has-chrome`), so a consumer writing the modifier alone matches nothing
+at all, and one choosing the wrong branch gets either 96px of dead space under a
+plain screen or a nav standing on the text. Handing back the whole list means a
+consumer never assembles one; taking the branch from `layout.hasBottomChrome` —
+whose own doc comment says *"One predicate, so the two answers cannot drift"* —
+means it cannot choose the wrong one either. New leaf module
+`src/render/dom/class_names.zig` holds the names as data with the argument in
+its module doc, `driver_files`-style.
+
+**The receipt was incomplete in a way that mattered.** This file cited only
+*"`stylesheet.zig`'s `sheet`, the `.nokre.has-chrome` rule"*. The sheet names
+the root class **seventeen** times — the type base, the tap-highlight, the bidi
+and RTL scoping, `min-width`, `overflow-x: clip`, the back control's four rules,
+plus two in `writeDerived`'s `comptimePrint`. Splicing only the cited rule would
+have left thirteen live transcriptions. All seventeen now derive from the
+constants, verified byte-for-byte against the published `docs/style.css`.
+
+**`live.js` is a fourth writer and cannot import a Zig constant**, so
+`class_names.zig` carries a `comptime` block that greps the `@embedFile`d JS for
+the modifier's spelling and fails the build on drift. The guard was checked by
+renaming the constant and watching it fire, not assumed.
+
+**Two claims corrected.** `Router.resolve` is private — what is public is the
+`Refusal.Reason.arg_charset` it produces, and B5's doc bullet is worded
+accordingly. `dom.zig`'s export list also carries the `serialize` / `stylesheet`
+submodules and `DriverSource` beyond the eight named here; the substantive claim
+(no class name) was right.
+
+**Consumer migrated in the same pass**, per standing practice.
+`getnokre.github.io`'s `writeDocument` takes the list from `rootClass`, and its
+print rule — which had retyped nokre's compound selector as
+`.nokre.has-chrome` — now names `#content`, the mount point's own id, which is
+the site's to name and outranks the class selector anyway.
+
+**B5 and the `introduction.md` phrase shipped alongside**, both as documentation
+only. `docs/localization.md`'s "The refusals" gained a **No localized route
+arguments** bullet — flagged as the one refusal in that list landing at the call
+rather than at compile time, and closing on what it actually costs: the
+localized *slug*, not the localized page. `docs/introduction.md`'s *"static text
+and images"* is now *"static text and icons"*; `icon` is a real `Role` member
+and an image never was.
+
+**One-home violation found and closed while in there.**
+`docs/internals/dom-edition.md` stated the class fact in *two* places — "What
+the host document owes" and a "The `nokre` class" bullet under "The seams". The
+seams bullet is now the home (it is where a driver author reads the API
+surface); the host-document bullet states only what is specific to `mount` and
+points at it.
 
 ---
 

@@ -26,6 +26,7 @@
 const std = @import("std");
 
 const app_mod = @import("../../core/app.zig");
+const class_names = @import("class_names.zig");
 const color = @import("../../core/color.zig");
 const element_mod = @import("../../core/element.zig");
 const layout = @import("../../core/layout.zig");
@@ -227,11 +228,30 @@ pub const Emitter = struct {
 
 // ---------------------------------------------------------------- entry
 
+/// The class list for the element a driver wraps `content` in — the
+/// whole attribute value, not the names to build one from.
+///
+/// The stylesheet hangs the root stack's padding, gap and bottom-chrome
+/// reserve off these classes, so a wrapper that carries the wrong list
+/// is a screen drawn with none of them. The reserve half is conditional
+/// and the condition is *layout's*, not the page's: whether a screen
+/// owes the clear space bottom chrome stands in is
+/// `layout.hasBottomChrome`, the one predicate the reference edition
+/// asks to reserve the trailing band and the live driver asks to toggle
+/// the same class — so a driver reads the answer here rather than
+/// deciding it, and the three cannot drift.
+///
+/// A driver's own classes go beside it: `class="{s} page"` is the
+/// intended shape (class_names.zig).
+pub fn rootClass(em: *const Emitter) []const u8 {
+    if (layout.hasBottomChrome(&em.app.tree)) return class_names.root ++ " " ++ class_names.has_chrome;
+    return class_names.root;
+}
+
 /// The screen: every root child that is not framework chrome.
 ///
-/// A driver wraps this in whatever the page needs and puts `nokre` on
-/// that wrapper — the stylesheet hangs the root stack's padding, gap and
-/// bottom-chrome reserve off that one class.
+/// A driver wraps this in whatever the page needs and puts `rootClass`
+/// on that wrapper.
 pub fn content(em: *Emitter) !void {
     const tree = &em.app.tree;
     var it = tree.children(tree.rootId());

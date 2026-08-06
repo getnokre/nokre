@@ -177,7 +177,7 @@ state changes, and otherwise nothing runs.
 
 What a consumer actually touches is small:
 
-- **Elements** — the closed set: static text and images, containers,
+- **Elements** — the closed set: static text and icons, containers,
   interactive controls, navigation chrome, and layers. Every one is
   specified in [elements.md](elements.md), semantics first.
 - **The tree** — a retained tree you append elements to. Malformed

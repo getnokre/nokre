@@ -406,6 +406,21 @@ refused loudly, at compile time, with the reason in the error.
   Between catalog entries there is no falling back, because parity is
   enforced instead — fallback is what silent untranslated text is made
   of.
+- **No localized route arguments** — the one refusal here that lands at
+  the call rather than at compile time. A route argument is an
+  identifier, so `router.zig`'s `validIdent` admits `[A-Za-z0-9_.-]` and
+  nothing else: a Persian or Turkish slug is refused outright by
+  `Router.writeRef` (`error.RouteArgCharset`) and by the same check on
+  the way back in (an `.arg_charset` refusal), never transliterated,
+  percent-encoded or otherwise quietly repaired. The ground is the
+  router's own — *"an argument is an identifier and not a payload. Free
+  text is a URL, which is deep_link's business"* — and it does not move
+  for a locale. What this costs a multi-locale surface is the localized
+  *slug*, not the localized page: key the route by an ASCII id and
+  localize the words the screen puts on it, the way route titles are
+  localized under [The chrome nokre writes](#the-chrome-nokre-writes)
+  above. A BCP 47 locale tag is itself ASCII, so a per-locale route
+  argument is fine; `note~fa` is a reference, `note~یادداشت` is not.
 
 ## Against gen_l10n
 

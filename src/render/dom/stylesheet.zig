@@ -39,6 +39,7 @@
 
 const std = @import("std");
 
+const class_names = @import("class_names.zig");
 const color = @import("../../core/color.zig");
 const element = @import("../../core/element.zig");
 const layout = @import("../../core/layout.zig");
@@ -49,6 +50,15 @@ const Gray = color.Gray;
 const Scale = text_mod.Scale;
 const metrics = layout.metrics;
 const root_stack = tree_mod.root_stack;
+
+// The root element's two classes, as selectors. Spliced into the sheet
+// wherever they appear rather than typed into it, for the reason every
+// other number here is read from the library instead of transcribed: a
+// host document is handed this same pair through `serialize.rootClass`,
+// and a sheet that spelled them itself would be the second statement of
+// them the export exists to remove (class_names.zig).
+const root_sel = "." ++ class_names.root;
+const root_sel_chromed = root_sel ++ "." ++ class_names.has_chrome;
 
 pub const Options = struct {
     /// Where the bundled faces are served from. The edition ships no
@@ -316,8 +326,8 @@ fn writeDerived(gpa: std.mem.Allocator, out: *std.ArrayList(u8)) !void {
         const yoff = s.baseline() - @divTrunc(3 * s.px(), 8) - @divTrunc(metrics.touch_target, 2);
         try out.print(
             gpa,
-            ".nokre > .icon-button.back:has(+ :is({s}, .s-{s}))," ++
-                " .nokre > .icon-button.back:has(+ :is(.document, .stack.hands-back) > :first-child:is({s}, .s-{s}))" ++
+            root_sel ++ " > .icon-button.back:has(+ :is({s}, .s-{s}))," ++
+                " " ++ root_sel ++ " > .icon-button.back:has(+ :is(.document, .stack.hands-back) > :first-child:is({s}, .s-{s}))" ++
                 " {{ top: calc(var(--page-pad) + {d}px); }}\n",
             .{ row[0], scale_name, row[0], scale_name, yoff },
         );
@@ -445,8 +455,8 @@ const sheet =
     \\   Zero specificity (`:where`), so every rule below still wins —
     \\   the code block's bleed and the panes' centring are margins the
     \\   *edition* chose, which is a different thing. */
-    \\:where(.nokre, .nav, .notice, .notices-pane, .sheet, .picker),
-    \\:where(.nokre, .nav, .notice, .notices-pane, .sheet, .picker) :where(*) {
+++ "\n:where(" ++ root_sel ++ ", .nav, .notice, .notices-pane, .sheet, .picker),\n" ++
+    ":where(" ++ root_sel ++ ", .nav, .notice, .notices-pane, .sheet, .picker) :where(*) {\n" ++
     \\  margin: 0;
     \\  padding: 0;
     \\}
@@ -485,7 +495,7 @@ const sheet =
     \\   sets `SkFont::Edging::kAntiAlias` and `setSubpixel(false)`, while
     \\   a browser on macOS defaults to subpixel-smoothed text that reads
     \\   a weight heavier than what every other platform draws. */
-    \\.nokre, .nav, .notice, .notices-pane, .sheet, .picker {
+++ "\n" ++ root_sel ++ ", .nav, .notice, .notices-pane, .sheet, .picker {\n" ++
     \\  -webkit-font-smoothing: antialiased;
     \\  -moz-osx-font-smoothing: grayscale;
     \\}
@@ -493,7 +503,7 @@ const sheet =
     \\/* There is no pressed state in nokre, so there is none to flash:
     \\   the grey wash a mobile browser paints over a tapped control is a
     \\   state the library does not have. */
-    \\.nokre, .nav, .notice, .notices-pane, .sheet, .picker { -webkit-tap-highlight-color: transparent; }
+++ "\n" ++ root_sel ++ ", .nav, .notice, .notices-pane, .sheet, .picker { -webkit-tap-highlight-color: transparent; }\n" ++
     \\
     \\/* A rule the reference draws is a rule: one unbroken line from the
     \\   run's start to its end. `skip-ink` cuts gaps around descenders,
@@ -522,7 +532,7 @@ const sheet =
     \\   A code block is named in neither: its lines do not mirror,
     \\   because a verbatim block is bytes in the order they were
     \\   written (`drawCodeBlock`). */
-    \\:is(.nokre, .nav, .notice, .notices-pane, .sheet, .picker)
+++ "\n:is(" ++ root_sel ++ ", .nav, .notice, .notices-pane, .sheet, .picker)\n" ++
     \\  :is(p, h1, h2, h3, h4, h5, h6, li, td, th, legend, label, button, a, span,
     \\      input, textarea, select, option) {
     \\  unicode-bidi: plaintext;
@@ -541,7 +551,7 @@ const sheet =
     \\   surfaces rather than set on the document: the attribute is the
     \\   driver's to stamp, but the page around an embedded app is not
     \\   this edition's to turn around. */
-    \\:root[data-direction="rtl"] :is(.nokre, .nav, .notice, .notices-pane, .sheet, .picker) {
+++ "\n:root[data-direction=\"rtl\"] :is(" ++ root_sel ++ ", .nav, .notice, .notices-pane, .sheet, .picker) {\n" ++
     \\  direction: rtl;
     \\}
     \\
@@ -570,18 +580,18 @@ const sheet =
     \\   inherit nothing from it and are named here instead. A page that
     \\   set this on `body` would be styling its host, which an edition
     \\   mounted into someone else's document has no business doing. */
-    \\.nokre, .nav, .notice, .notices-pane, .sheet, .picker {
+++ "\n" ++ root_sel ++ ", .nav, .notice, .notices-pane, .sheet, .picker {\n" ++
     \\  color: var(--ink);
     \\  font-family: prose;
     \\  font-size: var(--px-body);
     \\  line-height: var(--lh-body);
     \\}
     \\
-    \\/* The tree root is a vertical stack; a driver puts `nokre` on
+    \\/* The tree root is a vertical stack; a driver puts `rootClass` on
     \\   whatever it wraps the screen in. Its padding and gap are the root
     \\   stack's own fields, not a page style — `tree.root_stack` is where
     \\   both numbers live. */
-    \\.nokre {
+++ "\n" ++ root_sel ++ " {\n" ++
     \\  --pad: var(--page-pad);
     \\  --gap: var(--page-gap);
     \\  position: relative;
@@ -598,7 +608,7 @@ const sheet =
     \\   gap above the bar, the bar's own top pad, its slot, and the clear
     \\   space below it. The OS band is inside `--bar-bottom`, exactly as
     \\   `navBarBottomPad` puts it there. */
-    \\.nokre.has-chrome {
+++ "\n" ++ root_sel_chromed ++ " {\n" ++
     \\  padding-bottom: calc(
     \\    var(--nav-content-gap) + var(--nav-bar-pad) + var(--nav-slot) + var(--bar-bottom) + var(--safe-b)
     \\  );
@@ -608,7 +618,7 @@ const sheet =
     \\   is told it may, and a code block's min-content is its longest
     \\   line — which is the thing that is supposed to scroll rather than
     \\   push the pane wider. */
-    \\.nokre > *, .stack > *, .box > *, blockquote > *, li > *, .scroll > * { min-width: 0; }
+++ "\n" ++ root_sel ++ " > *, .stack > *, .box > *, blockquote > *, li > *, .scroll > * { min-width: 0; }\n" ++
     \\
     \\/* Every surface that scrolls sideways, told the same thing
     \\   directly. A segmented track's min-content is all of its chips
@@ -627,7 +637,7 @@ const sheet =
     \\   containing block for the chrome. What it clips at is the screen
     \\   edge, which is where an element that declines the advised margin
     \\   was told to stop anyway. */
-    \\.nokre { overflow-x: clip; }
+++ "\n" ++ root_sel ++ " { overflow-x: clip; }\n" ++
     \\
     \\/* ---- containers -------------------------------------------------- */
     \\
@@ -1400,7 +1410,7 @@ const sheet =
     \\   which is inside the border and outside the padding — so the page
     \\   margin is still ahead of them and every inset here spends it
     \\   before the bleed comes off. */
-    \\.nokre > .icon-button.back {
+++ "\n" ++ root_sel ++ " > .icon-button.back {\n" ++
     \\  position: absolute;
     \\  inset-inline-start: calc(var(--page-pad) - var(--back-bleed));
     \\  /* Nothing to centre on: `layoutRow` takes no offset when the
@@ -1408,13 +1418,13 @@ const sheet =
     \\     opens the row where it stands. */
     \\  top: var(--page-pad);
     \\}
-    \\.nokre > .icon-button.back + * { padding-inline-start: calc(var(--touch) + var(--icon-gap) - var(--back-bleed)); }
+++ "\n" ++ root_sel ++ " > .icon-button.back + * { padding-inline-start: calc(var(--touch) + var(--icon-gap) - var(--back-bleed)); }\n" ++
     \\/* A container that draws and insets nothing does not own the row's
     \\   first line — the block inside it does, so the indent lands there
     \\   (`handsDownBack`). Indenting the container instead pushes its
     \\   every paragraph into the chevron's band. */
-    \\.nokre > .icon-button.back + :is(.document, .stack.hands-back) { padding-inline-start: 0; }
-    \\.nokre > .icon-button.back + :is(.document, .stack.hands-back) > :first-child {
+++ "\n" ++ root_sel ++ " > .icon-button.back + :is(.document, .stack.hands-back) { padding-inline-start: 0; }\n" ++
+    root_sel ++ " > .icon-button.back + :is(.document, .stack.hands-back) > :first-child {\n" ++
     \\  padding-inline-start: calc(var(--touch) + var(--icon-gap) - var(--back-bleed));
     \\}
     \\

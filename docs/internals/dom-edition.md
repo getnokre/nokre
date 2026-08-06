@@ -271,8 +271,10 @@ What the host document owes, and what it keeps:
   framework's layers into one element and the screen into another — the
   same seam `chrome` / `content` are split at above — so a generated page
   keeps the id its skip link names and the class its stylesheet caps.
-  The driver still owns `has-chrome`, because whether a screen owes the
-  bottom reserve is layout's answer and not the page's.
+  What it does not write is nokre's own class list: that comes from
+  `dom.rootClass` ("The seams" below) and stands beside the page's. The
+  live driver keeps the conditional half of it true after boot, toggling
+  the bottom reserve as the screen changes underneath.
 - **The route.** `mount({ route })`, delivered as a *boot* argument
   rather than a navigation afterwards: the file already shows that
   screen, and switching to it after the first frame would build and paint
@@ -599,9 +601,18 @@ try dom.chrome(&em);    // notice, nav, sheet, picker
   mirrors routes into (`#note~42`), so a link in a serialized page and
   a link in a running app point at the same screen. A driver publishing
   one file per screen installs its own.
-- **The `nokre` class.** A driver puts it on whatever it wraps the
-  screen in; the stylesheet hangs the root stack's padding, gap and
-  bottom-chrome reserve off that one class.
+- **`rootClass`.** The class list for whatever a driver wraps the screen
+  in, as the whole attribute value rather than the names to build one
+  from — a driver's own classes stand beside it (`class="{s} page"`).
+  The stylesheet hangs the root stack's padding, gap and bottom-chrome
+  reserve off it, and the reserve half is conditional on
+  `layout.hasBottomChrome`, the same predicate the reference edition
+  asks to reserve its trailing band: layout's answer, not the page's.
+  Handed over whole because the selector it has to match is compound —
+  both names on the one element — so a list assembled by hand can name
+  the modifier alone and match nothing at all
+  ([class_names.zig](../../src/render/dom/class_names.zig) says what
+  each way of getting it wrong costs).
 - **The stylesheet** ([stylesheet.zig](../../src/render/dom/stylesheet.zig))
   is generated: thirteen grays in two ramps out of `core/color.zig`, six
   type scales out of `core/text.zig`, every padding, radius, target and

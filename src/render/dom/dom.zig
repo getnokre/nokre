@@ -68,6 +68,10 @@ pub const driver_sources: []const DriverSource = blk: {
     break :blk &frozen;
 };
 
+/// The class list for the element a driver wraps `content` in, picked
+/// for this screen — the whole attribute value, so a host document
+/// cannot write a list the sheet does not match (class_names.zig).
+pub const rootClass = serialize.rootClass;
 /// The screen: every root child that is not framework chrome.
 pub const content = serialize.content;
 /// The layers the framework installs: notice banner, nav, sheet, picker.

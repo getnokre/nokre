@@ -1086,6 +1086,41 @@ test "a picker over a sheet: each layer arrives over a scrim of its own, in pain
 
 // -------------------------------------------------------- stylesheet
 
+test "the root class list is the sheet's own, and the reserve is layout's answer" {
+    var app = try test_app.init(400, 600);
+    defer app.deinit();
+    var out: std.ArrayList(u8) = .empty;
+    defer out.deinit(testing.allocator);
+    var em: serialize.Emitter = .{ .gpa = testing.allocator, .app = &app, .out = &out };
+    defer em.deinit();
+
+    // A bare screen owes no bottom reserve. A host document that wrote
+    // the modifier unconditionally — which is all a host could do while
+    // the list was a string it typed — ends every plain page in 96px of
+    // nothing.
+    const plain = serialize.rootClass(&em);
+    try testing.expectEqualStrings("nokre", plain);
+    app.notify(.{ .title = "Sync failed", .important = true });
+    const chromed = serialize.rootClass(&em);
+    try testing.expectEqualStrings("nokre has-chrome", chromed);
+
+    // And what the sheet selects on is what a host is handed, derived
+    // here rather than typed so the two cannot drift. The compound
+    // selector wants both classes on the one element, which is the
+    // shape a hand-assembled list gets wrong: the modifier alone
+    // matches nothing at all.
+    var css: std.ArrayList(u8) = .empty;
+    defer css.deinit(testing.allocator);
+    try stylesheet.write(testing.allocator, &css, .{});
+    for ([_][]const u8{ plain, chromed }) |list| {
+        const selector = try std.mem.replaceOwned(u8, testing.allocator, list, " ", ".");
+        defer testing.allocator.free(selector);
+        const rule = try std.fmt.allocPrint(testing.allocator, "\n.{s} {{", .{selector});
+        defer testing.allocator.free(rule);
+        try expectContains(css.items, rule);
+    }
+}
+
 test "the stylesheet is generated from the library, not transcribed" {
     var css: std.ArrayList(u8) = .empty;
     defer css.deinit(testing.allocator);
