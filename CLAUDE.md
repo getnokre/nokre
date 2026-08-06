@@ -89,7 +89,11 @@ fact has one home; complement, never duplicate. Start with
   App, a journaling mock — a module-global `var` in `src/services` or
   `src/workers` is a bug.
 - Comments carry design rationale (WCAG citations, why-not-the-obvious).
-  Keep that voice; don't add narration.
+  Keep that voice; don't add narration. Treat a comment as code: review it
+  with the behavior it describes, and verify it still holds before leaving
+  it in place. What rots here is not narration but attachment, references,
+  and checkable claims — the checklist is in
+  [contributing.md](docs/internals/contributing.md), "Comments".
 - Integer math in anything that produces coordinates or bytes — no
   floats in layout, geometry, or rendering, no `Date`-like
   nondeterminism. The one sanctioned float user is `color.zig`'s

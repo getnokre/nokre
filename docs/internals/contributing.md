@@ -13,7 +13,8 @@ in review, not aspirational.
   [src/nokre.zig](../../src/nokre.zig); small modules keep design-proof
   tests inline. Implementation files should read in one pass.
 - Comments carry design rationale — WCAG citations, why-not-the-obvious.
-  Keep that voice; don't add narration.
+  Keep that voice; don't add narration. The checklist for keeping one true
+  is [below](#comments).
 - Integer math in layout, geometry, and anything that produces
   coordinates or bytes. The one sanctioned float user is the contrast
   check in [color.zig](../../src/core/color.zig) — deterministic
@@ -23,6 +24,47 @@ in review, not aspirational.
   nowhere else (`oauth`'s CSPRNG, `clock`'s wall time), for the reason
   stated at each: a service is not core, and neither one may be reached
   from `src/core` or `src/render`.
+
+## Comments
+
+A comment earns its place by carrying what the code cannot: a constraint, an
+invariant, a rejected alternative, a contract a signature does not spell. That
+much is the voice, and it is already the house style. What this codebase
+actually accumulates is not narration — it is comments that were true once.
+Treat a comment as code: it is reviewed and updated with the behavior it
+describes, in the same change, and a comment touched by a change gets read even
+when the change is not about comments.
+
+Before leaving a comment in place, check it against each of these. Every one
+has caught a live defect here.
+
+- **It sits on what it describes.** A doc block runs to the *next* declaration,
+  so a missing blank line silently reassigns it — a contract reading "returns
+  the field" can end up on a `const`, leaving the function it belonged to
+  undocumented. When two declarations sit close together, check which one the
+  compiler thinks the doc is on.
+- **Its references resolve.** Symbols get renamed and `docs/` pages get
+  rewritten. Never quote another document verbatim: restate the fact and cite
+  the page, so a rewrite there cannot leave a lie here. Point at symbols by the
+  name they have today.
+- **Its checkable claims still check.** Counts, widths, ordinals, "N of them",
+  "four lines up". If a test proves otherwise, the test wins and the comment is
+  wrong — fix the words, and do not touch a fixture to make a sentence true.
+- **It states the library's fact, not a consumer's.** A downstream site's page
+  count or route names in a library comment will rot on someone else's schedule.
+- **It has one home.** Each fact lives in one place and is pointed at from the
+  others; a second copy is a future contradiction, and the two will not drift
+  together. Where a `docs/` page, a sibling module, or the declaration above
+  already owns the fact, reference it instead of restating it.
+
+Delete on sight: dead plan labels from a finished round ("Part E", "B3"),
+tombstones for symbols that no longer exist, and a section heading with no
+section under it. A `// ---- label ----` divider over a real API surface in a
+long module is not ceremony — keep it, and keep any docs anchor it carries.
+
+Comment count is not a metric in either direction. Do not thin rationale to
+make a file look lean, and do not add a line that the names and types already
+say.
 
 ## Adding an element
 
