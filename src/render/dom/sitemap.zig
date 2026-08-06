@@ -224,25 +224,37 @@ pub const Sitemap = struct {
     /// chooser is itself indexed is publishing policy, which is the
     /// site resolver's in exactly the sense audit.zig's `Options.skip`
     /// draws it (`x_default`).
-    fn checkClosed(self: *const Sitemap) SitemapError!void {
-        for (self.entries.items, 0..) |e, i| {
-            for (self.entries.items[0..i]) |seen| {
-                if (std.mem.eql(u8, seen.path, e.path)) return error.UrlRepeated;
-            }
+    /// Both questions are "is this path among the entries", asked
+    /// `entries + entries × alts` times, so the paths go into a set
+    /// once and each question is a lookup. Two nested scans over string
+    /// compares read fine at the 22 URLs this library's own site has
+    /// and is tens of millions of `memcmp`s at the ~3,500 × 4 the first
+    /// real consumer arrived with — a build-time cost that grows as the
+    /// square of a site the whole point of the type is to let grow.
+    ///
+    /// The set borrows: keys are the entries' own paths, which outlive
+    /// the call, and it is freed before returning — `url()`'s copies
+    /// stay the only owned strings here. Bounded by `max_urls`, which
+    /// is checked before this runs, so the worst case is a 50,000-key
+    /// map and one allocation to hold it. Sorting would have cost an
+    /// allocation too and kept a log factor plus the string compares.
+    fn checkClosed(self: *const Sitemap) (SitemapError || Allocator.Error)!void {
+        var listed: std.StringHashMapUnmanaged(void) = .empty;
+        defer listed.deinit(self.gpa);
+        try listed.ensureTotalCapacity(self.gpa, @intCast(self.entries.items.len));
+
+        // Both loops stay whole and stay in this order: a sitemap with
+        // a repeat *and* a one-sided annotation reports the repeat, as
+        // it did when this was two nested scans.
+        for (self.entries.items) |e| {
+            if (listed.getOrPutAssumeCapacity(e.path).found_existing) return error.UrlRepeated;
         }
         for (self.entries.items) |e| {
             for (e.alts) |a| {
                 if (std.mem.eql(u8, a.hreflang, alternates.x_default)) continue;
-                if (!self.lists(a.path)) return error.AlternateNotListed;
+                if (!listed.contains(a.path)) return error.AlternateNotListed;
             }
         }
-    }
-
-    fn lists(self: *const Sitemap, path: []const u8) bool {
-        for (self.entries.items) |e| {
-            if (std.mem.eql(u8, e.path, path)) return true;
-        }
-        return false;
     }
 
     /// The five characters XML reserves, and the reason this file does
@@ -389,6 +401,84 @@ test "an ampersand in a URL is escaped, because one unescaped ends the file" {
         \\</urlset>
         \\
     , xml);
+}
+
+// The closure check answers "is this path an entry" once per entry and
+// once per alternate, which is where a set replaced two nested scans.
+// A set built from the wrong entries — the first page's, the last
+// page's, one locale's — passes every small case above and every one
+// of these. The size is arbitrary and small enough to stay a unit test;
+// what matters is that the defect is far from the start of the list.
+const bench_groups = 300;
+
+fn manyPages(sm: *Sitemap, groups: usize, skip: ?usize) !void {
+    var buf: [4][64]u8 = undefined;
+    for (0..groups) |g| {
+        var set: [4]Alternate = undefined;
+        for ([_][]const u8{ "en", "fa", "tr", "ar" }, 0..) |tag, i| {
+            set[i] = .{
+                .hreflang = tag,
+                .path = try std.fmt.bufPrint(&buf[i], "/{s}/s/{d}/", .{ tag, g }),
+            };
+        }
+        for (0..set.len) |i| {
+            // The one copy annotated everywhere and published nowhere.
+            if (skip) |s| if (g == s and i == 1) continue;
+            try sm.url(set[i].path, &set);
+        }
+    }
+}
+
+test "a closed graph of thousands of URLs writes, and every entry is in it" {
+    var sm: Sitemap = .init(testing.allocator, "https://example.com");
+    defer sm.deinit();
+    try manyPages(&sm, bench_groups, null);
+    const xml = try built(&sm);
+    defer testing.allocator.free(xml);
+
+    try testing.expectEqual(@as(usize, bench_groups * 4), sm.entries.items.len);
+    // The first page, the last page, and the alternate annotation of
+    // the last — the three places a set built from a prefix breaks.
+    try testing.expect(std.mem.indexOf(u8, xml, "<loc>https://example.com/en/s/0/</loc>") != null);
+    try testing.expect(std.mem.indexOf(u8, xml, "<loc>https://example.com/ar/s/299/</loc>") != null);
+    try testing.expect(std.mem.indexOf(u8, xml, "href=\"https://example.com/fa/s/299/\"") != null);
+}
+
+test "a repeat and a one-sided annotation far down a long list both still fail" {
+    var out: std.ArrayList(u8) = .empty;
+    defer out.deinit(testing.allocator);
+
+    var repeated: Sitemap = .init(testing.allocator, "https://example.com");
+    defer repeated.deinit();
+    try manyPages(&repeated, bench_groups, null);
+    try repeated.url("/ar/s/299/", &.{});
+    try testing.expectError(error.UrlRepeated, repeated.write(&out));
+    try testing.expectEqual(@as(usize, 0), out.items.len);
+
+    var open_graph: Sitemap = .init(testing.allocator, "https://example.com");
+    defer open_graph.deinit();
+    try manyPages(&open_graph, bench_groups, 150);
+    try testing.expectError(error.AlternateNotListed, open_graph.write(&out));
+    try testing.expectEqual(@as(usize, 0), out.items.len);
+}
+
+test "a sitemap with both defects reports the repeat" {
+    // Which one a driver is told about is behavior, not an accident of
+    // loop order: every URL is checked for a twin before any alternate
+    // is looked up, and a page published twice is the defect that makes
+    // the other reading unreliable.
+    var sm: Sitemap = .init(testing.allocator, "https://example.com");
+    defer sm.deinit();
+    const set = [_]Alternate{
+        .{ .hreflang = "en", .path = "/en/docs/" },
+        .{ .hreflang = "fa", .path = "/fa/docs/" },
+    };
+    try sm.url("/en/docs/", &set);
+    try sm.url("/en/docs/", &set);
+
+    var out: std.ArrayList(u8) = .empty;
+    defer out.deinit(testing.allocator);
+    try testing.expectError(error.UrlRepeated, sm.write(&out));
 }
 
 test "the origin and every path take the rules the head takes" {
