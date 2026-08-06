@@ -68,6 +68,55 @@ Full receipts at `git show 3855adf:HANDOFF.md`.
   `.error_copy` but no `.busy`, so its submit has no in-flight representation
   where its sibling does.
 
+## Left open by the comment pass
+
+A repository-wide read of every first-party file (both repos, ~82k lines) fixed
+comments that had stopped being true. These are what it found and did not fix,
+each deliberately: none is a comment defect, so none belonged in a comment commit.
+
+- **`nav.zig`'s private `clearChildren` re-implements `Tree.clearChildren`**
+  (tree.zig:223) with an O(n²) restart-the-iterator loop, and the same inline loop
+  is written out again at `overlays.zig:470-474`. `Tree.clearChildren` has no
+  non-test caller in `src/core` today. Consolidating touches tree mutation and node
+  lifetime, so it wants a golden run, not a reading pass.
+- **`overlays.zig:573-576` and `input.zig:414-421` re-seat nav focus differently
+  under comments that claim the same intent.** input searches for the `nav_item`
+  whose route `isCurrent`; overlays takes `children(nav).next()` unconditionally,
+  which is only right while the nav is still collapsed after the push. Neither uses
+  `nav.reseatNavFocus`, which exists for this. Whether the divergence is deliberate
+  could not be determined.
+- **`iap.zig:760-763`** — `MockState.postUpdate` does not clear `buying` when
+  `openOneShotOn`/`deliverOneShot` fails, where `PlatformState.postUpdate:512-528`
+  does. Possibly deliberate (under `zig test` an allocator failure is a crash by
+  house rule), but the asymmetry is undocumented.
+- **`shim/nokre_skia.cpp:36, :71`** — the `__EMSCRIPTEN__` arms are dead; nothing
+  defines the macro since the web stopped linking Skia. Removing them is a
+  preprocessor change on a file three platforms compile.
+- **`build.zig:2049-2051`** says `xcrun` runs "up to six times per `zig build`
+  (three linked check objects × two Apple SDKs, plus the iOS app path)". The loop
+  now creates five linked check objects, but the count is gated on `pkg != null`
+  and an Apple `os_tag`, and `store-dev` is macOS/Linux-only, so the intended
+  arithmetic is not recoverable by reading. Left rather than guessed.
+- **A fourth copy of the "linking needs identity" argument** lives in `addSecureStore`,
+  `addDeepLink`, `addOauth`, `addIap` and `addNotification`, with a second full set
+  of `addFail` strings for the `b.default_step` path. The `checkXNeedsPkg` layer was
+  collapsed; this one was not.
+- **`crowded_nav` may be weaker than intended.** Its comment claimed the roster
+  clears a row at no viewport width; `layout_test.zig:817-824` proves the row reopens
+  at 651. The comment was corrected and the fixture deliberately left alone — every
+  test using it runs at 375. If it was *meant* to be uncollapsible at any width it
+  needs a fifth destination, which changes what ~15 tests exercise.
+- **Three docs facts with more than one home.** `dom-edition.md:698-709` restates the
+  lastmod/changefreq argument it explicitly delegates to `sitemap.zig`'s module
+  comment; `:717` and `:727` speak of the canvas shell in the present tense against
+  `:11`'s "the canvas shell it replaced … is deleted"; and `skia-build.md:73` carries
+  the same false PNG-config contrast that `build-skia-android.sh` had — both FreeType
+  configs define `FT_CONFIG_OPTION_USE_PNG`, and the real divergence is
+  `skia_use_system_libpng`.
+- **The nav-roster measurement story has four homes** — `services.js`,
+  `stylesheet.zig:911`, `live.js`, and `dom-edition.md:250-257`. The docs page looks
+  like the owner and the three code sites should cite it.
+
 ## The static-site API is unvalidated where it matters most
 
 `getnokre.github.io` exercises it at one locale, in LTR, with English Markdown
