@@ -559,25 +559,6 @@ fn drawModalSurface(app: *App, canvas: Painter, r: Rect, title: []const u8, titl
     drawWrapped(app, canvas, .{ .x = title_x, .y = r.y + layout.pane_edge, .w = title_w, .h = r.h }, .prose, .h2, title, .ink);
 }
 
-/// The labeled-field prologue shared by text_input, text_area, select,
-/// and copyable: the label at the small scale above a bordered field
-/// that takes the rest of the rect. The label anchors to the leading
-/// edge — a single-line piece of chrome, so it follows the chrome's
-/// direction, not its own bytes. Returns the field.
-///
-/// `.g7`, not the `.g6` the compact controls use. The border is still
-/// the whole affordance — an empty field has nothing else to say it can
-/// be typed into, so 1.4.11 applies and `.g10` grouping is out — but a
-/// field's outline is a full-width run, and the same tone that reads as
-/// a hairline around a 20px radio ring reads as a heavy box at 600px.
-/// `.g7` is the lightest step that still clears 3:1 against paper. The
-/// compact controls cannot follow: their borders sit on the `.g11`
-/// track, where `.g7` is 2.5:1 (proven in `color.zig`).
-///
-/// Focus takes that outline over instead of ringing it: the field keeps
-/// its exact box and the boundary thickens and darkens in place. A
-/// full-width field ringed at an offset carried two strokes in two
-/// tones two pixels apart, which is a seam, not a state.
 /// The inset from a field's outline to its content — its own padding
 /// plus the border that padding sits inside.
 const field_pad = metrics.input_pad + metrics.border;
@@ -628,6 +609,25 @@ fn drawFieldProblem(app: *App, canvas: Painter, r: Rect, problem: []const u8) Re
 const disabled_field_ink: color.Gray = .g6;
 const disabled_field_edge: color.Gray = .g10;
 
+/// The labeled-field prologue shared by text_input, text_area, select,
+/// and copyable: the label at the small scale above a bordered field
+/// that takes the rest of the rect. The label anchors to the leading
+/// edge — a single-line piece of chrome, so it follows the chrome's
+/// direction, not its own bytes. Returns the field.
+///
+/// `.g7`, not the `.g6` the compact controls use. The border is still
+/// the whole affordance — an empty field has nothing else to say it can
+/// be typed into, so 1.4.11 applies and `.g10` grouping is out — but a
+/// field's outline is a full-width run, and the same tone that reads as
+/// a hairline around a 20px radio ring reads as a heavy box at 600px.
+/// `.g7` is the lightest step that still clears 3:1 against paper. The
+/// compact controls cannot follow: their borders sit on the `.g11`
+/// track, where `.g7` is 2.5:1 (proven in `color.zig`).
+///
+/// Focus takes that outline over instead of ringing it: the field keeps
+/// its exact box and the boundary thickens and darkens in place. A
+/// full-width field ringed at an offset carried two strokes in two
+/// tones two pixels apart, which is a seam, not a state.
 fn drawFieldChrome(app: *App, canvas: Painter, r: Rect, label: []const u8, focused: bool, disabled: bool) Rect {
     drawSmallLabel(app, canvas, r, label, if (disabled) disabled_field_ink else .ink);
     const label_h = text.Scale.small.lineHeight();
@@ -755,8 +755,9 @@ fn firstLineScale(app: *App, id: NodeId) text.Scale {
     return .body;
 }
 
-/// Tile-group hairlines between the picker's option rows, drawn in the
-/// 1px flow gap layout leaves between them, clipped like the rows.
+/// One tile row's own contents: the label, plus the leading mark,
+/// detail line and trailing chevron the tile carries. The card border
+/// and the hairlines between rows are the group's (`drawTileGroup`).
 fn drawTile(app: *App, canvas: Painter, id: NodeId, r: Rect, t: element_mod.Tile, focused: bool) void {
     // Focus reuses the picker-item pattern — the indicator on the row's
     // own edge — since an outset ring would collide with the separators
@@ -837,6 +838,8 @@ fn drawTileSeparators(app: *App, canvas: Painter, group: NodeId) void {
     }
 }
 
+/// Tile-group hairlines between the picker's option rows, drawn in the
+/// 1px flow gap layout leaves between them, clipped like the rows.
 fn drawPickerSeparators(app: *App, canvas: Painter, picker: NodeId) void {
     var rit = app.tree.children(picker);
     const region = while (rit.next()) |c| {

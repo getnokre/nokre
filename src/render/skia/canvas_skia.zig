@@ -4,9 +4,10 @@
 //!
 //! Face indices: family * 4 + variant (variant: 0 regular, 1 bold,
 //! 2 italic, 3 bold-italic; family: 0 mono, 1 prose), 8 for the icon
-//! face (no variants), and 9/10 for the Arabic-script companion
+//! face (no variants), 9/10 for the Arabic-script companion
 //! (regular/bold) that the shim substitutes for Arabic runs — core
-//! never requests it by index. Must match the shim.
+//! never requests it by index — and 11 for the brand face, the vendor
+//! sign-in marks (no variants either). Must match the shim.
 
 const std = @import("std");
 const Io = std.Io;

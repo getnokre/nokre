@@ -899,28 +899,23 @@ fn button(em: *Emitter, id: NodeId, b: element_mod.Button) !void {
     // Waiting is written in words, so the label already says it;
     // `aria-busy` is what says it to a screen reader mid-task.
     if (b.in_progress) {
-        // The strut is hidden, so the name moves onto the
-        // control: a button that stopped being named while it
-        // worked would be one a screen-reader user lost hold of.
+        // The strut is hidden, so the name moves onto the control: a
+        // button that stopped being named while it worked would be one
+        // a screen-reader user lost hold of.
         try em.raw(" aria-busy=\"true\" aria-label=\"");
         try em.text(b.label);
         try em.raw("\"");
     }
     try em.raw(">");
-    // Work in flight replaces the words rather than sitting
-    // beside them: a percentage fills the pill as it goes, and
-    // a job that cannot report one says so with an ellipsis.
-    // Waiting is written, never animated. The label stays as
-    // the button's accessible name either way — a control that
-    // stopped being named while it worked would be a control a
-    // screen-reader user lost hold of.
+    // Work in flight replaces the words rather than sitting beside
+    // them: a percentage fills the pill as it goes, and a job that
+    // cannot report one says so with an ellipsis. Waiting is written,
+    // never animated.
     if (b.in_progress) {
-        // The pill keeps the size its label gave it. Layout
-        // measured the words, so the words stay in flow as a
-        // strut — hidden, with the name moved onto the control
-        // — and what replaces them is drawn over the top. A
-        // button that shrank when it started working would be
-        // motion by another name.
+        // The pill keeps the size its label gave it. Layout measured
+        // the words, so they stay in flow as the hidden strut and what
+        // replaces them is drawn over the top. A button that shrank
+        // when it started working would be motion by another name.
         try em.raw("<span class=\"btn-strut\" aria-hidden=\"true\">");
         try em.text(b.label);
         try em.raw("</span>");

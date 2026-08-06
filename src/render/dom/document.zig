@@ -507,12 +507,12 @@ fn checkMeta(m: Meta) MetaError!void {
 /// things that must agree are written from one value.
 ///
 /// **What is deliberately not here: `og:locale`.** The page's language
-/// is a fact this file already holds — it is on `<html lang>` four
-/// lines up — and it still does not become a tag, because Open Graph's
-/// locale is `language_TERRITORY` and a BCP 47 tag need not carry a
-/// territory at all. `fa` would have to become `fa_IR` or `fa_AF`, and
-/// picking is inventing a fact about the reader nobody stated. The tag
-/// a machine can act on is `lang`, and it is written correctly.
+/// is a fact this file already holds — it is on `<html lang>` — and it
+/// still does not become a tag, because Open Graph's locale is
+/// `language_TERRITORY` and a BCP 47 tag need not carry a territory at
+/// all. `fa` would have to become `fa_IR` or `fa_AF`, and picking is
+/// inventing a fact about the reader nobody stated. The tag a machine
+/// can act on is `lang`, and it is written correctly.
 fn metaTags(em: *Emitter, doc: Document, m: Meta) !void {
     // The canonical and `og:url` come from this one optional, which is
     // the whole of "they cannot disagree": there is no second string to

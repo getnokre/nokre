@@ -15,14 +15,12 @@
 //! ## The event flow is inverted, deliberately
 //!
 //! [renderer-editions.md](../../../docs/internals/renderer-editions.md)
-//! flagged this and deferred it: "Edition-owned layout is possible but
-//! inverts the event flow — the backend would resolve hits and deliver
-//! semantic events — and is deliberately deferred until an edition
-//! actually needs different spatial arrangement." This edition is that
-//! case, and the inversion is not optional here: the browser lays the
-//! page out, so core's rects describe a geometry the reader is not
-//! looking at, and hit testing against them would be answering about
-//! the wrong picture.
+//! states the rule: an edition that owns its own layout inverts the
+//! event flow, so the backend resolves hits and delivers semantic
+//! events. This edition is the one that needed it, and the inversion is
+//! not optional here: the browser lays the page out, so core's rects
+//! describe a geometry the reader is not looking at, and hit testing
+//! against them would be answering about the wrong picture.
 //!
 //! So the browser resolves the hit and this hands core a *semantic*
 //! event: activate this node, focus that one. Everything downstream —
@@ -38,11 +36,10 @@
 //!
 //! ## The consumer contract
 //!
-//! The same one the canvas shell states: the root module exports
-//! `nokreWebBuild(gpa) !*App`, because on the web the browser is
-//! already mid-event-loop when the module instantiates and `main` never
-//! runs. An app written for one web edition boots on the other with no
-//! edit.
+//! Inherited unchanged from the canvas shell this edition replaced: the
+//! root module exports `nokreWebBuild(gpa) !*App`, because on the web
+//! the browser is already mid-event-loop when the module instantiates
+//! and `main` never runs. Replacing the shell cost a consumer no edit.
 //!
 //! Two more decls, both optional, and both only meaningful to a driver
 //! mounted over a page the *static* driver already wrote:

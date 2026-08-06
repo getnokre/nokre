@@ -26,9 +26,9 @@ const App = app_mod.App;
 const NodeId = tree_mod.NodeId;
 const testing = std.testing;
 
-/// The screen, as markup. The caller frees.
 fn noopPress(_: ?*anyopaque) void {}
 
+/// The screen, as markup. The caller frees.
 fn render(app: *App) ![]u8 {
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(testing.allocator);

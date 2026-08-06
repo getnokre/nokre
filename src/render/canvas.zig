@@ -1,7 +1,8 @@
 //! The drawing vocabulary. Nine operations — everything nokre can ever
 //! put on screen. Backends: the Skia shim (production), a recording canvas
-//! (renderer tests). Eight of them speak `Gray`; the ninth (`drawTextRgb`)
-//! is the one place color exists in nokre, and it is infrastructure, not
+//! (renderer tests). Eight of nine are colorless — six speak `Gray`,
+//! the clip pair speaks no tone at all; the ninth (`drawTextRgb`) is
+//! the one place color exists in nokre, and it is infrastructure, not
 //! API — see `Rgb`.
 
 const std = @import("std");

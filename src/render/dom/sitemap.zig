@@ -7,11 +7,10 @@
 //! *about* a whole tree rather than the page around one. What it shares
 //! with document.zig is the derivation
 //! ([alternates.zig](alternates.zig)) and the two rules about joining a
-//! path to an origin — and sharing exactly those is the point: B3's
-//! constraint was that the head's alternates and the sitemap's must not
-//! end up on opposite sides of the boundary, and under `Alternates.set`
-//! they are not merely derived alike, they are the same value handed to
-//! two writers.
+//! path to an origin — and sharing exactly those is the point: the
+//! head's alternates and the sitemap's must not end up on opposite
+//! sides of the boundary, and under `Alternates.set` they are not
+//! merely derived alike, they are the same value handed to two writers.
 //!
 //! **It writes bytes, not a file.** The caller's buffer is the
 //! destination and the caller does the `writeFile`, which is where the
@@ -38,8 +37,8 @@
 //! destination `Meta` carries — cannot *check* either: its grammar is
 //! W3C-datetime, an unparseable one is dropped in silence by every
 //! crawler, and the shape a hand-rolled generator actually ships is the
-//! build's own clock stamped on all 4,250 URLs, which tells a crawler
-//! the whole site changed every deploy. That is worse than absent, and
+//! build's own clock stamped on every URL, which tells a crawler the
+//! whole site changed every deploy. That is worse than absent, and
 //! Google's own guidance is to omit `lastmod` unless it is accurate. A
 //! consumer that has real per-page timestamps and wants them is a
 //! receipt this library does not have yet.
