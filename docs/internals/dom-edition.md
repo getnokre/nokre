@@ -280,7 +280,8 @@ try dom.document(&em, .{
     .stylesheet = "/style.css",
     .meta = .{                   // canonical, Open Graph, the card
         .origin = "https://getnokre.github.io",
-        .path = "/accessibility/",   // null on a 404: no URL of its own
+        .path = "/en/accessibility/",  // null on a 404: no URL of its own
+        .alternates = &alts,           // one per locale, plus the chooser
         .site_name = "nokre",
         .title = "Accessibility",
     },
@@ -301,7 +302,10 @@ ids, the URLs it published things at, the addressing mode, the words on
 its skip link. That line is the one round two drew when it declined a
 document helper that would have owned ids and an addressing mode
 belonging to the consumer, and it did not move — what moved is the
-structure around them.
+structure around them. That line stated for the driver author who has to
+work against it, with the test for a case neither half names, is
+[static-sites.md](../static-sites.md); what follows here is why each
+half sits where it does.
 
 **The library's half is the facts it already holds.**
 

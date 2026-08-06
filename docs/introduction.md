@@ -210,6 +210,8 @@ features to become the right one.
 - [elements.md](elements.md) — every element, its semantics, when to use it
 - [accessibility.md](accessibility.md) — how a11y is derived and enforced
 - [localization.md](localization.md) — catalogs, ICU messages, right-to-left
+- [static-sites.md](static-sites.md) — what a generator states and what
+  the library writes
 - [testing.md](testing.md) — the harness, queries, golden screenshots
 - [services.md](services.md) — OS capabilities beyond the window
 - [roadmap.md](roadmap.md) — what's coming next

@@ -55,6 +55,10 @@ you need them.
   nav bar comes from (the route table's titles and the framework's own
   words), and everything the compiler checks so a build that passes has
   every locale whole.
+- [static-sites.md](static-sites.md) — the boundary a generator is
+  written against: the document, the alternate set and the sitemap the
+  library writes, every destination and every publishing policy you
+  state, and the three questions that decide a case neither list covers.
 - [testing.md](testing.md) — the headless e2e harness: semantic queries,
   the input driver, service fakes, step traces, and byte-exact golden
   screenshots.

@@ -173,9 +173,13 @@ pub fn checkPath(path: []const u8) error{PathNotRooted}!void {
 /// The set's own rules, plus self-inclusion against the path of the
 /// page carrying it. `own` is `null` for a document with no URL.
 ///
-/// An empty set is not checked and is not a defect: a page that exists
-/// in one language has no choice of URLs to describe, and its canonical
-/// already says everything there is to say about where it lives.
+/// An empty set is not checked and is not a defect: a page with **one
+/// URL** has no choice of addresses to describe, and its canonical
+/// already says everything there is to say about where it lives. The
+/// number of languages is not what decides that — under this edition's
+/// scheme a page in one language still has two addresses, the prefixed
+/// copy and the chooser standing at the unprefixed path, and those want
+/// a set (`Meta.alternates`, which states this once).
 pub fn check(set: []const Alternate, own: ?[]const u8) Error!void {
     if (set.len == 0) return;
     for (set, 0..) |a, i| {

@@ -82,6 +82,9 @@ annotate each other with — `dom.Alternates` takes the bundle rather than
 a list of tags, as everything here does, and the `x-default` it adds is
 the chooser's address rather than any language's
 ([the alternate set](internals/dom-edition.md#the-alternate-set-and-the-two-writers-that-spend-it)).
+Which half of a generated site is the library's and which is the
+generator's, past the locale axis, is
+[static-sites.md](static-sites.md).
 
 ## The format
 

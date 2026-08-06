@@ -338,7 +338,9 @@ skipping `unresolvable_route`: on that edition a document's destination
 belongs to the site's own resolver rather than to any route table, and
 that resolver already fails the build on a reference it cannot honor,
 which is harder than this rule's answer. Skipping a rule nothing else
-checks is turning the guarantee off.
+checks is turning the guarantee off. The boundary that sanction is read
+off — which destinations are a generator's and which are the library's —
+is [static-sites.md](static-sites.md).
 
 The default skips nothing, and `audit.audit` — the one the harness runs
 at init and after every driver action — has no way to pass anything

@@ -1,10 +1,11 @@
 # HANDOFF — what a static, multi-locale site needs from nokre (2026-08-06)
 
-Status: **IN EXECUTION.** Part F was answered whole on 2026-08-06 — the round's
-premises are settled and recorded there; read it before anything else. The
-survey's *claims* are still claims and still want checking, but its open
-*questions* are closed. The execution queue is at the foot of this file, and
-items are deleted from it as they land.
+Status: **EXECUTED WHOLE, 2026-08-06.** Part F was answered first and the queue
+ran without a pause after it; all ten items are in "Landed" at the foot of this
+file, with the ground for everything that was refused or reshaped. What the
+round decided about its own boundary is now a doc rather than a record —
+`docs/static-sites.md` — so this file is a trail, not a contract: read the doc
+for the rule and read here only for why an item died.
 
 This file succeeds the third ergonomics round (executed whole; recoverable at
 `git show 3855adf:HANDOFF.md`). Parts 0 and A of that round are done through
@@ -693,15 +694,103 @@ it. See "Landed".
 
 ## The execution queue
 
-One item left of ten, and the queue keeps its numbering. One commit each. Contract changes bump
-`nokre.revision` and move all three pins in the same pass. Each item is deleted
-from this file as it lands, with its outcome recorded.
-
-10. **The boundary doc** — F.5, written from what shipped.
+**Empty. Ten of ten landed.** Every outcome is recorded below, in the order it
+was decided. Nothing here is deferred and nothing is half-done; what this round
+declined, it declined on a stated ground, and the grounds are in the entries
+rather than in anybody's memory.
 
 ---
 
 ## Landed
+
+### 10. The boundary doc — SHIPPED as `docs/static-sites.md`. nokre is still revision 40.
+
+**A new consumer doc rather than a section, and the ground is that no
+existing one could hold it.** The rule is consumer-facing — a driver author is
+who was misled — and the consumer track had no home for the document a
+generator writes at all: `getting-started.md`'s web section is the *app's* own
+site (the shell page, the CSP, `web_lang`), `localization.md` owns the locale
+axis and says the loop is the generator's, `accessibility.md` owns the audit's
+skip knob, and `routing.md` owns references in an app. A rule spread over four
+docs is the shape it already had in the source. `introduction.md` was the other
+candidate and is the wrong altitude: its refusals answer "is nokre for you",
+and a driver author reading about `Meta.origin` is past that question.
+`README.md` calls the consumer track "one reference per surface" — `dom.document`,
+`dom.localeStub`, `dom.Alternates`, `dom.Sitemap` and `Emitter.json` are a
+surface, and this is the one of them that states a contract instead of
+enumerating an API. Inbound pointers from `README.md`, `introduction.md`,
+`localization.md`, `accessibility.md` and dom-edition.md's own section; the
+arguments stay in dom-edition.md and are pointed at, not copied.
+
+**The rule, as it finally reads:** *your driver states every destination; the
+library states what a set of destinations may not disagree about.* That is
+`audit.zig`'s sentence with the round's answer attached — nokre took the
+derivations and the invariants and refused every destination and every policy,
+which is Part C's middle position arrived at empirically under a scope decision
+(F.2) that permitted more.
+
+**The test is three questions, and the third is the one worth having.** Does
+nokre already hold the fact (then not exporting it is the defect — `lang`, the
+class list, the boot route)? If you state it, can nokre *check* your answer
+(then it takes the relationship and leaves the value)? Would it have to
+*invent* one (then it is refused)? `lastmod` is the worked example and the
+obvious reading of it is wrong: it is not refused for being an SEO concern —
+nokre emits the sitemap it would sit in — but for being the one
+destination-adjacent fact the library can neither know nor check, where an
+origin it also cannot know it *can* check and therefore requires. The third
+question has a second blade, recorded because the check-test alone lets it
+through: `noindex` is *derivable* from `Meta.path == null` and is still
+refused, because whether an address is indexed is a decision about a site
+rather than a fact about a document. Derivability is not ownership.
+
+**One thing the entries did not say, now stated as a rule.** Item 2 wrote that
+no field on `Document` "has a default with an opinion" and named `addressing`.
+`Boot.driver_dir` is `/` — a *destination* with a default, unnamed there. It is
+not a crossing, and the reason generalises: where a field carries a default at
+all, the default is a fact about nokre — `addressing` is `mount`'s own default,
+`driver_dir` is where installing `App.web` whole puts the driver set,
+`Web.lang` is the language nokre's own words are in, `Meta.kind`'s `"website"`
+is the one `og:type` that claims nothing. Never a guess about a site. The doc
+states that, which is the ground `driver_dir` was missing.
+
+**No item crossed the line.** Checked against the source rather than against
+the entries: `Meta` reads no route name and computes no path (`url` is two
+`em.text` calls, and its own comment says the origin is not parsed);
+`alternates.zig` reads `L.default_locale` nowhere, and its `x_default` doc says
+so at the field; `Sitemap` fills a caller's buffer; `LocaleStub` takes hrefs and
+labels and derives neither. The two seams are still bytes. The strongest
+evidence remains item 9: a whole consumer migrated onto all of it with no
+library change.
+
+**One stale sentence found *in the library*, and item 9's correction was
+two-thirds of the way.** Item 7's entry says the wrong ground for an empty
+alternate set was corrected in place and that "the library was right" because
+`Meta.alternates`'s doc comment already stated it correctly. It did — but
+`alternates.check`'s doc comment carried the refuted sentence verbatim ("a page
+that exists in one language has no choice of URLs to describe"), which is the
+version a driver author hits first, since `check` is what refuses their set.
+Corrected to the same statement `Meta.alternates` makes, with the number of
+languages named as the thing that does *not* decide it. Doc comment only; no
+contract moved, so revision stays 40.
+
+**The named staleness, plus what fixing it exposed.** dom-edition.md's
+`dom.document` example paired `origin` with `.path = "/accessibility/"`, which
+after item 9 is the site's *chooser* address. It is `/en/accessibility/` now —
+and it gained an `.alternates` line, because a page at a locale-prefixed path
+carrying no alternate set is precisely the mistake the "alternate set" section
+two screens below argues against. Fixing the path alone would have left the
+example teaching it.
+
+**What was deliberately not written**: no changelog, no round summary, no
+"what shipped in revisions 33–40", and no second API reference — every call is
+named, none is enumerated, and the arguments live where they already lived.
+
+**Site: 1 locale, 33 screens, 32 stubs, 821 references, 1,156,880 bytes of
+markup, 71,897 bytes of driver.** All four gates green. The page needed a route
+(`pages.zig`, consumer track) and two catalog keys, and its icon is `file_text`
+— already in `tools/build-fonts.py`'s subset table and until now the one entry
+no page spent, so the woff2 does not move. `zig build test` in nokre exits 0
+with `src/` untouched but for that one doc comment.
 
 ### 9. Part G — SHIPPED on `getnokre.github.io`. **nokre did not move; it is still revision 40.**
 
