@@ -162,6 +162,133 @@ test "a spanned heading slugs its words, not \"section\"" {
     try expectLacks(html, "id=\"section\"");
 }
 
+test "a heading states its address, and it goes in verbatim" {
+    // The one heading something outside the page names. The words are
+    // still the words; only the address stops being a function of them.
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    const root = app.tree.rootId();
+    try app.tree.append(root, .{ .heading = .{ .content = "Your rights", .level = .h2, .anchor = "delete-account" } });
+
+    const html = try render(&app);
+    defer testing.allocator.free(html);
+    try testing.expectEqualStrings("<h2 id=\"delete-account\">Your rights</h2>", html);
+}
+
+test "the same stated address survives two languages that share no words" {
+    // The whole reason the field exists. One contractual destination,
+    // published per language: derivation makes it `your-rights` here
+    // and `حقوق-شما` there — two addresses for a link written down
+    // once, and neither of them is what was written down.
+    var en = try test_app.init(400, 400);
+    defer en.deinit();
+    try en.tree.append(en.tree.rootId(), .{ .heading = .{ .content = "Your rights", .level = .h2, .anchor = "delete-account" } });
+
+    var fa = try test_app.mirrored(400, 400);
+    defer fa.deinit();
+    try fa.tree.append(fa.tree.rootId(), .{ .heading = .{ .content = "حقوق شما", .level = .h2, .anchor = "delete-account" } });
+
+    const en_html = try render(&en);
+    defer testing.allocator.free(en_html);
+    const fa_html = try render(&fa);
+    defer testing.allocator.free(fa_html);
+    try expectContains(en_html, "id=\"delete-account\"");
+    try expectContains(fa_html, "id=\"delete-account\"");
+    try expectLacks(en_html, "id=\"your-rights\"");
+    try expectLacks(fa_html, "id=\"حقوق-شما\"");
+}
+
+test "a stated address is refused, never suffixed, when the name is gone" {
+    // The numeric suffix is right for two headings that merely repeat
+    // and wrong for the one address someone else was told to use: a
+    // silently renamed `delete-account` is the failure the field exists
+    // to prevent, so the build stops instead.
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    const root = app.tree.rootId();
+    try app.tree.append(root, .{ .heading = .{ .content = "Delete account", .level = .h2 } });
+    try app.tree.append(root, .{ .heading = .{ .content = "Your rights", .level = .h2, .anchor = "delete-account" } });
+
+    try testing.expectError(serialize.AnchorError.AnchorTaken, render(&app));
+}
+
+test "two stated addresses that collide fail the build" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    const root = app.tree.rootId();
+    try app.tree.append(root, .{ .heading = .{ .content = "Your rights", .level = .h2, .anchor = "delete-account" } });
+    try app.tree.append(root, .{ .heading = .{ .content = "Erasure", .level = .h2, .anchor = "delete-account" } });
+
+    try testing.expectError(serialize.AnchorError.AnchorTaken, render(&app));
+}
+
+test "a derived slug takes the suffix when a stated address got there first" {
+    // The other order, and the asymmetry is deliberate: document order
+    // decides who is refused, and neither order can move the stated
+    // address.
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    const root = app.tree.rootId();
+    try app.tree.append(root, .{ .heading = .{ .content = "Your rights", .level = .h2, .anchor = "delete-account" } });
+    try app.tree.append(root, .{ .heading = .{ .content = "Delete account", .level = .h2 } });
+
+    const html = try render(&app);
+    defer testing.allocator.free(html);
+    try expectContains(html, "<h2 id=\"delete-account\">Your rights</h2>");
+    try expectContains(html, "<h2 id=\"delete-account-1\">Delete account</h2>");
+}
+
+test "a stated address joins the anchor roster" {
+    // A reference gate that only saw the guesses would fail exactly the
+    // addresses a driver cared enough to write down.
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    const root = app.tree.rootId();
+    try app.tree.append(root, .{ .heading = .{ .content = "Privacy", .level = .h1 } });
+    try app.tree.append(root, .{ .heading = .{ .content = "Your rights", .level = .h2, .anchor = "delete-account" } });
+
+    var out: std.ArrayList(u8) = .empty;
+    defer out.deinit(testing.allocator);
+    var em: serialize.Emitter = .{ .gpa = testing.allocator, .app = &app, .out = &out };
+    defer em.deinit();
+    try serialize.content(&em);
+
+    const anchors = try em.takeAnchors(testing.allocator);
+    defer {
+        for (anchors) |a| testing.allocator.free(a);
+        testing.allocator.free(anchors);
+    }
+    try testing.expectEqual(@as(usize, 2), anchors.len);
+    try testing.expectEqualStrings("privacy", anchors[0]);
+    try testing.expectEqualStrings("delete-account", anchors[1]);
+}
+
+test "turning the derivation off does not drop a stated address" {
+    // `heading_ids` governs a guess the library was making. Dropping a
+    // destination the driver stated is a different act, and not one
+    // that flag can perform.
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    const root = app.tree.rootId();
+    try app.tree.append(root, .{ .heading = .{ .content = "Privacy", .level = .h1 } });
+    try app.tree.append(root, .{ .heading = .{ .content = "Your rights", .level = .h2, .anchor = "delete-account" } });
+
+    var out: std.ArrayList(u8) = .empty;
+    defer out.deinit(testing.allocator);
+    var em: serialize.Emitter = .{
+        .gpa = testing.allocator,
+        .app = &app,
+        .out = &out,
+        .options = .{ .heading_ids = false },
+    };
+    defer em.deinit();
+    try serialize.content(&em);
+    try testing.expectEqualStrings(
+        "<h1>Privacy</h1><h2 id=\"delete-account\">Your rights</h2>",
+        out.items,
+    );
+}
+
 test "two same-labeled choice groups get distinct radio names" {
     var app = try test_app.init(400, 400);
     defer app.deinit();

@@ -24,7 +24,9 @@
 //!   A container's own id, where a caller needs it, is `.at`.
 //! - Content-only elements (`text`, `heading`, `code_block`) take
 //!   their content directly; their remaining fields are either
-//!   defaults nobody sets or layout-owned state consumers may not set.
+//!   defaults nobody sets, layout-owned state consumers may not set,
+//!   or — for the two that a minority of call sites do state — a twin
+//!   method that names what it adds (`styled`, `spanned`, `anchored`).
 //!
 //! The set is closed exactly as the element set is: a new element adds
 //! its method in the same pass (docs/internals/contributing.md), and
@@ -75,6 +77,22 @@ pub const Cursor = struct {
 
     pub fn heading(c: Cursor, level: element_mod.HeadingLevel, content: []const u8) !void {
         try c.tree.append(c.at, .{ .heading = .{ .level = level, .content = content } });
+    }
+
+    /// `heading` stating its own address rather than leaving the DOM
+    /// edition to derive one from the words
+    /// (`element.Heading.anchor`). A twin rather than a third parameter
+    /// on `heading`, for `styled`'s reason: the stated anchor is the
+    /// rare heading — the one something outside the page names — and a
+    /// parameter every other call site passes `""` to would put the
+    /// exception in front of the rule.
+    ///
+    /// The anchor leads the content because it is what distinguishes
+    /// this call from `heading`, and because standing it next to the
+    /// level is what makes an untranslated literal beside a translated
+    /// title read as deliberate rather than forgotten.
+    pub fn anchored(c: Cursor, level: element_mod.HeadingLevel, anchor: []const u8, content: []const u8) !void {
+        try c.tree.append(c.at, .{ .heading = .{ .level = level, .anchor = anchor, .content = content } });
     }
 
     pub fn icon(c: Cursor, i: element_mod.Icon) !void {

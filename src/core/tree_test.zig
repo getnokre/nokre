@@ -193,6 +193,44 @@ test "append rejects unlabeled interactive elements" {
     try tree.append(root, .{ .button = .{ .label = "Go", .disabled = true } });
 }
 
+test "append rejects a stated anchor that cannot be the address it claims" {
+    var tree = try Tree.init(std.testing.allocator);
+    defer tree.deinit();
+    const root = tree.rootId();
+
+    // Whitespace and `#` are not spellable in an id or in a fragment at
+    // all; a leading digit is spellable in both and not in a CSS
+    // identifier, which is the third grammar a stated address meets.
+    try std.testing.expectError(error.InvalidAnchor, tree.append(root, .{ .heading = .{ .content = "Rights", .anchor = "delete account" } }));
+    try std.testing.expectError(error.InvalidAnchor, tree.append(root, .{ .heading = .{ .content = "Rights", .anchor = "#delete-account" } }));
+    try std.testing.expectError(error.InvalidAnchor, tree.append(root, .{ .heading = .{ .content = "Rights", .anchor = "2025-terms" } }));
+    // The accident this rule is really for: an anchor handed to the
+    // translation table, which is a working address in exactly the
+    // locales whose words are Latin.
+    try std.testing.expectError(error.InvalidAnchor, tree.append(root, .{ .heading = .{ .content = "حقوق شما", .anchor = "حذف-حساب" } }));
+
+    try tree.append(root, .{ .heading = .{ .content = "Your rights", .anchor = "delete-account" } });
+    // Empty is not a refusal: it is every heading that states nothing,
+    // and the derivation's whole domain.
+    try tree.append(root, .{ .heading = .{ .content = "Contact", .level = .h2 } });
+}
+
+test "a stated anchor is copied into the tree like every other consumer string" {
+    var tree = try Tree.init(std.testing.allocator);
+    defer tree.deinit();
+
+    var buf: [32]u8 = undefined;
+    const borrowed = try std.fmt.bufPrint(&buf, "delete-{s}", .{"account"});
+    try tree.append(tree.rootId(), .{ .heading = .{ .content = "Your rights", .anchor = borrowed } });
+    // The caller's buffer is reused the way a per-locale build reuses
+    // one. The tree's copy does not move.
+    @memset(&buf, 'x');
+
+    var it = tree.children(tree.rootId());
+    const h = tree.getConst(it.next().?).?.heading;
+    try std.testing.expectEqualStrings("delete-account", h.anchor);
+}
+
 test "append rejects layout-owned fields set by the consumer" {
     var tree = try Tree.init(std.testing.allocator);
     defer tree.deinit();

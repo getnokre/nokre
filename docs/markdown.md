@@ -112,6 +112,17 @@ on semantics — the table is the whole of it:
   covers — more parser for no more meaning.
 - **Marked-up link labels** (`[**Terms**](terms)`). See below: one link
   is one focus stop, and that is the constraint, not an omission.
+- **Heading attributes** (`## Rights {#delete-account}`). A heading can
+  state its own address — `Heading.anchor`, [elements.md](elements.md) —
+  but not from Markdown: the syntax is Kramdown's and PHP Markdown
+  Extra's, not CommonMark's and not GitHub's, so a `document`'s source
+  was not written against it and inventing a spelling here would be a
+  second grammar for a field the tree already has. A page with a
+  contractual anchor in it builds that heading, and the source around
+  it stays Markdown. Written anyway, the braces come through as part of
+  the heading's words and are slugged with them
+  (`rights-delete-account`) — visibly wrong on the page rather than
+  silently wrong in the address.
 
 Three more things degrade rather than fail, because content nokre does
 not control must never be able to raise:

@@ -396,6 +396,21 @@ base is already bold, a span's `strong` adds nothing to a heading and a
 span without it does not drop back to regular — span variants compose
 onto the element's face rather than replacing it.
 
+`anchor` states the address a section is linked to by, for the rare
+heading something outside the page names — an account-deletion section
+an app store's policy points at, which has to answer at the same address
+in every language the page is published in. Left empty (the default, and
+every other heading) the [DOM edition](internals/dom-edition.md) derives
+one from the words, which is a different address per language.
+`b.anchored(.h2, "delete-account", title)` is the cursor form. The value
+is an ASCII letter followed by ASCII letters, digits, `-`, `_` or `.` —
+so it is an `id`, a URL fragment and a CSS selector at once — and
+`append` refuses anything else, which is also what catches an anchor
+accidentally run through the translation table. Uniqueness within a
+document stays the library's: a stated address that collides fails the
+build rather than being renamed around. The argument is
+[static-sites.md](static-sites.md), "A heading id is a destination".
+
 ### `icon`
 One named Lucide glyph, laid out as a square line-height box so it
 aligns with same-scale text beside it. Options: `name` (the `IconName`

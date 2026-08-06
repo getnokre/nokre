@@ -80,6 +80,14 @@ test "every content method appends the element it names" {
     try std.testing.expectEqualStrings("a b", tree.getConst(lastChild(&tree, root_id)).?.label());
     try root.heading(.h2, "section");
     try std.testing.expectEqual(element_mod.HeadingLevel.h2, tree.getConst(lastChild(&tree, root_id)).?.heading.level);
+    // `heading` states no address; `anchored` is the same append with
+    // one. Nothing else separates them.
+    try std.testing.expectEqualStrings("", tree.getConst(lastChild(&tree, root_id)).?.heading.anchor);
+    try root.anchored(.h2, "delete-account", "Your rights");
+    const anchored = tree.getConst(lastChild(&tree, root_id)).?.heading;
+    try std.testing.expectEqual(element_mod.HeadingLevel.h2, anchored.level);
+    try std.testing.expectEqualStrings("Your rights", anchored.content);
+    try std.testing.expectEqualStrings("delete-account", anchored.anchor);
     try root.icon(.{ .name = .globe, .label = "Globe" });
     try expectLast(&tree, root_id, .icon);
     try root.divider();

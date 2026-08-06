@@ -43,6 +43,7 @@ because those are what a hand-written head gets wrong:
 | each locale's copy, and the chooser's address | that the set is complete — one required field per bundled locale, so a missing one is a compile error and an unbundled one is unstatable — that the tags are `L.tag`'s and not strings you typed, that the page is among its own alternates, and that the graph closes across the sitemap |
 | the mount ids, the content class, the addressing mode, the skip link's words, the URL you published the stylesheet at | nothing — they are names you invented, and a library default would be a guess |
 | the title, the description, the labels, a language's name in its own language | the escaping, on every one of them |
+| the address a section is linked to by, where something outside the page names one (`Heading.anchor`) | that it can be an `id`, a fragment and a CSS selector at once; that it is unique in the document; that a collision fails the build rather than renaming it; and that it is on the roster `takeAnchors` exports |
 | the structured data you serialized | that no byte of it can end the `<script>` block it lands in — `Emitter.json`, one escape and no opinion about the graph, which is why it does not write the tag either |
 
 And what the library writes without asking is what it already holds:
@@ -114,6 +115,73 @@ inventing. `Meta.Image.shape` is stated by you rather than derived from
 the pixel size: which crop an asset survives is editorial, and a
 threshold on the aspect ratio would be the library guessing at your
 artwork.
+
+## A heading id is a destination, and it was invented for one round
+
+The three questions were run against a fact that had been on the wrong
+side of the line since the edition shipped, and they moved it. Heading
+ids are derived from the heading's words (GitHub's slug, "A heading is
+an address" in
+[internals/dom-edition.md](internals/dom-edition.md)), and for the
+overwhelming majority of headings that is exactly right: nothing outside
+the page names them, so no address needs to exist before the words do.
+
+It stops being right the moment something outside the document writes
+one down. The first migration to meet this had a privacy policy whose
+rights section is linked by an app store's account-deletion policy, at
+one address specified across three locales. Derivation makes that
+`your-rights`, `حقوق-شما` and `haklariniz` — three addresses for one
+contractual destination, none of them the one in the contract. The
+questions answer cleanly: nokre does not hold the fact (the content
+does), nokre can check the answer, and the alternative is nokre
+inventing one. So a heading may **state** its address —
+`element.Heading.anchor`, spelled `b.anchored(.h2, "delete-account", …)`
+at the cursor — and the library goes on owning everything around it.
+
+**A field on the heading, not a verb on the emitter.** The rejected
+alternative was an `Emitter` option or verb stamping the next heading,
+and it fails on the same ground `lang` did: a driver never emits
+heading-by-heading — `document` walks the whole tree in one call — so a
+stamp would have to name its heading by position or by words, which is a
+second copy of a fact stated somewhere else, and the second copy is the
+one that goes stale. A bare `anchor` *element* was rejected too: every
+element here is semantic, and a node with no role, no words and nothing
+to draw is markup wearing an element's clothes.
+
+**Stating an address buys no exemption from the rules around it.**
+Uniqueness stays the library's, and a stated anchor that collides — with
+a derived slug or with another stated one — is `AnchorError.AnchorTaken`
+rather than the numeric suffix a repeated heading takes: suffixing the
+one address someone else was told to use is precisely the failure the
+field exists to prevent. Document order decides which of the two is
+refused, and neither order can move a stated address. The grammar — an
+ASCII letter, then ASCII letters, digits, `-`, `_`, `.` — is checked at
+`Tree.append` with every other construction rule, and it is narrower
+than an `id` needs because a stated address is also a fragment nobody
+should have to percent-encode and a selector a stylesheet should be able
+to name.
+
+**Where the two failures land, and why they land differently.** The
+grammar is a fact about one element, so it fails at the append that
+builds the heading — before layout, before a byte. Uniqueness is a fact
+about a whole document, which no append can see, so it fails at the
+heading during the walk rather than pre-write the way `MetaError` does.
+That is not a weaker posture, it is the one this kind of destination
+already has: a `Refs` hook that cannot honor a route fails mid-walk too,
+and a generator's error path is the same either way — the buffer is
+discarded and the build stops, because a driver that writes a file
+without checking the error had that bug before anchors existed.
+
+**Across locales it is safe by construction up to one step.** The value
+is a literal beside a translated title, and the ASCII floor turns the
+likeliest accident — running the anchor through the translation table —
+into a build failure in the first non-Latin locale rather than a broken
+link discovered by a store review. What the library cannot see is a
+translation table whose entries all happen to be ASCII; that last step
+is discipline, and the roster is what makes it checkable: stated
+anchors are in `takeAnchors`'s answer beside the derived ones, so a
+generator's own reference gate resolves `#delete-account` per locale and
+fails the build where it does not.
 
 ## A default is not an opinion about your site
 

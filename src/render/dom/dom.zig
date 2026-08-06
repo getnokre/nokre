@@ -41,6 +41,10 @@ const sitemap_mod = @import("sitemap.zig");
 pub const Emitter = serialize.Emitter;
 pub const Refs = serialize.Refs;
 pub const Dest = serialize.Dest;
+/// What a driver can get wrong about a heading that states its own
+/// address (`element.Heading.anchor`) — raised by the walk, at the
+/// heading, before the id is written.
+pub const AnchorError = serialize.AnchorError;
 
 /// The JavaScript a web build ships beside the wasm module — the live
 /// driver's whole browser half, as data. `addWebSite` copies exactly

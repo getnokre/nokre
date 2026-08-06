@@ -531,7 +531,18 @@ pub const Tree = struct {
             // concatenation), so providing both is ambiguous and
             // rejected rather than silently resolved.
             .text => |t| try self.validateSpans(parent, t.content, t.spans, t.style.ink),
-            .heading => |h| try self.validateSpans(parent, h.content, h.spans, .ink),
+            .heading => |h| {
+                try self.validateSpans(parent, h.content, h.spans, .ink);
+                // A stated anchor faces its grammar here, at
+                // construction, exactly as an external link faces
+                // open_url's scheme set — so a heading that can be
+                // built is a heading whose address can be written,
+                // linked and selected. Uniqueness is a fact about a
+                // *document*, which no single append can see; that one
+                // is the emitter's (dom/serialize.zig).
+                if (h.anchor.len != 0 and !element_mod.Heading.validAnchor(h.anchor))
+                    return error.InvalidAnchor;
+            },
             // A link goes exactly one place. Both destinations set is
             // ambiguity refused rather than resolved, and an external
             // one faces open_url's closed scheme set here, at
@@ -949,10 +960,19 @@ pub const Tree = struct {
             } else {
                 t.spans = try dupeSpans(a, t.spans, &t.content);
             },
-            .heading => |*h| if (h.spans.len == 0) {
-                h.content = try dupeValid(a, h.content);
-            } else {
-                h.spans = try dupeSpans(a, h.spans, &h.content);
+            .heading => |*h| {
+                if (h.spans.len == 0) {
+                    h.content = try dupeValid(a, h.content);
+                } else {
+                    h.spans = try dupeSpans(a, h.spans, &h.content);
+                }
+                // Copied like every other string a consumer hands in,
+                // and for `Action.key`'s reason rather than a
+                // formality: the anchor a driver states is routinely a
+                // literal beside a translated title, and a borrowed one
+                // would be pointing into whatever buffer the next
+                // screen build reuses.
+                h.anchor = try dupeValid(a, h.anchor);
             },
             .icon => |*i| i.label = try dupeValid(a, i.label),
             .code_block => |*c| c.content = try dupeValid(a, c.content),

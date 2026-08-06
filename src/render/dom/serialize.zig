@@ -98,11 +98,17 @@ pub const Emitter = struct {
     /// too, and each set belongs to the thing it configures.
     pub const Options = struct {
         refs: Refs = .{},
-        /// Give every heading an `id` derived from its words, so a section
-        /// can be linked to. Ids only — never an anchor control beside the
-        /// heading: a control the tree does not have is a control assistive
-        /// tech hears that the app never wrote, and the set is closed here
-        /// too.
+        /// Give every heading an `id` **derived** from its words, so a
+        /// section can be linked to. Ids only — never an anchor control
+        /// beside the heading: a control the tree does not have is a
+        /// control assistive tech hears that the app never wrote, and the
+        /// set is closed here too.
+        ///
+        /// It governs the derivation and nothing else. A heading that
+        /// *states* its address (`element.Heading.anchor`) writes it
+        /// either way and joins the roster either way: turning off a
+        /// guess the library was making cannot be the same act as
+        /// dropping a destination the driver stated.
         heading_ids: bool = true,
         /// Write each focus stop's `NodeId` as `data-n`, so a driver that
         /// resolves hits itself can name the node the reader meant. The
@@ -116,8 +122,9 @@ pub const Emitter = struct {
     out: *std.ArrayList(u8),
     options: Options = .{},
 
-    /// Heading ids already emitted on this document, for the numeric
-    /// suffix a repeat takes.
+    /// Heading ids already emitted on this document — derived and
+    /// stated alike — for the numeric suffix a repeat takes and the
+    /// collision a stated one is refused for.
     ids: std.ArrayList([]const u8) = .empty,
 
     /// Scratch for a `Refs` hook that has to assemble its answer — the
@@ -140,6 +147,11 @@ pub const Emitter = struct {
     /// *fact about the document*, which is a question a documents-mode
     /// edition has (docs/internals/dom-edition.md) and an app-in-a-page
     /// does not.
+    ///
+    /// One roster, both origins: a stated anchor is in here beside the
+    /// derived ones, because a reference gate that only saw the guesses
+    /// would fail exactly the addresses a driver cared enough to write
+    /// down.
     ///
     /// Ownership transfers: the strings are copied into `gpa` and the
     /// emitter's own roster comes back empty, so `deinit` frees nothing
@@ -395,9 +407,9 @@ pub fn node(em: *Emitter, id: NodeId) anyerror!void {
         .heading => |h| {
             const level = @intFromEnum(h.level);
             try em.print("<h{d}", .{level});
-            if (em.options.heading_ids) {
+            if (h.anchor.len != 0 or em.options.heading_ids) {
                 try em.raw(" id=\"");
-                try em.text(try headingId(em, h.content));
+                try em.text(try headingId(em, h.anchor, h.content));
                 try em.raw("\"");
             }
             try em.raw(">");
@@ -1343,14 +1355,50 @@ fn textClass(em: *Emitter, style: text_mod.Style, extra: []const u8) !void {
     try em.raw("\"");
 }
 
-/// GitHub's slug, because that is the slug the Markdown a `document`
-/// carries was written against: lowercase, spaces to hyphens, Unicode
-/// word characters kept, punctuation — ASCII and the General
-/// Punctuation block both — dropped, repeats numbered. Deterministic
-/// from the words alone, so the same heading is the same anchor on
-/// every run. Why it is GitHub's and not nokre's is
+/// What a driver can get wrong about a stated anchor that no single
+/// `Tree.append` could see. It is raised at the heading rather than
+/// pre-write the way `MetaError` is, because uniqueness is a fact about
+/// a whole document and the walk is what establishes it — the same
+/// place, and the same error path, a `Refs` hook that cannot honor a
+/// route already fails at.
+pub const AnchorError = error{
+    /// A stated `Heading.anchor` names an id this document already
+    /// minted — an earlier stated one, or a heading whose words derive
+    /// to the same slug. Refused rather than suffixed: the numeric
+    /// suffix is right for two headings that merely repeat, and wrong
+    /// for the one address something outside the page was told to use.
+    AnchorTaken,
+};
+
+/// The heading's address: the one it stated, or GitHub's slug of its
+/// words.
+///
+/// **Stated** goes in verbatim. Its grammar was settled at append
+/// (`element.Heading.validAnchor`), so what is left here is the only
+/// question a whole document can answer — whether the name is free —
+/// and a taken one is `AnchorTaken` rather than a suffix.
+///
+/// **Derived** is GitHub's slug, because that is the slug the Markdown
+/// a `document` carries was written against: lowercase, spaces to
+/// hyphens, Unicode word characters kept, punctuation — ASCII and the
+/// General Punctuation block both — dropped, repeats numbered.
+/// Deterministic from the words alone, so the same heading is the same
+/// anchor on every run. Why it is GitHub's and not nokre's is
 /// docs/internals/dom-edition.md, "A heading is an address".
-fn headingId(em: *Emitter, words: []const u8) ![]const u8 {
+///
+/// Both land in the same roster, so document order is the whole of the
+/// arbitration: a stated anchor is refused if the name is gone by the
+/// time it is reached, and a derived slug takes its usual suffix when a
+/// stated one got there first. Neither ordering can move a stated
+/// address, which is the property being defended.
+fn headingId(em: *Emitter, stated: []const u8, words: []const u8) ![]const u8 {
+    if (stated.len != 0) {
+        if (taken(em.ids.items, stated)) return AnchorError.AnchorTaken;
+        const owned = try em.gpa.dupe(u8, stated);
+        errdefer em.gpa.free(owned);
+        try em.ids.append(em.gpa, owned);
+        return owned;
+    }
     var buf: std.ArrayList(u8) = .empty;
     errdefer buf.deinit(em.gpa);
     var i: usize = 0;

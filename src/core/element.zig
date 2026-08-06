@@ -317,6 +317,33 @@ pub const Heading = struct {
     /// As on `Text`; the base face is always `base_face`, the base ink
     /// `.ink`.
     spans: []const Span = &.{},
+    /// The address this section is linked to by, stated rather than
+    /// derived. Empty — the overwhelming default — leaves the DOM
+    /// edition to derive one from the words (GitHub's slug), which is
+    /// right for every heading nothing outside the page names.
+    ///
+    /// It is a field because a heading id **is a destination**, and a
+    /// driver states its destinations (docs/static-sites.md). A derived
+    /// address is a pure function of the words, so it is a *different*
+    /// address in every language the page is published in — harmless
+    /// until something outside the document names one. A section an app
+    /// store's account-deletion policy links to has to answer at one
+    /// address in every locale, and no arrangement of words promises
+    /// that.
+    ///
+    /// Stating it buys no escape from the rules the derivation obeys.
+    /// Uniqueness within the document stays the library's, and a stated
+    /// anchor that collides fails the build rather than taking the
+    /// numeric suffix a repeated heading takes: silently renaming the
+    /// one address someone else already wrote down is the failure this
+    /// field exists to prevent.
+    ///
+    /// `validAnchor` is the grammar, checked at `Tree.append` with
+    /// every other construction rule. Its ASCII floor is load-bearing
+    /// past escaping: an anchor accidentally run through a translation
+    /// table fails the build in the first non-Latin locale, which is
+    /// the mistake a per-locale generator would otherwise ship.
+    anchor: []const u8 = "",
 
     /// Every level draws bold. Size alone cannot separate the levels —
     /// body text is 16px, so the smaller levels sit at or below it — so
@@ -325,6 +352,36 @@ pub const Heading = struct {
     /// ship real drawn bold faces, so this stays clear of synthetic
     /// emboldening and the rasterizer variance it reopens.
     pub const base_face: text.Face = .{ .family = .prose, .bold = true };
+
+    /// Whether `anchor` can be the address it claims to be: an ASCII
+    /// letter, then ASCII letters, digits, `-`, `_` and `.`.
+    ///
+    /// The set is the intersection of three grammars a stated anchor
+    /// has to satisfy at once, which is why it is narrower than any one
+    /// of them. It is a legal HTML `id` (no ASCII whitespace); it is a
+    /// URL fragment needing no percent-encoding, so the `#ref` a driver
+    /// writes and the `id` this emits are the same bytes rather than
+    /// two spellings a browser has to reconcile; and it is a CSS
+    /// identifier, so `#delete-account` selects in a stylesheet as well
+    /// as in a location bar — which the leading-letter rule alone buys.
+    ///
+    /// A derived id obeys none of this and does not need to: it is
+    /// GitHub's slug, Persian words and all, and nothing outside the
+    /// page names it. What is *stated* is written down somewhere this
+    /// build cannot see, so it is held to the grammar every reader of
+    /// it will use.
+    pub fn validAnchor(s: []const u8) bool {
+        if (s.len == 0) return false;
+        switch (s[0]) {
+            'A'...'Z', 'a'...'z' => {},
+            else => return false,
+        }
+        for (s[1..]) |c| switch (c) {
+            'A'...'Z', 'a'...'z', '0'...'9', '-', '_', '.' => {},
+            else => return false,
+        };
+        return true;
+    }
 };
 
 /// Block container: children flow vertically inside padding and an

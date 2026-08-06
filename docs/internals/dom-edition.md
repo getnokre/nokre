@@ -928,14 +928,41 @@ Ids only, never an anchor control beside the heading: a control the tree
 does not have is a control assistive tech would announce that the app
 never wrote, and the element set is closed here too.
 
+**Derived is the default, not the only way.** A pure function of the
+words is a different address in every language a page is published in,
+which is fine until something outside the document names one — an app
+store's account-deletion policy pointing at `#delete-account` in three
+locales at once. A heading may state its own address instead
+(`element.Heading.anchor`; the argument and the shape it beat are
+[static-sites.md](../static-sites.md), "A heading id is a destination").
+Two things change here and nothing else does:
+
+- The stated value goes in verbatim, and `Options.heading_ids` does not
+  suppress it. That flag governs a guess the library was making; a
+  destination the driver stated is not the flag's to drop.
+- `headingId` mints it into the same roster, and a name already there is
+  `AnchorError.AnchorTaken` rather than a `-1`. Only *derived* slugs
+  take the suffix. Document order is the whole of the arbitration: a
+  stated anchor reached after its name is gone fails the build, and a
+  derived slug reaching a name a stated anchor already took gets
+  numbered as any repeat would. Neither order moves a stated address,
+  which is the only property being defended.
+
+The grammar a stated anchor has to satisfy — an ASCII letter, then ASCII
+letters, digits, `-`, `_`, `.` (`element.Heading.validAnchor`) — is
+checked at `Tree.append`, not here: it is a fact about one element, and
+every construction rule in nokre runs at the append that builds it.
+What *this* file can see, and no single append can, is whether the name
+is free.
+
 What a document *exports* — the anchors another page may name — is
-`Emitter.takeAnchors(gpa)`. The emitter keeps the same list internally
-as the suffix bookkeeping above, but "which anchors does this page
-publish" is a question about the document, and a generator that answers
-it by reaching into an emitter's field and deep-copying it before
-`deinit` is holding bookkeeping and calling it an answer. Ownership
-transfers on the call, and it is called once, when the document is
-finished.
+`Emitter.takeAnchors(gpa)`, derived and stated alike. The emitter keeps
+the same list internally as the suffix bookkeeping above, but "which
+anchors does this page publish" is a question about the document, and a
+generator that answers it by reaching into an emitter's field and
+deep-copying it before `deinit` is holding bookkeeping and calling it an
+answer. Ownership transfers on the call, and it is called once, when the
+document is finished.
 
 ### IME
 
