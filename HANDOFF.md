@@ -765,6 +765,63 @@ were deleted. Full receipts at `git show 3855adf:HANDOFF.md`:
 
 ---
 
+## Part G — dogfood on this site, and give it a locale axis of one
+
+*Owner-raised 2026-08-06. Not a proposal for a feature; a proposal for how the
+features in Parts A and B get proven before a second consumer bets on them.*
+
+**The ordering argument.** `getnokre.github.io` is the only static consumer that
+moves in lockstep with nokre — same session, same pin, same reviewer — and this
+round has already shown what that buys. Every pass of the third round that
+shipped a door made nokre's own examples and tutorial walk through it first, on
+the stated ground that *if nokre's own house keeps writing the ritual, the door
+is not real*. Twice that caught defects a reading would not have: a container
+that panicked on the obvious call, and a driver verb that did not wait. An SSG
+API validated only against `rokovski.com` is validated against a tree that
+cannot move until nokre commits, which is the wrong order.
+
+**Give it a locale axis with exactly one locale — and keep its URLs where they
+are.** That last clause is the whole point, and it makes the degenerate case a
+sharper test than it first looks:
+
+- A single-locale site that stays at `/accessibility/` rather than moving to
+  `/en/accessibility/` proves the locale axis **does not force a path scheme**,
+  which is precisely what B4 says the driver owns. If the API cannot express
+  "one locale, identity mapping", it is wrong, and one locale is the only
+  configuration in which that is unambiguous.
+- It forces the one-locale case to work *without a special case*. An API first
+  exercised at three locales tends to grow a `if (locales.len == 1)` branch
+  later, in a consumer, unreviewed.
+- Moving the published URLs is a real cost with no test value: every inbound
+  link and every cross-doc fragment in `docs/` breaks, and the round would be
+  paying it to learn nothing it could not learn from the identity mapping.
+
+**What it would cost here**, verified: ~20 page titles are hardcoded English in
+`src/pages.zig:64,71,78,…` and would become catalog keys against a one-locale
+bundle; the origin is hardcoded at **four** sites (`src/main.zig:440` canonical,
+`:460` `og:url`, `:698` sitemap, `:708` robots) and wants one constant whatever
+else happens; and the site today has no l10n surface at all, so the bundle is
+new. Nothing else moves.
+
+**Be honest about which half this proves.** A one-locale dogfood exercises the
+axis, the loop, the path-scheme boundary, `lang` on a generated document, and
+A1a's hydration handover — that last one is testable here the moment the site
+declares a locale, because the failure is a mismatch between the page's locale
+and `navigator.language`, and an `en` page in a `de` browser reproduces it
+today. It **cannot** exercise hreflang alternates (nothing to alternate with),
+`x-default` in its meaningful form, or RTL — `en` is LTR, and the unmirrored
+serialized page A1a argues from is invisible until something RTL is served
+statically. Those need a second locale or the second consumer, and a green site
+must not be read as a validated API for them.
+
+**The cheap first step, independent of every verdict above.** The origin
+constant and `lang="en"` on the generated document are worth doing on this site
+whether or not nokre grows a single SSG export — the first is four copies of one
+string, and the second is the attribute a serialized page needs regardless of
+who ends up owning it.
+
+---
+
 ## Part F — questions only the owner can answer
 
 1. ~~**Does the original static-site-driver kill still stand?**~~ **Answered
