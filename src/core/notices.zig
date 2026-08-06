@@ -123,8 +123,7 @@ pub const Notify = struct {
 pub fn notify(app: *App, opts: Notify) void {
     if (opts.title.len == 0) return;
     // Dedup on the *stored* form, so a title the cap clipped cannot
-    // stand beside its identical clipped twin (Part E's logged cost:
-    // notices dedup by title).
+    // stand beside its identical clipped twin.
     const incoming = fit(opts.title, max_title_bytes);
     for (app.notices.items) |*n| {
         if (std.mem.eql(u8, n.title(), incoming)) return;

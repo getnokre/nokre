@@ -5,11 +5,9 @@
 //! How many actions a row can show is the framework's decision, like the
 //! nav's shape (nav.zig) — consumers declare the actions and nokre
 //! draws as many as fit. Nothing opts in: a row that overflows folds,
-//! and there is no arrangement a consumer has to reach for to get it. And like the nav's, the choice is a *tree*
-//! decision rather than a drawing one: `semantics.roleOf` reads the
-//! element kind and nothing else, so a control that opens a sheet cannot
-//! be a button quietly wearing a different label. Assistive tech is told
-//! what is actually there.
+//! and there is no arrangement a consumer has to reach for to get it.
+//! And like the nav's, it is a *tree* decision rather than a drawing
+//! one, for the reason nav.zig gives.
 //!
 //! It takes two steps, in this order, because neither can do the other's
 //! half: layout is the only place that knows how wide the row's span

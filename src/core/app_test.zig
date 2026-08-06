@@ -230,8 +230,10 @@ test "crossing to the destination already showing is the one no-op" {
 
 // ---- the collapsed nav (docs/elements.md#navigation-chrome) ----
 
-// Four sections whose widest title ("Subscriptions", from the route
-// table below) clears a row at no viewport width, so the shape is
+// Four sections whose titles come from the route table below, where
+// "Subscriptions" is the widest: the set collapses the row at every
+// width these tests use — `crowdedApp` is 375px, and the row does not
+// reopen until 651 (layout_test.zig owns that figure). The shape is
 // decided by the fixture, not by luck.
 const crowded_nav = [_]nav_mod.Destination{
     .{ .route = "library", .icon = .library },
@@ -383,8 +385,9 @@ test "focus on surviving chrome carries across reload by identity, not name" {
 test "the nav reshapes as the viewport crosses the threshold" {
     var app = try crowdedApp();
     defer app.deinit();
-    // Two short titles fit anywhere; four long ones fit nowhere. This
-    // set sits between: collapsed in portrait, a row in landscape.
+    // Not the crowded roster: "Account" for "Subscriptions", a set that
+    // needs 597 to stand as a row (layout_test.zig owns the figure).
+    // The two widths below sit either side of it.
     try app.setNav(&.{
         .{ .route = "library", .icon = .library },
         .{ .route = "settings", .icon = .settings },
@@ -1109,11 +1112,6 @@ test "setChrome re-says the framework's own words, in place" {
     _ = sheet;
     try testing.expect(queryLabel(&app, "Kapat") != null);
 }
-
-// The old `Chrome.Catalog` structural test lived here; the opt-in it
-// proved moved to the catalog itself — `l10n` `Bundle.chrome` derives
-// one reserved key per `Chrome` field — and l10n_test.zig proves the
-// derivation, field for field.
 
 fn findBack(app: *App) ?NodeId {
     var it = app.tree.dfs();

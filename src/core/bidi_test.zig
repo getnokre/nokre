@@ -154,9 +154,7 @@ test "degraded paragraphs stay deterministic" {
     try std.testing.expectEqual(big.len, runs[0].end);
 }
 
-// ---------------------------------------------------------------------------
-// UCD BidiCharacterTest subset.
-// ---------------------------------------------------------------------------
+// ---- the UCD BidiCharacterTest subset ----
 
 const ucd_data = @embedFile("bidi_character_test_data.txt");
 

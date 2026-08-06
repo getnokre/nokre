@@ -750,13 +750,9 @@ pub const TextInput = struct {
     /// element: a message drawn beside a field is prose that happens to
     /// sit nearby, and prose carries no relation. Every backend has a
     /// slot for the pair and none of them can be reached from a
-    /// sibling — `aria-invalid` + `aria-describedby` on the web,
-    /// AccessKit's `invalid` + `description` natively, `setContentInvalid`
-    /// + `setError` on Android — so a field error is either a field's
-    /// own field or it is invisible to assistive tech. It is announced
-    /// after the name and the value, which is where a reason belongs:
-    /// the user hears what the control is, what it holds, and then why
-    /// that is not accepted.
+    /// sibling, so a field error is either a field's own field or it is
+    /// invisible to assistive tech. The per-backend spelling, and where
+    /// the reason falls in the announcement, is docs/accessibility.md.
     ///
     /// The words are the app's, never the framework's. nokre has no
     /// validation and no opinion about what a valid value is; it owns

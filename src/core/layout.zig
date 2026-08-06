@@ -84,7 +84,7 @@ pub const metrics = struct {
     pub const focus_stroke = 2;
     /// Clear paper an outset ring keeps from an element that paints to
     /// its own edge — a filled pill, the segmented track, a group
-    /// border. See `drawClearFocusRing`.
+    /// border. See `drawFocusRing`.
     pub const focus_clear = 2;
     pub const radius = 8;
     pub const radius_card = 12;
@@ -1651,7 +1651,6 @@ const Ctx = struct {
     /// that ends in a clipped pill beside "More" reads as two different
     /// failures. So the fold is deliberately one deeper than the
     /// overflow itself, and that one is the first thing the sheet lists.
-    ///
     fn foldButtonRow(self: *Ctx, id: NodeId, avail_w: i32, padding: i32, gap: i32) ?usize {
         const span = avail_w - 2 * padding;
         var count: usize = 0;
@@ -1824,9 +1823,6 @@ const Ctx = struct {
         };
     }
 
-    /// One notice as a row: icon controls flank a title + description
-    /// column. Shared by the banner and the pane's rows. Writes the
-    /// element's `height`; returns it.
     /// Whether this node is a row inside a scroll region rather than a
     /// layer of its own. The one thing that distinguishes the notices
     /// pane's rows from the banner, which is the same element.
@@ -1835,6 +1831,9 @@ const Ctx = struct {
         return self.tree.getConst(parent).?.role() == .scroll_region;
     }
 
+    /// One notice as a row: icon controls flank a title + description
+    /// column. Shared by the banner and the pane's rows. Writes the
+    /// element's `height`; returns it.
     fn layoutNoticeRow(self: *Ctx, notice: NodeId, x: i32, y: i32, w: i32) i32 {
         const pad = metrics.notice_pad;
         const t = metrics.touch_target;
@@ -1898,9 +1897,10 @@ const Ctx = struct {
         return h;
     }
 
-    /// The notices pane's content flow: notice children become rows, the
-    /// pinned minimize control is skipped, everything else (the Dismiss
-    /// all button) flows normally.
+    /// The table: each column as wide as its widest cell, each row as
+    /// tall as its tallest, `border` between and around them. Writes the
+    /// rect of the table, of every row, and of every cell; returns the
+    /// height.
     fn layoutTable(self: *Ctx, id: NodeId, x: i32, y: i32, avail_w: i32) i32 {
         // Column widths: max intrinsic cell width per column. The array
         // is the capacity `Tree.append` enforces, so every cell that
