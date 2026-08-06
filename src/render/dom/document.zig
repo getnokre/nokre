@@ -343,6 +343,18 @@ fn bootScript(em: *Emitter, doc: Document, b: Boot, chosen: []const u8) !void {
 /// closes the block-ending case whole — `</script>`, `<!--` and
 /// `<script` all start with it, and `\x3C` is the same character to
 /// every JavaScript engine.
+///
+/// **It stays private, and `Emitter.json` is not it.** They share the
+/// second half of that argument and nothing else. This one writes the
+/// inside of a *JavaScript string literal*, where `\x3C` is the escape;
+/// a JSON document has no `\x` escape at all, so the public writer
+/// spells the same character `\u003C`. Collapsing them would mean one
+/// function whose output is valid in exactly one of its two
+/// destinations. And there is no second caller to export it for: the
+/// boot script is the library's own, the strings above are ids and URLs
+/// the driver stated as *parameters*, and a driver that wanted to hand
+/// this function executable JavaScript would be writing a `<script>`
+/// this edition has no other support for.
 fn js(em: *Emitter, s: []const u8) !void {
     for (s) |c| switch (c) {
         '\\' => try em.raw("\\\\"),

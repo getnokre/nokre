@@ -206,6 +206,58 @@ pub const Emitter = struct {
         };
     }
 
+    /// A JSON document the caller already serialized, on its way into a
+    /// `<script>` block — the one escape that destination needs and the
+    /// only place in this type where `text` above would be actively
+    /// wrong rather than merely redundant.
+    ///
+    /// `std.json` escapes JSON, which is a different question:
+    /// `</script>` is legal JSON and fatal inside a `<script>`. And a
+    /// script block's contents are **raw text**, so `&amp;` written into
+    /// one is five characters of nothing rather than an ampersand —
+    /// which is exactly why the markup escape cannot stand in here.
+    ///
+    /// **One byte, and it is the whole set.** A script block's data
+    /// state is left on `<` and on nothing else, so every way out of it
+    /// starts with one: `</script` ends the element; `<!--` opens the
+    /// escaped state, in which a later `</script>` no longer does —
+    /// which is how two innocent strings on one page combine to swallow
+    /// the rest of the document — and `<script` inside that opens the
+    /// double-escaped one. Escaping `<` closes all three, the way
+    /// document.zig's `js` does for the boot script. The escape it
+    /// takes is spelled `\u003C` here and `\x3C` there, because JSON
+    /// has no `\x` escape at all: that one difference is why these are
+    /// two functions and not one, however alike their argument reads.
+    ///
+    /// **What is deliberately left alone.** `&`, because raw text
+    /// decodes no character reference and an escape written where none
+    /// is needed is a false claim about where the bytes are going.
+    /// U+2028 and U+2029, because what they break is *JavaScript
+    /// source* (and only before ES2019); a block whose type is not a
+    /// script type is never parsed as source, and in JSON they are
+    /// ordinary characters inside a string.
+    ///
+    /// **Valid JSON carries no `<` outside a string literal** — its
+    /// structure is braces, brackets, commas, colons and literals — and
+    /// no continuation byte of a UTF-8 sequence can be `0x3C` either. So
+    /// a byte-wise pass over the finished document is the whole
+    /// transformation, and what comes out parses to the value that went
+    /// in.
+    ///
+    /// Serializing the value is not this function's business.
+    /// `std.json.Stringify` writes the document; whether the graph in it
+    /// is a FAQPage or a product listing is the site's content, and this
+    /// library has no opinion about either.
+    pub fn json(self: *Emitter, doc: []const u8) !void {
+        var rest = doc;
+        while (std.mem.indexOfScalar(u8, rest, '<')) |i| {
+            try self.raw(rest[0..i]);
+            try self.raw("\\u003C");
+            rest = rest[i + 1 ..];
+        }
+        try self.raw(rest);
+    }
+
     /// The node a focus stop belongs to, for a driver that answers
     /// "which element did the user mean" on its own.
     fn stop(self: *Emitter, id: NodeId) !void {

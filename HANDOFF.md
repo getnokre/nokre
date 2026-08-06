@@ -281,53 +281,6 @@ necessarily config, so the app is in the loop regardless.
 
 **Already solved if:** `packaging.zig` grew a head-writer the survey did not find.
 
-### A3. JSON-LD
-
-**Receipt.** Zero occurrences of `application/ld+json`, `json-ld` or
-`schema.org` in either repo, `src/` or `docs/`. That much stands.
-
-**The survey then asked for two things and only one of them is missing.** It
-closed with *"already solved if the emitter can express a raw `<script>` block
-safely today"* — **it can, and does.** `Emitter.raw` and `Emitter.print`
-(`src/render/dom/serialize.zig`) are public and
-write straight through to `out` with no escaping whatever; `Emitter.text`
-is the *single* escape in the type, and it is opt-in per call. A driver
-can emit a `<script type="application/ld+json">` block today, with nothing new
-in the library and nothing bypassed. The reference driver already does exactly
-this for its whole head — every `<meta>` in A2's receipt is a `raw` or a `print`.
-
-**So the emission half is closed.** What survives is narrower and should be
-stated as two separate residues:
-
-1. **A `</script>`-safe JSON string writer.** `std.json` escapes JSON, which is
-   not the same question: `</script>` is legal JSON and fatal inside a `<script>`
-   block. This is the same class of problem as the CSP `connect-src` injection
-   this repo swept 0–255 for (`packaging_test.zig`'s test *"no byte a consumer
-   supplies can smuggle a directive"*), and it has the same failure mode — a
-   consumer building the string by hand gets it right until one statement's text
-   carries the wrong bytes. Statement text is user-adjacent content in three
-   languages across 4,250 pages.
-2. **There is still no head seam.** `raw` writes wherever the emitter is
-   currently pointed; nothing in the type distinguishes "into `<head>`" from
-   "into the body". A driver that wants JSON-LD in the head has to be writing
-   the head at that moment, which the reference driver is and a per-route helper
-   would not be. Worth naming, because a JSON-LD *emitter* would have needed one
-   and a JSON-LD *escaper* does not.
-
-**The reshaped ask** is therefore a doc line naming `Emitter.raw` as the
-sanctioned seam for a block the library has no element for — stated where a
-driver author reads it, so the second driver does not have to conclude from an
-unescaped writer's existence that it is allowed to use one — plus, at most, the
-string writer. Not a JSON-LD emitter. The five graph types (FAQPage, Service + AggregateOffer with EUR,
-ItemList, WebPage, Article) are content and belong to the app, which the survey
-had right.
-
-**Against, on the residue that is left.** It is a JSON writer and a `<script>`
-tag. If the answer is "use `std.json.Stringify`, escape `</` yourself, and write
-the tag with `Emitter.raw`," say so in `dom-edition.md` and close it — a
-documented one-liner is a fine resolution, and given that `raw` already exists it
-may be the whole of what this item deserves.
-
 ### A4. `og:image`
 
 The reference site emits none. The consumer has one (`/og-image.png`) referenced
@@ -863,14 +816,6 @@ Ten items, strictly sequential, one commit each. Contract changes bump
 `nokre.revision` and move all three pins in the same pass. Each item is deleted
 from this file as it lands, with its outcome recorded.
 
-4. **A `</script>`-safe JSON string writer** — A3's residue, **minus the head
-   seam, which shipped with item 2** (`Document.head`, bytes not a hook). What
-   is left is the escaper. `document.zig`'s private `js` is the seed and the
-   argument in one place: `Emitter.text` is the *wrong* escape inside a
-   `<script>`, whose contents are raw text, and `<` as `\x3C` closes
-   `</script>`, `<!--` and `<script` in one rule. A JSON writer needs the same
-   treatment on the same ground; decide whether it takes `js` public, or grows
-   beside it.
 5. **Canonical, Open Graph, Twitter card, `og:image`** — A2 and A4. All of it is
    in the reference driver's head seam now (`main.zig`'s `writeHead`), which is
    where to read what it currently does — including the `p.kind != .not_found`
@@ -896,6 +841,85 @@ from this file as it lands, with its outcome recorded.
 
 One entry per finished item, with the ground for anything that changed shape.
 The queue above shrinks as this grows.
+
+### 4. `Emitter.json` — SHIPPED, revision 36
+
+**One method, one byte, and no new type.** `Emitter.json` takes a JSON
+document the caller already serialized and writes it wherever the emitter
+points, with every `<` as `\u003C`. That is the whole export. A3's own
+"Against" paragraph predicted this shape — *"a documented one-liner is a fine
+resolution"* — and having read the alternatives it is also the right one.
+
+**What was rejected, and why.** A wrapper that takes a *Zig value* and
+serializes it was the bigger contract on offer, and it buys nothing: it would
+put this library in charge of whitespace, `escape_unicode`, field naming and
+optional-field policy, all of which `std.json.Stringify` already decides better
+than a GUI library has any business deciding. So the contract is the narrow
+half — you serialize, nokre makes it safe to put in a `<script>`. A free
+function was the other candidate and lost to discoverability: the whole lesson
+of the item is that the escape belongs to the *destination*, which is a
+statement about the emitter, and a driver author reads `text` and `raw` before
+it reads anything else. And the method deliberately does **not** write the
+`<script>` tags. `href`'s precedent does not transfer — that seam was closed
+because the emitter had opened a quote the driver would have had to close,
+where here the driver opens and closes a tag nokre never touches — and owning
+the tag would have forced either a `type` parameter (a driver passing a
+JavaScript type gets its structured data *executed*) or a hardcoded MIME, which
+is a decision this item does not need to make.
+
+**`js` stays private, and the two do not collapse.** They share the second half
+of one argument and nothing else: `js` writes the inside of a *JavaScript
+string literal*, where the escape is `\x3C`; JSON has no `\x` escape at all,
+so the same character is `\u003C` here. One function would produce output valid
+in exactly one of its two destinations. There is also no caller to export it
+for — the boot script is the library's own, and a driver handing it executable
+JavaScript would be writing a `<script>` this edition supports no other way.
+That is now written at `js` itself, so the next reader does not re-open it.
+
+**Exactly one byte, and the evidence is the tokenizer's.** A `<script>` block's
+data state is left on `<` and on nothing else, so every way out starts with one:
+`</script` ends the element, `<!--` opens the escaped state — in which a later
+`</script>` *stops* ending it, so two innocent strings on one page swallow the
+rest of the document between them — and `<script` inside that opens the
+double-escaped one. That last pair is why the rule is `<` and not `</`. Two
+bytes are deliberately left alone: `&`, because raw text decodes no character
+reference (which is the same fact that makes `Emitter.text` the wrong escape
+here, not merely a redundant one), and U+2028/U+2029, because what they break is
+JavaScript *source*, and only before ES2019 — a block whose type is not a script
+type is never parsed as source, and in JSON they are ordinary characters.
+
+**`std.json` checked, not assumed.** Zig 0.16's `Stringify.encodeJsonStringChars`
+escapes `"`, `\` and `0x00`–`0x1F`, plus everything above `0x7E` under
+`escape_unicode`. `<` is in neither branch. So the premise A3 stated — that
+`</script>` survives `std.json` intact — is exactly true, and the test asserts
+it as a receipt rather than repeating it as a claim.
+
+**The test is the CSP sweep, asked at a different destination**
+(`serialize_test.zig`, *"no byte a consumer supplies can end a script block"*).
+The three hazards by name; then every codepoint the low 256 hold, in the middle
+of a string value, through a real `std.json` document — two properties per byte:
+no `<` survives, **and** the output parses back to the value that went in. The
+round trip is what makes the first property worth having, because it proves the
+escape is value-preserving and not just safe. Plus a key carrying `</script>`
+(the pass is over the finished document, not over one value) and the two
+non-escapes asserted as bytes. Checked by breaking `json` and watching it fire.
+
+**Nothing in either consumer tree uses it, and that is correct.** Zero
+occurrences of `ld+json` in `getnokre.github.io` or in either rokovski app,
+before this item and after it. The reference site emits no structured data and
+has no reason to; inventing a JSON-LD block for it to exercise the escape would
+have put content on that site to justify a library function, which is backwards.
+This is a capability shipped for the second consumer, and the sweep is the proof.
+The only consumer change in this pass is the three pins.
+
+**The doc line, reshaped by item 2 as the brief said it would be.**
+`dom-edition.md`'s "The seams" gains the statement that `raw` is the sanctioned
+writer for a block the library has no element for — *inside a fragment handed
+over at `Document.head`*, which is the honest guidance now that the head seam is
+bytes. The sanction is the seam's and not the function's: `raw` on the document
+emitter between two elements the walk wrote is going around an escape, not
+reaching a place they do not go. The byte-level argument stays in one home, the
+`json` doc comment; the seam statement stays in the other.
 
 ### 3. The boot handover carries the page's locale — SHIPPED, revision 35
 

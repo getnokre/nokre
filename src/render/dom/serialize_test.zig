@@ -203,6 +203,94 @@ test "consumer bytes are escaped, never interpreted" {
     try expectContains(html, "&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt; &amp; &#39;more&#39;");
 }
 
+test "no byte a consumer supplies can end a script block" {
+    // The same question the CSP sweep asks, at a different destination
+    // (packaging_test.zig, "no byte a consumer supplies can smuggle a
+    // directive"): not "which bytes did someone think of" but "what does
+    // every byte there is do". A `<script>` block's contents are raw
+    // text, so neither `text` above nor `std.json` is the escape it
+    // needs, and structured data is user-adjacent content by the page.
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    var out: std.ArrayList(u8) = .empty;
+    defer out.deinit(testing.allocator);
+    var em: serialize.Emitter = .{ .gpa = testing.allocator, .app = &app, .out = &out };
+    defer em.deinit();
+
+    // The three ways out of the data state, all of them bytes a
+    // statement's own words can carry. The middle one is why the rule is
+    // `<` and not `</`: it opens the escaped state, where the
+    // `</script>` *the driver itself wrote* stops ending the element —
+    // so two innocent strings on one page swallow the rest of the
+    // document between them.
+    for ([_][]const u8{ "</script>", "<!--", "<script" }) |hazard| {
+        const doc = try std.json.Stringify.valueAlloc(
+            testing.allocator,
+            .{ .statement = hazard },
+            .{},
+        );
+        defer testing.allocator.free(doc);
+        // The receipt for why this function exists at all: std.json
+        // writes the hazard straight through, because it is legal JSON.
+        try expectContains(doc, hazard);
+
+        out.clearRetainingCapacity();
+        try em.json(doc);
+        try expectLacks(out.items, "<");
+    }
+
+    // The sweep those three are examples of: every codepoint the low 256
+    // hold, in the middle of a string value rather than alone, because
+    // that is where a smuggled byte would hide. Two properties per byte,
+    // and the second is the one that makes the first worth having — the
+    // document that comes out parses back to the value that went in, so
+    // the escape is value-preserving and not merely safe.
+    for (0..256) |cp| {
+        var utf8: [4]u8 = undefined;
+        const n = std.unicode.utf8Encode(@intCast(cp), &utf8) catch unreachable;
+        var buf: [6]u8 = undefined;
+        buf[0] = 'x';
+        @memcpy(buf[1..][0..n], utf8[0..n]);
+        buf[1 + n] = 'y';
+        const statement = buf[0 .. n + 2];
+
+        const doc = try std.json.Stringify.valueAlloc(
+            testing.allocator,
+            .{ .statement = statement },
+            .{},
+        );
+        defer testing.allocator.free(doc);
+        out.clearRetainingCapacity();
+        try em.json(doc);
+        try testing.expect(std.mem.indexOfScalar(u8, out.items, '<') == null);
+
+        const parsed = try std.json.parseFromSlice(
+            struct { statement: []const u8 },
+            testing.allocator,
+            out.items,
+            .{},
+        );
+        defer parsed.deinit();
+        try testing.expectEqualStrings(statement, parsed.value.statement);
+    }
+
+    // A key is a string too, and the pass is over the finished document
+    // rather than over one value, so wherever a `<` came from it leaves
+    // the same way.
+    out.clearRetainingCapacity();
+    try em.json("{\"a</script>b\":1}");
+    try testing.expectEqualStrings("{\"a\\u003C/script>b\":1}", out.items);
+
+    // Everything else is left exactly as std.json wrote it, and the two
+    // absences are deliberate. `&` would have become `&amp;` under
+    // `text` — five characters of a statement nobody wrote, because raw
+    // text decodes no character reference. U+2028 breaks JavaScript
+    // *source*, and a data block is never parsed as source.
+    out.clearRetainingCapacity();
+    try em.json("{\"k\":\"a & b\\u2028c\"}");
+    try testing.expectEqualStrings("{\"k\":\"a & b\\u2028c\"}", out.items);
+}
+
 // --------------------------------------------------- per-element contract
 
 test "static elements: the words are what is conveyed" {

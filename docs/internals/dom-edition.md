@@ -705,6 +705,27 @@ try dom.chrome(&em);    // notice, nav, sheet, picker
 - **`Emitter.fragment`.** A second emitter over a buffer of the caller's
   own — how the bytes `Document.head` and `Document.body_end` take get
   the escaping the rest of the document gets.
+- **`Emitter.raw`, and when it is not a bypass.** Some of what a head
+  needs is a block this library has no element for and never will —
+  structured data, a preload, a favicon. Build it into a fragment and
+  hand it over at `Document.head` or `body_end`; inside that fragment
+  `raw` is the sanctioned writer, because those bytes are markup the
+  driver invented end to end and no element of nokre's stands for them.
+  The sanction is the seam's, not the function's: `raw` on the document
+  emitter, between two elements the walk wrote, is not reaching a place
+  the escapes do not go — it is going around one.
+
+  Two escapes are on the emitter for what does pass through it, and
+  which one a string takes is a question about its *destination*.
+  `text` is markup: a text node or a quoted attribute. **`json`** is the
+  one destination whose escape is neither `text`'s nor `std.json`'s — a
+  `<script>` block's contents are raw text, so `&amp;` in one is five
+  characters of nothing and the block ends at the first `</script>` the
+  bytes contain, inside a JSON string or not. It takes a document you
+  already serialized and re-escapes the one byte that can end the block;
+  what the graph in it says stays yours, and so does serializing it
+  ([serialize.zig](../../src/render/dom/serialize.zig)'s `json` has the
+  bytes and the evidence).
 - **Node ids.** With `Emitter.Options.node_ids`, every focus stop carries its
   `NodeId` as `data-n` (and an inline link its span as `data-s`) — the
   live driver's way of naming the node the reader meant. A page written
