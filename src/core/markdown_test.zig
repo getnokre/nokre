@@ -3,6 +3,7 @@
 //! never crash the parser.
 
 const std = @import("std");
+const element_mod = @import("element.zig");
 const markdown = @import("markdown.zig");
 const tree_mod = @import("tree.zig");
 
@@ -13,9 +14,18 @@ const testing = std.testing;
 /// Renders a parsed document as an indented outline: the shape the
 /// tests assert on, and the shape a reviewer can read.
 fn outline(gpa: std.mem.Allocator, source: []const u8) ![]u8 {
+    return outlineAt(gpa, .h1, source);
+}
+
+/// The same, for a document that states where its outline starts.
+fn outlineAt(gpa: std.mem.Allocator, base: element_mod.HeadingLevel, source: []const u8) ![]u8 {
     var tree = try Tree.init(gpa);
     defer tree.deinit();
-    const doc = try tree.appendId(tree.rootId(), .{ .document = .{ .label = "Doc", .source = source } });
+    const doc = try tree.appendId(tree.rootId(), .{ .document = .{
+        .label = "Doc",
+        .source = source,
+        .base_level = base,
+    } });
     return dump(gpa, &tree, doc);
 }
 
@@ -139,6 +149,55 @@ test "heading levels rebase onto a gapless sequence" {
         \\heading h2 "Jumped"
         \\heading h3 "Deeper"
         \\heading h1 "Back up"
+        \\
+    , got);
+}
+
+test "a stated base level moves the whole outline down, still gapless" {
+    // The page's own title is the h1; this body is subordinate to it.
+    // The source's numbering is irrelevant — it is rebased either way —
+    // so the depth it starts at can only come from the element.
+    const got = try outlineAt(testing.allocator, .h2,
+        \\## Opening
+        \\
+        \\#### Jumped
+        \\
+        \\##### Deeper
+        \\
+        \\## Back up
+    );
+    defer testing.allocator.free(got);
+    try testing.expectEqualStrings(
+        \\heading h2 "Opening"
+        \\heading h3 "Jumped"
+        \\heading h4 "Deeper"
+        \\heading h2 "Back up"
+        \\
+    , got);
+}
+
+test "a base level deep enough to run out of ladder flattens onto h6" {
+    // Six source depths from a base of h4: h4, h5, h6, then h6 for the
+    // rest. The same deterministic flattening a 7-deep source takes
+    // from h1 — descending never skips, which is what the audit checks.
+    const got = try outlineAt(testing.allocator, .h4,
+        \\# A
+        \\
+        \\## B
+        \\
+        \\### C
+        \\
+        \\#### D
+        \\
+        \\##### E
+    );
+    defer testing.allocator.free(got);
+    try testing.expectEqualStrings(
+        \\heading h4 "A"
+        \\heading h5 "B"
+        \\heading h6 "C"
+        \\heading h6 "D"
+        \\heading h6 "E"
         \\
     , got);
 }

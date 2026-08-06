@@ -20,7 +20,9 @@
 //! Markdown routinely opens at `##` or jumps h2 → h4, which would trip
 //! the `heading_level_skipped` audit on content the app cannot fix.
 //! Rebasing keeps the real outline and leaves the rule intact for
-//! app-authored trees.
+//! app-authored trees. Where that sequence *starts* is the one thing a
+//! rebased source can no longer say, so the element says it —
+//! `Document.base_level`, `h1` unless the screen already drew one.
 //!
 //! Pure Zig, no dependencies, integer-only — `core/qr.zig` is the
 //! precedent for a content module living in core.
@@ -42,20 +44,24 @@ const NodeId = tree_mod.NodeId;
 /// the same deterministic truncation bidi's line budgets take.
 pub const max_inline_spans = 128;
 
-/// Expands `source` as Markdown into children of `parent`. Bounded
+/// Expands `doc.source` as Markdown into children of `parent`. Bounded
 /// allocation: one scratch arena for the intermediate strings, released
 /// here; everything that survives was copied by `Tree.append`.
+///
+/// The whole element rather than its source, because the rebase reads
+/// `base_level` too — and a second parameter for it would be the one
+/// field a caller could pass out of step with the node it belongs to.
 ///
 /// The error set is `anyerror` on purpose. `Tree.append` calls this to
 /// expand a `document`, and this calls `Tree.append` for every block it
 /// produces — which is the whole point, since the parser's error path
 /// *is* append's — so an inferred set would be a cycle. It never
 /// panics; every failure arrives here as an error.
-pub fn expand(tree: *Tree, parent: NodeId, source: []const u8) anyerror!void {
+pub fn expand(tree: *Tree, parent: NodeId, doc: element_mod.Document) anyerror!void {
     var scratch = std.heap.ArenaAllocator.init(tree.gpa);
     defer scratch.deinit();
-    var state: State = .{ .a = scratch.allocator(), .tree = tree };
-    try state.blocks(parent, source, .{});
+    var state: State = .{ .a = scratch.allocator(), .tree = tree, .base_level = doc.base_level };
+    try state.blocks(parent, doc.source, .{});
 }
 
 /// What a container permits. Both exclusions mirror `Tree.append`'s
@@ -76,12 +82,20 @@ const State = struct {
     a: std.mem.Allocator,
     tree: *Tree,
     /// Source depths of the headings still open, innermost last. The
-    /// rendered level is this stack's height, so the outline is gapless
-    /// however the source numbered itself.
+    /// rendered level is this stack's height counted from `base_level`,
+    /// so the outline is gapless however the source numbered itself.
     heading_stack: [max_heading_stack]u8 = undefined,
     heading_len: usize = 0,
+    /// Where the document's own top heading lands (`element.Document`).
+    base_level: element_mod.HeadingLevel = .h1,
 
     const max_heading_stack = 6;
+    /// The deepest level HTML and `HeadingLevel` both have. A base past
+    /// `h1` spends part of the ladder before the document's first
+    /// heading, so a deep source flattens onto `h6` sooner — the same
+    /// deterministic flattening a 7-deep source already takes, and the
+    /// only alternative is refusing content the app cannot fix.
+    const deepest_level = 6;
 
     fn headingLevel(self: *State, source_depth: u8) element_mod.HeadingLevel {
         while (self.heading_len > 0 and self.heading_stack[self.heading_len - 1] >= source_depth) {
@@ -91,7 +105,9 @@ const State = struct {
             self.heading_stack[self.heading_len] = source_depth;
             self.heading_len += 1;
         }
-        return @enumFromInt(@as(u8, @intCast(@min(self.heading_len, max_heading_stack))));
+        const depth = @min(self.heading_len, max_heading_stack);
+        const level = @as(usize, @intFromEnum(self.base_level)) + depth - 1;
+        return @enumFromInt(@as(u8, @intCast(@min(level, deepest_level))));
     }
 
     fn blocks(self: *State, parent: NodeId, source: []const u8, allow: Allow) anyerror!void {

@@ -183,6 +183,32 @@ anchors are in `takeAnchors`'s answer beside the derived ones, so a
 generator's own reference gate resolves `#delete-account` per locale and
 fails the build where it does not.
 
+## The same three questions, on something that is not a destination
+
+The procedure is written here because destinations are where it was
+needed first, but nothing in it is about URLs, and the next thing it
+moved was heading *depth*. The same migration's article pages draw
+their title as an `h1` and then render fetched Markdown whose sections
+are `##`. Markdown rebases every document's first heading depth to the
+top of the outline ([markdown.md](markdown.md)), so those sections came
+out as four to six more `h1`s beside the title's — and no editing of
+the source could change it, since `#` and `##` rebase alike.
+
+Question 1 is the one that looks answerable and is not. nokre holds the
+tree, so it could read the heading before the document and start one
+level deeper — but headings here are flat, so a body that is a
+*sibling* of the preceding section would be filed as its child. That is
+an invention, which is question 3, and the invention would be silent.
+
+Question 2 is where it lands: the driver states the depth its body
+starts at (`Document.base_level`), and the library keeps both
+relationships around the value — a base too deep is
+`heading_level_skipped`, a base too shallow is `multiple_h1`, a rule
+added with the field because a field nokre cannot check is not a field
+at all. Structure is not automatically the library's; a value it can
+only guess and can fully check is the driver's, whatever the value
+describes.
+
 ## A default is not an opinion about your site
 
 A handful of these fields do carry defaults, and the rule is worth

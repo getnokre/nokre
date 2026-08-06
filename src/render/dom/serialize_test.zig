@@ -100,6 +100,33 @@ test "the root's children come through in tree order" {
     );
 }
 
+test "a title and a body that states its depth emit h1 then h2" {
+    // The page shape the static generator has thousands of: the screen
+    // draws the title, the body is fetched Markdown whose sections are
+    // ##. Without a stated base every section came out an <h1> beside
+    // the title's, which is the outline a crawler and a screen reader
+    // both read wrong.
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    const root = app.tree.rootId();
+    try app.tree.append(root, .{ .heading = .{ .content = "Trust", .level = .h1 } });
+    try app.tree.append(root, .{ .document = .{
+        .label = "Body",
+        .source = "## Scope\n\n### Data\n\n## Contact\n",
+        .base_level = .h2,
+    } });
+
+    const html = try render(&app);
+    defer testing.allocator.free(html);
+    try testing.expectEqualStrings(
+        "<h1 id=\"trust\">Trust</h1>" ++
+            "<div class=\"document\" role=\"document\" aria-label=\"Body\">" ++
+            "<h2 id=\"scope\">Scope</h2><h3 id=\"data\">Data</h3>" ++
+            "<h2 id=\"contact\">Contact</h2></div>",
+        html,
+    );
+}
+
 test "the walk is deterministic: two runs over one tree are identical" {
     // What replaces the byte-exact screenshot. A reviewer reads a text
     // diff, and an empty one means nothing changed.

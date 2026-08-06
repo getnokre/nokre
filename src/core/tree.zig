@@ -151,7 +151,7 @@ pub const Tree = struct {
     fn expandLinked(self: *Tree, id: NodeId, element: Element) !void {
         if (element != .document) return;
         errdefer self.remove(id) catch {};
-        try markdown.expand(self, id, self.getConst(id).?.document.source);
+        try markdown.expand(self, id, self.getConst(id).?.document);
     }
 
     /// `append`, but linked immediately after `sibling`. App chrome uses

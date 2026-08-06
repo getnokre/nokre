@@ -255,6 +255,12 @@ fails on:
 
 - `heading_level_skipped` — a heading more than one level deeper than
   the previous heading (h1 → h3 with no h2 between)
+- `multiple_h1` — a second top-level heading, reported at the second and
+  every one after it. A screen has one top or none; two tell everything
+  that navigates by heading level that the page is two documents. The
+  producer to watch for is a `document` left at the default
+  `base_level` under a title the screen already drew, which mints one
+  `h1` per section of fetched content ([markdown.md](markdown.md))
 - `duplicate_interactive_label` — two enabled interactive elements with
   the same accessible name are ambiguous to voice control, to screen
   reader users, and to test queries alike. Judged within the active

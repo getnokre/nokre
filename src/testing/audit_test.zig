@@ -187,13 +187,16 @@ test "audit flags skipped heading levels" {
 test "audit tracks the previous heading, not the deepest ever seen" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    // h1,h2,h3 walks down legally; the second h1 resets the outline, so
-    // its h3 skips h2 even though an h3 already appeared.
+    // h1,h2,h3 walks down legally; coming back up to h2 resets the
+    // outline, so the h4 after it skips h3 even though an h3 already
+    // appeared. The reset is shown from h2 rather than from a second
+    // h1, which is a violation of its own now (`multiple_h1`) and would
+    // put a second finding in the list this one counts.
     try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "A", .level = .h1 } });
     try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "B", .level = .h2 } });
     try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "C", .level = .h3 } });
-    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "D", .level = .h1 } });
-    const skipped = try app.tree.appendId(app.tree.rootId(), .{ .heading = .{ .content = "E", .level = .h3 } });
+    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "D", .level = .h2 } });
+    const skipped = try app.tree.appendId(app.tree.rootId(), .{ .heading = .{ .content = "E", .level = .h4 } });
 
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(testing.allocator);
@@ -209,13 +212,82 @@ test "audit allows ascending any distance between headings" {
     try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "A", .level = .h1 } });
     try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "B", .level = .h2 } });
     try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "C", .level = .h3 } });
-    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "D", .level = .h1 } });
+    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "D", .level = .h4 } });
+    // Three levels up in one step, which is a section ending, not a gap.
     try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "E", .level = .h2 } });
 
     var violations: std.ArrayList(Violation) = .empty;
     defer violations.deinit(testing.allocator);
     try collect(&app, &violations, .{});
     try testing.expectEqual(@as(usize, 0), violations.items.len);
+}
+
+test "audit flags a second h1 and leaves the first alone" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Title", .level = .h1 } });
+    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Section", .level = .h2 } });
+    const second = try app.tree.appendId(app.tree.rootId(), .{ .heading = .{ .content = "Also a title", .level = .h1 } });
+
+    var violations: std.ArrayList(Violation) = .empty;
+    defer violations.deinit(testing.allocator);
+    try collect(&app, &violations, .{});
+    try testing.expectEqual(@as(usize, 1), violations.items.len);
+    try testing.expectEqual(Violation.Rule.multiple_h1, violations.items[0].rule);
+    try testing.expectEqual(second, violations.items[0].id);
+}
+
+test "audit flags the h1 a document's default base level mints under a title" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    // The screen drew the title; the fetched body's sections are ##.
+    // Rebasing lands every one of them on h1, and the page now claims
+    // two tops — the defect `base_level` exists to let a driver state
+    // its way out of.
+    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Title", .level = .h1 } });
+    try app.tree.append(app.tree.rootId(), .{ .document = .{
+        .label = "Body",
+        .source = "## One\n\n## Two\n",
+    } });
+
+    var violations: std.ArrayList(Violation) = .empty;
+    defer violations.deinit(testing.allocator);
+    try collect(&app, &violations, .{});
+    try testing.expectEqual(@as(usize, 2), violations.items.len);
+    for (violations.items) |v| try testing.expectEqual(Violation.Rule.multiple_h1, v.rule);
+
+    // Stating the depth the body starts at clears it, with no other
+    // rule disturbed.
+    try app.tree.clearChildren(app.tree.rootId());
+    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Title", .level = .h1 } });
+    try app.tree.append(app.tree.rootId(), .{ .document = .{
+        .label = "Body",
+        .source = "## One\n\n## Two\n",
+        .base_level = .h2,
+    } });
+    violations.clearRetainingCapacity();
+    try collect(&app, &violations, .{});
+    try testing.expectEqual(@as(usize, 0), violations.items.len);
+}
+
+test "audit flags a document whose base level skips a level" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    // h1 then a body starting at h3: the gap the driver stated, caught
+    // by the rule that was already there. A base too deep and a base
+    // too shallow are both findings, so no wrong base is silent.
+    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Title", .level = .h1 } });
+    try app.tree.append(app.tree.rootId(), .{ .document = .{
+        .label = "Body",
+        .source = "## One\n",
+        .base_level = .h3,
+    } });
+
+    var violations: std.ArrayList(Violation) = .empty;
+    defer violations.deinit(testing.allocator);
+    try collect(&app, &violations, .{});
+    try testing.expectEqual(@as(usize, 1), violations.items.len);
+    try testing.expectEqual(Violation.Rule.heading_level_skipped, violations.items[0].rule);
 }
 
 test "audit flags duplicate interactive labels" {

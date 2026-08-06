@@ -927,6 +927,29 @@ pub const list_bullet = "\u{2022}";
 pub const Document = struct {
     label: []const u8,
     source: []const u8,
+    /// The level the document's own top heading renders at; the rebase
+    /// counts down from here (markdown.zig).
+    ///
+    /// A field because the source cannot state it and the tree cannot
+    /// derive it. Rebasing means the source's own numbering is gone —
+    /// `#` and `##` both open at the top — so a body embedded under a
+    /// title the screen already drew had no way to say it was
+    /// subordinate, and rendered a second `h1` per section. The tree
+    /// cannot answer it either: headings here are flat, so "one deeper
+    /// than the heading before me" would make a document that is a
+    /// *sibling* of the preceding section into its child. Where the
+    /// body sits in the page's outline is editorial, and editorial is
+    /// the app's.
+    ///
+    /// What stays the library's is every relationship around it: levels
+    /// still may not skip, and a page still gets one `h1` at most, both
+    /// checked by the audit — a base too deep is `heading_level_skipped`
+    /// and a base of `.h1` under a title is `multiple_h1`, so a wrong
+    /// answer fails a test rather than shipping.
+    ///
+    /// `.h1` because a document with nothing above it *is* the outline;
+    /// a deeper default would be a guess about a page nokre cannot see.
+    base_level: HeadingLevel = .h1,
 };
 
 /// An attributed quotation: words that belong to someone other than the

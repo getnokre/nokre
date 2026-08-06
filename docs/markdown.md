@@ -138,8 +138,9 @@ not control must never be able to raise:
 
 ## Heading levels are rebased
 
-The first heading depth in a document becomes `h1`, and each distinct
-deeper depth the next level:
+The first heading depth in a document becomes the document's
+`base_level`, and each distinct deeper depth the next level. With the
+default base of `h1`:
 
 | Source | Rendered |
 | --- | --- |
@@ -154,6 +155,35 @@ would trip the `heading_level_skipped` audit rule
 Rebasing preserves the real outline and leaves the rule intact for
 app-authored trees — it is not a loophole, because it only applies
 inside a `document`.
+
+### Where the outline starts is yours
+
+A body under a title the screen already drew is subordinate to it, and
+rebasing is exactly what makes the source unable to say so: `#` and
+`##` both open at the top, so no editing of the Markdown changes the
+answer. `Document.base_level` states it:
+
+```zig
+try b.heading(.h1, article.title);
+try b.document(.{ .label = article.title, .source = body, .base_level = .h2 });
+```
+
+The sections come out `h2`, their subsections `h3`, and the page has
+one `h1` — the title's. Left at the default, that page publishes one
+`h1` **per section**, which is what the audit now says out loud
+(`multiple_h1`).
+
+nokre does not derive the base from the tree, and the reason is worth
+keeping: headings here are flat, so "one deeper than the heading before
+me" would file a document that is a *sibling* of the preceding section
+as its child. Where a body sits in the page's outline is editorial.
+What the library keeps is both relationships around the value — a base
+too deep is `heading_level_skipped`, a base too shallow is
+`multiple_h1` — so a wrong base fails a test rather than shipping.
+
+Past `h6` there is no ladder left: a base of `h4` renders `h4`, `h5`,
+`h6`, then `h6` for everything deeper. That is the same flattening a
+seven-level source already takes from `h1`, and it never skips.
 
 ## Destinations: routes, and the external allowlist
 

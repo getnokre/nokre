@@ -1367,6 +1367,13 @@ involved. The subset it parses, the rule that everything else degrades
 to literal source text, and how links resolve are all
 [markdown.md](markdown.md)'s — its one home.
 
+`label` is the document's accessible name and is mandatory.
+`base_level` is where its outline starts: `.h1` for a body that is the
+page, `.h2` for one under a title the screen already drew. Left at the
+default under a title, a body publishes an `h1` per section — the
+rebase that makes the field necessary, and the two audit rules that
+check the answer, are [markdown.md](markdown.md)'s too.
+
 ### `segmented`
 An exclusive choice among 2+ fixed options — radiogroup semantics, not
 tabs. `label` (the group's accessible name), `options`, `selected`,

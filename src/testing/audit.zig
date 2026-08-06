@@ -27,6 +27,26 @@ pub const Violation = struct {
         unlabeled_interactive,
         /// Heading levels must not skip (h1 → h3 with no h2 before it).
         heading_level_skipped,
+        /// A screen has one top-level heading or none. A second `h1`
+        /// says the page has two tops, and every reader that navigates
+        /// by heading level — screen readers first, then the outline a
+        /// search engine builds — is told the second section starts a
+        /// second document.
+        ///
+        /// The producer worth naming is not a hand-built tree, where
+        /// the mistake is visible in the code that made it: it is a
+        /// `document` still carrying the default `base_level` under a
+        /// title the screen already drew, which renders one `h1` *per
+        /// section* of fetched content. That is what makes the field's
+        /// answer checkable at all — a base too deep is
+        /// `heading_level_skipped`, a base too shallow is this, and
+        /// between them no wrong base is silent.
+        ///
+        /// Whole-tree, like `heading_level_skipped` and unlike the
+        /// duplicate-label rule: layers decide what can be *invoked*,
+        /// and this is not about invoking anything. A sheet over a
+        /// screen is one document to the markup and to the outline.
+        multiple_h1,
         /// Two interactive elements with the same accessible label are
         /// ambiguous to voice control and to test queries alike. Judged
         /// within the active layer only (`App.focusScope`): everything
@@ -229,6 +249,7 @@ pub fn collect(app: *App, out: *std.ArrayList(Violation), options: Options) !voi
     // has laid out yet. Cheap when clean.
     app.performLayout();
     var prev_heading_level: u8 = 0;
+    var seen_h1 = false;
     // Each first-seen label with its route destination (null for
     // anything but a pure route navigation) — the destination is what
     // decides whether a later holder of the same label is a collision
@@ -289,6 +310,14 @@ pub fn collect(app: *App, out: *std.ArrayList(Violation), options: Options) !voi
                 // step; ascending any distance is fine.
                 if (level > prev_heading_level + 1) {
                     try out.append(app.gpa, .{ .id = id, .rule = .heading_level_skipped });
+                }
+                // Reported at the *second* h1 and every one after it:
+                // the first is the page's top and the innocent party,
+                // and a driver reading the node label wants the one
+                // that has to move.
+                if (level == 1) {
+                    if (seen_h1) try out.append(app.gpa, .{ .id = id, .rule = .multiple_h1 });
+                    seen_h1 = true;
                 }
                 prev_heading_level = level;
             },
