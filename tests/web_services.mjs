@@ -2,11 +2,12 @@
 // a browser, executed — `node tests/web_services.mjs <site>`, which is
 // what `zig build test` runs (build.zig's addWebServicesCheck).
 //
-// The three are deep_link, oauth and secure_store. Each is half Zig and
-// half JavaScript, the halves talk through the wasm boundary, and until
-// this file nothing ran either half: under `zig test` a service is its
-// mock, `check-targets` compiles the web legs into objects it never
-// links, and the parse step reads the JavaScript without executing a
+// The four are deep_link, oauth, secure_store and locale. Each is half
+// Zig and half JavaScript, the halves talk through the wasm boundary,
+// and until this file nothing ran either half: under `zig test` a
+// service is its mock, `check-targets` compiles the web legs into
+// objects it never links, and the parse step reads the JavaScript
+// without executing a
 // line. So the assertions here are all of one shape — the shipped
 // `live.js` is driven the way a browser drives it, and what the *wasm
 // app* recorded is read back through its probes (tests/web_services.zig).
@@ -42,11 +43,14 @@ const namespace = "nokre.ss.dev.nokre.webcheck/";
 // cache agree.
 let loads = 0;
 
-async function page(env = {}) {
+/// `env` is the browser this page loads in; `options` is what the page
+/// itself hands `mount` — the two are separate because the whole of the
+/// locale question is what happens when they disagree.
+async function page(env = {}, options = {}) {
   const browser = makeBrowser({ site, ...env });
   const { mount } = await import(live + `?load=${++loads}`);
   const into = browser.mountPoint();
-  const nk = await mount({ wasm: "app.wasm", into });
+  const nk = await mount({ wasm: "app.wasm", into, ...options });
   return { browser, into, nk, app: nk && probes(nk) };
 }
 
@@ -118,6 +122,11 @@ function probes(nk) {
       const len = nk.nokre_probe_redirect();
       return len < 0 ? null : text(len);
     },
+    deviceTag: () => text(nk.nokre_probe_device_tag()),
+    locale: () => text(nk.nokre_probe_locale()),
+    rtl: () => nk.nokre_probe_rtl() === 1,
+    localeChanges: () => nk.nokre_probe_locale_changes(),
+
     results: () => nk.nokre_probe_oauth_results(),
     status: () => ["none", "callback", "cancelled", "failure"][nk.nokre_probe_oauth_status()],
     authText: () => text(nk.nokre_probe_oauth_text()),
@@ -466,6 +475,106 @@ async function storeWithoutStorage() {
   done("secure_store — a blocked or full storage costs reload-survival and nothing else");
 }
 
+// ---- locale ------------------------------------------------------
+
+// The seed lane is `nokre_locale_scratch` / `nokre_locale_seed`, poured
+// strictly before `nokre_dom_boot` so the tag is in hand inside the
+// first `build` (services/locale/web.zig). What the assertions below
+// are about is *which* tag, because there are two answers and the wrong
+// one is invisible: hydration matches nodes by tag and `data-n`, never
+// by text, so an app that boots in the reader's language over a page
+// written in another swaps every string and reports nothing.
+//
+// The app resolves what it is given through its own bundle
+// (tests/web_services.zig: `L.resolve` → `setLocale` → `setDirection`,
+// the three lines docs/localization.md prescribes), so every scenario
+// reads back three things — the tag the shell reported, the locale the
+// app is in, and the words that reached the document.
+
+/// No page said anything, so the device is the answer — the lane that
+/// existed before the page could speak, unchanged.
+async function localeFollowsTheDevice() {
+  const { app, into, browser } = await page({ language: "fa-IR" });
+  assert.equal(app.deviceTag(), "fa-IR");
+  // Resolved, not echoed: "fa-IR" is not a locale this bundle has.
+  assert.equal(app.locale(), "fa");
+  assert.equal(app.rtl(), true);
+  assert.ok(into.textContent.includes("سرویس‌های وب"));
+  assert.equal(browser.document.documentElement.dataset.direction, "rtl");
+  done("locale — a page that says nothing boots in the device's language");
+}
+
+/// The item: a page generated in one language, opened in a browser set
+/// to another. Everything the reader sees has to be the page's.
+async function localeOfThePageWins() {
+  const { app, into, browser } = await page({ language: "en-US" }, { locale: "fa" });
+  assert.equal(app.deviceTag(), "fa");
+  assert.equal(app.locale(), "fa");
+  assert.ok(into.textContent.includes("سرویس‌های وب"));
+  assert.ok(!into.textContent.includes("web services"));
+  // The direction rides the same channel, and it is the half a static
+  // page cannot recover on its own: there is no media query for
+  // direction, so a boot that resolved `en` here would flip
+  // `data-direction` to ltr under a document still announcing `dir=rtl`.
+  assert.equal(app.rtl(), true);
+  assert.equal(browser.document.documentElement.dataset.direction, "rtl");
+  done("locale — the page's language beats the browser's, and the direction with it");
+}
+
+/// The other direction, which is the rule that keeps a shared URL
+/// showing one thing: an `en` page in a Persian browser stays English.
+async function localePinnedPageIsNeverRedirected() {
+  const { app, into, browser } = await page({ language: "fa-IR" }, { locale: "en" });
+  assert.equal(app.locale(), "en");
+  assert.equal(app.rtl(), false);
+  assert.ok(into.textContent.includes("web services"));
+  assert.equal(browser.document.documentElement.dataset.direction, "ltr");
+  done("locale — a pinned page keeps its language in a browser set to another");
+}
+
+/// The empty tag is a value here, not an absent option: it is the
+/// document of an app that chose no locale, whose catalog resolved to
+/// its own template — and that is what a boot has to reproduce.
+async function localeEmptyPinIsTheTemplate() {
+  const { app, into } = await page({ language: "fa-IR" }, { locale: "" });
+  assert.equal(app.deviceTag(), "");
+  assert.equal(app.locale(), "en");
+  assert.ok(into.textContent.includes("web services"));
+  done("locale — the empty tag pins the catalog's template, it does not mean 'ask the device'");
+}
+
+/// One resolution policy and not two: a tag the bundle does not carry
+/// lands exactly where the same tag lands on the device lane, because
+/// both are `L.resolve` inside the app and nothing resolves anything in
+/// the driver.
+async function localeUnbundledPinResolvesLikeTheDevice() {
+  const device = await page({ language: "de-DE" });
+  assert.equal(device.app.locale(), "en");
+  const pinned = await page({ language: "fa-IR" }, { locale: "de-DE" });
+  assert.equal(pinned.app.deviceTag(), "de-DE");
+  assert.equal(pinned.app.locale(), device.app.locale());
+  done("locale — an unbundled tag falls back the same way on both lanes");
+}
+
+/// After boot the device lane still moves a page that was following the
+/// device, and never moves one that pinned: the reader changing their
+/// browser's language is not a reason for /fa/ to become English.
+async function localeChangeAfterBoot() {
+  const following = await page({ language: "en-US" });
+  assert.equal(following.app.locale(), "en");
+  following.browser.languageChange("fa-IR");
+  assert.equal(following.app.localeChanges(), 1);
+  assert.equal(following.app.locale(), "fa");
+  assert.ok(following.into.textContent.includes("سرویس‌های وب"));
+
+  const pinned = await page({ language: "en-US" }, { locale: "fa" });
+  pinned.browser.languageChange("de-DE");
+  assert.equal(pinned.app.localeChanges(), 0);
+  assert.equal(pinned.app.locale(), "fa");
+  assert.ok(pinned.into.textContent.includes("سرویس‌های وب"));
+  done("locale — a change reaches a page following the device and no pinned page");
+}
+
 // ---- the service worker's registration ---------------------------
 
 /// The registration URL must be the worker's own address, resolved
@@ -554,6 +663,12 @@ const scenarios = [
   storeMirror,
   storeSurvivesReload,
   storeWithoutStorage,
+  localeFollowsTheDevice,
+  localeOfThePageWins,
+  localePinnedPageIsNeverRedirected,
+  localeEmptyPinIsTheTemplate,
+  localeUnbundledPinResolvesLikeTheDevice,
+  localeChangeAfterBoot,
   scratchIsClamped,
 ];
 
@@ -569,4 +684,4 @@ for (const scenario of scenarios) {
 
 // stdout stays empty and the transcript is one stream, the dev store's
 // arrangement: asserting this line asserts every scenario above it ran.
-console.error("web services: deep_link, oauth, secure_store — all ok");
+console.error("web services: deep_link, oauth, secure_store, locale — all ok");

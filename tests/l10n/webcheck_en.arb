@@ -1,0 +1,7 @@
+{
+  "@@locale": "en",
+  "title": "web services",
+  "@title": {
+    "description": "The heading of the one screen the web harness boots"
+  }
+}

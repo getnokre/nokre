@@ -910,7 +910,8 @@ examples link two of them; nothing runs them.
 ### The web's own gate
 
 `zig build test` builds `tests/web_services.zig` — an ordinary nokre app
-with deep_link, oauth and secure_store linked — into a site the same way
+with deep_link, oauth and secure_store linked, and a two-locale ARB
+bundle behind its one screen — into a site the same way
 `addApp` builds a consumer's, then boots that site in node against
 `tests/web_browser.mjs`, a browser stub carrying nothing but platform
 APIs (a document, a location, a session storage, a window that can open
@@ -942,6 +943,17 @@ rather than analyzed:
   reload and a deleted one does not come back; and a storage that is
   blocked or full costs reload-survival and nothing else — the table
   still answers, which is why this leg has no `Unavailable`.
+- **locale** — the seed lane reaches the first `build`, and the two
+  sources are held against each other: a page that says nothing about a
+  language boots in the browser's; a page that pins one boots in *its*
+  own, words and direction both, in a browser set to another; the empty
+  tag pins the catalog's template rather than meaning "ask the device";
+  a pinned tag the bundle does not carry falls back exactly where the
+  same tag falls back on the device lane; and a `languagechange` after
+  boot moves a page that was following the device and never a pinned
+  one. The assertions read the rendered words out of the document and
+  the direction off `documentElement`, so the claim is what a reader
+  would see and not what an export returned.
 
 What that gate is **not** is a browser. Layout, styling, the real event
 loop, a real popup's window management and a real storage's quota
@@ -950,8 +962,9 @@ page *looks* or where text wrapped — the golden tests are that, on the
 desktop editions. Still uncovered on the web specifically: the compute
 worker (`live-worker.js` in a real `Worker`), the service worker
 (`sw.js`, and therefore the notification leg), the http leg's `fetch`,
-the static driver's hydration handover, and IME and scrolling, which
-belong to the browser rather than to a service. Those remain
+the static driver's hydration handover — the *patch* over generated
+markup, that is; the locale it hands over is driven here — and IME and
+scrolling, which belong to the browser rather than to a service. Those remain
 browser-only, asserted by no test on either side.
 
 Practically, for your app: an integration bug in nokre's shell or in a

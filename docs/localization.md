@@ -42,7 +42,9 @@ locale the app is *in* is the **App's own state** — chosen with
 `App.locale()`, "" until chosen — so every screen, controller, and
 route title reads one live fact instead of keeping a copy a change
 could miss. Which locale the *device* wants is the `locale` service
-([services.md](services.md)), and `resolve` is the bridge:
+([services.md](services.md)) — on a page nokre generated it is the
+language that page was written in, reported on the same lane and
+resolved by the same line — and `resolve` is the bridge:
 
 ```zig
 // The device picks the catalog, the catalog decides the rest.
@@ -57,6 +59,11 @@ the template — the fallback `resolve` was written for. A language
 switched mid-session runs the same lines from the service's change
 handler; the chosen tag is App state, so reading it per frame costs
 nothing.
+
+`setLocale` is also what a *generated* page says it is in: the third
+line above is where the `lang` attribute on a serialized document comes
+from, so an app that renders pages without it publishes them claiming a
+language it may not be speaking.
 
 ## The format
 

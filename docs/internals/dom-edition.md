@@ -317,6 +317,39 @@ structure around them.
   a hole in it. There is no media query for direction the way there is
   for appearance, so before this a serialized Persian page stayed
   left-to-right until, and unless, a driver booted over it.
+- **The page's locale, not the reader's.** The same `App.locale()` that
+  becomes `lang` is also written into the boot call —
+  `mount({ locale })` — because the module landing on this file has to
+  rebuild the screen the file already shows, and it would not have.
+  `mount` seeds `navigator.language` where a page says nothing about a
+  language, so a `/fa/…` page opened in an English browser hydrated
+  **English over Persian markup**, silently: the match is tag plus
+  `data-n` ("The seams" below), nothing in that rule looks at text, and
+  a tree rebuilt in another language has the same shape and the same
+  ids. The diff therefore *succeeds* — every string swapped, the
+  direction flipped back under a document still announcing `dir="rtl"`,
+  the reader's scroll position faithfully preserved on a page that now
+  says something else.
+
+  It is one fact and not two: there is no `Boot.locale` field, so a
+  driver has no second locale to state and no way to state it
+  differently from the attribute. The empty tag is written too, and
+  means it — a document from an app that never called `setLocale` was
+  rendered from its catalog's *template*, and `""` is the tag
+  `L.resolve` answers with exactly that. Only an *absent* `locale`
+  means "follow the device", which is right for the one page that has
+  no screen in it yet ([packaging.zig](../../src/packaging/packaging.zig)'s
+  `webIndexHtml`, whose `mount` call pins nothing).
+
+  Resolution stays where it was. Nothing in the driver maps a tag to a
+  catalog: the pinned tag lands in the `locale` service exactly where
+  the device tag landed ([services.md](../services.md)), and the app's
+  own `L.resolve` answers it — so a page pinning a locale the bundle
+  does not carry falls back the same way a device asking for it does.
+  What the driver does drop is the change lane: `languagechange` moves a
+  page that was following the device and never a page that pinned, since
+  one URL that shows two languages is what per-locale pages exist to
+  prevent.
 - **`data-appearance`, and only when the app pinned one.** The other
   page-level fact core owns. The sheet's dark ramp is written under a
   media query *and* under this attribute, and the query already stands

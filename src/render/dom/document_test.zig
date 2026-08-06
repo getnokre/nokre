@@ -349,6 +349,54 @@ test "the boot script names the mount points, the route, and the module the edit
     try expectContains(html, "seed: \"/md/docs.md\"");
 }
 
+test "the boot call carries the language the file was written in" {
+    var app = try test_app.mirrored(400, 400);
+    defer app.deinit();
+    try app.setLocale("fa-IR");
+    var doc = plain("سلام");
+    doc.boot = .{ .wasm = "/app.wasm", .addressing = .documents };
+    const html = try write(&app, doc);
+    defer testing.allocator.free(html);
+
+    // The markup on this page is Persian and the module about to land
+    // on it must rebuild it in Persian. It would not: `mount` seeds
+    // `navigator.language` where a page says nothing, and hydration
+    // matches nodes by tag and `data-n` — never by text — so an English
+    // boot over this file swaps every string, flips the direction back,
+    // keeps the reader's scroll offset, and reports nothing at all.
+    try expectContains(html, "lang=\"fa-IR\"");
+    try expectContains(html, "locale: \"fa-IR\"");
+    // Both from one read of `App.locale()`: there is no `Boot` field
+    // beside `lang` for a driver to set differently.
+    try expectLacks(html, "locale: \"en\"");
+}
+
+test "an app that chose no locale pins the empty tag, not the attribute's fallback" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    var doc = plain("Hello");
+    doc.boot = .{ .wasm = "/app.wasm" };
+    const html = try write(&app, doc);
+    defer testing.allocator.free(html);
+
+    // The two spellings of one fact, and the place they legitimately
+    // differ. `lang` cannot be empty — no browser, screen reader or
+    // hyphenation table can act on "" — so it falls back to the
+    // language nokre's own words are in. The boot must not: this file
+    // was rendered from the app's catalog *template*, whatever language
+    // that is, and "" is the tag that resolves back to it (`L.resolve`).
+    // Pinning "en" here would boot an English catalog over a page a
+    // Persian-template app wrote — the defect, re-introduced by the
+    // fallback.
+    try expectContains(html, "<html lang=\"en\"");
+    try expectContains(html, "locale: \"\",");
+    // …and it is written even though it is empty, because an *absent*
+    // `locale` is `mount`'s "follow the device", which is the answer for
+    // an app shell booting into an empty body and not for a page that
+    // already has a screen in it.
+    try testing.expectEqual(@as(usize, 1), std.mem.count(u8, html, "locale:"));
+}
+
 test "the default addressing is mount's own, and says nothing" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
@@ -369,6 +417,9 @@ test "a boot script cannot be closed by a string a driver put in it" {
     var doc = plain("Hello");
     doc.chrome_id = "</script><script>alert(1)</script>";
     doc.boot = .{ .wasm = "a\"b\\c" };
+    // Not only the driver's strings: the locale tag reaches the same
+    // block, and `setLocale` takes the bytes an app hands it.
+    try app.setLocale("</script>");
     const html = try write(&app, doc);
     defer testing.allocator.free(html);
     // The block ends exactly once, where the writer ended it. `<` goes
@@ -381,6 +432,7 @@ test "a boot script cannot be closed by a string a driver put in it" {
     try expectLacks(script, "&lt;");
     try expectContains(script, "\\x3C/script>");
     try expectContains(html, "wasm: \"a\\\"b\\\\c\"");
+    try expectContains(html, "locale: \"\\x3C/script>\"");
     // …and the same id in the markup took the markup escape instead.
     try expectContains(html, "<div id=\"&lt;/script&gt;");
 }

@@ -832,9 +832,16 @@ fn onLocale(ctx: ?*anyopaque, tag: []const u8) void {
     const loc = L.resolve(tag);
     state.app.setLocale(L.tag(loc)) catch {};
     state.app.setDirection(L.dir(loc));
-    state.app.invalidate();   // what a new locale changes is the app's call
+    state.app.reload() catch {};   // the screen's words came out of a build
 }
 ```
+
+`reload` and not `invalidate`, and the difference is the whole point of
+the callback: the words on screen were read out of the catalog *inside*
+`build`, so they are in the tree the last build left. `invalidate` marks
+that tree for another layout and another paint — the same sentences,
+re-measured. `App.reload` names a locale change as one of its
+deliberate gestures for this reason, and it is honored even mid-edit.
 
 **The tag is cached, not read live.** `tag(app)` returns a slice of app
 state — no allocation, no OS call, no error — which is what makes it
@@ -884,6 +891,21 @@ error to hit. **On the web** the tag is `navigator.language`, seeded
 into wasm strictly before boot — so the boot read is synchronous there
 too — and `languagechange` is the change event; the origin declares
 nothing.
+
+**On the web there is a second source, and it outranks the device.** A
+page that was *generated* by nokre's static driver already holds a
+screen, in one language, and the module booting on top of it has to
+rebuild that same screen: hydration matches nodes by tag and node id and
+never by text, so an app that boots in the reader's language swaps every
+string on the page and nothing reports it. So a generated document's
+boot call names the locale the file was written in
+(`mount({ locale })`, written by `dom.document`), and that is what this
+service reports — `languagechange` is not delivered on such a page
+either, because the URL is the language there. An app shell booting into
+an empty body pins nothing and follows the device, which is the only
+evidence it has. The full argument is
+[dom-edition.md](internals/dom-edition.md), "The page's locale, not the
+reader's".
 
 In tests the mock is one app's fake device: the boot tag is config
 (`.locale = .mock(.{ .tag = "fa-IR" })`), readable inside the first

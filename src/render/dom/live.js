@@ -17,15 +17,17 @@
 //
 // The other shape it mounts in is a page the *static* driver already
 // wrote (dom-edition.md). There the document is not this driver's to
-// invent: it has its own <main>, it is already showing the screen, and
-// every route on the site is a file with a URL of its own. So four
-// options say which page this is and who owns what —
+// invent: it has its own <main>, it is already showing the screen, it
+// is already in a language, and every route on the site is a file with
+// a URL of its own. So five options say which page this is and who owns
+// what —
 //
 //   await mount({
 //     wasm: "/app.wasm",
 //     into: document.getElementById("chrome"),   // the framework's layers
 //     content: document.getElementById("content"), // the host's own <main>
 //     route: "routing",                          // the screen this file is
+//     locale: "fa",                              // the language it is in
 //     seed: "/md/routing.md",                    // what it was built from
 //     addressing: "documents",                   // a screen is a file here
 //   });
@@ -54,7 +56,7 @@ const COMPOSITION_INPUTS = new Set([
   "insertFromComposition", "deleteByComposition",
 ]);
 
-export async function mount({ wasm, into, worker, content, route, seed, addressing }) {
+export async function mount({ wasm, into, worker, content, route, locale, seed, addressing }) {
   // The oauth popup lands on the app's own page (services.js states
   // the design): a popup carrying an auth response reports its URL to
   // its opener and closes, instead of booting a second app nobody will
@@ -606,26 +608,46 @@ export async function mount({ wasm, into, worker, content, route, seed, addressi
 
   // ---- boot -------------------------------------------------------
 
-  // The device tag, strictly before boot: a locale read inside the
-  // first build has to answer synchronously, and the browser's answer
-  // is `navigator.language` (services/locale/web.zig owns the seed
-  // exports; this is the shell half that calls them).
+  // The tag, strictly before boot: a locale read inside the first
+  // build has to answer synchronously (services/locale/web.zig owns the
+  // seed exports; this is the shell half that calls them).
+  //
+  // Two sources, and the *page's* outranks the device's.
+  // `navigator.language` is the only evidence an app booting into an
+  // empty body has, and it stays the answer there. It is the wrong
+  // answer over a page a generator already wrote: that page is the
+  // app's first frame and it is in one language, while hydration
+  // matches nodes by tag and `data-n` and never by text — so an app
+  // that boots in another language swaps every string, mirrors the
+  // layout back, and reports nothing at all (dom-edition.md, "The
+  // page's locale, not the reader's").
   if (nk.nokre_locale_seed) {
-    const tag = bytes.encode(navigator.language || "");
+    // A page that pins the *empty* tag is a real page and not an absent
+    // option: it is the document of an app that chose no locale, whose
+    // catalog therefore resolved to its own template, and reproducing
+    // that is exactly the job. `undefined` is the only "nobody said".
+    const pinned = typeof locale === "string";
+    const tag = bytes.encode(pinned ? locale : navigator.language || "");
     const ptr = nk.nokre_locale_scratch(tag.length);
     if (ptr) {
       memory().set(tag, ptr);
       nk.nokre_locale_seed(tag.length);
     }
-    // Every change after boot, on the same lane.
-    addEventListener("languagechange", () => {
-      const t = bytes.encode(navigator.language || "");
-      const p = nk.nokre_locale_scratch(t.length);
-      if (!p) return;
-      memory().set(t, p);
-      nk.nokre_locale_receive(p, t.length);
-      frame();
-    });
+    // Every change after boot, on the same lane — and only where the
+    // device is what the app was following. A pinned page keeps its
+    // language when the reader changes their browser's: the URL is the
+    // language there, and one URL that shows two languages is the thing
+    // per-locale pages exist to prevent.
+    if (!pinned) {
+      addEventListener("languagechange", () => {
+        const t = bytes.encode(navigator.language || "");
+        const p = nk.nokre_locale_scratch(t.length);
+        if (!p) return;
+        memory().set(t, p);
+        nk.nokre_locale_receive(p, t.length);
+        frame();
+      });
+    }
   }
 
   // The stored secrets, strictly before boot for the locale's reason:

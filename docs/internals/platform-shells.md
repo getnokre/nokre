@@ -212,8 +212,11 @@ plus an `NSCurrentLocaleDidChangeNotification` observer on
 `[NSOperationQueue mainQueue]`, which *is* the marshal the main-thread
 rule asks for. The other four shells' sources are in their sections
 below, and the web's is `navigator.language`, seeded by the live driver
-([live.js](../../src/render/dom/live.js)); only Linux has no change
-source at all.
+([live.js](../../src/render/dom/live.js)) — except on a page nokre
+generated, where the shell's answer is the language that page was
+written in and the device is not consulted at all
+([dom-edition.md](dom-edition.md), "The page's locale, not the
+reader's"); only Linux has no change source at all.
 
 oauth is the one service whose native halves deliberately do **not** ride
 the shell files, and the exception is worth stating because it looks like

@@ -4,12 +4,20 @@
 //! live here, and the entries live.js calls are exported from here.
 //!
 //! The ordering that makes the boot tag synchronous is the driver's:
-//! live.js pours `navigator.language` in through the scratch/seed pair
+//! live.js pours the page's tag in through the scratch/seed pair
 //! strictly before `nokre_dom_boot` — so by the time App.init installs,
 //! the tag is already in hand and `install` can honour locale.h's
 //! fire-before-you-return clause
 //! itself. Appearance's post-boot push would not do: appearance is read
 //! at paint, the locale is read inside the first `build`.
+//!
+//! *Which* tag that is, is the driver's too, and there are two: the page
+//! pins one where nokre generated the page (`mount({ locale })`, from
+//! the same `App.locale()` its `lang` came from), and otherwise it is
+//! `navigator.language`. Nothing here can tell them apart, and nothing
+//! here should — this leg reports what the shell says, and on the web
+//! the page is part of the shell (docs/internals/dom-edition.md, "The
+//! page's locale, not the reader's").
 //!
 //! The single-app anchor: the browser runs exactly one nokre app per
 //! module instance — the web shell already holds that one app as module

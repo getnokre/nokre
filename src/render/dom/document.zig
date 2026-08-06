@@ -12,9 +12,10 @@
 //! be in the first bytes, the skip link has to name the content mount,
 //! the boot script has to name the same two ids the markup used and the
 //! same module file the edition ships (`driver_files.entry`), and the
-//! root element has to carry the locale the screen was built in. A
-//! driver that gets any of them wrong gets no error — a page that
-//! renders, and is wrong about what it says or how it reads
+//! root element and the boot call have to carry the same locale the
+//! screen was built in. A driver that gets any of them wrong gets no
+//! error — a page that renders, and is wrong about what it says or how
+//! it reads
 //! (docs/internals/dom-edition.md, "The document is the library's; the
 //! names in it are the driver's").
 //!
@@ -68,6 +69,11 @@ pub const Addressing = enum {
 /// Present or absent, never half — a page with no `Boot` is a complete
 /// document that reads, navigates and prints, which is the whole point
 /// of the pair (dom-edition.md, "Live over a generated page").
+///
+/// There is no locale field here, deliberately. The language the boot
+/// pins is the language the file was written in — `App.locale()`, the
+/// same read the root element's `lang` comes from — so a driver has no
+/// second one to state and no way to state it differently.
 pub const Boot = struct {
     /// Where the driver published the wasm module.
     wasm: []const u8,
@@ -131,8 +137,15 @@ pub const Document = struct {
 /// The chrome goes first, before the content, because the nav leads the
 /// focus order — a property of the tree, not of where CSS puts the bar.
 pub fn document(em: *Emitter, doc: Document) !void {
+    // One read of the app's locale, spent twice: the attribute a
+    // browser, a screen reader and a hyphenation table act on, and the
+    // tag the boot script pins so the module that lands on this file
+    // rebuilds it in the language it was written in. Two writers of one
+    // fact is how a page comes to say `fa` and boot `en`, so there is
+    // one, here, and neither is a field a driver could set apart.
+    const chosen = em.app.locale();
     try em.raw("<!doctype html>\n<html lang=\"");
-    try em.text(langTag(em.app));
+    try em.text(fallbackTag(chosen));
     // Two attributes and not one. `dir` is what a browser and assistive
     // tech read; `data-direction` is what the sheet's one mirroring rule
     // matches (`stylesheet.zig`'s `sheet`), and a page that stamped only
@@ -228,31 +241,50 @@ pub fn document(em: *Emitter, doc: Document) !void {
     try em.raw("\n</main>\n");
 
     try em.raw(doc.body_end);
-    if (doc.boot) |b| try bootScript(em, doc, b);
+    if (doc.boot) |b| try bootScript(em, doc, b, chosen);
     try em.raw("</body>\n</html>\n");
 }
 
 /// The document's language, as a BCP 47 tag.
 ///
 /// `App.locale()` is the app's own answer (`setLocale`), and `""` is
-/// "not chosen yet" — the common boot. An app that never chose is an app
-/// speaking the language every other default in `App.Options` speaks:
-/// `Chrome`'s words are English, and they are what the nav bar, the
-/// sheet's close control and the notices pane say on that page. So the
-/// un-chosen state has a language and this is it, rather than an
-/// invented default or an empty attribute no browser can use.
+/// "not chosen yet" — the common boot. What stands in for it is
+/// `element.default_chrome_tag`: the language *core's own* words are in
+/// — the nav bar, the sheet's close control, the notices pane — which
+/// is a narrower claim than "the app is English" and is the only one
+/// this layer can make. An empty attribute is not a language a browser,
+/// a screen reader or a hyphenation table can act on, and any other
+/// value would be invented.
+///
+/// **Where the stand-in and the page diverge, and why nothing here can
+/// see it.** An app with a catalog usually says
+/// `app.setChrome(L.chrome(loc))`, so the words above are not the ones
+/// on its screens. If that app also never calls `setLocale`, everything
+/// it renders comes from its catalog's *template* — Persian, say — and
+/// so does the boot, which pins `""` and resolves to that same template
+/// (`L.resolve`). The markup and the module that lands on it therefore
+/// agree, and the attribute alone is wrong. Nothing at this layer can
+/// tell: `l10n.Bundle` is a comptime type the *app* instantiates, no
+/// module under `render/` names l10n at all, and `App` holds a tag
+/// rather than a catalog. It is a misuse — the documented three lines
+/// choose the locale (docs/localization.md), and a per-locale
+/// generation loop chooses it per page — but a silent one, and this
+/// comment is where it is written down.
 ///
 /// It is a fallback and not a guess in one direction only: a *localized*
 /// app that set the direction and forgot the locale gets an `en` page
 /// laid out right-to-left, which is visibly wrong on the first screen
 /// rather than silently wrong forever.
 pub fn langTag(app: *const App) []const u8 {
-    const chosen = app.locale();
+    return fallbackTag(app.locale());
+}
+
+fn fallbackTag(chosen: []const u8) []const u8 {
     if (chosen.len != 0) return chosen;
     return element_mod.default_chrome_tag;
 }
 
-fn bootScript(em: *Emitter, doc: Document, b: Boot) !void {
+fn bootScript(em: *Emitter, doc: Document, b: Boot, chosen: []const u8) !void {
     try em.raw("<script type=\"module\">\nimport { mount } from \"");
     try js(em, b.driver_dir);
     try js(em, driver_files.entry);
@@ -276,6 +308,23 @@ fn bootScript(em: *Emitter, doc: Document, b: Boot) !void {
         try js(em, route);
         try em.raw("\",\n");
     }
+    // The language this file was written in, so the module that boots
+    // on top of it rebuilds the same words. Unconditional, and the
+    // empty tag is a value here rather than an omission: `mount` reads
+    // an absent `locale` as "follow the device", which is right for an
+    // app shell booting into an empty body and wrong for every page
+    // that already has a screen in it. A document generated by an app
+    // that chose no locale was rendered from its catalog's *template*,
+    // and "" is the tag that resolves back to exactly that.
+    //
+    // It is `App.locale()` raw, and not the `lang` above: the fallback
+    // that attribute takes is `Chrome`'s own language, a stand-in for a
+    // browser that cannot act on "" — pinning it here would boot an
+    // English catalog over a page a Persian-template app rendered,
+    // which is the defect this line exists to close.
+    try em.raw("  locale: \"");
+    try js(em, chosen);
+    try em.raw("\",\n");
     if (b.seed.len != 0) {
         try em.raw("  seed: \"");
         try js(em, b.seed);

@@ -858,6 +858,14 @@ export function makeBrowser({
       target.dispatchEvent(new PageEvent("hashchange"));
       return href;
     },
+    /// The reader changing their browser's language after the page
+    /// loaded. `navigator.language` moves first and the event follows,
+    /// which is the order a browser does it in — a driver that read the
+    /// old value would see the old value.
+    languageChange(tag) {
+      globals.navigator.language = tag;
+      target.dispatchEvent(new PageEvent("languagechange"));
+    },
     /// Microtasks the driver queued (`queueMicrotask`, a promise's
     /// `then`) run when the stack unwinds; node's own timers are
     /// untouched by the fake clock, so this is a real turn of its loop.

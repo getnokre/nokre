@@ -1,13 +1,13 @@
 //! The app the web harness boots (tests/web_services.mjs): a real nokre
-//! app on the *real* web legs of deep_link, oauth and secure_store,
-//! compiled to wasm32-freestanding and driven through the shipped
-//! live.js — the one place those three legs execute.
+//! app on the *real* web legs of deep_link, oauth, secure_store and
+//! locale, compiled to wasm32-freestanding and driven through the
+//! shipped live.js — the one place those four legs execute.
 //!
 //! Under `zig test` a service is its mock, and `check-targets` compiles
 //! the web legs into objects it never links or runs, so until this
 //! program nothing anywhere called `nokre_deep_link_receive`, opened the
-//! oauth popup loop, or poured a seed into the in-wasm table
-//! (docs/testing.md, "Where the harness stops").
+//! oauth popup loop, poured a seed into the in-wasm table, or answered
+//! `nokre_locale_seed` (docs/testing.md, "Where the harness stops").
 //!
 //! It is the dev-store driver's shape on the other side of the language
 //! gap: an ordinary app, no mock in the binary, plus one probe export
@@ -26,8 +26,19 @@ const std = @import("std");
 const h = @import("nokre");
 
 const deep_link = h.services.deep_link;
+const locale = h.services.locale;
 const oauth = h.services.oauth;
 const ss = h.services.secure_store;
+
+/// Two locales, and the second is right-to-left on purpose: the tag the
+/// shell seeds decides the words *and* the direction the document gets
+/// stamped with, and only an RTL locale makes the second one visible.
+/// English is the template, so the empty tag resolves here
+/// (docs/localization.md).
+const L = h.l10n.Bundle(&.{
+    @embedFile("l10n/webcheck_en.arb"),
+    @embedFile("l10n/webcheck_fa.arb"),
+});
 
 /// The scheme is validated on every platform even where the web leg
 /// ignores it (oauth.redirectUri says why), so the app declares the one
@@ -62,6 +73,12 @@ const State = struct {
     redirect_len: isize = -1,
     err: [64]u8 = undefined,
     err_len: usize = 0,
+
+    // locale: how many times the device reported a *change* after boot.
+    // The boot fire is not one — it lands before any handler is
+    // registered — so this counts what the app was told, not what the
+    // service cached.
+    locale_changes: u32 = 0,
 };
 
 var state_ptr: ?*State = null;
@@ -80,6 +97,31 @@ fn onLink(ctx: ?*anyopaque, url: []const u8) void {
     const n = @min(url.len, state.link.len);
     @memcpy(state.link[0..n], url[0..n]);
     state.link_len = n;
+}
+
+/// The three lines every localized nokre app writes
+/// (docs/localization.md, "Choosing the locale"): resolve the tag the
+/// shell reported against the bundle, tell the app which locale it is
+/// *in*, and mirror the chrome with it. Written here rather than
+/// paraphrased, because what the harness is checking is that these three
+/// lines land in the page's language and not the reader's.
+fn applyLocale(state: *State) void {
+    const loc = L.resolve(locale.tag(state.app));
+    state.app.setLocale(L.tag(loc)) catch |err| return note(state, err);
+    state.app.setDirection(L.dir(loc));
+}
+
+/// A device locale change after boot. The service does not rebuild for
+/// you — what a new locale changes is the app's business — and the
+/// screen's words came out of the catalog inside `build`, so the verb is
+/// `reload`, the deliberate-gesture one `App.reload` names a locale
+/// change as: `invalidate` alone would re-lay-out and re-serialize the
+/// tree that is already there, in the old language.
+fn onLocale(ctx: ?*anyopaque, _: []const u8) void {
+    const state: *State = @ptrCast(@alignCast(ctx.?));
+    state.locale_changes += 1;
+    applyLocale(state);
+    state.app.reload() catch |err| note(state, err);
 }
 
 fn onAuth(ctx: ?*anyopaque, result: oauth.Result) void {
@@ -140,6 +182,7 @@ fn note(state: *State, err: anyerror) void {
 fn buildHome(state: *State, app: *h.App) !void {
     state.app = app;
     deep_link.setHandler(app, state, onLink);
+    locale.setHandler(app, state, onLocale);
     // Inside the first build and nowhere else: a boot read is
     // synchronous by contract, and the seed either beat it or the
     // contract is broken.
@@ -152,7 +195,10 @@ fn buildHome(state: *State, app: *h.App) !void {
         }
     }
     const root = app.tree.rootId();
-    try app.tree.append(root, .{ .heading = .{ .content = "web services", .level = .h1 } });
+    // From the catalog, so the *rendered* words are what a scenario
+    // reads back: the failure this gate exists for is a page whose text
+    // is silently in the other language.
+    try app.tree.append(root, .{ .heading = .{ .content = L.of(app).tr(.title), .level = .h1 } });
     try app.tree.append(root, .{ .text = .{ .content = "The harness drives this app through the shipped live.js." } });
     try app.tree.append(root, .{ .button = .{
         .label = "Sign in",
@@ -185,6 +231,10 @@ pub fn nokreWebBuild(alloc: std.mem.Allocator) !*h.App {
     });
     state.app = app;
     state_ptr = state;
+    // After `App.init` and before the first build, which is where a
+    // boot locale is readable at all: the service's install fired inside
+    // `init` with whatever the shell seeded (services/locale/locale.zig).
+    applyLocale(state);
     try app.navigate("home");
     return app;
 }
@@ -309,6 +359,32 @@ pub export fn nokre_probe_oauth_cancel() void {
     const s = probe();
     if (s.handle) |handle| handle.cancel();
     s.handle = null;
+}
+
+/// The tag the *shell* reported — what live.js poured into the seed
+/// lane, before any resolution. Kept apart from the one below so "the
+/// page's locale never arrived" and "it arrived and the app resolved it
+/// elsewhere" stay different findings.
+pub export fn nokre_probe_device_tag() isize {
+    return out(locale.tag(probe().app));
+}
+
+/// The locale the app is *in* (`App.locale()`) — the resolved tag,
+/// which is also what `L.of(app)` spends and what a generated document
+/// would have carried as its `lang`.
+pub export fn nokre_probe_locale() isize {
+    return out(probe().app.locale());
+}
+
+/// 1 when the chrome is mirrored. Read from the app rather than from
+/// the attribute, so a scenario can hold the two against each other.
+pub export fn nokre_probe_rtl() i32 {
+    return @intFromBool(probe().app.direction == .rtl);
+}
+
+/// Device locale changes delivered *after* boot.
+pub export fn nokre_probe_locale_changes() u32 {
+    return probe().locale_changes;
 }
 
 /// The name of the error the last verb returned, empty if it succeeded.

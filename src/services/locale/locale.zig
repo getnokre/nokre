@@ -37,7 +37,13 @@
 //! and no curated unlinked error — a target whose shell has no hook
 //! simply reports the empty tag. Web parity is `navigator.language`,
 //! seeded into wasm strictly before boot and pushed again on
-//! `languagechange` (docs/internals/platform-shells.md).
+//! `languagechange` (docs/internals/platform-shells.md) — with one
+//! exception the web shell owns: a page nokre *generated* names the
+//! language it was written in, and on such a page that is what the
+//! shell reports and `languagechange` is not delivered at all. The
+//! app's own resolution is unchanged either way, which is the point
+//! (docs/internals/dom-edition.md, "The page's locale, not the
+//! reader's").
 
 const std = @import("std");
 const builtin = @import("builtin");

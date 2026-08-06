@@ -1923,7 +1923,7 @@ fn addWebServicesCheck(b: *std.Build, step: *std.Build.Step, enabled: bool) void
     run.setName("run tests/web_services.mjs");
     // A substring, on stderr, for addDevStoreCheck's reason: asserting
     // the program's last line asserts every scenario before it ran.
-    run.expectStdErrMatch("web services: deep_link, oauth, secure_store — all ok");
+    run.expectStdErrMatch("web services: deep_link, oauth, secure_store, locale — all ok");
     run.expectExitCode(0);
     step.dependOn(&run.step);
 }

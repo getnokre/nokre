@@ -236,108 +236,6 @@ in Part A.
 Each item: the claim, the receipt, the argument for the library, the strongest
 argument against, and what "already solved" would look like.
 
-### A1a. `lang` on a generated document, and what boots over it
-
-**The survey argued this one from the outside — screen readers, browser
-translation, hyphenation, search engines — under a section header ("Why now")
-that frames the whole round as content-SEO. Those are the weakest arguments
-available for it.** Two stronger ones were sitting in nokre's own design notes
-and in the mount signature, and both are about the library's own machinery
-failing rather than about a crawler's opinion. Lead with these.
-
-**Lead: hydration boots the wrong locale, silently, and the diff succeeds.**
-`mount({ wasm, into, worker, content, route, seed, addressing })` —
-`src/render/dom/live.js`'s `mount` — has no locale option. The only locale that
-reaches a wasm app in a browser is the device's: `mount`'s boot section pours
-`navigator.language` through the `nokre_locale_scratch` / `nokre_locale_seed`
-pair strictly before boot, and `src/services/locale/web.zig` is where it lands
-and what `App.init`'s install fires with. The driver entry points have no
-channel either — the reference site's `nokreWebBuild(gpa)`
-(`getnokre.github.io/src/web.zig`) takes an
-allocator and nothing else; `route`, `seed` and `addressing` are the whole of
-what `mount` carries per page. So a `/fa/…` page opened in an `en` browser
-hydrates **English over Persian markup**.
-
-And it does so without a single visible fault, because the hydration match is
-tag plus `data-n` (`docs/internals/dom-edition.md`, "The seams", the **Node
-ids** bullet): *"two nodes are the
-same node when they are the same kind of thing carrying the same id."* Nothing
-in that rule looks at text. The tree the app rebuilds in English has the same
-shape and the same ids as the tree the generator wrote in Persian, so the diff
-*succeeds*, every string is swapped, direction reverts to LTR, and the scroll
-position is faithfully preserved on a page that now says something else. There
-is no error and no warning; the pair's own contract guarantees the silence.
-
-`lang` on the generated document is the only thing that could carry the page's
-locale to the driver mounting over it. That makes A1a a correctness item for the
-static+hydrate pair Part D calls *"real, documented, and shipping"* — not a
-metadata item.
-
-**Second: appearance has a designed static fallback and direction has none.**
-`stylesheet.zig`'s `write` states the design out loud, in the comment above the
-`prefers-color-scheme` block — *"The media query is all a page with no app
-behind it — a screen serialized to a file — has to go on"* — and `live.js`'s
-`mount` says the same thing from the other side, in the comment introducing
-`syncRoot`. So the sheet is
-built to answer appearance for a page with no app behind it. **No media query
-can answer direction.** Only the attribute can, and on a serialized page nothing
-writes it, so `:root[data-direction="rtl"]` (`stylesheet.zig`'s `sheet`) never matches
-and the mirroring never happens. A file nokre wrote for a Persian reader stays
-LTR until — and unless — a driver boots over it. That is nokre's own note
-describing the static case as a case it serves, next to the one axis where it
-does not.
-
-**Receipt, corrected.** The survey said *"Nothing stamps `data-direction`."*
-**That is false.** `src/render/dom/live.js`'s `syncRoot` does
-`if (root.dataset.direction !== direction) root.dataset.direction = direction;`
-on the `documentElement` `mount` takes as `root`, backed by the
-`nokre_dom_direction` export (`src/render/dom/live.zig`'s `direction`, exported
-in that file's `comptime` block) — a literal-string grep for `data-direction`
-missed it because JS spells it camelCase through `dataset`. The true claim is
-narrower and is the one above: **nothing stamps it on a statically serialized
-page.** The live driver stamps both attributes, in the same three lines.
-
-What stands from the original receipt: `serialize.zig` emits no `lang`, no `dir`
-and no document at all. `getnokre.github.io/src/main.zig`'s `writeDocument`
-hardcodes `<html lang="en">`.
-The rest of RTL is complete — `App.direction` and `App.setDirection`
-(`src/core/app.zig`), `L.dir(loc)` and
-`l10n.directionOfTag` (`src/l10n/l10n.zig`) — the survey had those two the wrong
-way round —
-and the serializer flips chevrons off `em.app.direction`
-(`src/render/dom/serialize.zig`: `node`'s back-button case, and `tile`), which is
-the one piece of mirroring a
-static page *does* get, since it is markup rather than CSS.
-
-**For the library.** Nokre knows the locale and the direction; it wrote the
-whole file; and the one axis it declines to write is the one axis with no
-fallback and the one the boot handover cannot recover. A Persian page served as
-`lang="en"` is also wrong for screen readers, browser translation, hyphenation
-and search engines, but that is now the fourth reason, not the first.
-
-**Against.** `stylesheet.zig`'s `sheet` states the refusal deliberately, in the
-mirrored-chrome comment: an
-embedded app must not turn the page around it. And `docs/localization.md`,
-"Right-to-left",
-takes a stronger line — *"There is no `dir` attribute and no per-locale direction
-flag in ARB — a Persian string in an English locale and an English string in a
-Persian locale each lay out correctly on their own evidence. This never depends
-on the setting below."* If direction is a property of runs of text rather than of
-documents, then a document-level `dir` is the wrong idea and the driver is the
-right place for the one line that nevertheless has to exist. Note this cuts at
-`dir` only: it has nothing to say about `lang`, which is what the hydration
-argument actually needs.
-
-**Note the asymmetry**, because it may be the whole resolution: an *embedded*
-app must not restyle its host, but a *generated document* has no host — nokre
-wrote the whole file. The refusal may simply not apply to the static path, in
-which case this is a stamp in the static document writer and the doctrine is
-unchanged.
-
-**Already solved if:** a sanctioned per-page locale channel into `mount` exists
-that the survey missed. (`data-direction` has a stamp — just not on the static
-path, which is the item.)
-
 ### A1b. `webIndexHtml`'s hardcoded `lang` — a different ask, and a smaller one
 
 **The survey filed this as the same item as A1a. It is not, and merging them
@@ -353,7 +251,10 @@ So: parameterising `webIndexHtml`'s `lang` does nothing for 4,250 static pages,
 and stamping the static path does nothing for a wasm app shell. **Two items,
 two verdicts**, and they can legitimately differ — A1b is a `Decl` field on a
 page nokre wholly owns, with no consumer boundary anywhere near it; A1a is the
-question of whether nokre writes into a document the driver authored.
+question of whether nokre writes into a document the driver authored. (A1a has
+since shipped whole and its section is deleted: revision 34 stamped the static
+document, revision 35 carried the same locale across the boot handover. Both are
+in Landed.)
 
 A1b is also the weaker of the two on its own merits: the shell page is a boot
 stub with no prose in it, so `lang` there is nearly decorative. It is cheap, and
@@ -684,8 +585,11 @@ Verified present. An item proposing any of these is a survey miss.
   two interactive surfaces need exactly this.
 
   **Two qualifications the survey's "no new mechanism is required" glosses
-  over.** First, A1a: the pair carries no locale, and the same `data-n` match
-  quoted above is what makes booting the wrong one silent. Second, **the seed
+  over.** First, A1a: the pair carried no locale, and the same `data-n` match
+  quoted above is what made booting the wrong one silent — **shipped, revision
+  35**; the pair carries one now (`mount({ locale })`, written by
+  `dom.document` from the same `App.locale()` its `lang` comes from), and a
+  driver still supplies none. Second, **the seed
   costs a network fetch per page** — `live.js`'s `mount` builds its `seeding`
   promise as `fetch(seed).then((r) => r.text())`, a URL, not inline bytes. That is the right
   trade for two interactive surfaces and for a doc site handing over its
@@ -959,13 +863,6 @@ Ten items, strictly sequential, one commit each. Contract changes bump
 `nokre.revision` and move all three pins in the same pass. Each item is deleted
 from this file as it lands, with its outcome recorded.
 
-3. **Hydration reads the document's locale** — A1a's lead argument: the silent
-   wrong-locale boot, and `mount`'s missing locale channel. **Note what item 2
-   already changed here:** the boot script is `document.zig`'s now, so `mount`'s
-   new option gets exactly one writer on the static path — `Boot` — and the
-   document's `lang` is derived from the same `App.locale()` the channel has to
-   carry. The site is the reproduction Part G promised: its pages say
-   `lang="en"` and its `mount` call says nothing about a locale.
 4. **A `</script>`-safe JSON string writer** — A3's residue, **minus the head
    seam, which shipped with item 2** (`Document.head`, bytes not a hook). What
    is left is the escaper. `document.zig`'s private `js` is the seed and the
@@ -999,6 +896,117 @@ from this file as it lands, with its outcome recorded.
 
 One entry per finished item, with the ground for anything that changed shape.
 The queue above shrinks as this grows.
+
+### 3. The boot handover carries the page's locale — SHIPPED, revision 35
+
+**`mount({ locale })`**, and `document.zig`'s boot script writes it. A page
+generated in Persian and opened in an English browser now boots in Persian —
+words, `L.dir` and all — because the tag `live.js` pours into the locale
+service's seed lane before boot is the page's where the page named one, and
+`navigator.language` only where it did not.
+
+**Every claim in the brief checked out**, with one correction and one addition.
+`mount` had no locale option; the boot section poured `navigator.language`
+through `nokre_locale_scratch` / `nokre_locale_seed` strictly before
+`nokre_dom_boot`; `services/locale/web.zig` is where it lands and what
+`App.init`'s install fires with; `sameNode` returns `true` for every text node
+before it looks at anything else and `patchNode` then assigns `a.data = b.data`,
+so the diff succeeds and every string is swapped in silence.
+
+**The correction is the direction half, and it is worse than "reverts to
+LTR".** `live.js` writes `data-direction` and never `dir` (item 2's finding,
+unchanged), so a wrong-locale boot over a Persian page left `dir="rtl"` standing
+in the markup and flipped `data-direction` to `ltr` underneath it — the page
+announced right-to-left to a screen reader and laid out left-to-right, which is
+neither of the two states and is the one no reader can explain. The same channel
+closes it, because direction is `App.setDirection(L.dir(loc))` and follows
+whatever locale the app resolved.
+
+**Where the override enters, and why it could not be anywhere later.** The app's
+own three lines are `L.resolve(locale.tag(app))` → `setLocale` → `setDirection`
+(docs/localization.md). Anything entering *downstream* of that — a boot argument
+calling `App.setLocale` for the app, a `Options.locale` — is overwritten by the
+app's next build, which re-resolves from the service and wins. So the channel is
+the service's own seed lane: the shell's answer to "what language is this app
+in", which on the web is the page when the page is nokre's own. `L.resolve` is
+therefore untouched and no second resolution policy exists — a pinned tag the
+bundle does not carry falls back exactly where the same tag falls back on the
+device lane, and there is a scenario asserting the two land on the same value.
+
+**One fact, spent twice, in one place.** `document` reads `App.locale()` once
+and hands the same slice to the root element's `lang` and to the boot call.
+There is deliberately **no `Boot.locale` field**: a driver has no second locale
+to state, so the two cannot disagree by construction rather than by a driver
+keeping them in sync — which is the defect one layer up.
+
+**The one place they legitimately differ, and it is not a hole.** `lang` keeps
+item 2's fallback (`element.default_chrome_tag`) because `lang=""` is not
+something a browser, a screen reader or a hyphenation table can act on. The boot
+pins `App.locale()` **raw**, empty tag included. Pinning `"en"` there would boot
+the *English* catalog of a bundle whose template is Persian over a page that was
+rendered from that template — the exact defect, re-introduced by the fallback.
+`""` is the tag `L.resolve` answers with the template, so it reproduces the page.
+
+**And it is written even when empty**, which is the call worth recording. An
+*absent* `locale` is `mount`'s "follow the device", and that is right for exactly
+one page: the app shell that boots into an empty body (`packaging.zig`'s
+`webIndexHtml`, which pins nothing and is unchanged). Every generated document
+has a screen in it already, so the device can never be the right answer there —
+including for an app that never called `setLocale`, whose page was rendered from
+its catalog's template. `typeof locale === "string"` is the test, so `""` is a
+value and `undefined` is the only absence.
+
+**`languagechange` is not delivered on a pinned page.** The listener is
+installed only on the device lane. A reader changing their browser's language is
+not a reason for `/fa/…` to become English — F.4's "a prefixed URL is never
+redirected", read from inside the page.
+
+**Proved at the web gate, not argued.** `tests/web_browser.mjs` already took a
+`language`; it now also has `languageChange(tag)`, and `page(env, options)`
+splits the browser from what the page hands `mount` — the two are separate
+because the whole question is what happens when they disagree.
+`tests/web_services.zig` grew a real two-locale ARB bundle (en template, fa for
+RTL) and writes the documented three lines, so the assertions read the rendered
+Persian out of the document and the direction off `documentElement` rather than
+asking an export what it returned. Six scenarios: the device lane unchanged; the
+page's language beating the browser's, direction included; an `en` page holding
+in a Persian browser; the empty tag resolving to the template rather than
+meaning "ask the device"; an unbundled pin landing where the device lane lands;
+and a post-boot `languagechange` moving the unpinned page and never the pinned
+one. The gate's line is now `deep_link, oauth, secure_store, locale — all ok`,
+and locale's web leg — which every scenario had been executing unasserted since
+it shipped — is a named leg of that gate.
+
+**The queue's line that the site is the reproduction Part G promised is not yet
+true**, and the reason is Part G's own: the site has no l10n surface at all, so
+its pages render the same bytes in a `de` browser as in an `en` one and there is
+nothing to boot wrongly. A reproduction needs an app with a catalog, which is
+why it lives in the gate's harness app. The site becomes that reproduction at
+item 9, and the channel it will use is already in its published `live.js`.
+
+**What could not be proved here.** Nothing hydrates a *generated document* in
+any gate: the harness mounts into an empty body, so the patch over real
+generated markup — the silent text swap itself — is still browser-only, and
+`docs/testing.md`'s uncovered list now says so precisely instead of listing the
+whole handover. What is proved is the fact the handover carries and what the app
+does with it, on both lanes, in the real driver.
+
+**The consumer needed no change, and that is the design working.**
+`getnokre.github.io` invents no locale, so there was nothing for it to pass:
+`dom.document` derives the boot's locale from the same `App.locale()` it derives
+`lang` from, and the site's app has never chosen one. Its 32 pages gained exactly
+one line each — `locale: "",` — which is that app's honest answer and, until
+item 9, the only one it has. Site: 32 screens, 796 references (791 → 796 from
+this pass's five new doc cross-links), 1,034,624 bytes of markup.
+
+**Found while writing the test, and fixed.** `docs/services.md`'s `onLocale`
+example ended in `state.app.invalidate()`. That does not put a new language on
+screen: the words came out of the catalog *inside* `build`, so they are in the
+tree the last build left, and `invalidate` only marks it for another layout and
+another paint — the same sentences, re-measured. `App.reload`'s own doc names a
+locale change as one of its deliberate gestures. The example now says `reload`
+and says why. The harness app hit this exactly once, on the one scenario that
+changes the language after boot.
 
 ### 2. The document shell — SHIPPED, revision 34
 
