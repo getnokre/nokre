@@ -49,6 +49,7 @@
 
 const std = @import("std");
 
+const alternates_mod = @import("alternates.zig");
 const app_mod = @import("../../core/app.zig");
 const class_names = @import("class_names.zig");
 const color = @import("../../core/color.zig");
@@ -56,6 +57,7 @@ const driver_files = @import("driver_files.zig");
 const element_mod = @import("../../core/element.zig");
 const serialize = @import("serialize.zig");
 
+const Alternate = alternates_mod.Alternate;
 const App = app_mod.App;
 const Emitter = serialize.Emitter;
 const Gray = color.Gray;
@@ -125,6 +127,11 @@ pub const Boot = struct {
 ///   `twitter:card`, because a driver that emits the first and forgets
 ///   the second has a preview on one network and a bare link on the
 ///   other.
+/// - **A page is among its own alternates**, and every `hreflang` in
+///   them is a tag the catalog handed over. The set itself is complete
+///   by type and reciprocal by construction, one layer down
+///   ([alternates.zig](alternates.zig)); what this type adds is that
+///   the page carrying it belongs to it.
 ///
 /// Absent (`Document.meta` is `null`) writes none of it — a page that
 /// is not a page on a site, which is what an app shell booting into an
@@ -150,6 +157,25 @@ pub const Meta = struct {
     /// writes exactly that the first time it flips the flag and leaves
     /// the string. Here there is nothing left to leave.
     path: ?[]const u8 = null,
+
+    /// Every URL this page also exists at in another language, plus the
+    /// `x-default` — `Alternates(L).set`'s answer, which is where the
+    /// tags come from and why the set is complete.
+    ///
+    /// **Empty is the honest answer for a page with one URL**, and the
+    /// default. A single-language site has no choice of addresses to
+    /// annotate; its canonical already says where the page lives, and a
+    /// one-entry `hreflang` block says nothing a crawler did not know.
+    /// Alternates start earning their bytes at the second URL — which
+    /// under this edition's scheme is the moment a locale prefix and a
+    /// stub appear, even at one locale.
+    ///
+    /// The whole set is one value, shared by every locale's copy of
+    /// this page: that is what makes the annotations reciprocal without
+    /// anybody checking (alternates.zig). What is checked here is
+    /// self-inclusion, since only the document knows which of those
+    /// paths is its own.
+    alternates: []const Alternate = &.{},
 
     /// `og:site_name` — what the *site* is called, beside what the page
     /// is called. Omitted when empty.
@@ -241,11 +267,12 @@ pub const MetaError = error{
     OriginNotAbsolute,
     /// `Meta.origin` ends in `/`, which every path here begins with.
     OriginEndsInSlash,
-    /// A path in `Meta` — the document's or the image's — does not
-    /// begin with `/`, so joining it to the origin would produce
-    /// something that is not the URL anybody meant.
+    /// A path in `Meta` — the document's, the image's, or an
+    /// alternate's — does not begin with `/`, so joining it to the
+    /// origin would produce something that is not the URL anybody
+    /// meant.
     PathNotRooted,
-};
+} || alternates_mod.Error;
 
 /// Everything the driver invented, and nothing it did not.
 pub const Document = struct {
@@ -466,14 +493,14 @@ fn fallbackTag(chosen: []const u8) []const u8 {
 }
 
 fn checkMeta(m: Meta) MetaError!void {
-    if (std.mem.indexOf(u8, m.origin, "://") == null) return error.OriginNotAbsolute;
-    if (std.mem.endsWith(u8, m.origin, "/")) return error.OriginEndsInSlash;
-    if (m.path) |p| {
-        if (!std.mem.startsWith(u8, p, "/")) return error.PathNotRooted;
-    }
-    if (m.image) |img| {
-        if (!std.mem.startsWith(u8, img.path, "/")) return error.PathNotRooted;
-    }
+    try alternates_mod.checkOrigin(m.origin);
+    if (m.path) |p| try alternates_mod.checkPath(p);
+    if (m.image) |img| try alternates_mod.checkPath(img.path);
+    // The set's own rules, and this page's membership in it. A `null`
+    // path with alternates on it lands here as `AlternatesOmitThisPage`
+    // and is exactly that: a document with no URL of its own cannot be
+    // one of the URLs a page exists at.
+    try alternates_mod.check(m.alternates, m.path);
 }
 
 /// Canonical, Open Graph and the Twitter card, in one pass so the
@@ -495,6 +522,11 @@ fn metaTags(em: *Emitter, doc: Document, m: Meta) !void {
         try url(em, m.origin, p);
         try em.raw("\">\n");
     }
+    // Beside the canonical, because they answer one question together:
+    // the canonical says which URL *this* content lives at, and these
+    // say which languages that URL has siblings in. A crawler that has
+    // one without the other picks a copy at random for every reader.
+    try alternates_mod.links(em, m.origin, m.alternates);
     // `property`, not `name`: Open Graph is RDFa, and a head written by
     // hand mixes the two vocabularies about as often as not.
     try em.raw("<meta property=\"og:type\" content=\"");
@@ -744,12 +776,21 @@ pub fn LocaleStub(comptime L: type) type {
         /// writes no heading — a stub is a list of languages and reads
         /// as one without a sentence over it.
         heading: []const u8 = "",
-        /// Markup spliced at the end of `<head>`. The alternates a
-        /// crawler reads here are the driver's for now (item 7's
-        /// `hreflang` block is what will move them), and so is any
-        /// robots directive: what an unprefixed address is *for* is
-        /// indexing policy, which is the site resolver's.
+        /// Markup spliced at the end of `<head>`. A robots directive
+        /// goes here: what an unprefixed address is *for* is indexing
+        /// policy, which is the site resolver's.
         head: []const u8 = "",
+        /// Where this stub itself is published — which is the whole of
+        /// what it takes to put the alternate set on it. Absent writes
+        /// none of it, which is right for a stub nobody indexes.
+        ///
+        /// The set is not stated twice: `choices` is already one path
+        /// per bundled locale, so it *is* `Alternates.paths` with a
+        /// label attached, and the `x-default` is this page's own
+        /// address because this page is what `x-default` means
+        /// (`alternates.x_default`). A driver restating either would be
+        /// the second source of truth the type exists to prevent.
+        published: ?Published = null,
         /// One per bundled locale, named by it. The type is generated
         /// from `L.Locale`, so this cannot be short, long, or spelled
         /// for a locale the bundle does not have.
@@ -767,6 +808,18 @@ pub fn LocaleStub(comptime L: type) type {
             /// can act on. It is also the anchor's `lang`, so a screen
             /// reader says it in the right voice.
             label: []const u8,
+        };
+
+        /// A stub's own URL, split the way `Meta` splits one and
+        /// checked by the same two lines.
+        pub const Published = struct {
+            /// Scheme and host, no trailing slash.
+            origin: []const u8,
+            /// The unprefixed path this page stands at, leading slash
+            /// included. It is also where `x-default` points, and there
+            /// is one field rather than two because those are the same
+            /// address by definition.
+            path: []const u8,
         };
     };
 }
@@ -793,6 +846,15 @@ pub fn LocaleStub(comptime L: type) type {
 /// and the page it lands on read the reader the same way. The list
 /// would be a better answer to a different question and a *disagreeing*
 /// answer to this one.
+///
+/// **It carries the alternate set too, when it says where it is.**
+/// `published` is the only thing needed for it: `choices` already holds
+/// one path per bundled locale, which is what an alternate set is, and
+/// `x-default` is this page's own address because a stub is what
+/// `x-default` *means* (alternates.zig). One shape, one writer, and no
+/// restatement — the block on a locale's copy and the block here are
+/// the same function over the same set, which is what keeps the
+/// annotation two-sided.
 ///
 /// **The links are not a fallback anyone should have to think about.**
 /// They are the document; the script is what saves a reader from
@@ -848,6 +910,25 @@ pub fn localeStub(em: *Emitter, comptime L: type, stub: LocaleStub(L)) !void {
     try em.raw("nokreLocaleStub(");
     try stubData(em, L, stub);
     try em.raw(");\n</script>\n");
+
+    // The same block the copies carry, written by the same function
+    // over the same shape — `choices` is one path per bundled locale,
+    // which is what an alternate set is, and the `x-default` is this
+    // page. A crawler that reads a locale's copy is told the stub
+    // exists; without this it would not be told the reverse, and a
+    // one-sided annotation is the failure the whole set exists to
+    // avoid.
+    if (stub.published) |pub_at| {
+        var set: [locales.len + 1]Alternate = undefined;
+        inline for (locales, 0..) |loc, i| {
+            set[i] = .{
+                .hreflang = comptime L.tag(loc),
+                .path = @field(stub.choices, @tagName(loc)).href,
+            };
+        }
+        set[locales.len] = .{ .hreflang = alternates_mod.x_default, .path = pub_at.path };
+        try alternates_mod.links(em, pub_at.origin, &set);
+    }
     try em.raw(stub.head);
     try em.raw("</head>\n<body>\n");
 
@@ -882,7 +963,7 @@ pub fn localeStub(em: *Emitter, comptime L: type, stub: LocaleStub(L)) !void {
     try em.raw("</nav>\n</main>\n</body>\n</html>\n");
 }
 
-fn checkStub(comptime L: type, stub: LocaleStub(L)) LocaleStubError!void {
+fn checkStub(comptime L: type, stub: LocaleStub(L)) (LocaleStubError || MetaError)!void {
     const locales = comptime std.enums.values(L.Locale);
     var hrefs: [locales.len][]const u8 = undefined;
     inline for (locales, 0..) |loc, i| {
@@ -893,6 +974,15 @@ fn checkStub(comptime L: type, stub: LocaleStub(L)) LocaleStubError!void {
             if (std.mem.eql(u8, taken, choice.href)) return error.ChoiceHrefsCollide;
         }
         hrefs[i] = choice.href;
+    }
+    // A stub that says where it is has to say it the way every other
+    // URL here is said. The hrefs are free to be relative *until* this
+    // page claims an address — an `hreflang` is absolute or it is
+    // nothing, so the same slices then owe the rooted-path rule.
+    if (stub.published) |pub_at| {
+        try alternates_mod.checkOrigin(pub_at.origin);
+        try alternates_mod.checkPath(pub_at.path);
+        for (hrefs) |h| try alternates_mod.checkPath(h);
     }
 }
 

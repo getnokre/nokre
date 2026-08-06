@@ -409,6 +409,12 @@ structure around them.
     guessed from the pixel size: which crop an asset survives is
     editorial, and a document with no image is a `summary` card and
     cannot be made into anything else.
+  - The `hreflang` block is a field here — `Meta.alternates` — and not
+    markup a driver splices through the head seam. What the document
+    checks about it is the one rule only a document can, that the page
+    is among its own alternates. Where the set comes from, and why it
+    cannot come out one-sided, is "The alternate set, and the two
+    writers that spend it" below.
 
   What is deliberately absent: `og:locale`. The page's language is a
   fact this file holds — it is on `<html lang>` — but Open Graph's
@@ -480,8 +486,9 @@ scroll position survives.
 #### The locale axis, and the one page that is about the reader
 
 A multi-locale site regenerates its whole tree once per bundled locale.
-Almost none of that is this library's, and the part that is, is one
-page.
+Almost none of that is this library's. What is, is one page and one
+value: the chooser standing at the unprefixed address, and the set of
+addresses every copy of a page annotates its siblings with.
 
 **What the driver owns, and it is nearly all of it.** The loop, the
 output paths, the prefix scheme, which routes exist, where each locale's
@@ -523,6 +530,10 @@ try dom.localeStub(&em, L, .{
     .title = "nokre",
     .stylesheet = "/style.css",
     .heading = "Choose a language",
+    .published = .{                    // where this page is; the rest follows
+        .origin = "https://example.com",
+        .path = "/docs/",
+    },
     .choices = .{                      // one field per bundled locale
         .en = .{ .href = "/en/docs/", .label = "English" },
         .fa = .{ .href = "/fa/docs/", .label = "فارسی" },
@@ -579,10 +590,105 @@ try dom.localeStub(&em, L, .{
   resolves to its own address navigates nowhere rather than spinning.
 
 What the stub does *not* say is what an unprefixed address is for. A
-`noindex`, or the `hreflang` block that names it `x-default`, is
-indexing policy — the site resolver's, in exactly the sense
+`noindex` is indexing policy — the site resolver's, in exactly the sense
 [audit.zig](../../src/testing/audit.zig)'s `Options.skip` draws it — and
-goes in through the head seam.
+goes in through the head seam, which on this page is what that seam is
+there for.
+
+The `hreflang` block is neither of those. It is `published`, one field
+naming where this page stands, and the stub derives the rest from the
+`choices` it is already holding: one path per bundled locale is what an
+alternate set is, and the `x-default` is this page's own address because
+a stub is what `x-default` *means*. A driver restating either would be
+the second source of truth the type exists to prevent. Left out, no
+block is written — which is a decision about indexing again, and so
+belongs beside the `noindex` rather than beside the set.
+
+#### The alternate set, and the two writers that spend it
+
+A page published in three languages exists at three URLs and each of
+them has to name the other two. Nothing about getting that wrong is
+loud: the pages render, the links work, and the failure is a line in
+somebody's search console months later saying one page annotates a
+sibling that does not annotate it back.
+
+[alternates.zig](../../src/render/dom/alternates.zig) answers it by
+removing the opportunity rather than by checking for the mistake. **A
+page's alternates are its own variants, so the set is one value for
+every page in the family** — the English copy and the Persian copy of
+one route are handed the same array and write byte-identical blocks out
+of it. Reciprocity is therefore not a rule a
+driver keeps but a shape it cannot get out of, and what is left over is
+self-inclusion, the one question the set cannot answer about itself.
+That one is asked of every page carrying a set: on a locale's copy by
+`checkMeta`, and again in the sitemap, because the two writers do not
+check each other.
+
+`Alternates(L)` takes the bundle for the reason `choices` above does —
+one required field per bundled locale, so completeness is a compile
+error rather than a runtime sweep, and the tags are `L.tag`'s rather
+than BCP 47 strings a driver typed. Everything around them stays
+stated: the origin, the prefix scheme, whether a path ends in a slash.
+This edition still computes no path anywhere.
+
+**`x-default` is an address, not a language.** It is the stub's — the
+one URL in the set that is about the *reader* rather than about a
+language, which is precisely what stands at the unprefixed path. It is
+also **not the default locale's URL**, which is the single mistake this
+block is usually written wrong by: the default locale is a locale and
+has a path beside every other. That is why the stub's address is a
+required field of its own (`Alternates.stub`) rather than something a
+driver could omit and have defaulted to the template's page.
+
+**The head's block and the sitemap's are one value, not two derivations
+that agree today.** `Alternates.set` hands back a fixed-size array the
+caller keeps in a local and passes to both `Meta.alternates` and
+`Sitemap.url`; one function writes the `<link rel="alternate">` form for
+a locale's copy and for the stub alike, and the sitemap writes the
+`<xhtml:link>` form from the same entries. The builder copies what it is
+given, so a generation loop's local may die with its iteration and the
+file still holds what it said.
+
+**What a sitemap knows that no page can.** `dom.Sitemap` is not a
+document — no screen, no head, no locale, no `Emitter` — because it is
+one file *about* a tree rather than the page around one, and what it
+owns is the questions that need the whole tree in view: that no URL is
+listed twice, and that the alternate graph **closes**, every language
+copy any entry names being itself an entry. That last one is the
+one-sided annotation, failed at build time instead of reported in a
+console a year on, and no per-page function could ever run it. Beside
+those it owns what a hand-written file gets wrong at a distance: the
+`xhtml` namespace declared exactly when something below uses the prefix,
+and the XML escape, since one unescaped `&` out of a query string is a
+file no parser reads past. The specification's two ceilings — 50,000
+URLs and 50 MB, `max_urls` and `max_bytes` — are hard errors rather than
+warnings, since a `<urlset>` past either is a file nothing reads. The
+first of them is where the single-file trade actually arrives: a site
+large enough to want a sitemap index splits the alternate graph across
+files, and then nothing can check that it closes, which is most of what
+this type is for.
+
+**It writes bytes, not a file.** The caller's buffer is the destination
+and the caller does the `writeFile`, the shape `stylesheet.write`
+already has. That is the line the refused per-locale generation loop
+left behind, read from the other side: output paths, directory layout
+and what a build does with the bytes are the driver's, so the part of a
+build this edition could most easily have taken over is the part it
+declines. Nothing is appended if any check fails, `document`'s posture
+for `Meta` — a half-written file is worse than none.
+
+**`lastmod` and `changefreq` are refused, and not for symmetry.** The
+argument is in [sitemap.zig](../../src/render/dom/sitemap.zig)'s module
+comment, written down so it does not have to be had again: `changefreq`
+is publishing policy Google has said for years it does not use, and a
+generator stamping `weekly` on everything is stating a schedule nobody
+keeps. `lastmod` is a filesystem or VCS fact this library cannot know
+and — alone among the destinations `Meta` carries — cannot check either,
+so what a generator actually ships is the build's own clock on every
+URL, telling a crawler the whole site changed on every deploy. That is
+worse than absent. A consumer holding real per-page timestamps is a
+receipt this library has not been handed, not an omission waiting to be
+filled in.
 
 ### Services are not the edition's business
 
@@ -855,6 +961,11 @@ try dom.chrome(&em);    // notice, nav, sheet, picker
   is the library's; the names in it are the driver's" above; `content`
   and `chrome` stay separately callable for a driver placing them
   itself, which is what the live one does.
+- **`Sitemap`** ([sitemap.zig](../../src/render/dom/sitemap.zig)) is the
+  one thing here that is about a whole tree rather than one page, and it
+  is a builder rather than a seam: URLs and their alternates go in, the
+  `<urlset>` comes out into a buffer of the caller's ("The alternate set,
+  and the two writers that spend it" above).
 - **`Emitter.fragment`.** A second emitter over a buffer of the caller's
   own — how the bytes `Document.head` and `Document.body_end` take get
   the escaping the rest of the document gets.

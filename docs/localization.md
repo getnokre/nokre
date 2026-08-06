@@ -73,6 +73,11 @@ it *does* write for you is the chooser at an unprefixed address, whose
 script resolves the reader's tag through the rule above rather than a
 second one: `dom.localeStub`, in
 [internals/dom-edition.md](internals/dom-edition.md#the-locale-axis-and-the-one-page-that-is-about-the-reader).
+The other thing it writes for you is the `hreflang` set those copies
+annotate each other with — `dom.Alternates` takes the bundle rather than
+a list of tags, as everything here does, and the `x-default` it adds is
+the chooser's address rather than any language's
+([the alternate set](internals/dom-edition.md#the-alternate-set-and-the-two-writers-that-spend-it)).
 
 ## The format
 

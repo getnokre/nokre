@@ -273,8 +273,8 @@ it is not urgent.
 (A2 and A4 have since shipped whole and their sections are deleted: revision 37
 put canonical, Open Graph, the Twitter card and `og:image` behind `Document.meta`
 while leaving every destination in it a required driver-supplied field. The entry
-in Landed is where the boundary argument came out, and it is the one to read
-before item 7 adds alternates to the same struct.)
+in Landed is where the boundary argument came out; revision 39 then added
+alternates to that same struct without a second origin.)
 
 ---
 
@@ -361,50 +361,12 @@ either owned already or belongs to the driver. The interesting design question
 is now the narrow one: **is the loop worth owning at all**, given it is four
 lines over a set nokre can already enumerate?
 
-### B2. hreflang and `x-default`
+### B2 and B3. hreflang, `x-default`, sitemap alternates
 
-**Receipt.** Zero `hreflang`, zero `x-default` anywhere in either repo.
-
-Given a route, a locale set and an origin, the alternate set is
-`{origin}/{locale}{suffix}` for every locale plus `x-default` — fully derivable.
-The consumer's existing test asserts the alternate href set matches *exactly*,
-both directions, which is precisely the kind of invariant that is easy to
-half-implement by hand.
-
-This is the strongest single candidate in the file: mechanical, derivable, no
-content dependency, and wrong-by-hand in ways that are invisible until an
-international search console complains months later.
-
-**The better shape, since this file's sketches are illustrative.** Not a config
-struct — a **pure function** over three inputs:
-
-- the locale set, taken from the bundle (`L.Locale`), not declared;
-- the current locale;
-- a driver-supplied `fn(locale, route) → path`.
-
-returning the alternate set. Nokre then owns exactly two things — the
-**completeness invariant** (every bundled locale appears, exactly once) and the
-**`x-default` rule** — and the driver owns **every byte of policy**: the origin,
-the prefix scheme, whether the default locale is bare, what a route's path even
-looks like. That is Part C's middle position expressed as a signature rather than
-argued for in prose, and it is the same shape `Refs` already has: nokre owns the
-attribute, the driver answers where it points.
-
-It also keeps B3 on the same side of the line **for free**, which this file
-already insists on: the sitemap writer calls the same function with the same
-driver callback and gets the same set, so the two cannot disagree.
-
-### B3. Sitemap alternates
-
-**Receipt.** `main.zig`'s `writeExtras` emits a flat `<urlset>` of
-`<loc>` only, with no `lastmod`, no `changefreq`
-and no `<xhtml:link>` alternates; it writes `robots.txt` in the same function.
-
-For a multi-locale site the sitemap should carry `<xhtml:link rel="alternate">`
-per locale per URL. Same derivation as B2 from the same inputs — and under B2's
-reshaped signature above, literally the same call. If B2 lands in the library,
-this is nearly free; if B2 stays in the driver, this should too — they should not
-end up on opposite sides of the boundary.
+**SHIPPED, revision 39** — as one derivation both writers spend. See "Landed"
+below. The survey's pure-function sketch was superseded by a type; the
+completeness invariant is a compile error rather than a runtime sweep, and
+reciprocity turned out not to need enforcing at all.
 
 ### B4. The output-path scheme
 
@@ -804,11 +766,6 @@ Ten items, strictly sequential, one commit each. Contract changes bump
 `nokre.revision` and move all three pins in the same pass. Each item is deleted
 from this file as it lands, with its outcome recorded.
 
-7. **hreflang, `x-default`, sitemap alternates** — B2 and B3, one derivation.
-   The head half composes with item 5's `Document.meta`, which already holds the
-   origin every alternate is joined to and already checks it; alternates are a
-   field there rather than a second struct with a second origin. The sitemap is
-   not a document and wants a home of its own.
 8. **`webIndexHtml`'s `lang`** — A1b. **Check first whether `dom.document`
    should simply write that page**, which item 2 left open deliberately: the
    shell page is a title, a stylesheet link, a body with one mount point and a
@@ -816,12 +773,80 @@ from this file as it lands, with its outcome recorded.
    both real and neither large: `webIndexHtml` writes its page with no `App` in
    hand (`document` takes an `Emitter`, which is an App and an `out`), and the
    shell boots into `document.body` where `Document` requires two mount ids.
-9. **Part G** — `getnokre.github.io` onto all of it.
+9. **Part G** — `getnokre.github.io` onto all of it. **What items 6 and 7 left
+   ready for it:** the ~20 stubs are `dom.localeStub` calls over a single-locale
+   bundle, and the identity case needs no special branch — the self-address guard
+   is what stops a stub at its own address from spinning. The `/en/…` prefix is
+   entirely `links.zig`'s and `outPath`'s; nokre computes no path. `failOnStale`'s
+   walk is scoped to two shapes that both gain a locale segment. `writeExtras`
+   already calls `dom.Sitemap` and its call does not change when the axis
+   arrives — only the `&.{}` alternate set becomes a real one. The ~20 hardcoded
+   English titles in `src/pages.zig`'s `all` become catalog keys against a
+   one-locale bundle, which is the part with no precedent yet in this round.
 10. **The boundary doc** — F.5, written from what shipped.
 
 ---
 
 ## Landed
+
+### 7. hreflang, `x-default`, sitemap alternates — SHIPPED, revision 39
+
+**The survey's pure function became a type, and the reason is item 6's
+precedent.** `Alternates(L)` (`src/render/dom/alternates.zig`) takes
+`paths: EnumFieldStruct(L.Locale, []const u8, null)` — one required field per
+bundled locale — so a locale in the ARB set and missing from an alternate set is
+a **compile error**, and one the bundle does not carry cannot be written down at
+all. The completeness invariant B2 asked nokre to own is therefore not checked;
+it is unstatable-wrongly. `LocaleStub.choices` is literally the same shape with a
+label attached, which is what made the precedent obvious.
+
+**Reciprocity turned out not to need enforcing.** B2 named it as the invisible
+failure — one page listing a sibling that does not list it back. But a page's
+alternates are its *own* variants, so one `Set` value serves the whole family and
+every copy of a route carries a byte-identical block. There is no per-page
+derivation left to disagree with itself. Self-inclusion is the other half and
+*is* checked (`alternates.check`), because only the document knows which of the
+paths is its own.
+
+**`x-default` is a required field separate from `paths`**, and that separation is
+the item's sharpest decision. The mistake this whole block gets written wrong by
+is treating `x-default` as the default locale's URL; making `stub` required means
+a driver cannot omit it and silently inherit the template's path. Nothing in the
+module reads `L.default_locale`.
+
+**The sitemap landed on the derivation side without crossing item 6's line.**
+`Sitemap` (`src/render/dom/sitemap.zig`) builds bytes into the caller's buffer
+and the driver does the `writeFile` — the shape `stylesheet.write` already has,
+and the line drawn when the per-locale generation loop was refused: nothing under
+`src/render/dom` reaches a filesystem. B3's constraint is satisfied more strongly
+than it asked: the head's block and the sitemap's `<xhtml:link>`s are not two
+derivations that agree today, they are one `Set` value handed to two writers.
+What the sitemap owns beyond that is what one file can see and one page cannot —
+XML escaping, the `xhtml` namespace declared exactly when used, the spec's two
+limits, and the alternate graph **closed**: every sibling any entry names is
+itself an entry. No per-page function could run that check.
+
+**`lastmod` and `changefreq` refused, and the ground is recorded so the next
+round does not re-propose them.** `changefreq` is publishing policy Google has
+said for years it does not use. `lastmod` is a filesystem or VCS fact the library
+cannot know *and cannot check* — its grammar is W3C-datetime, an unparseable one
+is dropped in silence by every crawler, and the shape a hand-rolled generator
+actually ships is the build's own clock stamped on all 4,250 URLs, telling a
+crawler the whole site changed every deploy. Worse than absent. A consumer with
+real per-page timestamps is a receipt this library does not have yet.
+
+**Single-locale sites emit no alternates, and that is principled.** An empty set
+is not checked and is not a defect: a page that exists in one language has no
+choice of URLs to describe, and its canonical already says everything there is to
+say about where it lives. `getnokre.github.io` passes `&.{}` and its
+`writeExtras` call is already shaped so the locale axis does not change it.
+
+**Process note, recorded because it cost time.** The implementing agent died to
+API errors twice — once after finishing the code and the consumer migration but
+before reporting, once before writing the record. The code was reviewed directly
+from the diff instead of from a report, and the doc track was finished by a
+second agent with the source frozen. Nothing was accepted unread.
+
 
 One entry per finished item, with the ground for anything that changed shape.
 The queue above shrinks as this grows.

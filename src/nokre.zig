@@ -14,7 +14,7 @@ const std = @import("std");
 /// Hand-bumped on every consumer-visible contract change, never by
 /// machinery — the no-CI stance is deliberate
 /// (docs/getting-started.md).
-pub const revision: u32 = 38;
+pub const revision: u32 = 39;
 
 pub const geometry = @import("core/geometry.zig");
 pub const color = @import("core/color.zig");
@@ -266,6 +266,11 @@ test {
     _ = @import("render/renderer_test.zig");
     _ = @import("render/dom/serialize_test.zig");
     _ = @import("render/dom/document_test.zig");
+    // Small enough to keep its design proofs inline, and named here
+    // anyway: `_ = render.dom` above re-exports the type without
+    // analyzing the file it lives in, so its tests would silently not
+    // run — checked by breaking one and watching the build stay green.
+    _ = @import("render/dom/sitemap.zig");
     _ = @import("a11y/semantics_test.zig");
     _ = @import("testing/audit_test.zig");
     _ = @import("testing/harness_test.zig");

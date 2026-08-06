@@ -908,3 +908,211 @@ test "the stub's head keeps the charset in the first bytes and the seam last" {
     // page the reader is not meant to see.
     try testing.expect(head_end < std.mem.indexOf(u8, html, "<h1 class=\"s-h1\">Choose a language</h1>").?);
 }
+
+// -------------------------------------------------- the alternate set
+
+const alternates = @import("alternates.zig");
+
+/// The set every test below spends: one path per bundled locale, and
+/// the stub's unprefixed path beside them. Written once because that is
+/// the design — every locale's copy of one page is handed *this* value,
+/// which is what makes the annotations reciprocal without a check.
+const docs_set = (alternates.Alternates(L){
+    .stub = "/docs/",
+    .paths = .{ .en = "/en/docs/", .fa = "/fa/docs/" },
+}).set();
+
+fn sitedWith(path: []const u8, set: []const alternates.Alternate) document.Meta {
+    return .{ .origin = "https://example.com", .path = path, .alternates = set };
+}
+
+test "the tags come out of the catalog, and the set is closed by the type" {
+    // Three entries for a two-locale bundle: the count is the
+    // completeness invariant read out of the derivation. A locale in
+    // the bundle and missing from `paths` does not fail here — it fails
+    // to compile.
+    try testing.expectEqual(@as(usize, 3), docs_set.len);
+    try testing.expectEqualStrings("en", docs_set[0].hreflang);
+    try testing.expectEqualStrings("/en/docs/", docs_set[0].path);
+    try testing.expectEqualStrings("fa", docs_set[1].hreflang);
+    try testing.expectEqualStrings("/fa/docs/", docs_set[1].path);
+    // The bundle's order, and the two tags are `L.tag`'s answers rather
+    // than strings this test typed beside them.
+    try testing.expectEqualStrings(L.tag(.en), docs_set[0].hreflang);
+    try testing.expectEqualStrings(L.tag(.fa), docs_set[1].hreflang);
+}
+
+test "x-default is the stub's address, not the default locale's" {
+    const x = docs_set[docs_set.len - 1];
+    try testing.expectEqualStrings("x-default", x.hreflang);
+    try testing.expectEqualStrings("/docs/", x.path);
+    // The one thing that would be indistinguishable if `stub` had a
+    // default instead of being required: the template locale is a
+    // locale, with a prefixed path of its own like every other, and
+    // `x-default` is not it.
+    try testing.expectEqual(L.default_locale, .en);
+    try testing.expectEqualStrings("/en/docs/", docs_set[0].path);
+    try testing.expect(!std.mem.eql(u8, x.path, docs_set[0].path));
+}
+
+test "every copy of one page carries the same block, and each is in it" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+
+    var en_doc = plain("Docs");
+    en_doc.meta = sitedWith("/en/docs/", &docs_set);
+    const en = try write(&app, en_doc);
+    defer testing.allocator.free(en);
+
+    var fa_doc = plain("Docs");
+    fa_doc.meta = sitedWith("/fa/docs/", &docs_set);
+    const fa = try write(&app, fa_doc);
+    defer testing.allocator.free(fa);
+
+    const block =
+        \\<link rel="alternate" hreflang="en" href="https://example.com/en/docs/">
+        \\<link rel="alternate" hreflang="fa" href="https://example.com/fa/docs/">
+        \\<link rel="alternate" hreflang="x-default" href="https://example.com/docs/">
+        \\
+    ;
+    // Reciprocity is not checked, it is the same bytes: one value, two
+    // documents. A block that differed between two copies of a page is
+    // the failure a search console reports months later, and there is
+    // no second derivation here to differ.
+    try expectContains(en, block);
+    try expectContains(fa, block);
+    // Self-inclusion read out of the output: each page's canonical is
+    // one of the hrefs above it.
+    try expectContains(en, "<link rel=\"canonical\" href=\"https://example.com/en/docs/\">");
+    try expectContains(fa, "<link rel=\"canonical\" href=\"https://example.com/fa/docs/\">");
+    // And beside the canonical rather than off in the driver's seam.
+    try testing.expect(std.mem.indexOf(u8, en, "rel=\"canonical\"").? <
+        std.mem.indexOf(u8, en, "rel=\"alternate\"").?);
+    try testing.expect(std.mem.indexOf(u8, en, "rel=\"alternate\"").? <
+        std.mem.indexOf(u8, en, "og:type").?);
+}
+
+test "a page that is not among its own alternates is refused before a byte" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    var doc = plain("Docs");
+    // The Turkish copy of a page whose set never heard of Turkish —
+    // which reads to a crawler as "this document is a copy of something
+    // else", and is the shape a fourth locale arrives in.
+    doc.meta = sitedWith("/tr/docs/", &docs_set);
+
+    var out: std.ArrayList(u8) = .empty;
+    defer out.deinit(testing.allocator);
+    var em: serialize.Emitter = .{ .gpa = testing.allocator, .app = &app, .out = &out };
+    defer em.deinit();
+    try testing.expectError(error.AlternatesOmitThisPage, document.document(&em, doc));
+    try testing.expectEqual(@as(usize, 0), out.items.len);
+}
+
+test "a page with no URL of its own cannot be a member of a set" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    var doc = plain("Not found");
+    var m = sited(null);
+    m.alternates = &docs_set;
+    doc.meta = m;
+
+    var out: std.ArrayList(u8) = .empty;
+    defer out.deinit(testing.allocator);
+    var em: serialize.Emitter = .{ .gpa = testing.allocator, .app = &app, .out = &out };
+    defer em.deinit();
+    // The 404 is served at whatever address missed. It has no URL, so
+    // it is not one of the URLs anything exists at — and the same error
+    // says so, because it is the same rule.
+    try testing.expectError(error.AlternatesOmitThisPage, document.document(&em, doc));
+}
+
+test "a hand-built set gets the checks the derived one cannot need" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+
+    // Two languages at one address: one of them is unreachable and its
+    // readers are handed the other's — `LocaleStub`'s
+    // `ChoiceHrefsCollide` on the other page.
+    var doc = plain("Docs");
+    doc.meta = sitedWith("/en/docs/", &.{
+        .{ .hreflang = "en", .path = "/en/docs/" },
+        .{ .hreflang = "fa", .path = "/en/docs/" },
+    });
+    try testing.expectError(error.AlternatePathRepeated, write(&app, doc));
+
+    // Two `x-default`s, which is a driver wanting two default pages.
+    doc.meta = sitedWith("/en/docs/", &.{
+        .{ .hreflang = "en", .path = "/en/docs/" },
+        .{ .hreflang = "x-default", .path = "/docs/" },
+        .{ .hreflang = "x-default", .path = "/" },
+    });
+    try testing.expectError(error.AlternateHreflangRepeated, write(&app, doc));
+
+    // And an unrooted path, which would join to the origin as garbage.
+    doc.meta = sitedWith("/en/docs/", &.{
+        .{ .hreflang = "en", .path = "/en/docs/" },
+        .{ .hreflang = "fa", .path = "fa/docs/" },
+    });
+    try testing.expectError(error.PathNotRooted, write(&app, doc));
+}
+
+test "a page in one language annotates nothing, and that is the default" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    var doc = plain("Docs");
+    doc.meta = sited("/docs/");
+    const html = try write(&app, doc);
+    defer testing.allocator.free(html);
+    // One URL is not a choice between URLs, and the canonical above
+    // already said where the page lives.
+    try expectLacks(html, "rel=\"alternate\"");
+}
+
+test "the stub carries the same block, derived from the choices it already has" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    var stub = plainStub();
+    stub.published = .{ .origin = "https://example.com", .path = "/docs/" };
+    const html = try writeStub(&app, stub);
+    defer testing.allocator.free(html);
+
+    // Byte-identical to what every locale's copy carries — one writer
+    // over one shape, so the annotation is two-sided by construction
+    // and the driver restated neither the paths nor the tags.
+    try expectContains(html,
+        \\<link rel="alternate" hreflang="en" href="https://example.com/en/docs/">
+        \\<link rel="alternate" hreflang="fa" href="https://example.com/fa/docs/">
+        \\<link rel="alternate" hreflang="x-default" href="https://example.com/docs/">
+        \\
+    );
+    // x-default is this page. That is what a stub is.
+    try testing.expectEqual(@as(usize, 1), std.mem.count(u8, html, "hreflang=\"x-default\""));
+}
+
+test "a stub that does not say where it is says nothing about the set" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    const html = try writeStub(&app, plainStub());
+    defer testing.allocator.free(html);
+    // `published` is one optional rather than an origin and a path with
+    // nothing binding them, so half of an alternate block is unstatable.
+    try expectLacks(html, "rel=\"alternate\"");
+}
+
+test "a stub claiming an address owes the rules every other URL here owes" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+
+    var stub = plainStub();
+    stub.published = .{ .origin = "example.com", .path = "/docs/" };
+    try testing.expectError(error.OriginNotAbsolute, writeStub(&app, stub));
+
+    // The hrefs are free to be relative until this page claims an
+    // address: an `hreflang` is absolute or it is nothing.
+    stub = plainStub();
+    stub.choices.fa.href = "fa/docs/";
+    testing.allocator.free(try writeStub(&app, stub));
+    stub.published = .{ .origin = "https://example.com", .path = "/docs/" };
+    try testing.expectError(error.PathNotRooted, writeStub(&app, stub));
+}

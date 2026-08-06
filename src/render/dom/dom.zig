@@ -34,7 +34,9 @@
 
 pub const serialize = @import("serialize.zig");
 pub const stylesheet = @import("stylesheet.zig");
+const alternates_mod = @import("alternates.zig");
 const document_mod = @import("document.zig");
+const sitemap_mod = @import("sitemap.zig");
 
 pub const Emitter = serialize.Emitter;
 pub const Refs = serialize.Refs;
@@ -112,3 +114,26 @@ pub const LocaleStub = document_mod.LocaleStub;
 /// What a driver can get wrong about a `LocaleStub`, returned by
 /// `localeStub` before it writes a byte.
 pub const LocaleStubError = document_mod.LocaleStubError;
+
+/// Every URL one page also exists at, in another language: the set the
+/// head's `hreflang` links and the sitemap's `<xhtml:link>`s both spend
+/// (alternates.zig). It takes the bundle rather than a list of tags for
+/// `LocaleStub`'s reason — one required field per bundled locale, so
+/// completeness is a compile error rather than a runtime sweep — and it
+/// computes no path: the prefix scheme is the driver's whole.
+pub const Alternates = alternates_mod.Alternates;
+pub const Alternate = alternates_mod.Alternate;
+/// The reserved `hreflang` of the page a reader with no matching
+/// language is sent to — this edition's sniffing stub, standing at the
+/// unprefixed path. It is not a language, and it is not the default
+/// locale's URL.
+pub const x_default = alternates_mod.x_default;
+
+/// The `<urlset>`: every URL a generator published, with the same
+/// alternate set its head carries (sitemap.zig). It builds bytes into
+/// the caller's buffer and never a file — the filesystem stays the
+/// driver's, where the refused generation loop left it.
+pub const Sitemap = sitemap_mod.Sitemap;
+/// What a driver can get wrong about a sitemap, returned before a byte
+/// of it reaches the caller's buffer.
+pub const SitemapError = sitemap_mod.SitemapError;
