@@ -101,3 +101,14 @@ pub const MetaError = document_mod.MetaError;
 /// The document's language tag: the app's chosen locale, or the language
 /// nokre's own words are in when nothing has been chosen.
 pub const langTag = document_mod.langTag;
+
+/// The page at an unprefixed path on a locale-prefixed site: per-locale
+/// links and the script that picks between them, resolving the reader's
+/// tag exactly the way the bundle does (document.zig). It takes the
+/// bundle rather than a list of tags, so the set of locales it publishes
+/// is the ARB set and cannot be a second, disagreeing copy of it.
+pub const localeStub = document_mod.localeStub;
+pub const LocaleStub = document_mod.LocaleStub;
+/// What a driver can get wrong about a `LocaleStub`, returned by
+/// `localeStub` before it writes a byte.
+pub const LocaleStubError = document_mod.LocaleStubError;

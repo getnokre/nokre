@@ -804,8 +804,6 @@ Ten items, strictly sequential, one commit each. Contract changes bump
 `nokre.revision` and move all three pins in the same pass. Each item is deleted
 from this file as it lands, with its outcome recorded.
 
-6. **The locale axis** — the generation loop, prefix-all output paths, sniffing
-   stubs. B1 and B4.
 7. **hreflang, `x-default`, sitemap alternates** — B2 and B3, one derivation.
    The head half composes with item 5's `Document.meta`, which already holds the
    origin every alternate is joined to and already checks it; alternates are a
@@ -827,6 +825,159 @@ from this file as it lands, with its outcome recorded.
 
 One entry per finished item, with the ground for anything that changed shape.
 The queue above shrinks as this grows.
+
+### 6. The locale axis — SHIPPED as one page, revision 38. The loop was refused.
+
+**The open question this item asked — "is the loop worth owning at all?" — is
+answered no, and the stub is what was worth owning.** B1's own arithmetic is
+right: a generation pass is four lines over a set nokre already enumerates
+(`std.enums.values(L.Locale)`, `setLocale`/`setDirection`/`setChrome`, write).
+What a library loop would have had to own beyond those four lines is the
+output paths, the directory layout and the file writing — which is not a
+document shell, it is the build — plus a callback for everything a real
+generator does per page: the a11y audit, `takeAnchors` for the link check, the
+per-page canonical, the seed URL, the stale sweep. What it would have saved is
+the `for`. F.2 put the document in the library and this does not reopen that;
+it draws the line at the file system, where nothing in `src/render/dom` has
+ever reached.
+
+**B4 is decided and not built, deliberately.** Prefix-all is settled (F.4) and
+it is *policy the driver executes*: `Refs.resolve` already returns `/fa/…` for
+any route, so the URL half was expressible before this item, and F.1's test —
+an item asking nokre to own something the consumer invents dies the way A10.4
+died — applies to a path scheme by name. nokre computes no path here and
+carries no prefix anywhere. The refusal is recorded in dom-edition.md rather
+than only here, since the next round will otherwise re-derive it.
+
+**What shipped is `dom.localeStub(em, L, …)`** — the page at every unprefixed
+path, the one thing on the axis that has no home in a driver and is
+wrong-by-hand in ways nothing reports. `document.zig` writes it (the same
+file, sharing `headOpen` so the charset-first rule keeps one enforcer), and it
+is a second writer rather than a flag on `Document`: no mount points, no
+`data-n`, no boot, no screen, and no locale of its own.
+
+**It takes the bundle, not a list of tags, and that is the whole answer to
+B1's sharpest constraint.** `choices` is `std.enums.EnumFieldStruct(L.Locale,
+Choice, null)` — one required field per bundled locale — so the completeness
+invariant is a *type*, not a check: a bundled locale missing from a stub is a
+compile error, and a locale the ARB set does not carry cannot be written down
+at all. The tags themselves are never re-typed by the driver; `L.tag`/`L.dir`
+supply them. There is no `Site.locales` anywhere and no second source of truth
+to disagree with the catalog.
+
+**The destinations and the words stay the driver's**, item 5's line held
+exactly: an href per locale (the resolver's answer, copied) and a label per
+locale (a language's name in its own language is content, and this library has
+no catalog of them). What nokre checks is what a driver gets wrong about the
+pair it supplied — a choice with no destination, a choice with no words, and
+**two locales at one address**, which makes one language unreachable and hands
+its readers the other's. All three refuse before the doctype, `checkMeta`'s
+reason, and a test asserts the buffer is empty after a refusal.
+
+**The resolution is the bundle's, transcribed once and gated.** This is the
+one place in the library where a decision nokre owns is stated in two
+languages, and it could not be avoided: `Bundle.resolve` is comptime Zig and
+the stub loads no wasm on purpose — a redirect that first fetches an app is a
+redirect nobody waits for. So `src/render/dom/locale_stub.js` repeats the
+algorithm *in the library* (exact tag, then bare language in bundle order,
+then `L.default_locale`) over tags the bundle hands it, and the driver states
+no part of it. Three alternatives were considered and refused:
+`Intl.DateTimeFormat.supportedLocalesOf` with `localeMatcher: "lookup"`, which
+is RFC 4647 truncation and genuinely disagrees — `zh-Hans` against an
+`en`/`zh-Hant` bundle is `zh-Hant` under `resolve` and the template under
+lookup; a driver-supplied matcher, which is a second policy by construction;
+and shipping the function as a fifth `driver_file`, which costs a network
+round trip before a redirect and a 404 that fails silently.
+
+**What holds the transcription is a gate, not a comment.**
+`tests/locale_stub.zig` (native, host-run like the dev store and the http
+stress) writes one real stub page plus the locale `L.resolve` gives for 27
+device tags; `tests/locale_stub.mjs` executes **that page's own script** once
+per tag against a `location` and `navigator` of its own and asserts it
+navigates where Zig said. Neither file states an expected locale, so a change
+to the resolution rule moves both sides at once and a change to one alone
+fails the build. The same run asserts the no-JS half (a plain link per locale,
+marked with its `hreflang`) and two properties a hand-rolled redirect drops
+silently: the query and the fragment reach the destination, and a stub
+standing at one of its own choices navigates nowhere rather than spinning the
+browser. `zig build test`'s new line is
+`locale stub: 27 device tags, 3 locales — all ok`.
+
+**Three locales, and the third is what makes the gate a gate.** The first cut
+of this reused the web harness's `en`/`fa` pair, and that bundle cannot reach
+`resolve`'s middle pass in any interesting way: bare language **in bundle
+order** has one candidate when no two locales share a language, so
+`findIndex`, `findLastIndex` and an object's own key order all pass — and the
+one branch where a transcription could silently disagree was the one branch
+nothing executed. It is also exactly the branch where `Intl`'s lookup matcher
+was cited above as differing. So the gate has a bundle of its own,
+`tests/l10n/stub_*.arb`, listing **`fa-AF` before `fa`**: a browser reporting
+`fa-IR` then has two candidates and must land on the *earlier*, which is the
+answer a backwards scan or a bare-tag preference gets wrong. Not folded into
+`webcheck_*.arb`, on the owner's ground: that pair is item 3's locale-service
+gate and giving it a third locale would change a test to serve this one.
+Proven by breaking the ordering and watching it fire —
+`a browser reporting "fa-IR" was sent to https://nokre.test/fa/docs/, where
+L.resolve says https://nokre.test/fa-AF/docs/` — and, because a gap like this
+must not be able to return silently, the mjs also asserts that some probe
+*reaches* the contested pass at all and that Zig's answer for it really is the
+earliest candidate. That guard was proven too, against a thinned table: `no
+device tag in the table reaches the bundle-order pass with more than one
+candidate — the branch is untested, whatever the assertions above say`.
+
+**Three smaller calls worth recording.** The stub is in *no* locale, so its
+root element takes the template's — the language the script falls back to, so
+the document a reader passes through claims the language they are about to be
+sent to — and a test pins that against an app left in `fa` by a generation
+loop. It reads `navigator.language` and not `navigator.languages`, because the
+single tag is what live.js's boot pours into the locale service and the list
+would be a *disagreeing* answer between the stub and the page it lands on. And
+it stamps no `data-appearance`: no app boots here, so the media query is all
+the page has and is exactly right (`stylesheet.zig`'s `write`).
+
+**Considered and left out: a `L.select(app, loc)` for the loop's three
+setters.** Forgetting `setDirection` is a real silent defect — item 3's own
+finding — but `chrome(locale)` is a compile error in any bundle without the
+reserved chrome keys, so a three-in-one call would force chrome keys on every
+catalog whose app wanted it. A two-line version was not worth an export the
+documented three lines already give.
+
+**The script's bytes.** `@embedFile`d and written inline, so it ships in no
+site directory (the site's driver byte count is unchanged) and is parsed by
+the existing js gate as a sixth file. Its comments were cut to a nine-line
+header on the one-home rule — every argument in them was already in
+`localeStub`'s doc comment, and these bytes are on *every* stub page, where a
+paragraph is a paragraph per page. A stub is 1,934 bytes.
+
+**No consumer change beyond the pin, and that is correct.**
+`getnokre.github.io` takes its locale axis at item 9; migrating it here would
+have been item 9 done early and its URLs moved twice. **Site: 32 screens, 803
+references (798 → 803, the five new links being this pass's own doc
+cross-links), 1,051,573 bytes of markup.** Every byte accounted for: **+7,226**
+on the dom-edition page and **+2,126** on the testing page and **+668** on
+localization — this pass's documentation — plus **+5,835 / +1,909 / +575** on
+their copied Markdown; **+27** on the colophon's provenance stamp; and **+3**
+net across six pages from NodeId-derived values changing digit count, because
+a longer doc moves the pool's generation for the pages built after it.
+Normalizing `data-n`, `aria-labelledby="field-…"` and the radio groups' `name`
+leaves a diff of exactly the three doc pages and the colophon stamp.
+`sitemap.xml`, `robots.txt`, `style.css` and `favicon.svg` are byte-identical
+and **no file was added, removed or renamed** — which is the proof the URLs did
+not move.
+
+**What item 7 needs to know.** The stub is where `x-default` points, and its
+head seam is how a driver puts alternates on it today — if item 7 grows an
+alternates block for `Meta`, the stub wants the same treatment rather than a
+second shape, and it already holds the bundle needed to derive the set. The
+completeness invariant item 7 owes ("every bundled locale, exactly once") has a
+precedent here and it is a type rather than a check: prefer
+`EnumFieldStruct(L.Locale, …)` over a slice plus a runtime sweep. **What item 9
+needs to know**: the site's ~20 stubs are `localeStub` calls with a
+single-locale bundle, so every stub resolves to the one locale and the guard
+against a stub at its own address is what keeps the identity case from
+spinning; the `/en/…` prefix is entirely `links.zig`'s and `outPath`'s to
+write, and `failOnStale`'s walk is scoped to two shapes that both gain a
+locale segment.
 
 ### 5. Canonical, Open Graph, the Twitter card, `og:image` — SHIPPED, revision 37
 

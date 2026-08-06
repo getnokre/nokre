@@ -967,6 +967,55 @@ markup, that is; the locale it hands over is driven here — and IME and
 scrolling, which belong to the browser rather than to a service. Those remain
 browser-only, asserted by no test on either side.
 
+### The locale stub's own gate
+
+The other JavaScript nokre ships is one function, and it is the only
+place in the library where a decision nokre owns is stated *twice*.
+`dom.localeStub` writes the page at an unprefixed path on a
+locale-prefixed site, and the script in it has to resolve the reader's
+`navigator.language` against the bundled locale set exactly the way
+`Bundle.resolve` does — but it cannot call it. `resolve` is comptime
+Zig, and the stub loads no wasm on purpose: a redirect that first
+fetches an app is a redirect nobody waits for. So
+`src/render/dom/locale_stub.js` transcribes the algorithm, and a
+transcription with nothing under it is two policies waiting to disagree.
+
+`zig build test` runs both halves against each other.
+`tests/locale_stub.zig` — a native program, host-run like the dev store
+and the http stress — writes one real stub page and, beside it, the
+locale `L.resolve` gives for each of 27 device tags: exact matches in
+both cases and both separators, region and script subtags under a
+bundled language, languages the bundle does not carry, and the shapes a
+browser with nothing to say produces. `tests/locale_stub.mjs` then
+executes **that page's own script** once per tag, against a `location`
+and a `navigator` of its own, and asserts it navigates where Zig said it
+would.
+
+Neither file states an expected locale. The bundle states them, so a
+change to the resolution rule moves both sides at once and a change to
+one of them alone fails the build.
+
+**The bundle is three locales and its own, and the third one is the
+whole reason.** `resolve`'s middle pass is bare language **in bundle
+order**, and with no two locales sharing a language that loop has a
+single candidate — so `findIndex`, `findLastIndex` and an object's own
+key order all answer alike, and the one line most likely to drift is
+the one line nothing executes. So `tests/l10n/stub_*.arb` lists `fa-AF`
+*before* `fa`, and a browser reporting `fa-IR` has two candidates and
+must land on the earlier — deliberately the answer a transcription that
+scanned backwards, or that preferred the bare tag, would get wrong.
+That the bundle can still pose the question is itself asserted, so a
+later edit cannot quietly return the branch to being uncovered. It is a
+bundle of its own rather than the web harness's pair because that one
+is the locale service's gate and is about something else.
+
+The same run asserts what the page owes a reader whose script never ran
+— a plain link per locale, marked with its `hreflang` — and the two
+properties the script carries that a hand-rolled redirect drops
+silently: the query and the fragment reach the destination, and a stub
+standing at one of its own choices navigates nowhere rather than
+spinning the browser.
+
 Practically, for your app: an integration bug in nokre's shell or in a
 native service backend will not fail your test suite. Everything above
 `App.dispatch` will.

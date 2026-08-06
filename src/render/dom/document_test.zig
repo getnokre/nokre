@@ -735,3 +735,176 @@ test "two runs over one tree are byte-identical" {
     defer testing.allocator.free(b);
     try testing.expectEqualStrings(a, b);
 }
+
+// ------------------------------------------------------- the locale stub
+
+/// A real `l10n.Bundle`, because the stub's whole shape rests on what
+/// `Bundle` generates: `Locale` is built with `@Enum`, and `choices` is
+/// an `EnumFieldStruct` over it. A hand-written stand-in with a plain
+/// enum would prove the duck typing and not the thing under test. This
+/// is the one place under `render/` that names l10n at all, and it is a
+/// test — the writer itself takes the bundle as an anonymous comptime
+/// type and imports nothing.
+const l10n = @import("../../l10n/l10n.zig");
+
+const stub_en_arb =
+    \\{ "@@locale": "en", "hello": "Hello" }
+;
+const stub_fa_arb =
+    \\{ "@@locale": "fa", "hello": "سلام" }
+;
+const L = l10n.Bundle(&.{ stub_en_arb, stub_fa_arb });
+
+fn writeStub(app: *App, stub: document.LocaleStub(L)) ![]u8 {
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(testing.allocator);
+    var em: serialize.Emitter = .{ .gpa = testing.allocator, .app = app, .out = &out };
+    defer em.deinit();
+    try document.localeStub(&em, L, stub);
+    return out.toOwnedSlice(testing.allocator);
+}
+
+fn plainStub() document.LocaleStub(L) {
+    return .{
+        .title = "Choose a language",
+        .stylesheet = "/style.css",
+        .choices = .{
+            .en = .{ .href = "/en/docs/", .label = "English" },
+            .fa = .{ .href = "/fa/docs/", .label = "فارسی" },
+        },
+    };
+}
+
+test "every bundled locale gets a link, in the bundle's order" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    const html = try writeStub(&app, plainStub());
+    defer testing.allocator.free(html);
+
+    const en = "<a class=\"link\" href=\"/en/docs/\" hreflang=\"en\" lang=\"en\" dir=\"ltr\">English</a>";
+    // The direction is the bundle's answer for the locale, not the
+    // app's for the page: this document is in neither.
+    const fa = "<a class=\"link\" href=\"/fa/docs/\" hreflang=\"fa\" lang=\"fa\" dir=\"rtl\">فارسی</a>";
+    try expectContains(html, en);
+    try expectContains(html, fa);
+    try testing.expect(std.mem.indexOf(u8, html, en).? < std.mem.indexOf(u8, html, fa).?);
+    // Two locales in the bundle, two links on the page. The count is
+    // the completeness invariant read out of the output — the type
+    // enforces it, and this is what enforcement looks like from here.
+    try testing.expectEqual(@as(usize, 2), std.mem.count(u8, html, "<a class=\"link\""));
+}
+
+test "the stub is in the template's language, whatever the app is in" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    // A generation loop leaves the app in whichever locale it wrote
+    // last. The stub is not that page and must not claim to be.
+    try app.setLocale("fa");
+    app.setDirection(.rtl);
+    const html = try writeStub(&app, plainStub());
+    defer testing.allocator.free(html);
+    try expectContains(html, "<html lang=\"en\" dir=\"ltr\" data-direction=\"ltr\">");
+    // …and it is the same locale the script falls back to, so the
+    // document a reader passes through claims the language they are
+    // about to be sent to.
+    try expectContains(html, "\"fallback\":0");
+}
+
+test "the script's data is the bundle's tags and the driver's destinations" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    const html = try writeStub(&app, plainStub());
+    defer testing.allocator.free(html);
+    try expectContains(html,
+        \\nokreLocaleStub({"tags":["en","fa"],"hrefs":["/en/docs/","/fa/docs/"],"fallback":0});
+    );
+    // The whole resolution, once, in the library's own file — a driver
+    // states no part of it and cannot state it differently.
+    try expectContains(html, "function nokreLocaleStub(c) {");
+}
+
+test "the stub carries no screen, no boot and no ids" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Docs", .level = .h1 } });
+    const html = try writeStub(&app, plainStub());
+    defer testing.allocator.free(html);
+    try expectLacks(html, "Docs");
+    try expectLacks(html, "mount(");
+    try expectLacks(html, "data-n");
+    // No mount points either: there is nothing to boot into, so there
+    // are no ids for a driver to have invented.
+    try expectLacks(html, "id=\"");
+}
+
+test "a label cannot end the script block, and takes the other escape in the markup" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    var stub = plainStub();
+    stub.choices.fa = .{ .href = "/fa/</script>/", .label = "</script><script>alert(1)</script>" };
+    const html = try writeStub(&app, stub);
+    defer testing.allocator.free(html);
+    // The stub's own block ends exactly once, where the writer ended
+    // it. Inside it the driver's bytes went through `Emitter.json`,
+    // which is the escape a JSON document in raw text needs; in the
+    // anchor the same bytes went through `Emitter.text`, which is the
+    // one markup needs. Neither would do the other's job.
+    try testing.expectEqual(@as(usize, 1), std.mem.count(u8, html, "</script>"));
+    try expectContains(html, "\\u003C/script>");
+    try expectContains(html, "&lt;/script&gt;");
+}
+
+test "a stub cannot be written with a choice that goes nowhere" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+
+    var empty_href = plainStub();
+    empty_href.choices.fa.href = "";
+    try testing.expectError(error.ChoiceHrefEmpty, writeStub(&app, empty_href));
+
+    var empty_label = plainStub();
+    empty_label.choices.fa.label = "";
+    try testing.expectError(error.ChoiceLabelEmpty, writeStub(&app, empty_label));
+
+    // Two locales at one address: the second language is then
+    // unreachable from here and its readers are handed the first's,
+    // which is the exact failure the stub exists to prevent.
+    var collide = plainStub();
+    collide.choices.fa.href = collide.choices.en.href;
+    try testing.expectError(error.ChoiceHrefsCollide, writeStub(&app, collide));
+}
+
+test "a refused stub leaves no bytes behind" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    var out: std.ArrayList(u8) = .empty;
+    defer out.deinit(testing.allocator);
+    var em: serialize.Emitter = .{ .gpa = testing.allocator, .app = &app, .out = &out };
+    defer em.deinit();
+    var bad = plainStub();
+    bad.choices.en.href = "";
+    try testing.expectError(error.ChoiceHrefEmpty, document.localeStub(&em, L, bad));
+    // Checked before the doctype, `checkMeta`'s reason: a half-written
+    // file published is worse than a build that failed.
+    try testing.expectEqual(@as(usize, 0), out.items.len);
+}
+
+test "the stub's head keeps the charset in the first bytes and the seam last" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    var stub = plainStub();
+    stub.head = "<meta name=\"robots\" content=\"noindex\">\n";
+    stub.heading = "Choose a language";
+    const html = try writeStub(&app, stub);
+    defer testing.allocator.free(html);
+    const charset = std.mem.indexOf(u8, html, "<meta charset=\"utf-8\">").?;
+    const script = std.mem.indexOf(u8, html, "<script>").?;
+    const seam = std.mem.indexOf(u8, html, "robots").?;
+    const head_end = std.mem.indexOf(u8, html, "</head>").?;
+    try testing.expect(charset < script);
+    try testing.expect(script < seam);
+    try testing.expect(seam < head_end);
+    // The script is in the head and blocking: everything below it is a
+    // page the reader is not meant to see.
+    try testing.expect(head_end < std.mem.indexOf(u8, html, "<h1 class=\"s-h1\">Choose a language</h1>").?);
+}

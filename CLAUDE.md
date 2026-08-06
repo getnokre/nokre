@@ -26,7 +26,10 @@ fact has one home; complement, never duplicate. Start with
   booted by node against the browser stub `tests/web_browser.mjs`, the
   one gate where the three web-only service legs (deep_link, oauth,
   secure_store) execute at all (`docs/testing.md`, "The web's own
-  gate"). node is the build's only external tool and both steps want it
+  gate"), plus `tests/locale_stub.mjs`, which runs a generated locale
+  stub's own script against `Bundle.resolve`'s answers — the one place
+  a decision this library owns is stated in two languages
+  (`docs/testing.md`, "The locale stub's own gate"). node is the build's only external tool and both steps want it
   on PATH; the build **fails without it** rather than passing a check it
   did not run — `-Djs-parse=false` is how you say you meant to skip both.
   With `-Dskia` it also links the examples, which is the desktop link

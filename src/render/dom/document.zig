@@ -28,6 +28,15 @@
 //! and the facts it already holds: the locale, the direction, the class
 //! list, the paper of both ramps, the module the page boots.
 //!
+//! **The one page here with no screen in it** is `localeStub`, and it
+//! is in this file rather than beside it because it is the same
+//! document minus everything: the doctype, the head's fixed tags and
+//! the charset-first rule are shared (`headOpen`), and what is left is
+//! a list of links and a script. It has no mount points, no `data-n`,
+//! no boot and no locale of its own — a page *about* the locale set
+//! rather than one written in a locale — which is why it is a second
+//! writer instead of a flag on `Document`.
+//!
 //! **The two seams are bytes, not hooks.** `head` and `body_end` are
 //! markup the driver already built, spliced where their names say. A
 //! `fn (em)` hook would hand the driver `em.out` and re-open the door
@@ -337,34 +346,7 @@ pub fn document(em: *Emitter, doc: Document) !void {
     }
     try em.raw(">\n");
 
-    try em.raw(
-        \\<head>
-        \\<meta charset="utf-8">
-        \\<meta name="viewport" content="width=device-width, initial-scale=1">
-        \\<title>
-    );
-    try em.text(doc.title);
-    try em.raw("</title>\n");
-    if (doc.description.len != 0) {
-        try em.raw("<meta name=\"description\" content=\"");
-        try em.text(doc.description);
-        try em.raw("\">\n");
-    }
-    try em.raw("<link rel=\"stylesheet\" href=\"");
-    try em.text(doc.stylesheet);
-    try em.raw("\">\n");
-    // The browser chrome around the page, painted in the page's own
-    // paper — both ramps, because a hardcoded pair would sit still while
-    // a ramp change moved every page behind it. It is the same fact the
-    // sheet's `--paper` carries, said in the one place CSS cannot reach.
-    try em.print(
-        \\<meta name="theme-color" media="(prefers-color-scheme: light)" content="#{x:0>2}{x:0>2}{x:0>2}">
-        \\<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#{x:0>2}{x:0>2}{x:0>2}">
-        \\
-    , .{
-        Gray.paper.byte(.light), Gray.paper.byte(.light), Gray.paper.byte(.light),
-        Gray.paper.byte(.dark),  Gray.paper.byte(.dark),  Gray.paper.byte(.dark),
-    });
+    try headOpen(em, doc.title, doc.description, doc.stylesheet);
     if (doc.meta) |m| try metaTags(em, doc, m);
     try em.raw(doc.head);
     try em.raw("</head>\n<body>\n");
@@ -402,6 +384,46 @@ pub fn document(em: *Emitter, doc: Document) !void {
     try em.raw(doc.body_end);
     if (doc.boot) |b| try bootScript(em, doc, b, chosen);
     try em.raw("</body>\n</html>\n");
+}
+
+/// `<head>` and the tags every page this module writes carries,
+/// whatever else is in it — the charset first, because a browser stops
+/// looking for it after the first bytes, and everything else that is a
+/// fact rather than a destination.
+///
+/// Shared by the two writers here so that the rule about the first
+/// bytes has one enforcer rather than one per page shape. Neither the
+/// element nor the seam is closed: the caller writes its own tags after
+/// this and closes the head itself.
+fn headOpen(em: *Emitter, title: []const u8, description: []const u8, sheet: []const u8) !void {
+    try em.raw(
+        \\<head>
+        \\<meta charset="utf-8">
+        \\<meta name="viewport" content="width=device-width, initial-scale=1">
+        \\<title>
+    );
+    try em.text(title);
+    try em.raw("</title>\n");
+    if (description.len != 0) {
+        try em.raw("<meta name=\"description\" content=\"");
+        try em.text(description);
+        try em.raw("\">\n");
+    }
+    try em.raw("<link rel=\"stylesheet\" href=\"");
+    try em.text(sheet);
+    try em.raw("\">\n");
+    // The browser chrome around the page, painted in the page's own
+    // paper — both ramps, because a hardcoded pair would sit still while
+    // a ramp change moved every page behind it. It is the same fact the
+    // sheet's `--paper` carries, said in the one place CSS cannot reach.
+    try em.print(
+        \\<meta name="theme-color" media="(prefers-color-scheme: light)" content="#{x:0>2}{x:0>2}{x:0>2}">
+        \\<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#{x:0>2}{x:0>2}{x:0>2}">
+        \\
+    , .{
+        Gray.paper.byte(.light), Gray.paper.byte(.light), Gray.paper.byte(.light),
+        Gray.paper.byte(.dark),  Gray.paper.byte(.dark),  Gray.paper.byte(.dark),
+    });
 }
 
 /// The document's language, as a BCP 47 tag.
@@ -636,4 +658,272 @@ fn js(em: *Emitter, s: []const u8) !void {
         '\r' => try em.raw("\\r"),
         else => try em.out.append(em.gpa, c),
     };
+}
+
+// ------------------------------------------------------- the locale stub
+
+/// The whole browser half of the stub, inlined into every one of them.
+/// It is `Bundle.resolve` transcribed into the one language that cannot
+/// call it — see `localeStub` for why a transcription is the only shape
+/// available here, and tests/locale_stub.mjs for the gate that holds the
+/// two identical.
+const locale_stub_js = @embedFile("locale_stub.js");
+
+comptime {
+    // These bytes go *inline* into a `<script>`, where three sequences
+    // end or re-open the block (serialize.zig's `json` carries the
+    // tokenizer's argument). Driver strings reach it through `json`,
+    // which escapes them; this file is the library's own and is checked
+    // instead — the class_names.zig arrangement, where a fact the
+    // compiler cannot follow into a `.js` file is grepped at comptime.
+    @setEvalBranchQuota(8 * locale_stub_js.len + 1000);
+    for ([_][]const u8{ "</script", "<!--", "<script" }) |hazard| {
+        if (std.mem.indexOf(u8, locale_stub_js, hazard) != null)
+            @compileError("nokre: locale_stub.js carries '" ++ hazard ++
+                "', which ends or re-opens the script block it is written into");
+    }
+}
+
+/// What a driver can get wrong about a `LocaleStub`, returned before it
+/// writes a byte — a page that fails halfway is worse than none, and
+/// every one of these is a build-time mistake rather than a reader's.
+pub const LocaleStubError = error{
+    /// A locale's choice names no destination, so the reader who picks
+    /// it — or is sent there — arrives nowhere.
+    ChoiceHrefEmpty,
+    /// A locale's choice has no words, so the link with the script
+    /// blocked is an anchor a reader cannot read and a screen reader
+    /// cannot name.
+    ChoiceLabelEmpty,
+    /// Two locales point at the same page. One of them is then
+    /// unreachable from here and its readers are silently handed the
+    /// other's language — the failure a stub exists to prevent.
+    ChoiceHrefsCollide,
+};
+
+/// The page at an *unprefixed* path: no screen, no boot, no data — the
+/// per-locale copies of one page and a script that picks between them.
+///
+/// **Why it is a page at all.** Static hosting can neither read
+/// `Accept-Language` nor answer with a 301 — GitHub Pages has no
+/// redirect rules — so the only place the choice can be made is in the
+/// document the reader already got. Every page a locale axis publishes
+/// lives at `/{locale}/…` and **is never redirected away from**: one
+/// URL showing different content to different readers is what breaks
+/// sharing and canonicalisation both. The stub is the other side of
+/// that rule — the one address that is allowed to be about the reader,
+/// because it has no locale of its own to be wrong about.
+///
+/// **What the driver supplies is every destination and every word**:
+/// where each locale's copy of this page is published, and what that
+/// language is called. Neither is derivable — nokre does not know where
+/// a site puts anything (`Meta` draws the same line), and a locale's
+/// name in its own language is content this library has no catalog for.
+///
+/// **What it cannot supply is the locale set.** `choices` has one field
+/// per bundled locale, generated from `L.Locale` itself, so a locale in
+/// the bundle and missing here is a compile error and a locale here
+/// that the bundle does not carry cannot be written down. That is the
+/// completeness invariant stated as a type rather than checked at run
+/// time — and it is the whole reason this call takes the bundle instead
+/// of a list of tags, which would be a second source of truth that can
+/// disagree with the ARB set (`dom.driver_files` exists for the same
+/// failure).
+pub fn LocaleStub(comptime L: type) type {
+    return struct {
+        /// The `<title>`, escaped here. In whatever language the driver
+        /// judges a reader arriving with no locale reads best; the root
+        /// element says the template's, which is where the script sends
+        /// a reader it cannot place.
+        title: []const u8,
+        /// Where the driver published the edition's stylesheet.
+        /// Required for `Document`'s reason: a page that does not link
+        /// it is unstyled markup and nothing says so.
+        stylesheet: []const u8,
+        /// The words above the list, if the driver wants any. Empty
+        /// writes no heading — a stub is a list of languages and reads
+        /// as one without a sentence over it.
+        heading: []const u8 = "",
+        /// Markup spliced at the end of `<head>`. The alternates a
+        /// crawler reads here are the driver's for now (item 7's
+        /// `hreflang` block is what will move them), and so is any
+        /// robots directive: what an unprefixed address is *for* is
+        /// indexing policy, which is the site resolver's.
+        head: []const u8 = "",
+        /// One per bundled locale, named by it. The type is generated
+        /// from `L.Locale`, so this cannot be short, long, or spelled
+        /// for a locale the bundle does not have.
+        choices: std.enums.EnumFieldStruct(L.Locale, Choice, null),
+
+        /// One locale's copy of the page this stub stands at.
+        pub const Choice = struct {
+            /// Where that copy is published — absolute or relative to
+            /// this page, since the script resolves it against
+            /// `location` either way. The path scheme is the driver's
+            /// whole: nokre computes no path here and no prefix.
+            href: []const u8,
+            /// The language's name **in that language**, which is the
+            /// only form a reader who cannot read this page's language
+            /// can act on. It is also the anchor's `lang`, so a screen
+            /// reader says it in the right voice.
+            label: []const u8,
+        };
+    };
+}
+
+/// Writes the stub: the document, the links a reader with no JavaScript
+/// chooses from, and the script that chooses for everyone else.
+///
+/// **The resolution is the bundle's, and there is no second policy.**
+/// The script cannot call `L.resolve` — that function is comptime Zig
+/// in a wasm module this page deliberately does not load, since a
+/// redirect that first fetches an app is a redirect nobody waits for.
+/// So the algorithm is transcribed into locale_stub.js *once, in the
+/// library*, over the tags the bundle itself hands out here: exact tag
+/// (case and `-`/`_` ignored), then bare language in bundle order, then
+/// `L.default_locale`. A driver states none of it and cannot state it
+/// differently. What holds the transcription honest is a gate rather
+/// than a comment — tests/locale_stub.mjs runs *this* page's script
+/// against `L.resolve`'s own answers over a table of device tags, so a
+/// change to either side that the other does not follow fails the build
+/// (docs/testing.md, "The locale stub's own gate").
+///
+/// **`navigator.language`, not `navigator.languages`.** The single tag
+/// is what live.js's boot pours into the locale service, so the stub
+/// and the page it lands on read the reader the same way. The list
+/// would be a better answer to a different question and a *disagreeing*
+/// answer to this one.
+///
+/// **The links are not a fallback anyone should have to think about.**
+/// They are the document; the script is what saves a reader from
+/// reading it. A stub whose script does not run — blocked, unsupported,
+/// a crawler — is a page offering a choice rather than a blank frame,
+/// which is the whole reason this is a page and not a
+/// `<meta http-equiv="refresh">`.
+///
+/// **Two things the script carries across, and both are losses a
+/// hand-rolled redirect takes silently.** The query and the fragment
+/// are the *reader's* — a shared `/docs/#the-seams` has to arrive at
+/// `/en/docs/#the-seams` or the link no longer names what it named — so
+/// they are copied onto the destination unless it states its own. And a
+/// stub whose own address is one of its choices navigates nowhere: the
+/// comparison is against the resolved URL, so a driver that published a
+/// stub over a locale's page gets a page that stands still rather than
+/// a browser that spins.
+///
+/// The script's own bytes are the library's, written to the page
+/// unescaped — a comptime check refuses a `locale_stub.js` carrying
+/// anything that could end the block. Every driver-supplied byte in
+/// there is a string inside the JSON argument, and goes through
+/// `Emitter.json`.
+pub fn localeStub(em: *Emitter, comptime L: type, stub: LocaleStub(L)) !void {
+    const locales = comptime std.enums.values(L.Locale);
+    try checkStub(L, stub);
+
+    // The stub is in no locale — that is what it is for — so the root
+    // element takes the template's, which is the language the script
+    // falls back to. A reader it cannot place lands on that page, and
+    // the document they were served on the way there claims the same
+    // language rather than the last one the generator happened to be
+    // in.
+    const def = L.default_locale;
+    try em.raw("<!doctype html>\n<html lang=\"");
+    try em.text(L.tag(def));
+    const dir = @tagName(L.dir(def));
+    try em.print("\" dir=\"{s}\" data-direction=\"{s}\">\n", .{ dir, dir });
+
+    try headOpen(em, stub.title, "", stub.stylesheet);
+
+    // In the head, and blocking, because everything below it is a page
+    // the reader is not meant to see: a redirect that waits for the
+    // body is a chooser that flashes up and disappears. Nothing here
+    // touches the DOM — `location` and `navigator` are all it reads —
+    // so there is nothing to wait for either.
+    //
+    // No `data-appearance` above it for the reason stylesheet.zig's
+    // `write` gives: no app boots on this page, so the media query is
+    // all it has to go on and is exactly right.
+    try em.raw("<script>\n");
+    try em.raw(locale_stub_js);
+    try em.raw("nokreLocaleStub(");
+    try stubData(em, L, stub);
+    try em.raw(");\n</script>\n");
+    try em.raw(stub.head);
+    try em.raw("</head>\n<body>\n");
+
+    // `class_names.root` and nothing else: `rootClass`'s conditional
+    // half is `layout.hasBottomChrome` over a screen, and there is no
+    // screen here. The two class names inside are the sheet's own,
+    // spelled the way serialize.zig spells them — one compile, one
+    // stylesheet.
+    try em.print("<main class=\"{s}\">\n", .{class_names.root});
+    if (stub.heading.len != 0) {
+        try em.raw("<h1 class=\"s-h1\">");
+        try em.text(stub.heading);
+        try em.raw("</h1>\n");
+    }
+    try em.raw("<nav class=\"stack\">\n");
+    inline for (locales) |loc| {
+        const choice = @field(stub.choices, @tagName(loc));
+        const tag = comptime L.tag(loc);
+        try em.raw("<a class=\"link\" href=\"");
+        try em.text(choice.href);
+        // `hreflang` is what the destination is in; `lang` is what the
+        // words in the anchor are in. They are the same tag here and
+        // they are not the same claim — one is for a crawler deciding
+        // which copy to index, the other for a screen reader deciding
+        // how to pronounce "فارسی".
+        try em.print("\" hreflang=\"{s}\" lang=\"{s}\" dir=\"{s}\">", .{
+            tag, tag, @tagName(comptime L.dir(loc)),
+        });
+        try em.text(choice.label);
+        try em.raw("</a>\n");
+    }
+    try em.raw("</nav>\n</main>\n</body>\n</html>\n");
+}
+
+fn checkStub(comptime L: type, stub: LocaleStub(L)) LocaleStubError!void {
+    const locales = comptime std.enums.values(L.Locale);
+    var hrefs: [locales.len][]const u8 = undefined;
+    inline for (locales, 0..) |loc, i| {
+        const choice = @field(stub.choices, @tagName(loc));
+        if (choice.href.len == 0) return error.ChoiceHrefEmpty;
+        if (choice.label.len == 0) return error.ChoiceLabelEmpty;
+        for (hrefs[0..i]) |taken| {
+            if (std.mem.eql(u8, taken, choice.href)) return error.ChoiceHrefsCollide;
+        }
+        hrefs[i] = choice.href;
+    }
+}
+
+/// The script's one argument: the bundle's tags in the bundle's order,
+/// the driver's destinations beside them, and the index the bundle
+/// falls back to.
+///
+/// Serialized with `std.json` and written through `Emitter.json`,
+/// because every string in it is a driver's — a label carrying
+/// `</script>` would otherwise end the block, and the same label
+/// through `Emitter.text` would arrive as five characters of nothing
+/// inside raw text.
+///
+/// The fallback travels as an index rather than being assumed to be
+/// zero: it is `L.default_locale`'s position, read from the bundle, and
+/// a reader of the emitted page can see which one it is.
+fn stubData(em: *Emitter, comptime L: type, stub: LocaleStub(L)) !void {
+    const locales = comptime std.enums.values(L.Locale);
+    var tags: [locales.len][]const u8 = undefined;
+    var hrefs: [locales.len][]const u8 = undefined;
+    var fallback: usize = 0;
+    inline for (locales, 0..) |loc, i| {
+        tags[i] = comptime L.tag(loc);
+        hrefs[i] = @field(stub.choices, @tagName(loc)).href;
+        if (loc == L.default_locale) fallback = i;
+    }
+    const doc = try std.json.Stringify.valueAlloc(em.gpa, .{
+        .tags = tags[0..],
+        .hrefs = hrefs[0..],
+        .fallback = fallback,
+    }, .{});
+    defer em.gpa.free(doc);
+    try em.json(doc);
 }

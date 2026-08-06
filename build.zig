@@ -1231,6 +1231,10 @@ pub fn build(b: *std.Build) void {
     // calls them? A wasm app, the site's own live.js, and node.
     addWebServicesCheck(b, test_step, js_parse);
 
+    // And the one decision this library states twice, in two languages:
+    // the locale a stub sends a reader to.
+    addLocaleStubCheck(b, test_step, target, js_parse);
+
     if (update_goldens and !enable_golden) {
         const fail = b.addFail("-Dupdate-goldens requires -Dgolden: `zig build test -Dskia -Dgolden -Dupdate-goldens`");
         test_step.dependOn(&fail.step);
@@ -1798,8 +1802,8 @@ const JsShipped = struct {
 /// added to one list but not the other would ship unparsed — or be
 /// parsed and never shipped. Only the *goal* is stated here, because
 /// only this check needs it.
-const js_shipped: [dom_driver_files.len + 1]JsShipped = blk: {
-    var list: [dom_driver_files.len + 1]JsShipped = undefined;
+const js_shipped: [dom_driver_files.len + 2]JsShipped = blk: {
+    var list: [dom_driver_files.len + 2]JsShipped = undefined;
     for (dom_driver_files, 0..) |f, i| {
         list[i] = .{
             .path = "src/render/dom/" ++ f,
@@ -1810,6 +1814,12 @@ const js_shipped: [dom_driver_files.len + 1]JsShipped = blk: {
         };
     }
     list[dom_driver_files.len] = .{ .path = "src/packaging/testdata/boot.js", .ext = ".mjs" };
+    // The stub's script is the one file here that ships in no site: it
+    // is `@embedFile`d and written *inline* into every page
+    // `dom.localeStub` produces, which is why it is not in
+    // `driver_files` and why it is a classic script — a module in a
+    // `<script>` with no `type` is not what a browser would run.
+    list[dom_driver_files.len + 1] = .{ .path = "src/render/dom/locale_stub.js", .ext = ".cjs" };
     break :blk list;
 };
 
@@ -1924,6 +1934,61 @@ fn addWebServicesCheck(b: *std.Build, step: *std.Build.Step, enabled: bool) void
     // A substring, on stderr, for addDevStoreCheck's reason: asserting
     // the program's last line asserts every scenario before it ran.
     run.expectStdErrMatch("web services: deep_link, oauth, secure_store, locale — all ok");
+    run.expectExitCode(0);
+    step.dependOn(&run.step);
+}
+
+/// The locale stub's gate, and the reason it is a gate rather than a
+/// comment: `dom.localeStub` writes a page whose script has to make the
+/// same decision `l10n`'s `Bundle.resolve` makes, in a language that
+/// cannot call it. Two implementations of one policy is exactly the
+/// arrangement this repository refuses everywhere else — so the one
+/// place it is unavoidable gets the strongest available substitute, a
+/// gate that runs both and compares.
+///
+/// `tests/locale_stub.zig` (native, host-run like the dev store and the
+/// http stress) writes one real stub page and the answers `L.resolve`
+/// gives for a table of device tags; `tests/locale_stub.mjs` executes
+/// *that page's own script* per tag and asserts it lands where Zig said.
+/// Neither file states an expected locale: the bundle states them.
+///
+/// It rides `-Djs-parse` for `addWebServicesCheck`'s reason — it asks
+/// for node and for the shipped JavaScript actually executed — and it
+/// needs the host to be the target, since the writer is run, not
+/// merely built.
+fn addLocaleStubCheck(b: *std.Build, step: *std.Build.Step, target: std.Build.ResolvedTarget, enabled: bool) void {
+    if (!enabled) return;
+    const t = target.result;
+    if (t.os.tag != builtin.os.tag or t.cpu.arch != builtin.cpu.arch) return;
+    const node = b.findProgram(&.{"node"}, &.{}) catch return;
+
+    const nokre_mod = b.createModule(.{
+        .root_source_file = b.path("src/nokre.zig"),
+        .target = target,
+        .optimize = .Debug,
+    });
+    configureNokre(b, nokre_mod, null, .{}, false);
+    const exe = b.addExecutable(.{ .name = "locale-stub-check", .root_module = b.createModule(.{
+        .root_source_file = b.path("tests/locale_stub.zig"),
+        .target = target,
+        .optimize = .Debug,
+        .imports = &.{.{ .name = "nokre", .module = nokre_mod }},
+    }) });
+
+    // The page and the table are outputs of the run, so the two halves
+    // cannot drift by one being regenerated without the other.
+    const write = b.addRunArtifact(exe);
+    const page = write.addOutputFileArg("stub.html");
+    const answers = write.addOutputFileArg("resolve.json");
+
+    const run = b.addSystemCommand(&.{node});
+    run.addFileArg(b.path("tests/locale_stub.mjs"));
+    run.addFileArg(page);
+    run.addFileArg(answers);
+    run.setName("run tests/locale_stub.mjs");
+    // A substring, on stderr, for addDevStoreCheck's reason: asserting
+    // the program's last line asserts every case before it ran.
+    run.expectStdErrMatch("locale stub:");
     run.expectExitCode(0);
     step.dependOn(&run.step);
 }

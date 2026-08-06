@@ -1,0 +1,7 @@
+{
+  "@@locale": "en",
+  "language": "English",
+  "@language": {
+    "description": "This locale's own name, as the locale stub's link to it says it"
+  }
+}

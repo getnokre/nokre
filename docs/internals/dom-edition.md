@@ -477,6 +477,113 @@ rather than a repaint — node ids are stated in both drivers' output, so
 the heading the reader landed on is the same node afterwards and their
 scroll position survives.
 
+#### The locale axis, and the one page that is about the reader
+
+A multi-locale site regenerates its whole tree once per bundled locale.
+Almost none of that is this library's, and the part that is, is one
+page.
+
+**What the driver owns, and it is nearly all of it.** The loop, the
+output paths, the prefix scheme, which routes exist, where each locale's
+copy is published. A generation pass is four lines over a set nokre can
+already enumerate —
+
+```zig
+inline for (comptime std.enums.values(L.Locale)) |loc| {
+    try app.setLocale(L.tag(loc));      // the page's language, and its `lang`
+    app.setDirection(L.dir(loc));       // and how it is laid out
+    app.setChrome(L.chrome(loc));       // nokre's own words, if the catalog has them
+    try writeEveryPage(&app, loc);      // the driver's, entirely
+}
+```
+
+— and every line of it is either an existing call or a decision about
+where files go. A loop in the library would have had to own the output
+paths, the directory layout and the file writing, which is not a
+document shell: it is the build. It would also have had to call back
+into everything a real generator does per page — the a11y audit, the
+anchor harvest for the link check, the per-page canonical, the seed URL
+— so what it saved would be the `for`, and what it cost is a callback
+interface for the rest. `Refs.resolve` already lets a driver answer
+`/fa/…` for any route, which is the URL half; the path scheme stays
+where round two put ids and addressing modes, in the driver's hands.
+
+**What the library owns is `dom.localeStub`** — the page at every
+*unprefixed* path. Every page a locale axis publishes lives at
+`/{locale}/…` and **is never redirected away from**: one URL showing
+different content to different readers breaks sharing and
+canonicalisation both, and hreflang and canonical require one URL per
+locale variant to point at. That leaves the reader who arrives with no
+locale in the address, and static hosting can answer them nowhere else
+— GitHub Pages reads no `Accept-Language` and has no redirect rules —
+so the answer is a page:
+
+```zig
+try dom.localeStub(&em, L, .{
+    .title = "nokre",
+    .stylesheet = "/style.css",
+    .heading = "Choose a language",
+    .choices = .{                      // one field per bundled locale
+        .en = .{ .href = "/en/docs/", .label = "English" },
+        .fa = .{ .href = "/fa/docs/", .label = "فارسی" },
+    },
+});
+```
+
+- **The locale set is the bundle's, by type.** `choices` is an
+  `EnumFieldStruct` over `L.Locale`, so a bundled locale missing here is
+  a compile error and a locale the bundle does not carry cannot be
+  written down at all. This is why the call takes the bundle instead of
+  a list of tags: a declared list is a second source of truth that can
+  silently disagree with the ARB set — a locale in the list and not the
+  bundle publishes a tree of template strings under its prefix, one in
+  the bundle and not the list is never published — which is exactly the
+  failure [driver_files.zig](../../src/render/dom/driver_files.zig)
+  exists to prevent.
+- **The destinations and the words are the driver's.** Where each
+  locale's copy lives is the resolver's answer, copied; a language's
+  name in its own language is content, and this library has no catalog
+  of them. What it checks is what a driver gets wrong about the pair: a
+  choice with no destination, a choice with no words, and **two locales
+  at one address**, which makes one language unreachable and hands its
+  readers the other's — refused before a byte is written, `checkMeta`'s
+  reason.
+- **The resolution is `Bundle.resolve`, and there is no second policy.**
+  The script cannot call it — that is comptime Zig, and this page loads
+  no wasm on purpose, since a redirect that first fetches an app is a
+  redirect nobody waits for — so
+  [locale_stub.js](../../src/render/dom/locale_stub.js) transcribes it
+  *once, in the library*, over tags the bundle itself hands out: exact
+  tag (case and `-`/`_` ignored), then bare language in bundle order,
+  then `L.default_locale`. It reads `navigator.language`, the same one
+  live.js's boot pours into the locale service, so the stub and the page
+  it lands on read the reader alike; `navigator.languages` would be a
+  better answer to a different question and a disagreeing answer to this
+  one. What keeps a transcription honest is a gate rather than a comment
+  — [testing.md](../testing.md)'s "The locale stub's own gate" runs the
+  emitted page's own script against `L.resolve`'s answers.
+- **The links are the document; the script is what saves a reader from
+  reading it.** With the script blocked, unsupported, or a crawler, the
+  page offers a choice instead of a blank frame — which is the reason
+  this is a page and not a `<meta http-equiv="refresh">`. Each anchor
+  carries `hreflang` (what the destination is in) *and* `lang` (what the
+  words in it are in, so "فارسی" is pronounced in the right voice), plus
+  the direction the bundle gives that locale.
+- **The stub is in no locale**, so its root element takes the
+  template's — the language the script falls back to, which is where a
+  reader it cannot place is going anyway. It stamps no
+  `data-appearance` either: no app boots here, so the media query is
+  all the page has to go on and is exactly right.
+- **The query and the fragment are carried across.** A shared
+  `/docs/#the-seams` arrives at `/en/docs/#the-seams`; a stub that
+  resolves to its own address navigates nowhere rather than spinning.
+
+What the stub does *not* say is what an unprefixed address is for. A
+`noindex`, or the `hreflang` block that names it `x-default`, is
+indexing policy — the site resolver's, in exactly the sense
+[audit.zig](../../src/testing/audit.zig)'s `Options.skip` draws it — and
+goes in through the head seam.
+
 ### Services are not the edition's business
 
 A compute worker has no more to do with markup than it has with Skia,

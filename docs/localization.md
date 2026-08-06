@@ -65,6 +65,15 @@ line above is where the `lang` attribute on a serialized document comes
 from, so an app that renders pages without it publishes them claiming a
 language it may not be speaking.
 
+A static site that publishes every locale runs those same lines once per
+`L.Locale` and writes its tree again inside the loop — the loop, the
+output paths and the URL scheme are the generator's, and nokre asks for
+no list of locales anywhere, since the bundle is the list. The one page
+it *does* write for you is the chooser at an unprefixed address, whose
+script resolves the reader's tag through the rule above rather than a
+second one: `dom.localeStub`, in
+[internals/dom-edition.md](internals/dom-edition.md#the-locale-axis-and-the-one-page-that-is-about-the-reader).
+
 ## The format
 
 An ARB file is a JSON object. `@@locale` is required — nokre embeds
