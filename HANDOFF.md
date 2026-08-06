@@ -333,16 +333,15 @@ reciprocity turned out not to need enforcing at all.
 
 ### B4. The output-path scheme
 
-The reference driver maps home → `index.html`, 404 → `404.html`, else
-`<route>/index.html` (`main.zig`'s `outPath`; the survey pointed at
-`failOnStale` instead). A locale axis
-multiplies that, and the default-locale question (`/en/…` versus bare) is a real
-fork the consumer has already answered one way (Astro's
-`prefixDefaultLocale: true`).
-
-Worth deciding alongside B1 rather than after: it determines whether the
-canonical for the home page is `/` or `/en/`, which determines what the redirect
-stub at `/` must say, which the consumer already has two of.
+**DECIDED in F.4 and EXECUTED in item 9 — in the driver, where it belongs.**
+The reference driver now maps home → `<tag>/index.html`, else
+`<tag>/<route>/index.html`, with the old unprefixed shape kept exactly as it
+was for the chooser stub, and 404 → `404.html` once, from the template locale
+(`main.zig`'s `outPath` and `stubPath`). nokre carries no prefix and computes no
+path; the whole scheme is thirty lines of consumer code. The home page's
+canonical is `/en/` and the stub at `/` is a real page rather than a redirector,
+which is what F.4's "no locale version is ever just a redirector" means read in
+both directions. See "Landed" below.
 
 ### B5. Route references are ASCII-only
 
@@ -575,64 +574,31 @@ were deleted. Full receipts at `git show 3855adf:HANDOFF.md`:
 
 ---
 
-## Part G — dogfood on this site, and give it a locale axis of one
+## Part G — dogfood on this site — SHIPPED in item 9
 
-*Owner-raised 2026-08-06. Not a proposal for a feature; a proposal for how the
-features in Parts A and B get proven before a second consumer bets on them.*
+**EXECUTED whole, with the URL move.** `getnokre.github.io` has a locale axis of
+one, its pages live at `/en/…`, and 31 chooser stubs stand at the paths they used
+to live at. nokre did not move. The outcome, the counts against this part's own
+estimates and the honest account of which half it proves are in "Landed" below.
 
-**The ordering argument.** `getnokre.github.io` is the only static consumer that
-moves in lockstep with nokre — same session, same pin, same reviewer — and this
-round has already shown what that buys. Every pass of the third round that
-shipped a door made nokre's own examples and tutorial walk through it first, on
-the stated ground that *if nokre's own house keeps writing the ritual, the door
-is not real*. Twice that caught defects a reading would not have: a container
-that panicked on the obvious call, and a driver verb that did not wait. An SSG
-API validated only against `rokovski.com` is validated against a tree that
-cannot move until nokre commits, which is the wrong order.
+The ordering argument stands as written and is worth keeping: this site is the
+only static consumer that moves in lockstep with nokre — same session, same pin,
+same reviewer — and an SSG API validated only against a tree that cannot move
+until nokre commits is validated in the wrong order.
 
-**Give it a locale axis with exactly one locale — and keep its URLs where they
-are.** That last clause is the whole point, and it makes the degenerate case a
-sharper test than it first looks:
+Two things this part got wrong, both recorded rather than quietly fixed:
 
-- A single-locale site that stays at `/accessibility/` rather than moving to
-  `/en/accessibility/` proves the locale axis **does not force a path scheme**,
-  which is precisely what B4 says the driver owns. If the API cannot express
-  "one locale, identity mapping", it is wrong, and one locale is the only
-  configuration in which that is unambiguous.
-- It forces the one-locale case to work *without a special case*. An API first
-  exercised at three locales tends to grow a `if (locales.len == 1)` branch
-  later, in a consumer, unreviewed.
-- Moving the published URLs is a real cost with no test value: every inbound
-  link and every cross-doc fragment in `docs/` breaks, and the round would be
-  paying it to learn nothing it could not learn from the identity mapping.
-
-**What it would cost here**, verified: ~20 page titles are hardcoded English —
-the `.title` field of every entry in `src/pages.zig`'s `all` — and would become
-catalog keys against a one-locale
-bundle; the origin was hardcoded at **four** sites (in `src/main.zig`:
-`writeDocument`'s canonical and `og:url`, and `writeExtras`'s sitemap `<loc>`
-and `robots.txt`) and wanted one constant whatever
-else happens — **done in item 5**, `main.zig`'s `origin`, which also records why
-`content.zig`'s `qr` example is a fifth occurrence and not a fifth copy; and the
-site today has no l10n surface at all, so the bundle is new. Nothing else moves.
-
-**Be honest about which half this proves.** A one-locale dogfood exercises the
-axis, the loop, the path-scheme boundary, `lang` on a generated document, and
-A1a's hydration handover — that last one is testable here the moment the site
-declares a locale, because the failure is a mismatch between the page's locale
-and `navigator.language`, and an `en` page in a `de` browser reproduces it
-today. It **cannot** exercise hreflang alternates (nothing to alternate with),
-`x-default` in its meaningful form, or RTL — `en` is LTR, and the unmirrored
-serialized page A1a argues from is invisible until something RTL is served
-statically. Those need a second locale or the second consumer, and a green site
-must not be read as a validated API for them.
-
-**The cheap first step, independent of every verdict above.** The origin
-constant and `lang="en"` on the generated document are worth doing on this site
-whether or not nokre grows a single SSG export — the first is four copies of one
-string, and the second is the attribute a serialized page needs regardless of
-who ends up owning it. *(Both have since landed: `lang` in item 2, the origin
-constant in item 5.)*
+- **"Keep its URLs where they are."** Written before F.4 existed, on the ground
+  that moving them would break every inbound link for no test value. F.4's
+  sniffing stubs dissolved that cost — an old path is a page again, not a 404 —
+  and F's closing paragraph overruled it. Part G's own second bullet survives the
+  reversal intact and was the sharper half all along: the one-locale case has to
+  work **without a special case**, and it does. There is no `if (locales.len ==
+  1)` anywhere in the consumer.
+- **"~20 page titles."** It is 32, and the same undercount ran through "~20
+  stubs". Verified counts and estimates are side by side in the Landed entry;
+  the standing lesson from round three — *survey counts are wrong every time,
+  verify before designing* — held again.
 
 ---
 
@@ -712,38 +678,196 @@ that appears to is misreading a decision, not finding a gap.
 performance work and the residue bullets stay filed as evidence, untouched. They
 are not deferred *by* this round's decisions; they simply were not taken up.
 
-**Part G runs, with the URL move.** Decision 4's sniffing stubs dissolve Part G's
-one stated cost — the objection was that *"every inbound link and every cross-doc
-fragment in `docs/` breaks"*, and a stub at each old unprefixed path means none
-of them do; they land on the right locale instead. So `getnokre.github.io` takes
-a locale axis of one, its pages move to `/en/…`, and ~20 stubs preserve the old
-paths. Part G's honest-about-which-half paragraph still stands: this exercises
-the axis, the loop, the path scheme, `lang` on a generated document and A1a's
-hydration handover, and it exercises **neither** real alternates nor RTL.
+**Part G ran, with the URL move — SHIPPED as item 9.** Decision 4's sniffing
+stubs dissolved Part G's one stated cost, and the migration confirmed it in the
+output: not one inbound link or cross-doc fragment broke, because every path the
+site published before the axis is still a page. The prediction that this
+exercises the axis, the loop, the path scheme, `lang` on a generated document
+and A1a's hydration handover — and **neither** real alternates nor RTL — held
+exactly, with one correction the run itself forced: it *does* exercise
+alternates, in the degenerate two-entry form the prefix-plus-stub scheme
+creates at one locale. What stays unexercised is a set with two *languages* in
+it. See "Landed".
 
 ---
 
 ## The execution queue
 
-Ten items, strictly sequential, one commit each. Contract changes bump
+One item left of ten, and the queue keeps its numbering. One commit each. Contract changes bump
 `nokre.revision` and move all three pins in the same pass. Each item is deleted
 from this file as it lands, with its outcome recorded.
 
-9. **Part G** — `getnokre.github.io` onto all of it. **What items 6 and 7 left
-   ready for it:** the ~20 stubs are `dom.localeStub` calls over a single-locale
-   bundle, and the identity case needs no special branch — the self-address guard
-   is what stops a stub at its own address from spinning. The `/en/…` prefix is
-   entirely `links.zig`'s and `outPath`'s; nokre computes no path. `failOnStale`'s
-   walk is scoped to two shapes that both gain a locale segment. `writeExtras`
-   already calls `dom.Sitemap` and its call does not change when the axis
-   arrives — only the `&.{}` alternate set becomes a real one. The ~20 hardcoded
-   English titles in `src/pages.zig`'s `all` become catalog keys against a
-   one-locale bundle, which is the part with no precedent yet in this round.
 10. **The boundary doc** — F.5, written from what shipped.
 
 ---
 
 ## Landed
+
+### 9. Part G — SHIPPED on `getnokre.github.io`. **nokre did not move; it is still revision 40.**
+
+**The claim to check hardest, checked.** Not one line of `src/` or `docs/` in
+this repository changed. `git status --porcelain` in the nokre checkout is empty
+and HEAD is still `ca364ad`; `zig fmt src/ tests/` reformatted nothing and
+`zig build test` exits 0. The site's pin stayed at 40 and rokovski was not
+touched. The whole migration is consumer code — a new `src/l10n.zig` and
+`src/l10n/site_en.arb`, and edits to five files — which is the outcome items 6
+and 7 were designed for and is the real finding of this pass: **the API took a
+consumer onto the locale axis without a single defect surfacing.** That is a
+weaker result than the two rounds where dogfooding caught something, and it is
+weaker in the honest direction; it is not a claim that nothing is wrong, only
+that nothing was wrong *here*, at one locale, in LTR.
+
+**Every count Part G estimated was low, and the standing lesson held.** The
+survey said "~20 page titles" and "~20 stubs" for a site with **32** pages. Real
+numbers: 32 titles, 32 blurbs, **31 stubs** (every page but the 404, which has
+no address of its own), 16 chrome words, **90 catalog messages** in all. The
+origin was already one constant — item 5's `main.zig`'s `origin`, verified, four
+call sites still reading it.
+
+**The bundle covers what this site's Zig writes and nothing that comes out of a
+`.md` file.** In: the 32 titles and 32 blurbs (`pages.zig`, now `title: L.Key`
+and `blurb: L.Key`), the 16 reserved chrome keys, the skip link, the footer's
+three strings, the 404 body, the home page's `<title>`, the chooser's heading
+and each language's name in itself. Out: nokre's `docs/*.md`, rendered into 25
+of the 32 pages and staying one language. **One place diverges from the "if the
+site's Zig writes it, it is a catalog key" test, deliberately and visibly**: the
+prose of the six screens this site builds by hand — home, the two track indexes,
+the gallery, the palette, the colophon — is still Zig literals. Those are page
+*bodies*, the same category as the Markdown beside them in the route table, and
+keying them means shredding `Span` arrays into several hundred sentence
+fragments (`", "`, `"macOS"`, `"note~42"`), which is the concatenation
+antipattern `Chrome.open_prefix`'s own comment argues against.
+
+**The 404 body is in, and it is a rule rather than an exception** — stated as
+one here so the next round neither keys the other bodies to match nor unkeys
+this one. Two tests, and a string needs both:
+
+1. **Is it a system surface or an editorial body?** The 404 is the router's
+   failure page, not an article: a reader lands there from anywhere, so a
+   language they cannot read is a dead end rather than a page they can skip.
+2. **Does keying it survive as sentences?** `notFoundLead` and `notFoundTail`
+   are two keys around one deliberately untranslated code span
+   (`error.UnknownRoute`, an identifier and not a word). That is a sentence a
+   translator can move. Several hundred fragments is not — and a rule that
+   produces the concatenation antipattern is the wrong rule however tidy it
+   looks from the Zig side.
+
+The hand-built bodies fail both. Nothing here is waiting to be finished.
+
+**A one-locale site whose documents are English Markdown and whose frame is a
+catalog is not half-finished.** It is exactly the shape a documentation site has
+on the day it adds a second language — the frame localizes in one commit, the
+documents on a translator's schedule — and saying so is more useful than
+pretending the whole tree is ready.
+
+**The chrome words moved off `default_chrome`, and that is the honest version of
+"this site has a locale."** `app.setChrome(L.chrome(loc))` runs in the loop
+beside `setLocale` and `setDirection` — docs/localization.md's documented three
+lines, in its order. `L.chrome` derives one reserved key per `Chrome` field at
+comptime, so the 16 keys are a compile error to omit and a field nokre grows is
+a build error here rather than an English string on a Persian page. The English
+values are the library's defaults to the byte, which is why the chrome markup in
+the diff is unchanged: a catalog that says what the fallback said proves the
+wiring without moving a pixel. `setDirection` is written even though every
+bundled locale is LTR, because it is the one of the three that is silent when
+forgotten (item 3's own finding).
+
+**The path scheme is the driver's, thirty lines of it, and nokre computes none
+of it.** `links.pageHref(gpa, loc, i, frag)` answers `/{tag}/` or
+`/{tag}/{route}/`; `links.stubHref(gpa, i)` answers what `pageHref` used to,
+unchanged, which is what made the URL move free. `main.zig`'s `outPath` and
+`stubPath` are the file-system half. The locale segment is `L.tag(loc)` rather
+than a literal, so the directory, the `hreflang` and the page's own `lang` are
+one fact out of the catalog. **There is no `Site.locales`**: `l10n.zig`'s
+`locales` is `std.enums.values(L.Locale)` and the only enumeration anywhere.
+
+**Which locale a reference resolves for is read off the App, not carried beside
+it.** `links.zig`'s `localeOf` is `L.of(app).locale` — the same move the `page`
+field made when it became `Router.current()`, and it makes the static resolver
+and the live one answer from one fact. The live half needed no code for it: the
+boot script pins the page's locale (item 3), so a browser in `de` rebuilds the
+`en` page as `en`. That is A1a's hydration handover, and it is now reproducible
+here — before this pass the site emitted `locale: ""`, which resolves to the
+template and hid the question.
+
+**The stub set: 31 pages, `dom.localeStub` verbatim, no branch for the identity
+case.** Each stands at the path its page used to occupy, carries the same
+`<title>` as its page (they are the same page, and the alternate set is what
+tells a crawler so), a `Choose a language` heading, one `<a hreflang lang dir>`
+per locale for a reader with no JavaScript, and the library's own transcription
+of `Bundle.resolve`. Verified mechanically: all 31 old addresses exist, each
+holds `nokreLocaleStub({"tags":["en"],"hrefs":["/en/…/"],"fallback":0})` naming
+its own page, and each carries both alternates. At one locale the stub's only
+choice is the page beside it and the library's self-address guard is what keeps
+that from spinning — no consumer code knows the case exists. A stub is ~2,207
+bytes here (item 6 measured 1,934 for a bare one; the difference is this site's
+head seam and the alternate block).
+
+**The alternate set is real now, and item 7's recorded ground is corrected in
+place** — see item 7's entry above, which now says what changed and why. One
+`Alternates(L).Set` per route is built before anything is written and handed to
+both writers, so the head's block and the sitemap's `<xhtml:link>`s are the same
+array rather than two derivations. The sitemap lists the 31 `/en/…` URLs and not
+the stubs: the closure rule exempts `x-default` precisely because whether a
+chooser is indexed is publishing policy, and this site's answer is that a
+sitemap lists content.
+
+**The 404 is the one page the axis does not multiply, and it is not a special
+case in the axis.** A static host serves one document for a URL that missed —
+GitHub Pages looks for `404.html` at the root and nowhere else — so `outPath`
+returns `null` for it outside the template locale. It has no canonical, no
+alternates and no stub, which is `Meta.path = null` doing exactly what item 5
+built it for.
+
+**`failOnStale` grew one level and was proven by breaking it three ways.** The
+walk now covers `<locale>/index.html`, `<locale>/<route>/index.html`,
+`<route>/index.html` (the stub) and `md/<route>.md`. A locale leaving the
+catalog needs no rule of its own — it stops being a locale directory and falls
+to the stub test, which no route answers. All three shapes were planted in a
+scratch output tree and all three failed the build:
+`stale page: …/en/bogus/index.html`, `…/bogus/index.html`, `…/de/index.html`.
+
+**The one cross-link that would have rotted silently, found and fixed.** The
+footer typed `/colophon/` as a literal — the same bytes `pageHref` answered with,
+right up until the locale axis made them diverge on every page of the site. It
+resolves now. The audit found nothing else: nokre's `docs/*.md` name routes, not
+paths, and their two `getnokre.github.io` mentions are the bare origin; `sw.js`
+precaches nothing; the remaining absolute paths in `src/` are root assets
+(`/style.css`, `/app.wasm`, `/favicon.svg`, `/assets/fonts/…`, `/md/…`) which do
+not move.
+
+**Site: 1 locale, 32 screens, 31 stubs, 809 references, 1,139,384 bytes of
+markup, 71,897 bytes of driver.** All four gates green: the a11y audit per screen
+per locale, the link check including anchors (now per locale, since a heading id
+is derived from the heading's words), the icon subset over pages *and* stubs, and
+stale output. References are **809 before and after** — the resolver answers the
+same references, at different addresses. Markup 1,063,328 → 1,139,384: the pages
+gained 7,637 bytes (the alternate block and three bytes per internal href) and
+the 31 stubs are the other 68,419.
+
+**The output diff, accounted for whole.** 34 files modified, 31 added, **0
+removed and 0 orphaned**. The 31 modified pages are the old addresses, each now
+holding its own chooser; `404.html` moved its links under `/en/`; `sitemap.xml`
+gained the alternates and the prefix; `app.wasm` changed because `content.zig`
+did. The 31 additions are `docs/en/`. `style.css`, `robots.txt`, `favicon.svg`,
+every file in `docs/md/` and all four driver files are byte-identical, which is
+the proof that nothing but the URL scheme and the catalog moved. A rebuild over
+the same two clean commits reproduces it byte for byte.
+
+**What this run proves, and what a green site must not be read as.** Proven end
+to end: the locale axis, the per-locale loop written with no special case for a
+set of one, the path-scheme boundary (nokre carries no prefix), `lang` and `dir`
+on a generated document, the chooser stub including its script, `L.chrome`'s
+compile-time completeness, `Title.of_locale`, `L.of(app)`, `trAny` over a
+runtime key table, and A1a's hydration handover. **Not proven, and not provable
+here:** an alternate set with two *languages* in it — this site's is
+`en` + `x-default`, which exercises the type and the two writers but not the
+choice a crawler actually faces; `x-default` in its multi-locale form, where it
+stands for languages the bundle lacks; RTL anywhere, since `en` is LTR and the
+unmirrored serialized page A1a argues from cannot appear until something RTL is
+served statically; and the **content** path — the site's documents are English
+Markdown with no catalog entries, so nothing here says whether a translated
+*body* renders correctly. Those need a second locale or the second consumer.
 
 ### 8. `webIndexHtml`'s `lang` — SHIPPED as `Web.lang`, revision 40. Unification refused.
 
@@ -875,11 +999,30 @@ actually ships is the build's own clock stamped on all 4,250 URLs, telling a
 crawler the whole site changed every deploy. Worse than absent. A consumer with
 real per-page timestamps is a receipt this library does not have yet.
 
-**Single-locale sites emit no alternates, and that is principled.** An empty set
-is not checked and is not a defect: a page that exists in one language has no
-choice of URLs to describe, and its canonical already says everything there is to
-say about where it lives. `getnokre.github.io` passes `&.{}` and its
-`writeExtras` call is already shaped so the locale axis does not change it.
+**An empty set is a real answer, and the ground recorded here for it was
+wrong. Corrected in place by item 9.** What was written was: *"a page that
+exists in one language has no choice of URLs to describe, and its canonical
+already says everything there is to say about where it lives"*, with
+`getnokre.github.io` cited as the case in point passing `&.{}`. The first
+clause is true of a page with one URL and **the number of languages is not
+what decides that**. Under F.4's prefix-all scheme every page has two
+addresses from the first locale onward — the copy at `/en/x/` and the chooser
+at `/x/` — and they are different *in kind*: one is about a language, one is
+about the reader. A crawler told nothing about the pair has to guess how they
+relate, and the guess it makes is "duplicate". So this site emits a real
+two-entry set at one locale (`en` → `/en/x/`, `x-default` → `/x/`), and the
+sentence about single-locale sites now reads: **a page with one URL emits no
+alternates; a page with one language may still have two URLs.** The
+`Meta.alternates` doc comment in `document.zig` already says exactly this
+("Alternates start earning their bytes at the second URL — which under this
+edition's scheme is the moment a locale prefix and a stub appear, even at one
+locale") — the library was right and only this record was stale, which is why
+correcting it needed no code change.
+
+The claim that `writeExtras` was already shaped so the axis would not change
+it **held**: the call became `sm.url(pageHref(loc, i, ""), &alternates[i])`,
+one argument swapped from `&.{}` to a real set, inside a loop that gained a
+locale. Verified by item 9.
 
 **Process note, recorded because it cost time.** The implementing agent died to
 API errors twice — once after finishing the code and the consumer migration but
