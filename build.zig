@@ -381,13 +381,14 @@ fn appWeb(options: AppOptions) packaging.Web {
     };
 }
 
-/// secure_store without an identity cannot link (the id is the store's
-/// namespace); surface the fix on the artifact the consumer will
-/// actually build — hb.default_step belongs to the dependency and a
-/// consumer never depends on it.
-/// Every service that needs a declared package identity, checked as one
-/// group: an artifact either carries the declaration all four can read
-/// or it fails naming the service that wanted it.
+/// Everything an `addApp` call can declare that needs the app's
+/// identity, checked as one group: the five services below plus the
+/// Apple icon. Why each one needs it is on its own `AppOptions` field
+/// and in docs/services.md; what this layer decides is where the
+/// refusal lands — on the artifact the consumer will actually build,
+/// because hb.default_step belongs to the dependency and a consumer
+/// never depends on it. So an artifact either carries a declaration
+/// all six can read, or it fails naming the one that wanted it.
 fn checkServicesNeedPkg(hb: *std.Build, options: AppOptions, artifact: *std.Build.Step.Compile) void {
     checkStoreNeedsPkg(hb, options, artifact);
     checkDeepLinkNeedsPkg(hb, options, artifact);
@@ -397,10 +398,6 @@ fn checkServicesNeedPkg(hb: *std.Build, options: AppOptions, artifact: *std.Buil
     checkAppleIconNeedsPkg(hb, options, artifact);
 }
 
-/// notification without an identity has no channel to name, no
-/// AppUserModelID to derive, and no entitlement to key — three platforms'
-/// worth of identity, so linking it demands `.pkg`. secure_store's rule
-/// again, on the artifact the consumer builds.
 fn checkNotificationNeedsPkg(hb: *std.Build, options: AppOptions, artifact: *std.Build.Step.Compile) void {
     if ((options.notification or options.notification_push) and options.pkg == null) {
         const fail = hb.addFail("notification needs the app's identity — its Android channel, Windows AppUserModelID and Apple entitlement are keyed to the app id, so declare .pkg alongside .notification (docs/services.md)");
@@ -415,9 +412,6 @@ fn checkStoreNeedsPkg(hb: *std.Build, options: AppOptions, artifact: *std.Build.
     }
 }
 
-/// deep_link without an identity cannot derive its entitlement or
-/// assetlinks (both keyed to the app id), so linking it demands `.pkg` —
-/// surfaced on the artifact the consumer builds, like the store's.
 fn checkDeepLinkNeedsPkg(hb: *std.Build, options: AppOptions, artifact: *std.Build.Step.Compile) void {
     if (options.deep_link_domains.len != 0 and options.pkg == null) {
         const fail = hb.addFail("deep_link needs the app's identity — its entitlement and assetlinks are keyed to the app id, so declare .pkg alongside .deep_link_domains (docs/services.md)");
@@ -425,9 +419,6 @@ fn checkDeepLinkNeedsPkg(hb: *std.Build, options: AppOptions, artifact: *std.Bui
     }
 }
 
-/// oauth without an identity cannot derive its URL-type registration or
-/// its intent-filter (both keyed to the app id) — deep_link's rule, on
-/// the artifact the consumer builds.
 fn checkOauthNeedsPkg(hb: *std.Build, options: AppOptions, artifact: *std.Build.Step.Compile) void {
     if ((options.oauth_schemes.len != 0 or options.oauth_apple) and options.pkg == null) {
         const fail = hb.addFail("oauth needs the app's identity — its URL-type registration and intent-filter are keyed to the app id, so declare .pkg alongside .oauth_schemes (docs/services.md)");
@@ -435,9 +426,6 @@ fn checkOauthNeedsPkg(hb: *std.Build, options: AppOptions, artifact: *std.Build.
     }
 }
 
-/// iap without an identity cannot resolve a catalog — both stores look
-/// products up against the app id — so linking it demands `.pkg`, on the
-/// artifact the consumer builds. secure_store's rule, one store over.
 fn checkIapNeedsPkg(hb: *std.Build, options: AppOptions, artifact: *std.Build.Step.Compile) void {
     if (options.iap and options.pkg == null) {
         const fail = hb.addFail("iap needs the app's identity — both stores resolve products against the app id, so declare .pkg alongside .iap (docs/services.md)");
@@ -445,10 +433,9 @@ fn checkIapNeedsPkg(hb: *std.Build, options: AppOptions, artifact: *std.Build.St
     }
 }
 
-/// An app icon with no identity has nowhere to go: the bundle rides
-/// the packaging tree, and there is no tree without `.pkg`. The
-/// services' rule, on the artifact the consumer builds — the icon's
-/// own shape is checked where the tree is written (`addAppleIcon`).
+/// The one member of this group that is not a service. The `.pkg`
+/// requirement is all that is checked here; the icon's own shape is
+/// checked where the tree is written (`addAppleIcon`).
 fn checkAppleIconNeedsPkg(hb: *std.Build, options: AppOptions, artifact: *std.Build.Step.Compile) void {
     if (options.apple_icon != null and options.pkg == null) {
         const fail = hb.addFail("apple_icon has no packaging tree to ride — the icon is delivered beside the manifests, so declare .pkg alongside .apple_icon (docs/services.md)");
@@ -1095,8 +1082,8 @@ pub fn build(b: *std.Build) void {
     } else null;
 
     // Deliberately not http's "always available" shape: linking costs
-    // something real (Security.framework, advapi32, a ~139 KiB wasm
-    // table), and the store is meaningless without an identity to
+    // something real (Security.framework, advapi32, a static table on
+    // wasm), and the store is meaningless without an identity to
     // namespace it — hence the pkg_id requirement (docs/services.md).
     const secure_store_opt = b.option(bool, "secure_store", "Link the secure_store service (requires pkg_id — the app id is the store's namespace)") orelse false;
 
@@ -1395,11 +1382,12 @@ pub fn build(b: *std.Build) void {
         serve_step.dependOn(&addWebServeTo(b, site, .{ .port = port }).step);
     }
 
-    // ---- Packaging manifests: build outputs of the declaration
-    // (docs/services.md). `zig build pkg` → zig-out/pkg; the Android
-    // example's Gradle runs it at every configuration. A consumer that declares pkg_* gets the
-    // same tree carrying its own identity as named write-files "pkg"
-    // (consumers using addApp get it as App.pkg instead). ----
+    // ---- Packaging manifests: build outputs of the declaration. ----
+    // The tree docs/services.md describes: `zig build pkg` →
+    // zig-out/pkg, and the Android example's Gradle runs it at every
+    // configuration. A consumer that declares pkg_* gets the same tree
+    // carrying its own identity as named write-files "pkg" (consumers
+    // using addApp get it as App.pkg instead).
     {
         const pkg_step = b.step("pkg", "Generate platform packaging manifests into zig-out/pkg");
         installKitchenSinkPkg(b, pkg_step);
@@ -1768,8 +1756,8 @@ fn configureNokre(b: *std.Build, mod: *std.Build.Module, pkg: ?PackageDecl, serv
     });
     // A bare wasm target has no libc to supply the three headers that
     // file includes, and no reason to link one: the DOM edition's live
-    // driver is Zig plus the browser's own rasterizer. Four
-    // declarations and three definitions close the gap
+    // driver is Zig plus the browser's own rasterizer. The headers and
+    // the definitions behind them close the gap
     // (shim/freestanding/README.md).
     if (mod.resolved_target) |target| {
         const t = target.result;
@@ -1790,7 +1778,9 @@ fn configureNokre(b: *std.Build, mod: *std.Build.Module, pkg: ?PackageDecl, serv
 /// packaging.zig into the generated page's directory, and the testdata
 /// copy checked here is the byte-exact golden of that emitter
 /// (packaging_test.zig's "web boot.js is byte-exact"), so parsing it
-/// parses what ships.
+/// parses what ships. One more reaches a browser without ever being a
+/// file a site serves — `locale_stub.js` is written inline into a
+/// generated page, stated at the entry that adds it below.
 ///
 /// The goal is not decoration. live.js, live-worker.js and services.js
 /// are ES modules — the driver imports them and the compute actor is a
@@ -2312,16 +2302,6 @@ fn addSecureStore(b: *std.Build, mod: *std.Build.Module, decl: ?PackageDecl, ena
     }
 }
 
-/// May this build have the dev file store? Three refusals, and a build
-/// that trips any of them fails — the flag is never quietly downgraded
-/// to the platform store either, because a driver that thinks it has a
-/// writable store and does not is the failure this whole backend exists
-/// to end.
-///
-/// The shape is deliberate: nothing here is a property of the machine
-/// running the build, so a refusal reproduces everywhere, and there is
-/// no combination of environment, signature or runtime state that turns
-/// a shipping build's store into this one.
 /// Where the secure_store dev file store can exist at all: a native
 /// desktop POSIX build of the host that is building it. The quiet
 /// ahead-of-time answer for a consumer's build.zig deciding whether to
@@ -2337,6 +2317,16 @@ pub fn devStoreHost(target: std.Build.ResolvedTarget) bool {
     return desktop_posix and t.os.tag == builtin.os.tag and t.cpu.arch == builtin.cpu.arch;
 }
 
+/// May this build have the dev file store? Three refusals, and a build
+/// that trips any of them fails — the flag is never quietly downgraded
+/// to the platform store either, because a driver that thinks it has a
+/// writable store and does not is the failure this whole backend exists
+/// to end.
+///
+/// The shape is deliberate: nothing here is a property of the machine
+/// running the build, so a refusal reproduces everywhere, and there is
+/// no combination of environment, signature or runtime state that turns
+/// a shipping build's store into this one.
 fn devStoreAllowed(b: *std.Build, mod: *std.Build.Module, target: std.Target, dev: bool) bool {
     if (!dev) return false;
     var ok = true;

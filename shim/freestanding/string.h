@@ -1,8 +1,8 @@
 #pragma once
 #include <stddef.h>
 
-// memset/memcpy/memmove come from Zig's compiler-rt; only strlen has to
-// be written (freestanding.c).
+// memset/memcpy/memmove come from Zig's compiler-rt; strlen and strchr
+// are the two that have to be written (freestanding.c).
 void *memset(void *dst, int value, size_t len);
 void *memcpy(void *dst, const void *src, size_t len);
 void *memmove(void *dst, const void *src, size_t len);
