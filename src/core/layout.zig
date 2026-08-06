@@ -618,7 +618,7 @@ pub fn computeScrolled(tree: *Tree, measurer: text.Measurer, viewport: Size, scr
     }
 
     if (nav) |n| layoutNavChrome(tree, measurer, n, anchored, safe_bottom, rtl);
-    if (indicator) |n| layoutIndicator(tree, measurer, n, anchored, safe_bottom, rtl);
+    if (indicator) |n| layoutIndicator(tree, n, anchored, safe_bottom, rtl);
     if (notice) |n| layoutNoticeChrome(tree, measurer, n, anchored, rtl);
     const area = contentArea(tree, viewport, safe_bottom);
     const s = tree.getConst(root).?.stack;
@@ -767,8 +767,7 @@ pub fn indicatorRidesNavGroup(tree: *const Tree) bool {
 /// in the corner of a pane nothing draws would read as belonging to the
 /// page instead of to the bar. Standing alone it is the bar's only
 /// content, so it is the group: one square, centered.
-fn layoutIndicator(tree: *Tree, measurer: text.Measurer, indicator: NodeId, viewport: Size, safe_bottom: i32, rtl: bool) void {
-    _ = measurer;
+fn layoutIndicator(tree: *Tree, indicator: NodeId, viewport: Size, safe_bottom: i32, rtl: bool) void {
     const bar_h = navBarHeight(safe_bottom);
     const items_top = viewport.h - bar_h + metrics.nav_bar_pad;
     const y = items_top + @divTrunc(navItemHeight() - metrics.touch_target, 2);

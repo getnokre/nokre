@@ -568,7 +568,7 @@ fn addDesktopApp(hb: *std.Build, options: AppOptions) App {
             // keyboard, dbus-1 backs appearance detection (the portal
             // Settings read). The AccessKit Unix adapter (Rust, AT-SPI over
             // its own zbus socket) needs the Rust std runtime's libc deps.
-            addWaylandShell(hb, app_mod, target);
+            addWaylandShell(hb, app_mod);
             app_mod.linkLibrary(ak);
             app_mod.addObjectFile(hb.path(accesskit_lib));
             for ([_][]const u8{ "wayland-client", "xkbcommon", "dbus-1", "m", "dl" }) |lib|
@@ -587,8 +587,7 @@ fn addDesktopApp(hb: *std.Build, options: AppOptions) App {
 /// compile that glue and shell.c. Committing generated code is the
 /// anti-pattern the qrcodegen/harfbuzz vendoring avoids; the toolchain
 /// regenerates it into a private dir the shell includes.
-fn addWaylandShell(hb: *std.Build, app_mod: *std.Build.Module, target: std.Build.ResolvedTarget) void {
-    _ = target;
+fn addWaylandShell(hb: *std.Build, app_mod: *std.Build.Module) void {
     // Where the protocol XML lives is the wayland-protocols package's
     // own answer (its .pc exports pkgdatadir), and it varies by distro —
     // prefix installs and NixOS put it nowhere near /usr/share. The

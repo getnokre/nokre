@@ -174,7 +174,7 @@ const State = struct {
                 // stays in the quote, as CommonMark says.
                 if (isBlank(line)) break;
                 if (body.items.len == 0) break;
-                if (body.items.len > 0) try body.append(self.a, '\n');
+                try body.append(self.a, '\n');
                 try body.appendSlice(self.a, line);
                 _ = lines.next();
                 continue;

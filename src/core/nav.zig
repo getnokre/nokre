@@ -420,14 +420,10 @@ fn currentIndexIn(app: *const App, roster: []const RosterItem) ?usize {
     return null;
 }
 
-fn firstChild(app: *const App, nav: NodeId) ?NodeId {
-    var it = app.tree.children(nav);
-    return it.next();
-}
-
 fn soleChild(app: *const App, nav: NodeId) ?NodeId {
     if (app.tree.childCount(nav) != 1) return null;
-    return firstChild(app, nav);
+    var it = app.tree.children(nav);
+    return it.next();
 }
 
 fn clearChildren(app: *App, nav: NodeId) !void {

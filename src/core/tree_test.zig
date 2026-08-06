@@ -20,10 +20,8 @@ test "append builds sibling chains in order" {
     var tree = try Tree.init(std.testing.allocator);
     defer tree.deinit();
 
-    const a = try tree.appendId(tree.rootId(), .{ .text = .{ .content = "a" } });
-    const b = try tree.appendId(tree.rootId(), .{ .text = .{ .content = "b" } });
-    _ = a;
-    _ = b;
+    try tree.append(tree.rootId(), .{ .text = .{ .content = "a" } });
+    try tree.append(tree.rootId(), .{ .text = .{ .content = "b" } });
 
     var it = tree.children(tree.rootId());
     try std.testing.expectEqualStrings("a", tree.getConst(it.next().?).?.label());
