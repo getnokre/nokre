@@ -79,9 +79,6 @@ pub const l10n = @import("l10n/l10n.zig");
 // the web exports — while unlinked builds keep exporting nothing.
 comptime {
     if (@import("builtin").cpu.arch == .wasm32) {
-        // The web's driver is reached by nothing on the consumer side
-        // — the browser drives its exports — so lazy analysis would
-        // drop it. Force it in.
         _ = render.dom_live;
     }
     if (@import("nokre_secure_store_options").linked) _ = services.secure_store;

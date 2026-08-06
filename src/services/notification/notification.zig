@@ -39,6 +39,7 @@ const builtin = @import("builtin");
 const options = @import("nokre_notification_options");
 const app_mod = @import("../../core/app.zig");
 const clock = @import("../clock/clock.zig");
+const services = @import("../services.zig");
 
 const App = app_mod.App;
 const is_wasm = builtin.cpu.arch == .wasm32;
@@ -49,15 +50,11 @@ const is_wasm = builtin.cpu.arch == .wasm32;
 // referenced — the mock is the only path — so tests stay dependency-free.
 const web = if (is_wasm and !builtin.is_test) @import("web.zig") else struct {};
 
-/// Whether this target's shell provides the hooks. Referenced only where
-/// true, so a target without a leg never names the externs. Unlike
-/// share's switch, `.linux` is blanket-true: the Wayland desktop has
-/// org.freedesktop.Notifications on the bus this shell already polls, and
-/// Android has NotificationManager, so both halves of `.linux` answer.
-const has_shell_hook = is_wasm or switch (builtin.os.tag) {
-    .macos, .ios, .windows, .linux => true,
-    else => false,
-};
+// Every shell exports the notification hooks. Unlike share's switch,
+// `.linux` is blanket-true: the Wayland desktop has
+// org.freedesktop.Notifications on the bus this shell already polls, and
+// Android has NotificationManager, so both halves of `.linux` answer.
+const has_shell_hook = services.every_shell_hooks;
 
 /// The id's charset and cap, secure_store's rule for secure_store's
 /// reason: this string survives verbatim as a `UNNotificationRequest`

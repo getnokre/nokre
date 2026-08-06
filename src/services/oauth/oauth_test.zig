@@ -360,6 +360,11 @@ test "an app torn down mid-flow drops its callback instead of landing it" {
 
 // ---- the harness verbs (docs/testing.md) ----
 
+/// The fixture the verbs below drive. `build` does bind `self.app`, but
+/// `Harness.init` returns by value, so that pointer is into the
+/// pre-move Harness: every test rebinds `screen.app = &t.app` once
+/// `init` has returned, and the handlers reach the app through the ctx
+/// (secure_store_test's pattern).
 const Screen = struct {
     app: *App,
     signed_in: bool = false,
@@ -419,8 +424,6 @@ test "harness: tap sign in, complete the auth, assert the screen it produced" {
     var screen: Screen = .{ .app = undefined };
     var t = try Harness.init(std.testing.allocator, .{ .w = 320, .h = 480 }, .{ .ctx = &screen, .build = Screen.build });
     defer t.deinit();
-    // The harness moved out of init by value; handlers reach the app
-    // through the ctx, bound here (secure_store_test's pattern).
     screen.app = &t.app;
 
     try t.tapLabel("Sign in");
@@ -435,8 +438,6 @@ test "harness: cancelling leaves the screen where it was" {
     var screen: Screen = .{ .app = undefined };
     var t = try Harness.init(std.testing.allocator, .{ .w = 320, .h = 480 }, .{ .ctx = &screen, .build = Screen.build });
     defer t.deinit();
-    // The harness moved out of init by value; handlers reach the app
-    // through the ctx, bound here (secure_store_test's pattern).
     screen.app = &t.app;
 
     try t.tapLabel("Sign in");
@@ -448,8 +449,6 @@ test "harness: a named failure is the offline case, one call" {
     var screen: Screen = .{ .app = undefined };
     var t = try Harness.init(std.testing.allocator, .{ .w = 320, .h = 480 }, .{ .ctx = &screen, .build = Screen.build });
     defer t.deinit();
-    // The harness moved out of init by value; handlers reach the app
-    // through the ctx, bound here (secure_store_test's pattern).
     screen.app = &t.app;
 
     try t.tapLabel("Sign in");

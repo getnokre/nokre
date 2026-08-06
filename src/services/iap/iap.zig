@@ -156,6 +156,19 @@ pub const Update = union(enum) {
     failure: Failure,
 };
 
+/// Whether this update means the payment sheet is gone — a cancel, a
+/// decline, an approval, a deferral — so the app may buy again. A
+/// `.restored` purchase never was a sheet and must not clear one that
+/// is up. Both the dispatch path and the drop path in
+/// `PlatformState.postUpdate` ask this, and they have to agree or the
+/// one-sheet `buying` guard leaks.
+fn fromSheet(update: Update) bool {
+    return switch (update) {
+        .purchase => |p| p.state != .restored,
+        .cancelled, .failure => true,
+    };
+}
+
 /// What `setHandler` registers. Called on the UI thread, between events,
 /// once per update.
 pub const Handler = *const fn (ctx: ?*anyopaque, update: Update) void;
@@ -370,16 +383,11 @@ fn dispatchCatalog(ctx: ?*anyopaque, catalog: Catalog) void {
     cb(cb_ctx, catalog);
 }
 
-/// Every update lands here first. Anything but a `.restored` purchase
-/// means the sheet is gone — a cancel, a decline, an approval, a
-/// deferral — so the app may buy again; a restore replay never was a
-/// sheet and must not clear one that is up.
+/// Every update lands here first: a sheet-level one (`fromSheet`)
+/// releases the one-sheet guard before the app's handler runs.
 fn dispatchUpdate(ctx: ?*anyopaque, update: Update) void {
     const st: *ServiceState = @ptrCast(@alignCast(ctx.?));
-    const from_sheet = switch (update) {
-        .purchase => |p| p.state != .restored,
-        .cancelled, .failure => true,
-    };
+    const from_sheet = fromSheet(update);
     if (from_sheet) st.buying = false;
     const h = st.handler orelse return;
     h(st.handler_ctx, update);
@@ -513,10 +521,7 @@ const PlatformState = struct {
         // A dropped sheet-level update must still release the one-sheet
         // guard dispatchUpdate would have cleared, or `buying` refuses
         // every purchase for the rest of the run.
-        const from_sheet = switch (update) {
-            .purchase => |p| p.state != .restored,
-            .cancelled, .failure => true,
-        };
+        const from_sheet = fromSheet(update);
         const ticket = workers.openOneShotOn(Update, self.runtime, self, dispatchUpdate) catch {
             if (from_sheet) self.buying = false;
             return;

@@ -1037,9 +1037,10 @@ pub const Nav = struct {};
 ///
 /// The defaults cut the other way for that app: a `Chrome` literal
 /// that misses a field compiles, and the miss ships as English in the
-/// middle of a translated nav bar. `Catalog` is the opt-in that closes
-/// this — the same fields with no defaults, so full coverage is
-/// checked where every other catalog mistake is checked here: at
+/// middle of a translated nav bar. `l10n.Bundle(…).chrome` is the
+/// opt-in that closes this — it derives one reserved key per field, so
+/// a field nokre grows is a missing-key failure in every locale the
+/// app ships, caught where every other catalog mistake is caught: at
 /// compile time.
 ///
 /// Borrowed, never owned, exactly like `RouteDef.title`: an ARB

@@ -1,14 +1,15 @@
 //! AccessKit adapter boundary. AccessKit (via its C bindings, bound in
 //! shim/nokre_accesskit.c) delivers the semantic snapshot to UIA
-//! (Windows), NSAccessibility (macOS), AT-SPI (Linux), and Android's
-//! accessibility framework; the web target mirrors the snapshot into ARIA
-//! attributes instead — on the web the DOM *is* the accessibility
-//! tree, so that platform derives no snapshot at all
-//! (docs/internals/dom-edition.md).
+//! (Windows), NSAccessibility (macOS), and AT-SPI (Linux); iOS and
+//! Android wire the same `flatten` output into their shells with no
+//! AccessKit library at all, because UIAccessibility and
+//! AccessibilityNodeProvider already speak flat element lists (`Ios`
+//! below; src/platform/android/android.zig for the JNI path). Which
+//! shell binds which is docs/internals/platform-shells.md's to say.
 //!
-//! The macOS (VoiceOver), Windows (UIA), and Linux (AT-SPI — Orca)
-//! bindings are live; other platforms wire the same `flatten` output
-//! into their shells as they land (docs/roadmap.md).
+//! The web target takes nothing from here — on the web the DOM *is* the
+//! accessibility tree, so that platform derives no snapshot at all
+//! (docs/internals/dom-edition.md).
 
 const std = @import("std");
 const semantics = @import("semantics.zig");

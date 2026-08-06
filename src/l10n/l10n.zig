@@ -489,11 +489,10 @@ pub fn Bundle(comptime arb_sources: []const []const u8) type {
         /// `chromeCurrentScreen`. Feed it straight to `App.setChrome`.
         /// The derivation is the whole point: a chrome string nokre
         /// grows is a missing-key compile error in every app that
-        /// calls this, in every locale it ships — the guarantee the
-        /// old `Chrome.Catalog` literal gave, moved to where the words
-        /// live, with the field to key spelling no longer an app's to
-        /// get wrong. The strings are constant data, borrowed like
-        /// every `tr` answer.
+        /// calls this, in every locale it ships — full coverage checked
+        /// where the words live, with the field to key spelling no
+        /// longer an app's to get wrong. The strings are constant data,
+        /// borrowed like every `tr` answer.
         pub fn chrome(locale: Locale) element_mod.Chrome {
             switch (locale) {
                 inline else => |loc| return comptime chromeAt(@intFromEnum(loc)),
@@ -1049,13 +1048,6 @@ fn selectOther(comptime s: arb.Select) arb.Segs {
     }
     unreachable; // validateSegs required it
 }
-
-// ---------------------------------------------------------------------------
-// runtime tag matching (resolve)
-
-// Tag identity (case, separator) is plural_rules.zig's one rule —
-// `tagEql`/`languageOf` there — shared by this file's runtime resolve
-// and the comptime bundle machinery alike.
 
 // ---------------------------------------------------------------------------
 // writing direction
