@@ -25,6 +25,7 @@
 const std = @import("std");
 const h = @import("nokre");
 
+const dom = h.render.dom;
 const deep_link = h.services.deep_link;
 const locale = h.services.locale;
 const oauth = h.services.oauth;
@@ -79,12 +80,20 @@ const State = struct {
     // registered — so this counts what the app was told, not what the
     // service cached.
     locale_changes: u32 = 0,
+
+    // The segmented control's answer, and the only screen state a press
+    // moves. The hydration scenario asserts on it from both sides: the
+    // app saw the press, and the words the rebuild wrote came out of it.
+    view: usize = 0,
 };
 
 var state_ptr: ?*State = null;
 
 var arg_buf: [8 * 1024]u8 = undefined;
 var result_buf: [8 * 1024]u8 = undefined;
+/// Where `nokre_probe_document` builds; the answer is copied into
+/// `result_buf` like every other, so the harness reads one buffer.
+var doc_buf: std.ArrayList(u8) = .empty;
 
 // ---- the app ----------------------------------------------------
 
@@ -179,6 +188,22 @@ fn note(state: *State, err: anyerror) void {
     @memcpy(state.err[0..state.err_len], name[0..state.err_len]);
 }
 
+/// The two chips of the one control on this app's screen, and the two
+/// sentences under it. A press has to change both, because a chip that
+/// moves proves the browser resolved the hit and nothing else: the
+/// sentence is written by the *builder*, so it only moves if the app
+/// rebuilt the screen and the driver patched the result in.
+const views = [_][]const u8{ "List", "Grid" };
+const shown = [_][]const u8{ "Showing a list.", "Showing a grid." };
+
+/// A press on a chip. `reload` and not `invalidate`: the words above
+/// come out of `build`, and `invalidate` re-lays-out and re-serializes
+/// the tree that is already there (docs/routing.md, the four motions).
+fn onView(state: *State, selected: usize) void {
+    state.view = selected;
+    state.app.reload() catch |err| note(state, err);
+}
+
 fn buildHome(state: *State, app: *h.App) !void {
     state.app = app;
     deep_link.setHandler(app, state, onLink);
@@ -204,10 +229,28 @@ fn buildHome(state: *State, app: *h.App) !void {
         .label = "Sign in",
         .on_press = .bind(onSignIn, state),
     } });
+    try app.tree.append(root, .{ .segmented = .{
+        .label = "View",
+        .options = &views,
+        .selected = state.view,
+        .on_select = .bind(onView, state),
+    } });
+    try app.tree.append(root, .{ .text = .{ .content = shown[state.view] } });
+}
+
+/// The nav's second destination, and nothing more: a roster is two
+/// entries at the least (`setNav`), and a roster is what puts anything
+/// at all in the *chrome* mount — which is half of what a page with two
+/// of them is for.
+fn buildSecond(_: *State, app: *h.App) !void {
+    try app.tree.append(app.tree.rootId(), .{
+        .heading = .{ .content = "Second", .level = .h1 },
+    });
 }
 
 const routes = h.Routes(State).table(&.{
     .{ .name = "home", .title = .{ .fixed = "Home" }, .build = buildHome },
+    .{ .name = "second", .title = .{ .fixed = "Second" }, .build = buildSecond },
 });
 
 comptime {
@@ -235,6 +278,10 @@ pub fn nokreWebBuild(alloc: std.mem.Allocator) !*h.App {
     // boot locale is readable at all: the service's install fired inside
     // `init` with whatever the shell seeded (services/locale/locale.zig).
     applyLocale(state);
+    try app.setNav(&.{
+        .{ .route = "home", .icon = .house },
+        .{ .route = "second", .icon = .settings },
+    });
     try app.navigate("home");
     return app;
 }
@@ -385,6 +432,53 @@ pub export fn nokre_probe_rtl() i32 {
 /// Device locale changes delivered *after* boot.
 pub export fn nokre_probe_locale_changes() u32 {
     return probe().locale_changes;
+}
+
+/// Which chip the app believes is chosen. Read from the app, so a
+/// scenario can hold it against the chip the *document* is showing —
+/// the two disagreeing is a press the browser resolved and core never
+/// heard, which is exactly the failure a hydrated page can have.
+pub export fn nokre_probe_view() usize {
+    return probe().view;
+}
+
+/// The file a generator would publish for the screen this app is on:
+/// `dom.document`, over this app's own tree, with the two mount ids and
+/// the boot options the harness then mounts back over it.
+///
+/// It is a probe rather than markup the harness holds because the
+/// hydration claim is about *two writers of one page* — the static
+/// driver wrote the file, the live driver rebuilds it — and a fixture
+/// typed in JavaScript would be a third, agreeing with neither. -2 is a
+/// document too long for the result buffer: a probe that outgrew its
+/// transport, not a fault in what it measured.
+pub export fn nokre_probe_document() isize {
+    const s = probe();
+    doc_buf.clearRetainingCapacity();
+    var em: dom.Emitter = .{
+        .gpa = std.heap.wasm_allocator,
+        .app = s.app,
+        .out = &doc_buf,
+        // What the live driver renders with (live.zig), and what makes
+        // a node's identity *stated* across the handover rather than
+        // guessed at.
+        .options = .{ .node_ids = true },
+    };
+    defer em.deinit();
+    dom.document(&em, .{
+        .title = "web services",
+        .stylesheet = "/style.css",
+        .chrome_id = "chrome",
+        .content_id = "content",
+        .content_class = "page",
+        .skip = "Skip to content",
+        .boot = .{ .wasm = "/app.wasm", .addressing = .documents },
+    }) catch |err| {
+        note(s, err);
+        return -2;
+    };
+    if (doc_buf.items.len > result_buf.len) return -2;
+    return out(doc_buf.items);
 }
 
 /// The name of the error the last verb returned, empty if it succeeded.

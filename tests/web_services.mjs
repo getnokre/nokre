@@ -25,7 +25,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { makeBrowser, Storage } from "./web_browser.mjs";
+import { makeBrowser, PageEvent, Storage } from "./web_browser.mjs";
 
 const site = process.argv[2];
 if (!site) {
@@ -85,6 +85,17 @@ function probes(nk) {
   return {
     links: () => nk.nokre_probe_links(),
     link: () => text(nk.nokre_probe_link()),
+
+    /// The whole file `dom.document` writes for the screen this app is
+    /// on — the static half of the pair, asked of the same module the
+    /// live half runs in.
+    document() {
+      const len = nk.nokre_probe_document();
+      if (len === -2) throw failure();
+      return text(len);
+    },
+    /// Which chip the app believes is chosen.
+    view: () => nk.nokre_probe_view(),
 
     bootValue() {
       const len = nk.nokre_probe_boot_value();
@@ -646,6 +657,89 @@ async function scratchIsClamped() {
   done("dom driver — a length past the scratch is cut to what the glue wrote");
 }
 
+// ---- the two-mount page ------------------------------------------
+
+/// The arrangement `dom.document` writes, and the one the reference
+/// site and every static consumer boot in: two mount points,
+/// `addressing: "documents"`, and a page that is *already showing the
+/// screen* when the module lands on it.
+///
+/// It is the shape nothing else here has. Every scenario above boots
+/// into a bare div, which is an app shell's page and the one case where
+/// hydration has nothing to hydrate — so the handover itself, the claim
+/// that "boot is a patch rather than a repaint" (dom-edition.md), was
+/// never executed anywhere.
+///
+/// Two module instances, deliberately. The first writes the file, with
+/// the library, out of the app's own tree; the second is the browser's,
+/// booting over the parsed result. That is the pair the two drivers
+/// were split for, and running it as a pair is the only way a
+/// disagreement between them shows up as anything but a page that looks
+/// right.
+async function documentsPage() {
+  const generator = await page({}, { route: "home", locale: "", addressing: "documents" });
+  const file = generator.app.document();
+
+  const browser = makeBrowser({ site });
+  browser.openPage(file);
+  const chrome = document.body.querySelector("#chrome");
+  const content = document.body.querySelector("#content");
+  assert.ok(chrome, "the file has a chrome mount");
+  assert.ok(content, "the file has a content mount");
+  // The roster is what puts anything in the chrome mount at all: a page
+  // whose first mount is empty would assert nothing about it.
+  assert.ok(chrome.querySelector("nav"), "the file's chrome mount holds the nav");
+  assert.ok(content.querySelector("[data-n]"), "the file states node ids");
+
+  // The nodes the reader is looking at, held from before the mount.
+  // Identity is the whole assertion: nokre states every focus stop's
+  // `NodeId` in both drivers' output precisely so the handover can keep
+  // the node rather than build a new one that looks like it — and a
+  // replaced node is a lost scroll offset, a lost selection and a lost
+  // caret, none of which the markup afterwards would show.
+  const before = { chrome: [...chrome.childNodes], content: [...content.childNodes] };
+
+  const { mount } = await import(live + `?load=${++loads}`);
+  const nk = await mount({
+    wasm: "app.wasm",
+    into: chrome,
+    content,
+    route: "home",
+    locale: "",
+    addressing: "documents",
+  });
+  const app = probes(nk);
+
+  const kept = (was, is) => is.filter((n) => was.includes(n)).length;
+  assert.equal(
+    kept(before.content, [...content.childNodes]),
+    before.content.length,
+    "hydration replaced the content mount's nodes instead of patching them",
+  );
+  assert.equal(
+    kept(before.chrome, [...chrome.childNodes]),
+    before.chrome.length,
+    "hydration replaced the chrome mount's nodes instead of patching them",
+  );
+
+  // And the page is live: a press on the second chip reaches the app,
+  // and the sentence the *builder* writes under the control moves with
+  // it. A chip that moved alone would only prove the browser resolved a
+  // hit.
+  const chip = document.body
+    .querySelectorAll("[data-i]")
+    .find((el) => el.textContent.includes("Grid"));
+  assert.ok(chip, "the file carries the segmented control");
+  chip.dispatchEvent(new PageEvent("click"));
+  assert.equal(app.view(), 1);
+  assert.ok(
+    content.textContent.includes("Showing a grid."),
+    "the repaint after the press never landed",
+  );
+
+  done("the document — two mounts hydrate node for node, and a press repaints");
+}
+
 // ---- the run -----------------------------------------------------
 
 const scenarios = [
@@ -670,6 +764,7 @@ const scenarios = [
   localeUnbundledPinResolvesLikeTheDevice,
   localeChangeAfterBoot,
   scratchIsClamped,
+  documentsPage,
 ];
 
 for (const scenario of scenarios) {

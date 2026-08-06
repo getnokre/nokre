@@ -391,11 +391,26 @@ pub fn document(em: *Emitter, doc: Document) !void {
     // region and the screen as another, and a region is an element. It
     // costs the document nothing — every layer inside it is fixed, so
     // the element has no size and no effect on where any of them land.
+    //
+    // **Not one byte of whitespace inside either mount**, which reads
+    // like formatting and is the handover. A mount's children are what
+    // the live driver diffs its frame against, node by node, under one
+    // identity rule — same kind of thing, same `data-n` (live.js's
+    // `sameNode`). A newline after the open tag is a text node the
+    // frame does not have, so the walk pairs the file's *first* child
+    // against the frame's second, disagrees, and replaces it — and
+    // every sibling after it, down both mounts. The page still renders,
+    // which is why this survived: what it costs is exactly what the
+    // handover was for — the reader's scroll offset, their selection,
+    // their caret, and the node the fragment they arrived on names
+    // (dom-edition.md, "boot is a patch rather than a repaint"). The
+    // newlines *between* the mounts are the file's own and cost
+    // nothing, being outside both.
     try em.raw("<div id=\"");
     try em.text(doc.chrome_id);
-    try em.raw("\">\n");
+    try em.raw("\">");
     try serialize.chrome(em);
-    try em.raw("\n</div>\n");
+    try em.raw("</div>\n");
 
     try em.raw("<main id=\"");
     try em.text(doc.content_id);
@@ -404,9 +419,9 @@ pub fn document(em: *Emitter, doc: Document) !void {
         try em.raw(" ");
         try em.text(doc.content_class);
     }
-    try em.raw("\">\n");
+    try em.raw("\">");
     try serialize.content(em);
-    try em.raw("\n</main>\n");
+    try em.raw("</main>\n");
 
     try em.raw(doc.body_end);
     if (doc.boot) |b| try bootScript(em, doc, b, chosen);

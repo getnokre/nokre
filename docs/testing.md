@@ -910,8 +910,8 @@ examples link two of them; nothing runs them.
 ### The web's own gate
 
 `zig build test` builds `tests/web_services.zig` — an ordinary nokre app
-with deep_link, oauth and secure_store linked, and a two-locale ARB
-bundle behind its one screen — into a site the same way
+with deep_link, oauth and secure_store linked, a two-locale ARB bundle
+behind its screens and a nav roster over them — into a site the same way
 `addApp` builds a consumer's, then boots that site in node against
 `tests/web_browser.mjs`, a browser stub carrying nothing but platform
 APIs (a document, a location, a session storage, a window that can open
@@ -954,6 +954,19 @@ rather than analyzed:
   one. The assertions read the rendered words out of the document and
   the direction off `documentElement`, so the claim is what a reader
   would see and not what an export returned.
+- **the document** — the arrangement every static consumer boots in,
+  which nothing else here has: two mount points and `addressing:
+  "documents"`, over a page that already shows the screen. Two module
+  instances run as the pair the two drivers are: the first writes the
+  file with `dom.document` out of its own tree, the second boots over
+  the parsed result. The assertion is **node identity** — every child
+  the file put in both mounts is the same object afterwards — because
+  that is what "boot is a patch rather than a repaint" means and the
+  markup afterwards looks identical either way. Then a press on a
+  segmented chip, which must reach the app *and* land a repaint: the
+  probe says which chip core believes is chosen, and the sentence under
+  the control is written by `build`, so it only moves if the screen was
+  rebuilt and patched in.
 
 What that gate is **not** is a browser. Layout, styling, the real event
 loop, a real popup's window management and a real storage's quota
@@ -962,10 +975,8 @@ page *looks* or where text wrapped — the golden tests are that, on the
 desktop editions. Still uncovered on the web specifically: the compute
 worker (`live-worker.js` in a real `Worker`), the service worker
 (`sw.js`, and therefore the notification leg), the http leg's `fetch`,
-the static driver's hydration handover — the *patch* over generated
-markup, that is; the locale it hands over is driven here — and IME and
-scrolling, which belong to the browser rather than to a service. Those remain
-browser-only, asserted by no test on either side.
+and IME and scrolling, which belong to the browser rather than to a
+service. Those remain browser-only, asserted by no test on either side.
 
 ### The locale stub's own gate
 

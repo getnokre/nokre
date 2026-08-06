@@ -285,7 +285,9 @@ class Element extends DomNode {
 
   set innerHTML(html) {
     this.childNodes = [];
-    for (const child of parseHtml(this.ownerDocument, html).childNodes) this.appendChild(child);
+    // Over a copy: `appendChild` unparents each node, which splices the
+    // list being walked and would adopt every other child.
+    for (const child of [...parseHtml(this.ownerDocument, html).childNodes]) this.appendChild(child);
   }
 
   matches(selector) {
@@ -829,6 +831,27 @@ export function makeBrowser({
       into.clientWidth = width;
       document.body.appendChild(into);
       return into;
+    },
+    /// A whole file, served: the markup a generator wrote is parsed and
+    /// becomes this page, `<html>` attributes and all. A driver that
+    /// boots over a page it already published mounts into elements the
+    /// *file* wrote, not into a bare div — and what survives that
+    /// handover is only a question you can ask of a document that was
+    /// parsed rather than assembled.
+    ///
+    /// The one thing it does not do is run the page's own scripts: the
+    /// boot call is the scenario's, because a scenario has to hold the
+    /// nodes from before the mount to say anything about after it.
+    openPage(html) {
+      const parsed = parseHtml(document, html);
+      const root = parsed.querySelector("html") ?? parsed;
+      for (const { name, value } of root.attributes ?? []) {
+        document.documentElement.setAttribute(name, value);
+      }
+      const body = root.querySelector("body") ?? root;
+      document.body.childNodes = [];
+      for (const child of [...body.childNodes]) document.body.appendChild(child);
+      return document.body;
     },
     /// A press, through the document: the element carrying this label
     /// is found, a click is dispatched on it, and everything after that

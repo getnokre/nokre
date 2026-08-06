@@ -543,6 +543,67 @@ test "the content mount carries nokre's class list and the driver's beside it" {
     try expectContains(html, expected);
 }
 
+test "a mount holds the frame's bytes and no whitespace of the file's own" {
+    const Screens = struct {
+        fn build(_: ?*anyopaque, app: *App) anyerror!void {
+            try app.tree.append(app.tree.rootId(), .{ .heading = .{ .content = "Library", .level = .h1 } });
+        }
+    };
+    var app = try App.init(testing.allocator, .{
+        .viewport = .{ .w = 900, .h = 600 },
+        .services = .mocks(),
+        .routes = &.{
+            .{ .name = "library", .title = .{ .fixed = "Library" }, .build = Screens.build },
+            .{ .name = "settings", .title = .{ .fixed = "Settings" }, .build = Screens.build },
+        },
+    });
+    defer app.deinit();
+    // A roster, so the chrome mount is not empty and has something to
+    // be wrong about.
+    try app.setNav(&.{
+        .{ .route = "library", .icon = .library },
+        .{ .route = "settings", .icon = .settings },
+    });
+    try app.navigate("library");
+
+    const html = try write(&app, plain("Library"));
+    defer testing.allocator.free(html);
+
+    // The live driver's frame is `chrome` followed by `content` with
+    // nothing between or around them, and its first frame is diffed
+    // against these two mounts' children node for node. One newline
+    // after an open tag is a text node the frame does not have: the
+    // walk then pairs the file's first child against the frame's
+    // second, disagrees, and replaces it — and every sibling after it.
+    // That is a boot that repaints instead of patching, which costs the
+    // reader's scroll offset, their selection and their caret (live.js's
+    // `patch`). So the seam is asserted as bytes rather than as a
+    // substring: what follows the open tag is the region, exactly.
+    var region: std.ArrayList(u8) = .empty;
+    defer region.deinit(testing.allocator);
+
+    {
+        var em: serialize.Emitter = .{ .gpa = testing.allocator, .app = &app, .out = &region };
+        defer em.deinit();
+        try serialize.chrome(&em);
+    }
+    const chrome_open = "<div id=\"chrome\">";
+    const chrome_at = std.mem.indexOf(u8, html, chrome_open).? + chrome_open.len;
+    try testing.expectEqualStrings(region.items, html[chrome_at..][0..region.items.len]);
+    try expectContains(html, "</div>\n<main id=\"content\"");
+
+    region.clearRetainingCapacity();
+    {
+        var em: serialize.Emitter = .{ .gpa = testing.allocator, .app = &app, .out = &region };
+        defer em.deinit();
+        try serialize.content(&em);
+    }
+    const main_at = std.mem.indexOf(u8, html, "<main id=\"content\"").?;
+    const content_at = main_at + std.mem.indexOf(u8, html[main_at..], "\">").? + 2;
+    try testing.expectEqualStrings(region.items, html[content_at..][0..region.items.len]);
+    try expectContains(html, "</main>\n");
+}
+
 test "chrome comes before content, because the nav leads the focus order" {
     const Screens = struct {
         fn build(_: ?*anyopaque, app: *App) anyerror!void {

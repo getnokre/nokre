@@ -1047,6 +1047,20 @@ try dom.chrome(&em);    // notice, nav, sheet, picker
   diffs the static page by exactly that rule, which is what carries
   the reader's scroll, focus, and caret through the handover. The ids
   are a hydration contract, not decoration.
+
+  **And the ids are only half of it: a mount's children have to *be*
+  the frame's nodes.** The diff walks siblings in order, so one newline
+  written inside a mount for the file's own readability is a text node
+  the frame does not have — the walk pairs the file's first child
+  against the frame's second, disagrees, and replaces it, and every
+  sibling after it. Nothing looks wrong afterwards, which is how a
+  driver ships it: the markup is right, the ids are right, and the boot
+  was a repaint. So `document` writes both mounts tight —
+  `<div id="chrome">` and `<main …>` are followed immediately by the
+  region and closed immediately after it — and
+  [document_test.zig](../../src/render/dom/document_test.zig) asserts
+  the two seams as bytes against `chrome` and `content` themselves. A
+  driver placing the regions itself owes the same tightness.
 - **`Refs`.** How a route reference becomes an `href`, as a `ctx` +
   function pointer like every other action in nokre. The hook resolves
   a route to a `Dest` — `internal` (a plain href) or `external` (the
