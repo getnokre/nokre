@@ -318,14 +318,14 @@ export async function mount({ wasm, into, worker, content, route, locale, seed, 
     if (el.selectionStart !== at || el.selectionEnd !== at) el.setSelectionRange(at, at);
   }
 
-  // The fragment names the screen the app is on, in both directions
-  // and without configuration. It is a reference, unencoded: every byte
-  // a name or an argument may carry is one encodeURIComponent leaves
-  // alone, so what the app writes is what a reader copies.
   // core/router.zig's `Change`, in that enum's order.
   const MOTION = ["push", "pop", "replace", "switch_to"];
 
   let bar = "";
+  // The fragment names the screen the app is on, in both directions
+  // and without configuration. It is a reference, unencoded: every byte
+  // a name or an argument may carry is one encodeURIComponent leaves
+  // alone, so what the app writes is what a reader copies.
   function syncAddressBar() {
     const ref = read(nk.nokre_dom_route(), nk.nokre_dom_route_len());
     if (ref === bar) return;
@@ -587,17 +587,16 @@ export async function mount({ wasm, into, worker, content, route, locale, seed, 
   // it is also what re-asks every measured decision, the nav's shape
   // among them.
   //
-  // The width is the container's, not the window's. A host page may
-  // hold the screen to a readable column (the one nokre ships does),
-  // and core measuring against the window instead would decide against
-  // a width nobody is looking at: prose wrapped somewhere else, a row
-  // of actions that had room to spare and so never folded its tail,
-  // a track that fitted in a column it overflows. The height stays the
-  // window's, because that is what "how much is visible" means and
-  // what a scroll region resolves against.
-  // Measured on the element the *screen* is in, which is the column
-  // prose wraps in and the width a row of actions folds against; where
-  // the host owns that element, the chrome's own container is not it.
+  // The width is the container's, not the window's — the element the
+  // *screen* is in, and where the host owns that element, the chrome's
+  // own container is not it. A host page may hold the screen to a
+  // readable column (the one nokre ships does), and core measuring
+  // against the window instead would decide against a width nobody is
+  // looking at: prose wrapped somewhere else, a row of actions that had
+  // room to spare and so never folded its tail, a track that fitted in
+  // a column it overflows. The height stays the window's, because that
+  // is what "how much is visible" means and what a scroll region
+  // resolves against.
   function remeasure() {
     if (!nk) return; // the faces beat the module; boot reports it itself
     nk.nokre_dom_resize(screen.clientWidth, innerHeight);

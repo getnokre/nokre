@@ -269,32 +269,6 @@ export function appHooks({ nk, memory, workerUrl, wasmUrl, onWork, onMetrics }) 
     onWork();
   }
 
-  // Text measurement, which is a shell's job everywhere: natively it is
-  // HarfBuzz through the shim, here it is the engine that will draw the
-  // run. Widths are ceiled to whole pixels the way the shim ceils them,
-  // so layout never underestimates and a wrap point stays stable.
-  //
-  // Layout asks this thousands of times per frame — once per candidate
-  // wrap — so the answers are cached by face, size and string: for one
-  // set of loaded faces, the same question has the same answer.
-  //
-  // Which is the whole catch. The faces are bundled and fixed, but they
-  // still arrive over the network, and a ruler asked before one lands
-  // answers in whatever the browser fell back to — narrower stems, and
-  // a tofu box where a private-use icon codepoint should be. The text
-  // itself repaints when the face arrives; a cached width does not, so
-  // core keeps every decision it made from the wrong number: where
-  // prose wrapped, whether a row of actions folded, whether a track had
-  // to bleed. The nav's row is where it showed worst — it stayed a row
-  // some thirty pixels past the width it actually fitted in, so the end
-  // destinations hung over both screen edges before `navCollapses`
-  // agreed the roster no longer fitted.
-  //
-  // So the cache lives exactly as long as the font set it was measured
-  // against. `loadingdone` is the browser saying a batch just became
-  // available, which is precisely when these answers went stale — and
-  // it fires however the faces arrive, including the ordinary case
-  // where nothing requests one until a first frame paints with it.
   // ---- oauth: the popup, and the two ways it can end ----
   // A popup rather than a top-level redirect: a redirect would tear
   // down the wasm instance mid-flow, and the app would come back with
@@ -346,6 +320,32 @@ export function appHooks({ nk, memory, workerUrl, wasmUrl, onWork, onMetrics }) 
     endAuth(0, e.data.href);
   });
 
+  // Text measurement, which is a shell's job everywhere: natively it is
+  // HarfBuzz through the shim, here it is the engine that will draw the
+  // run. Widths are ceiled to whole pixels the way the shim ceils them,
+  // so layout never underestimates and a wrap point stays stable.
+  //
+  // Layout asks this thousands of times per frame — once per candidate
+  // wrap — so the answers are cached by face, size and string: for one
+  // set of loaded faces, the same question has the same answer.
+  //
+  // Which is the whole catch. The faces are bundled and fixed, but they
+  // still arrive over the network, and a ruler asked before one lands
+  // answers in whatever the browser fell back to — narrower stems, and
+  // a tofu box where a private-use icon codepoint should be. The text
+  // itself repaints when the face arrives; a cached width does not, so
+  // core keeps every decision it made from the wrong number: where
+  // prose wrapped, whether a row of actions folded, whether a track had
+  // to bleed. The nav's row is where it showed worst — it stayed a row
+  // some thirty pixels past the width it actually fitted in, so the end
+  // destinations hung over both screen edges before `navCollapses`
+  // agreed the roster no longer fitted.
+  //
+  // So the cache lives exactly as long as the font set it was measured
+  // against. `loadingdone` is the browser saying a batch just became
+  // available, which is precisely when these answers went stale — and
+  // it fires however the faces arrive, including the ordinary case
+  // where nothing requests one until a first frame paints with it.
   const FAMILIES = ["mono", "prose", "icons", "brand"];
   const ruler = document.createElement("canvas").getContext("2d");
   const widths = new Map();
