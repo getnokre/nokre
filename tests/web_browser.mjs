@@ -120,6 +120,24 @@ function matchesList(el, selector) {
 
 // ---- the tree ----------------------------------------------------
 
+// Focus lives on an *element*, so an element that leaves the document
+// takes the reader's focus with it: every engine falls `activeElement`
+// back to the body, and there is no way to keep a focus ring on a node
+// that is no longer there. The rule is the platform's, not the
+// driver's, and it is modelled here because it is the one the hydration
+// contract rests on — a handover that replaces a node rather than
+// patching it loses the focus the reader arrived with, and a stub that
+// held the reference would report that loss as a pass.
+function dropFocusInside(doc, node) {
+  if (!doc) return;
+  for (let el = doc.activeElement; el; el = el.parentNode) {
+    if (el === node) {
+      doc.activeElement = null;
+      return;
+    }
+  }
+}
+
 class DomNode {
   constructor(doc) {
     this.ownerDocument = doc;
@@ -148,6 +166,7 @@ class DomNode {
     const at = this.childNodes.indexOf(node);
     if (at >= 0) this.childNodes.splice(at, 1);
     node.parentNode = null;
+    dropFocusInside(this.ownerDocument, node);
     return node;
   }
 
@@ -157,6 +176,7 @@ class DomNode {
     this.childNodes[at] = fresh;
     fresh.parentNode = this;
     old.parentNode = null;
+    dropFocusInside(this.ownerDocument, old);
     return old;
   }
 

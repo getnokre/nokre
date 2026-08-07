@@ -554,11 +554,14 @@ pub fn document(em: *Emitter, doc: Document) !void {
     //
     // **Not one byte of whitespace inside either mount**, which reads
     // like formatting and is the handover. A mount's children are what
-    // the live driver diffs its frame against, node by node, under one
-    // identity rule — same kind of thing, same `data-n` (live.js's
+    // the live driver diffs its frame against, node by node and *in
+    // order* — and across the boot that order is the whole of the
+    // identity, because the ids in this file name slots in the
+    // generator's node table and no browser shares one (live.js's
     // `sameNode`). A newline after the open tag is a text node the
     // frame does not have, so the walk pairs the file's *first* child
-    // against the frame's second, disagrees, and replaces it — and
+    // against the frame's second, disagrees on the node type, and
+    // replaces it — and
     // every sibling after it, down both mounts. The page still renders,
     // which is why this survived: what it costs is exactly what the
     // handover was for — the reader's scroll offset, their selection,

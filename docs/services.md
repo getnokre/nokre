@@ -895,7 +895,7 @@ nothing.
 **On the web there is a second source, and it outranks the device.** A
 page that was *generated* by nokre's static driver already holds a
 screen, in one language, and the module booting on top of it has to
-rebuild that same screen: hydration matches nodes by tag and node id and
+rebuild that same screen: hydration matches nodes by tag and position and
 never by text, so an app that boots in the reader's language swaps every
 string on the page and nothing reports it. So a generated document's
 boot call names the locale the file was written in

@@ -480,10 +480,10 @@ half sits where it does.
   rebuild the screen the file already shows, and it would not have.
   `mount` seeds `navigator.language` where a page says nothing about a
   language, so a `/fa/…` page opened in an English browser hydrated
-  **English over Persian markup**, silently: the match is tag plus
-  `data-n` ("The seams" below), nothing in that rule looks at text, and
-  a tree rebuilt in another language has the same shape and the same
-  ids. The diff therefore *succeeds* — every string swapped, the
+  **English over Persian markup**, silently: the handover matches by tag
+  and position ("The seams" below), nothing in that rule looks at text,
+  and a tree rebuilt in another language has exactly the same shape.
+  The diff therefore *succeeds* — every string swapped, the
   direction flipped back under a document still announcing `dir="rtl"`,
   the reader's scroll position faithfully preserved on a page that now
   says something else.
@@ -1116,7 +1116,10 @@ node by node, under the identity rule the node-ids seam states below —
 same tag, same `data-n`, same node. So the write is proportional to
 what changed, and everything the browser keeps beside the document —
 scroll offsets, text selection, an open IME session — survives the
-frames that did not touch it.
+frames that did not touch it. That rule is about two frames of *one*
+tree. The first frame, which meets a page some other process wrote, has
+no shared tree to name a node with and matches positionally instead;
+the seam below has the argument.
 
 ### A heading is an address, and the address is GitHub's
 
@@ -1293,21 +1296,48 @@ try dom.chrome(&em);    // notice, nav, sheet, picker
   to a file has nobody to tell and leaves it off, *unless* that file is
   going to be booted over: identity across frames is what makes the boot
   a patch instead of a replacement, and a replacement throws away the
-  scroll position the reader arrived at. The match is tag plus
-  `data-n` — two nodes are the same node when they are the same kind
-  of thing carrying the same id — and the live driver's first frame
-  diffs the static page by exactly that rule, which is what carries
-  the reader's scroll, focus, and caret through the handover. The ids
-  are a hydration contract, not decoration.
+  scroll position the reader arrived at. Between two frames of one
+  running app the match is tag plus `data-n` — two nodes are the same
+  node when they are the same kind of thing carrying the same id.
+
+  **Across the handover it is not, and cannot be.** A `data-n` is a
+  handle into the tree that wrote it: a slot index and that slot's
+  generation ([tree.zig](../../src/core/tree.zig)'s `NodeId`). A
+  generator has one app and one tree and publishes a page per screen per
+  locale; every `switchTo` releases the content subtree and takes the
+  slots back off a free list, so by the second page both halves of the
+  id have moved — the generation has climbed and the index comes back in
+  release order rather than the order it was first handed out in. A
+  browser booting *one* page has none of that history behind it and no
+  way to acquire it. **The two agree only on the very first page a
+  generator writes, and by coincidence there.** So the first frame
+  matches **positionally**: the file and the frame are the same tree
+  serialized twice by the same walk in the same order, and position plus
+  tag is the whole of what two processes share. The frame's own ids
+  arrive as attributes — adopted, not matched — and from the second
+  frame on the document carries the running tree's ids and the rule
+  above is the rule again ([live.js](../../src/render/dom/live.js)'s
+  `sameNode`).
+
+  Making the ids agree instead was the obvious move and is the wrong
+  one, twice over. Resetting the generation per page removes the only
+  thing that stops a stale handle from addressing a recycled slot, which
+  a driver holding ids across rebuilds actually needs; and numbering the
+  nodes per frame would shift every node after an insertion, destroying
+  exactly the mid-session identity the diff exists for. The ids are a
+  hydration contract, not decoration — but the contract they carry is
+  *within* one running app, and across the boot the contract is the
+  walk.
 
   **And the ids are only half of it: a mount's children have to *be*
-  the frame's nodes.** The diff walks siblings in order, so one newline
-  written inside a mount for the file's own readability is a text node
-  the frame does not have — the walk pairs the file's first child
-  against the frame's second, disagrees, and replaces it, and every
-  sibling after it. Nothing looks wrong afterwards, which is how a
-  driver ships it: the markup is right, the ids are right, and the boot
-  was a repaint. So `document` writes both mounts tight —
+  the frame's nodes.** Positional matching makes that stricter, not
+  looser. The diff walks siblings in order, so one newline written
+  inside a mount for the file's own readability is a text node the frame
+  does not have — the walk pairs the file's first child against the
+  frame's second, disagrees on the node *type*, and replaces it, and
+  every sibling after it. Nothing looks wrong afterwards, which is how a
+  driver ships it: the markup is right and the boot was a repaint. So
+  `document` writes both mounts tight —
   `<div id="chrome">` and `<main …>` are followed immediately by the
   region and closed immediately after it — and
   [document_test.zig](../../src/render/dom/document_test.zig) asserts

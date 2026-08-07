@@ -121,8 +121,18 @@ each deliberately: none is a comment defect, so none belonged in a comment commi
 
 `getnokre.github.io` exercises it at one locale, in LTR, with English Markdown
 bodies. That covers the axis, the per-locale loop, the path-scheme boundary,
-`lang`/`dir` on a generated document, the chooser stub, `L.chrome`'s
-compile-time completeness and the hydration handover.
+`lang`/`dir` on a generated document, the chooser stub and `L.chrome`'s
+compile-time completeness.
+
+It did **not** cover the hydration handover, and the sentence that used to claim
+it here is this section's own receipt. A reference site publishes pages and
+watches none of them boot; the one gate that boots the shipped `live.js` over a
+generated page booted over the *first* page its generator ever wrote — the only
+page whose node ids a browser could ever have matched. Every page after it
+handed over by replacing the reader's document, on every static site nokre has
+published, and nothing reported it, because the markup afterwards is identical
+either way. Closed at revision 54, and the case no gate reached is now
+`hydrationOutlivesTheGeneratorsHistory` (docs/testing.md).
 
 It cannot cover an alternate set with two real languages, `x-default` in its
 multi-locale form, RTL served statically, or a translated document body. Those

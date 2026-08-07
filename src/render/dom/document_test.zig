@@ -1071,7 +1071,7 @@ test "the boot call carries the language the file was written in" {
     // The markup on this page is Persian and the module about to land
     // on it must rebuild it in Persian. It would not: `mount` seeds
     // `navigator.language` where a page says nothing, and hydration
-    // matches nodes by tag and `data-n` — never by text — so an English
+    // matches nodes by tag and position — never by text — so an English
     // boot over this file swaps every string, flips the direction back,
     // keeps the reader's scroll offset, and reports nothing at all.
     try expectContains(html, "lang=\"fa-IR\"");

@@ -156,6 +156,12 @@ export async function mount({ wasm, into, worker, content, route, locale, seed, 
       // document's own.
       content.classList.toggle("has-chrome", !!nk.nokre_dom_chromed());
     }
+    // Both mounts have met the tree once now, so whatever the host page
+    // arrived carrying has been reconciled with it and every `data-n` in
+    // the document is this app's. Cleared here rather than at the top of
+    // the function because the two mounts are two hydrations of one
+    // frame, and the chrome's would otherwise be the only one.
+    hydrating = false;
     restoreFocus();
     syncAddressBar();
     syncRoot();
@@ -207,10 +213,47 @@ export async function mount({ wasm, into, worker, content, route, locale, seed, 
   // rather than guessed at. Two nodes are the same node when they are
   // the same kind of thing and carry the same id; a node whose id
   // changed is a different node and is replaced outright.
+  //
+  // ## The first frame is a handover, and there the id says nothing
+  //
+  // That rule holds between two frames of one running app, because both
+  // came out of one tree and a `data-n` is a handle *into* that tree: a
+  // slot index and that slot's generation (core/tree.zig's `NodeId`).
+  // Across a boot over a page a generator wrote, there is no shared
+  // tree. The file was serialized by another process out of another
+  // node table, and by the time it wrote this page that table had a
+  // history — every screen it published freed its content subtree and
+  // took the slots back off a free list, which moves both halves of the
+  // id: the generation climbs and the index comes back in release order
+  // rather than the order it was first handed out in. A generator
+  // writing N pages and a browser booting one cannot agree, and only
+  // the generator's very first page ever did. Insisting on the id here
+  // made every other page's handover a replacement — the scroll offset,
+  // the caret and the focus above, thrown away on a page that then
+  // looked perfectly correct.
+  //
+  // So across the handover identity is **positional**. The file and the
+  // frame are the same tree serialized twice by the same walk in the
+  // same order — that is what makes hydrating one with the other mean
+  // anything at all — and position plus tag is the whole of what the two
+  // processes share. The frame's ids arrive the way every other
+  // attribute arrives, adopted rather than matched, and from the second
+  // frame on the document carries the running tree's own and the rule
+  // above is the rule again.
+  //
+  // The alternative was to make the ids agree — reset the generation per
+  // page, or number the nodes per frame. Both are worse. The generation
+  // is what stops a stale handle from addressing a recycled slot, which
+  // is a live hazard in a driver that holds ids across rebuilds; and a
+  // per-frame ordinal would shift every node after an insertion, which
+  // destroys exactly the mid-session identity this diff is for.
+  let hydrating = true;
+
   function sameNode(a, b) {
     if (a.nodeType !== b.nodeType) return false;
     if (a.nodeType === Node.TEXT_NODE) return true;
     if (a.nodeName !== b.nodeName) return false;
+    if (hydrating) return true;
     return (a.dataset?.n ?? null) === (b.dataset?.n ?? null);
   }
 
@@ -633,7 +676,7 @@ export async function mount({ wasm, into, worker, content, route, locale, seed, 
   // empty body has, and it stays the answer there. It is the wrong
   // answer over a page a generator already wrote: that page is the
   // app's first frame and it is in one language, while hydration
-  // matches nodes by tag and `data-n` and never by text — so an app
+  // matches nodes by tag and position and never by text — so an app
   // that boots in another language swaps every string, mirrors the
   // layout back, and reports nothing at all (dom-edition.md, "The
   // page's locale, not the reader's").

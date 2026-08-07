@@ -985,6 +985,22 @@ rather than analyzed:
   probe says which chip core believes is chosen, and the sentence under
   the control is written by `build`, so it only moves if the screen was
   rebuilt and patched in.
+- **the document, from a generator with a history** — the same handover
+  where the generator has *already written other pages*, which is every
+  page of a static site but the first and the case the scenario above
+  cannot reach. A generator is one app and one tree, and each screen it
+  publishes spends the tree's slot allocator, so the `data-n` in the
+  file it writes second is not the one a browser booting that file
+  arrives at — the handover was a replacement on 3,377 of rokovski.com's
+  3,378 pages and looked perfectly right afterwards. What is asserted is
+  the contract rather than the mechanism, deliberately: the ids in the
+  frame **must** differ from the ids in the file — that is what proves
+  the app rebuilt its tree at all, and reading id equality as health
+  gets it exactly backwards — *and* the control the reader had tabbed to
+  before the module landed must still be `document.activeElement`. Focus
+  survives only if the element does, so the second assertion is the
+  scroll, selection and caret claim as well, made on the one term this
+  harness can observe directly.
 - **the boot** — the same page again, booted by *the file the page asks
   for* rather than by a `mount` call the harness typed. Every scenario
   above hands `mount` an option object written in JavaScript, so until

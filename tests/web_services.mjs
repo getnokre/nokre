@@ -525,7 +525,7 @@ async function storeWithoutStorage() {
 // strictly before `nokre_dom_boot` so the tag is in hand inside the
 // first `build` (services/locale/web.zig). What the assertions below
 // are about is *which* tag, because there are two answers and the wrong
-// one is invisible: hydration matches nodes by tag and `data-n`, never
+// one is invisible: hydration matches nodes by tag and position, never
 // by text, so an app that boots in the reader's language over a page
 // written in another swaps every string and reports nothing.
 //
@@ -781,6 +781,137 @@ async function documentsPage() {
   );
 
   done("the document — two mounts hydrate node for node, and a press repaints");
+}
+
+/// The same handover from a generator that has **already written other
+/// pages**, which is every page of every static site but the first.
+///
+/// The scenario above boots over a file written by an app that had done
+/// nothing else, and that is why it passed while the contract was
+/// broken in the field: a `data-n` is a slot index and that slot's
+/// generation out of the tree's allocator (core/tree.zig's `NodeId`), so
+/// two trees agree about it only when they have the same allocation
+/// history behind them. A generator has one app and one tree and writes
+/// a page per screen per locale — rokovski.com writes 3,378 — and every
+/// `switchTo` frees the content subtree and takes it back off the free
+/// list, which moves *both* halves: the generation climbs and the index
+/// comes back in the free list's order rather than the first one. A
+/// browser booting one page has none of that history and never can. So
+/// the ids in the file and the ids in the frame disagree on every page
+/// after the first, and the handover was replacing the reader's document
+/// rather than patching it — the scroll offset, the focus and the caret
+/// that dom-edition.md calls "a hydration contract, not decoration".
+///
+/// What is asserted is the contract and not the mechanism, because the
+/// mechanism is also the fingerprint of the bug: `data-n` moving between
+/// the file and the frame proves the app rebuilt its tree, which is what
+/// a boot *is*, and reading id equality as health gets it exactly
+/// backwards. So this asks the two questions separately — the ids
+/// disagree, **and** every node the reader was looking at is still the
+/// node they were looking at, focus included.
+async function hydrationOutlivesTheGeneratorsHistory() {
+  const generator = await page({}, { route: "home", locale: "", addressing: "documents" });
+
+  // The pages before this one. Written, not merely navigated to: a
+  // generator lays each screen out and serializes it, and it is the
+  // rebuild under `switchTo` that spends the allocator either way.
+  const earlier = [];
+  for (const route of ["second", "hub", "actions", "footed", "second", "hub"]) {
+    generator.app.switchTo(route);
+    earlier.push(generator.app.document());
+  }
+  generator.app.switchTo("home");
+  const file = generator.app.document();
+
+  const stated = (html) => [...html.matchAll(/data-n="(\d+)"/g)].map((m) => m[1]);
+  const shown = (root) => root.querySelectorAll("[data-n]").map((el) => el.dataset.n);
+  assert.ok(earlier.length && stated(file).length, "the generator wrote no addressable page");
+
+  const browser = makeBrowser({ site });
+  browser.openPage(file);
+  const chrome = document.body.querySelector("#chrome");
+  const content = document.body.querySelector("#content");
+  assert.ok(chrome && content, "the file has both mounts");
+
+  // The reader, before the module lands. A generated page is readable
+  // and operable the moment it parses — that is the whole reason it is
+  // written whole — so by the time a wasm module has been fetched and
+  // instantiated the reader may well have tabbed to something. This is
+  // the state the handover owes them.
+  const button = content.querySelector("button");
+  assert.ok(button, "the file carries no control to stand on");
+  button.focus();
+  assert.equal(document.activeElement, button);
+
+  const before = { chrome: [...chrome.childNodes], content: [...content.childNodes] };
+  const deep = [...content.querySelectorAll("[data-n]")];
+  const parsed = shown(content);
+  assert.ok(deep.length >= 2, "the screen states too few ids to be a test");
+
+  const { mount } = await import(live + `?load=${++loads}`);
+  await mount({
+    wasm: "app.wasm",
+    into: chrome,
+    content,
+    route: "home",
+    locale: "",
+    addressing: "documents",
+  });
+
+  // The boot ran, and the proof is that the ids moved: the frame's are
+  // this browser's tree's, the file's were the generator's, and nothing
+  // could make two node tables in two processes agree. Asserted here so
+  // that what follows cannot be read as "the app never rebuilt".
+  assert.notDeepEqual(
+    shown(content),
+    parsed,
+    "the frame carried the file's own ids — this run proves nothing about a rebuild",
+  );
+
+  // …and it patched anyway. The contract first, because the contract is
+  // the point: the control the reader had tabbed to is still the focused
+  // element. A replaced node cannot be — focus lives on the element and
+  // the element is gone, which is the platform's rule and not this
+  // stub's (web_browser.mjs).
+  assert.equal(
+    document.activeElement,
+    button,
+    "the handover took the reader's focus with the node it replaced",
+  );
+
+  // Then the mechanism under it. Every node the reader was looking at is
+  // the same object, which is where a browser keeps a scroll offset, a
+  // selection and a caret as well as the focus above.
+  const kept = (was, is) => is.filter((n) => was.includes(n)).length;
+  assert.equal(
+    kept(before.content, [...content.childNodes]),
+    before.content.length,
+    "a page after the generator's first replaced the screen instead of patching it",
+  );
+  assert.equal(
+    kept(before.chrome, [...chrome.childNodes]),
+    before.chrome.length,
+    "a page after the generator's first replaced the chrome instead of patching it",
+  );
+  const live_now = content.querySelectorAll("[data-n]");
+  assert.equal(
+    deep.filter((el) => live_now.includes(el)).length,
+    deep.length,
+    "an addressable node was rebuilt rather than kept",
+  );
+
+  // And the page is live afterwards, so none of the above was bought by
+  // a mount that did not finish.
+  const chip = document.body
+    .querySelectorAll("[data-i]")
+    .find((el) => el.textContent.includes("Grid"));
+  chip.dispatchEvent(new PageEvent("click"));
+  assert.ok(
+    content.textContent.includes("Showing a grid."),
+    "the repaint after the press never landed",
+  );
+
+  done("the document — a page the generator wrote after others still patches, and keeps the reader's focus");
 }
 
 /// The same page, booted by **the file the page asks for** instead of by
@@ -1547,6 +1678,7 @@ const scenarios = [
   localeChangeAfterBoot,
   scratchIsClamped,
   documentsPage,
+  hydrationOutlivesTheGeneratorsHistory,
   theBootIsAFileThePageNames,
   navShapeFollowsTheWindow,
   navBandCarriesEveryDestination,

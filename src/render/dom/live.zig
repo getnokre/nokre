@@ -255,9 +255,13 @@ fn seedBytes(len: usize) callconv(.c) void {
 /// frame's bytes and does nothing when the new one matches, which is
 /// the case a frame usually is. A frame that differs is not swapped in
 /// wholesale either: the glue patches the shown document against this
-/// markup node by node, under the same identity rule the hydration
-/// handover uses — same tag, same `data-n`, same node — so the write is
-/// proportional to what changed even though the serialization never is.
+/// markup node by node — same tag, same `data-n`, same node — so the
+/// write is proportional to what changed even though the serialization
+/// never is. That rule is *this* tree's, and holds between two frames of
+/// it. The first frame after a boot over a generated page is not two
+/// frames of one tree, and matches by tag and position instead: the
+/// file's ids name slots in the generator's node table, which no
+/// browser shares (live.js's `sameNode`).
 ///
 /// `wrap` asks for the driver's own `<main>` around the screen. A page
 /// that has one already — a generated file keeping its id, its class
