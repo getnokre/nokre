@@ -319,9 +319,20 @@ fn buildFooted(state: *State, app: *h.App) !void {
     // is a set, and a set whose members are annotated except one is a
     // reader's question about the one. What states nothing is the link
     // above that is not part of the set.
-    try app.tree.append(stack, .{ .link = .{ .label = "English", .route = "en", .lang = "en" } });
-    try app.tree.append(stack, .{ .link = .{ .label = "فارسی", .route = "fa", .lang = "fa" } });
-    try app.tree.append(stack, .{ .link = .{ .label = "Türkçe", .route = "tr", .lang = "tr" } });
+    //
+    // And none of the three is a route. A reference names a screen and
+    // the arguments that pick which page of it this is, and nokre's
+    // grammar has no third slot a locale could ride in — so a real
+    // multi-locale site writes a reference of its own here and answers
+    // it in its `Refs` against whatever screen is current, which is how
+    // a reader keeps their place when they switch. `lang:` is the
+    // spelling rokovski.com uses; the colon is outside a route name's
+    // charset, so nothing can collide with it and the router can never
+    // spell it. That is the whole point of it being here: this is the
+    // destination the *browser* has to take, because core cannot.
+    try app.tree.append(stack, .{ .link = .{ .label = "English", .route = "lang:en", .lang = "en" } });
+    try app.tree.append(stack, .{ .link = .{ .label = "فارسی", .route = "lang:fa", .lang = "fa" } });
+    try app.tree.append(stack, .{ .link = .{ .label = "Türkçe", .route = "lang:tr", .lang = "tr" } });
     try app.tree.append(stack, .{ .text = .{ .content = "© nokre" } });
 }
 
@@ -346,14 +357,11 @@ const routes = h.Routes(State).table(&.{
     // rather than a dead anchor a reader finds.
     .{ .name = "terms", .title = .{ .fixed = "Terms" }, .build = buildSecond },
     .{ .name = "privacy", .title = .{ .fixed = "Privacy" }, .build = buildSecond },
-    // This page's own copies, one per language it is published in. On a
-    // real site a generator's `Refs` sends these three at `/en/…`,
-    // `/fa/…` and `/tr/…`; here the default fragment resolver answers,
-    // which is enough — what the gate is about is the language on the
-    // anchor, not the address under it.
-    .{ .name = "en", .title = .{ .fixed = "English" }, .build = buildFooted },
-    .{ .name = "fa", .title = .{ .fixed = "English" }, .build = buildFooted },
-    .{ .name = "tr", .title = .{ .fixed = "English" }, .build = buildFooted },
+    // The chooser's three destinations are deliberately *not* here.
+    // `buildFooted` says why: a locale's copy of this page is not a
+    // route, so the table cannot spell one and the default fragment
+    // resolver answers `#lang:fa` for it. Adding entries would make
+    // this gate the one arrangement no site has.
 });
 
 comptime {

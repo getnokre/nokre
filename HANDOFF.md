@@ -153,3 +153,50 @@ becomes an attribute (two writers, one silent rewrite), or leave it and say so i
 `localization.md`. The bug is unexploded — every ARB in this repo spells its tag
 with `-`, `fa-AF` included — which is exactly why it should be settled before a
 locale is added by someone reading the ARB spec rather than this file.
+
+## Two consumers want a link with a size
+
+Recorded as an observation. Nothing here has been designed, no shape has been
+argued, and this is not a request for a styling hook — it is two data points
+filed where the next round can find them.
+
+**What both hit.** `Link` carries no style: `element.Link` is a label, a
+destination, a `lang` and layout's own `folded` — no ink, no scale. So a
+`stack` of `link`s is body-scale ink, and a footer built the way this library
+tells consumers to build one cannot be the small dimmed type a footer is set in
+almost everywhere. Two repos, one week, neither agent aware of the other:
+
+- **getnokre.github.io**, in the comment it left beside its `footer` builder.
+  It drew a `divider` because the licence sentence "is set in exactly the same
+  face at exactly the same size" as the paragraph above it — "which is what the
+  small dimmed type behind a border used to prevent and what moving into the
+  tree gave up. The type is the library's to decide and this is not asking for
+  it back."
+- **rokovski.com**, reported by the agent that adopted revision 50 and *not*
+  written down in that repo, so this half is second-hand. What is checkable
+  there: the footer row — the site's name, four links, the language row — is
+  the one body-scale block in a builder that reaches for
+  `.{ .scale = .small, .ink = .mid }` on captions, eyebrows and detail lines
+  throughout. Circumstantial, and stated as such.
+
+Two consumers asking is this library's own bar for an element earning its place
+([contributing.md](docs/internals/contributing.md)).
+
+**The ask is narrower than it was reported**, which is the part worth having on
+file. "The cursor has no spans-plus-style call" is a missing *verb*, not a
+missing capability: `Text` already carries a `style` beside its `spans` —
+`validateSpans` reads `t.style.ink` as the base every span inherits — and a
+span already carries `route`, `external`, `lang` and its own `ink`, serialized
+as a real anchor with its own tab stop (`serialize.zig`'s `inlines`). A small,
+muted row of links is therefore expressible today, as one `text` element built
+through `tree.append` directly, because `Cursor.spanned` is the one door and it
+drops the style. What that form cannot do is what a `stack` does: gaps,
+wrapping as a row, and the nested group a language row is.
+
+So there are three questions here and a decision on none of them — the cursor
+verb (the smallest thing that would have unblocked both), a `scale` on `Span`
+(it has an `ink` and no scale, which is why the workaround can only be
+paragraph-wide), and a style on `Link` itself. Whether any of them is the
+styling hook the refusals forbid is the argument nobody has made: the refusal
+names colour and custom widgets, and a scale is neither — but that is an
+assertion, not a case.

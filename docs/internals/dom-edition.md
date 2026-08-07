@@ -528,13 +528,33 @@ else's host — which are legal hrefs and not routes at all. A route change
 the app makes *itself* still navigates, through the href its own `Refs`
 writes.
 
+**A link is the browser's under the keyboard too**, and for one revision
+it was not. The click handler passed every `a[href]` and the keydown
+handler passed none: it cancelled the keystroke and handed Enter to
+core, which refuses a destination the route table cannot spell — and a
+locale's copy of this page is exactly that, because a reference names a
+screen and its arguments and has no slot a locale could ride in. So a
+footer's language chooser switched language under a pointer and did
+nothing at all under a keyboard or a switch, which is WCAG 2.1.1
+Keyboard at level A: a harder failure than the 3.1.2 the `lang` on the
+anchor had just fixed, on the same six words. The branch is **Enter's
+alone**. Space activates no anchor in any browser, so handing it over
+would navigate nothing and would take the activation away from the links
+core *can* honor; it stays core's, where a focus stop takes both keys on
+every platform. Modifiers ride along with Enter for the click handler's
+reason — `Ctrl+Enter` is the reader's "open in a new tab", and core has
+no way to mean it.
+
 External links are the browser's on *every* driver, for the same
 modifier-key reasons: serialize.zig writes them as real anchors
 (`target="_blank" rel="noopener noreferrer"` — same-tab would tear the
 running instance down), and the live driver's click handler passes any
-anchor whose href is not a `#fragment`. Keyboard activation still
-crosses into core and reaches the open_url service, whose web leg is
-services.js's `window.open` ([../services.md](../services.md)).
+anchor whose href is not a `#fragment`. Where the app shell addresses
+its screens, keyboard activation still crosses into core and reaches the
+open_url service, whose web leg is services.js's `window.open`
+([../services.md](../services.md)); under `documents` the Enter branch
+above takes it first and the anchor's own `target="_blank"` opens the
+tab, which is the same new window by the browser's own hand.
 
 The reader's side of the bargain: the page is complete before the module
 arrives, every link works with the script blocked, and boot is a patch

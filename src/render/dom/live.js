@@ -442,6 +442,23 @@ export async function mount({ wasm, into, worker, content, route, locale, seed, 
     if (composing || e.isComposing) return;
     const key = KEY_BY_CODE[e.key];
     if (key === undefined) return;
+    // Where a screen is a document, a link is the browser's on the
+    // keyboard exactly as it is under a press — the click handler above
+    // states the reasons and they are the same reasons. The two have to
+    // agree: a press that hands the reader their file beside a keystroke
+    // that hands core a destination the route table cannot spell — a
+    // locale's copy of this page, a heading, a file on someone else's
+    // host — is a link that works with a pointer and does nothing at all
+    // with a keyboard, which is WCAG 2.1.1 Keyboard, level A. A footer's
+    // language chooser is exactly that destination on a real site.
+    //
+    // Enter alone, because Enter is the one key an anchor activates on
+    // in a browser. Space stays core's: a browser does not activate a
+    // link with it, so returning here would not navigate — it would only
+    // take the activation away from the destinations core *can* honor.
+    // The reader's modifiers ride along, the click handler's point:
+    // Ctrl+Enter is "open in a new tab", which core has no way to mean.
+    if (documents && e.key === "Enter" && e.target.closest("a[href]")) return;
     const editable = e.target.matches("input[type=text], input[type=password], textarea");
     // Inside a field the arrows and Home/End are the caret's, and
     // `editing.zig` is what moves it — so they go through like any

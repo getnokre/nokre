@@ -1021,6 +1021,25 @@ rather than analyzed:
   document root must still carry the page's own and not any of theirs,
   and the links beside them that are not part of the set must carry no
   `lang` at all.
+- **a link and the keyboard, under `documents`** — the one scenario
+  about two handlers *agreeing*. The click handler passed every
+  `a[href]` to the browser and the keydown handler passed none, so a
+  press reached the file and Enter reached core, which refuses a
+  destination the route table cannot spell. The footer's language row is
+  that destination on every real site — a locale's copy of a page is not
+  a route — so the row worked with a pointer and did nothing with a
+  keyboard: WCAG 2.1.1 Keyboard, level A. The assertion is what a
+  browser would do next, read off the event: a `focusin` puts the reader
+  on the anchor the way Tab does, and the keydown that follows must come
+  back **uncancelled**, which is the browser following the href and the
+  only way that page is ever reached. Then the three boundaries, because
+  a fix that took more than it should would pass the first line and fail
+  a reader anyway: the click on the same anchor is uncancelled too,
+  Space over it is still core's — no browser activates a link with it,
+  so handing it over would navigate nothing and cost every link core
+  *can* honor its activation — and the same screen mounted as an app
+  shell still cancels Enter and still lands on `#terms`, because there
+  the destination was always core's to reach.
 
 What that gate is **not** is a browser. Layout, styling, the real event
 loop, a real popup's window management and a real storage's quota

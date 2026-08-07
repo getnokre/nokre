@@ -1353,6 +1353,77 @@ async function theFooterIsContent() {
   done("the footer — content in the tree is styled, cleared, resolved and audited, with no seam");
 }
 
+/// The keyboard's half of "a link is the browser's", which was missing
+/// for as long as the addressing existed.
+///
+/// Under `addressing: "documents"` the click handler hands any `a[href]`
+/// to the browser and the keydown handler did not: it cancelled the
+/// keystroke and passed Enter to core, which refuses a destination the
+/// route table cannot spell. The footer's language row is exactly that
+/// destination on every real site — a locale's copy of a page is not a
+/// route, because a reference has no slot a locale could ride in — so
+/// the chooser switched language under a pointer and did nothing at all
+/// under a keyboard or a switch. That is WCAG 2.1.1 Keyboard, level A,
+/// and it shipped on six pages of the first site to adopt this.
+///
+/// It is a scenario here rather than a unit test because there is no
+/// unit under it. The defect is two handlers in one shipped file
+/// disagreeing about the same question, and the only place either of
+/// them runs is a booted page being driven by real events — which is
+/// this gate's whole reason for existing (docs/testing.md).
+async function documentsHandLinksToTheKeyboard() {
+  const { browser, into } = await page({}, { route: "footed", locale: "", addressing: "documents" });
+  const key = (name) => Object.assign(new PageEvent("keydown"), { key: name });
+  // Tab is the browser's on this edition, and where it landed is what
+  // crosses back into wasm — so a keystroke without this is a keystroke
+  // from nobody, and core would answer for whatever else held the tree's
+  // focus. The whole scenario is about the reader who arrived by Tab.
+  const tabTo = (el) => el.dispatchEvent(new PageEvent("focusin"));
+
+  const chooser = into.querySelectorAll("a").find((a) => a.getAttribute("lang") === "fa");
+  assert.ok(chooser, "the page carries no language row to press");
+  tabTo(chooser);
+  assert.equal(
+    chooser.getAttribute("href"),
+    "#lang:fa",
+    "the chooser's destination is a route after all, so this proves nothing",
+  );
+
+  // `dispatchEvent` answers "nobody cancelled it", which here is the
+  // whole assertion: an uncancelled keydown on an anchor is the browser
+  // following the link, and it is the only way this destination is ever
+  // reached. Both of these were false before the branch existed.
+  assert.equal(chooser.dispatchEvent(key("Enter")), true, "Enter over a link is still cancelled");
+  assert.equal(
+    chooser.dispatchEvent(new PageEvent("click")),
+    true,
+    "the press stopped being the browser's",
+  );
+  // And the driver did not re-address the page behind the browser's
+  // back: the href on the anchor is the whole navigation.
+  assert.deepEqual(browser.location.assigned, [], "the driver navigated instead of the anchor");
+
+  // Space is not an anchor's key in any browser, so it stays core's. The
+  // carve-out is about a destination core cannot reach, not about the
+  // keyboard: returning here too would take the activation away from
+  // every link core *can* honor and hand the browser a key it does
+  // nothing with.
+  assert.equal(chooser.dispatchEvent(key(" ")), false, "Space over a link stopped crossing into core");
+
+  // And it is scoped to this addressing. The same screen as an app shell
+  // — where a route is a redraw and the router owns the address bar —
+  // still cancels Enter and still navigates, because there the
+  // destination is core's to reach.
+  const shell = await page({}, { route: "footed", locale: "" });
+  const terms = shell.into.querySelectorAll("a").find((a) => a.getAttribute("href") === "#terms");
+  assert.ok(terms, "the footer lost the one link the router can spell");
+  tabTo(terms);
+  assert.equal(terms.dispatchEvent(key("Enter")), false, "an app shell stopped taking Enter into core");
+  assert.equal(shell.browser.location.hash, "#terms", "Enter never reached the router");
+
+  done("the document — a link takes Enter from the browser, and Space from core");
+}
+
 // ---- the run -----------------------------------------------------
 
 const scenarios = [
@@ -1383,6 +1454,7 @@ const scenarios = [
   bootIsDerivedFromWhatIsOnThePage,
   tilesAreAnchorsOrButtons,
   theFooterIsContent,
+  documentsHandLinksToTheKeyboard,
 ];
 
 for (const scenario of scenarios) {
