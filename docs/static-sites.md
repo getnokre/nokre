@@ -46,6 +46,7 @@ because those are what a hand-written head gets wrong:
 | the address a section is linked to by, where something outside the page names one (`Heading.anchor`) | that it can be an `id`, a fragment and a CSS selector at once; that it is unique in the document; that a collision fails the build rather than renaming it; and that it is on the roster `takeAnchors` exports |
 | the language a run of words is in, where it is not the page's (`Link.lang`, `Span.lang` — the chooser's anchors) | that the tag is a tag: `error.InvalidLangTag` at `append`, before a document can carry an attribute a browser would drop |
 | the structured data you serialized | that no byte of it can end the `<script>` block it lands in — `Emitter.json`, one escape and no opinion about the graph, which is why it does not write the tag either |
+| that this page carries a policy, and the hosts your app fetches beyond its own origin (`Document.csp`) | every directive in it — derived from what the page contains — plus that each host is a source and not a second directive, that a page which boots nothing declares none, and that the assets the page names are on the origin the policy can reach |
 
 And what the library writes without asking is what it already holds:
 `lang` and both direction attributes from `App.locale()` and
@@ -649,11 +650,20 @@ both into a rule that can be applied before the fact:
 > **A byte seam is legitimate exactly where the thing in it is not
 > content.**
 
-`Document.head` passes and always did. A `<meta>`, a CSP, a JSON-LD
-block, a preload, a favicon: nothing in a head is a thing a reader sees,
-so nothing in it is a thing the library could have styled, cleared,
+`Document.head` passes and always did. A `<meta>`, a JSON-LD block, a
+preload, a favicon: nothing in a head is a thing a reader sees, so
+nothing in it is a thing the library could have styled, cleared,
 audited or resolved, and handing it over as bytes gives up nothing. It
 is a real need with no element behind it and there never will be one.
+
+This list said "a CSP" for two revisions and that one was wrong — not
+because a policy renders, but because **where** a byte seam splices is
+the end of the head, and a Content-Security-Policy governs only what
+the parser meets past it. Written there it would let through the
+stylesheet link above it, the whole `Meta` block, and on a stub the
+chooser script itself: a policy that reads correct and is not. It is
+`Document.csp` now, two sections down, and it is the one head tag with
+a seat rather than a place in a list.
 
 `Document.body_end` failed. Every consumer that ever used it put a
 **footer** through — a stack of links and a line of text — which is
@@ -777,6 +787,11 @@ Asked of every other field, and none of them fails:
 - `head` passes, above, and is the only seam left.
 - `title`, `description`, `meta` are head content: a `<title>` and a
   string of `<meta>` tags, none of which renders.
+- `csp` is head content too and is deliberately **not** a seam, which
+  is the distinction `skip` draws from the other end: you supply one
+  list into a tag the library owns, and the library owns every
+  directive in it. Bytes there would be an inventory nokre holds,
+  typed by you.
 - `chrome_id`, `content_id`, `content_class`, `stylesheet`, `boot` are
   names and destinations the driver invented. `content_class` is the
   nearest call — it is a class list, so it is *styling* — and it passes
@@ -839,6 +854,82 @@ cannot be hashed and cannot move into script, since a page that never
 boots must still render right. The narrow pair is `style-src-elem
 'self'` with `'unsafe-inline'` left only where an attribute needs it
 ([internals/dom-edition.md](internals/dom-edition.md)).
+
+## And the page can now say so itself
+
+Reachable is not the same as written, and for a revision it was only
+reachable: nothing in `dom.Document` could express a policy, so the
+site that adopted the round above published with none at all. That is
+not a gap a driver should fill by hand either. The inventory of what
+this edition fetches is the library's — nokre knows every request its
+own page makes and you do not — and a hand-written copy of it in your
+generator is a second statement of a library fact, which is the thing
+this whole page exists to rule out. A response header is the better
+vehicle where you have one; a static host serving a committed tree
+often has none, and then a `<meta>` is the only vehicle there is.
+
+So you ask for it, and nokre derives it:
+
+```zig
+.csp = .{},   // or .{ .connect_src = &.{"https://api.example.com"} }
+```
+
+**What differs between two of your pages is what is on them.** A page
+that boots grants the module, the driver's two workers and the fetch; a
+page of prose and links grants none of the three, and `default-src
+'none'` is what makes those absences a refusal rather than an omission;
+a locale stub grants its chooser one script source and nothing else.
+You state none of that and cannot state it differently — it is read off
+the `Document` you are writing, the same way `boot`'s own necessity is
+read off the tree.
+
+**One source is yours, because it is the one nokre cannot know.** A
+fetch is the only outbound request your app's code can make here, so
+`connect_src` is the hosts it talks to: `http.request`'s URLs, an OAuth
+provider's *token* endpoint. They join `connect-src` and nothing else,
+the default is empty — your own origin — and an entry that is not a
+plain source expression fails the build rather than reaching a page,
+exactly as the app shell's `web_connect_src` does. A page that boots
+nothing may not declare one at all: nothing on it fetches, so the power
+would be granted to nobody.
+
+**Every other source is this origin**, which is a requirement and not
+an assumption. Publish your stylesheet, your wasm module, your driver
+directory or a page's seed somewhere else and the build fails
+(`error.AssetOffOrigin`) rather than shipping a page a browser will
+refuse to boot. The one asset no `Document` can see is where you
+published the faces — `stylesheet.Options.fonts`, a different call,
+whose default is a rooted path — so if you serve nokre's fonts from
+another origin, `font-src 'self'` is the directive that will not cover
+them, and the policy is not one your site can carry.
+
+**Your head seam is the one thing on the page nokre cannot read**, so
+what the policy grants it is the narrowest set a head actually spends:
+`img-src 'self'` for a favicon, `font-src 'self'` for a preloaded face,
+and `style-src-elem 'self'` for a second stylesheet of your own — all
+of them on this origin, because that is the only origin this policy
+names. A head that reaches past that is a head this policy refuses, and
+the two worth naming are a web-app manifest (no `manifest-src` is
+written: a generated page is not an app shell, and the shell's own page
+is the only one here that links one) and anything served from a CDN. If
+your seam needs either, the policy for your site is your edge's to
+write, not this page's.
+
+**Three directives stay your edge's**, and nothing a page says can
+change it: `frame-ancestors`, `report-uri`/`report-to` and `sandbox` are
+ignored inside a `<meta>` by specification. Set them where the site is
+served from, and know that this is the whole reason the meta is worth
+shipping anyway — it carries the ten directives that *are* honoured
+there, and the alternative on a host with no headers is none of them.
+One directive not to add: `require-trusted-types-for 'script'` breaks
+the live driver, which patches each frame in by parsing markup
+off-document.
+
+**Absent is a real answer and it is the default.** Whether a document
+carries its policy in its own bytes or takes one from the edge that
+serves it is a fact about your deployment, and a library that decided
+it for you would be spending bytes on every page you publish to repeat
+a header you already send.
 
 ## A default is not an opinion about your site
 

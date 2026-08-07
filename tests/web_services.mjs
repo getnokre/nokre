@@ -25,7 +25,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { makeBrowser, PageEvent, Storage } from "./web_browser.mjs";
+import { admits, makeBrowser, PageEvent, policyOf, Storage } from "./web_browser.mjs";
 
 const site = process.argv[2];
 if (!site) {
@@ -819,6 +819,37 @@ async function theBootIsAFileThePageNames() {
 
   const named = /<script type="module" src="([^"]*)"><\/script>/.exec(file);
   assert.ok(named, "the document names no boot module");
+
+  // The page's own policy, held against the page's own subresources
+  // before anything runs. A derived policy has one obvious failure —
+  // it refuses the app it was derived from — and this is where it
+  // cannot ship: the boot below fetches its module through a `fetch`
+  // the browser stub enforces `connect-src` on, so a policy that got
+  // that directive wrong is a scenario that throws rather than a page
+  // that quietly does nothing in the field.
+  const origin = "https://app.example/";
+  const policy = policyOf(file);
+  assert.ok(policy, "the generated page carries no policy to boot under");
+  assert.ok(
+    admits(policy, "script-src", named[1], origin),
+    `the page's policy refuses its own boot module: ${named[1]}`,
+  );
+  const sheet = /<link rel="stylesheet" href="([^"]*)">/.exec(file);
+  assert.ok(
+    admits(policy, "style-src-elem", sheet[1], origin),
+    `the page's policy refuses its own stylesheet: ${sheet[1]}`,
+  );
+  // The faces the sheet declares, and the icon a driver's head seam
+  // puts on the page: neither is markup nokre wrote, and both are
+  // refused outright by `default-src 'none'` if the directive is gone.
+  assert.ok(admits(policy, "font-src", "/assets/fonts/prose.woff2", origin));
+  assert.ok(admits(policy, "img-src", "/favicon.svg", origin));
+  // And what a page may not do, which is the half a policy is for: an
+  // injected script from anywhere, this origin included, has no source
+  // to be admitted by — every `<script>` on the page is a file the
+  // policy names or a data block a browser never runs.
+  assert.ok(!admits(policy, "script-src", "https://evil.example/x.js", origin));
+  assert.ok(!admits(policy, "connect-src", "https://evil.example/x", origin));
   // The site really serves what the page asks for. `site.manifest` and
   // the directory agree by another scenario; what is checked here is
   // that the *page* names a member of that set, which is the failure

@@ -167,9 +167,17 @@ A site nokre assembles whole is a site nokre can tell the truth about,
 and the truth is short: it loads its own module, four of its own
 scripts, two of its own stylesheets, its own faces and its own icons,
 and it talks to no host it was not told about. That is a
-Content-Security-Policy, and the page carries it as a `<meta>` — the
-per-directive inventory is `packaging.webIndexHtml`, which is the
-emitter, so the policy cannot fall behind the page it rides in.
+Content-Security-Policy, and the page carries it as a `<meta>`.
+
+The per-directive inventory is [csp.zig](../../src/render/dom/csp.zig),
+which is a leaf beside `driver_files.zig` and for its reason: both
+writers of HTML here spend it — `packaging.webIndexHtml` for the shell
+page and `document.zig` for a generated one — and build.zig reads
+packaging, so nothing in it may reach the rest of the library. One
+inventory rather than two because the *edition* is what it describes,
+not the page: what a shell fetches and what a published page fetches are
+the same list of things, and written twice the second copy is the one
+that falls behind the day this edition learns to fetch something new.
 
 It belongs here rather than in a consumer's hands for the reason
 `services.js` does. A page a build regenerates is a poor place for a
@@ -211,9 +219,10 @@ only where an attribute needs it.
 **`connect-src` is the one directive an app outgrows**, because a fetch
 is the only outbound request an app's own code can make here: no app
 supplies script, style, faces or images to this edition. So it is the
-one seam a consumer gets — `web_connect_src` on `addApp`, a list of
-hosts that joins that directive and no other — and the entries are
-checked before they reach the page (`packaging.badConnectSrc`), because
+one seam a consumer gets — `web_connect_src` on `addApp` for a shell,
+`Csp.connect_src` on a `Document` for a generated page, a list of hosts
+that joins that directive and no other — and the entries are checked
+before they reach the page (`csp.badConnectSrc` on both paths), because
 a string that lands inside a policy is a string that could end the
 directive it landed in. The default is empty, which is the app's own
 origin and nothing else.
@@ -341,6 +350,68 @@ The one page that did not move is [packaging.zig](../../src/packaging/packaging.
 `webIndexHtml`: its boot already was a file, and there is exactly one of
 it per site with two arguments out of the declaration, so it writes them
 into `boot.js` and has no per-page data to state.
+
+#### And then the page that could carry the policy did not carry one
+
+The round above made `script-src 'self'` **reachable** for a published
+page and stopped there. `dom.Document` had no way to state a policy at
+all, so the site that adopted it shipped with none: no meta on any page,
+no `_headers`, and nothing an edge could be pointed at — because
+GitHub Pages serving a committed tree permits no custom response header,
+and for that class of consumer a `<meta http-equiv>` is the only vehicle
+there is.
+
+**The head seam is not the answer, and the reason is position rather
+than doctrine.** [static-sites.md](../static-sites.md) names a CSP among
+the things `Document.head` is legitimately for, and for every other tag
+in a head that is right. This one is different: a policy governs only
+what the parser meets *after* it, and the seam is spliced at the end of
+the head — after the stylesheet link, after the whole `Meta` block, and
+on a stub after the chooser script itself. A policy written there reads
+correct and lets through every subresource the head already asked for.
+`webIndexHtml` has said so in a comment since it was written; what was
+missing was the seat, and `Document.csp` is that seat: immediately
+behind the charset, ahead of everything it governs.
+
+**What it is, is derived.** A consumer passing a string would be passing
+a copy of a library fact — whether a module is compiled, whether the
+driver behind it can reach a worker, whether anything on the page
+fetches at all — and the copy is what goes stale. So `Csp` is asked for
+and then read off the `Document`:
+
+| the page | what it grants past the floor |
+| --- | --- |
+| a booting document | `script-src 'self' 'wasm-unsafe-eval'`, `worker-src 'self'`, `connect-src 'self'` + declared hosts, the split `style-src` pair |
+| a document with no boot | the `style-src` pair and nothing executable — `default-src 'none'` answers for every absence |
+| a locale stub | `script-src 'self'` for its chooser, and an undivided `style-src 'self'`: its markup is written in document.zig and carries no style attribute |
+
+`img-src 'self'` and `font-src 'self'` are on all three, and the second
+of those is the interesting one: nokre's own markup spends neither. The
+faces are the *stylesheet's*, fetched through its `@font-face` block,
+and the icon is the head seam's — which is the one place a policy here
+cannot see what it is granting, and is therefore granted the narrowest
+thing that works. The one input to the whole derivation that no page can
+see is where a driver published the faces (`stylesheet.Options.fonts`, a
+different call, with a rooted default); that is stated in
+[static-sites.md](../static-sites.md) rather than guessed at.
+
+**Every source but the declared hosts is `'self'`, so the assets have to
+be there.** A stylesheet, a wasm module, a driver directory or a seed
+published off-origin is one the browser refuses on a page that would
+otherwise have booted — a blank page with a console message, which is
+the silent direction — so `error.AssetOffOrigin` refuses it before a
+byte, along with a host declared on a page that boots nothing
+(`error.ConnectSrcWithoutBoot`) and a source that could end its own
+directive (`error.InvalidConnectSrc`).
+
+**The obvious failure is a policy that blocks its own boot, and it is
+gated where a boot actually happens.** tests/web_browser.mjs reads the
+policy off the file `openPage` is served and enforces it on every
+`fetch` and every service-worker registration after it, so the two
+scenarios that boot the shipped `live.js` over a generated page boot
+*under* the policy that page states. A directive dropped from the
+derivation stops being a Zig test's opinion about a string and becomes
+`Refused to load app.wasm` in a run that was mounting an app.
 
 #### The document is the library's; the names in it are the driver's
 

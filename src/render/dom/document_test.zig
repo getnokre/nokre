@@ -1597,3 +1597,240 @@ test "a stub claiming an address owes the rules every other URL here owes" {
     stub.published = .{ .origin = "https://example.com", .path = "/docs/" };
     try testing.expectError(error.PathNotRooted, writeStub(&app, stub));
 }
+
+// ------------------------------------------------------------ the policy
+//
+// The directive set itself is csp.zig's subject and is not re-asserted
+// here — that file owns the inventory and both writers spend it. These
+// are about the two pages: which powers each one derives from what it
+// contains, where the tag lands, and what a driver is refused for.
+
+/// The policy as a browser reads it: the content attribute of the one
+/// meta tag carrying it, or null on a page with none.
+fn policyOf(html: []const u8) ?[]const u8 {
+    const open = "<meta http-equiv=\"Content-Security-Policy\" content=\"";
+    const at = std.mem.indexOf(u8, html, open) orelse return null;
+    const rest = html[at + open.len ..];
+    return rest[0..std.mem.indexOfScalar(u8, rest, '"').?];
+}
+
+fn expectDirective(html: []const u8, directive: []const u8) !void {
+    var it = std.mem.splitScalar(u8, policyOf(html).?, ';');
+    while (it.next()) |raw| {
+        if (std.mem.eql(u8, std.mem.trim(u8, raw, " \n"), directive)) return;
+    }
+    std.debug.print("expected directive:\n  {s}\nin policy:\n  {s}\n", .{ directive, policyOf(html).? });
+    return error.TestExpectedDirective;
+}
+
+fn expectNoDirective(html: []const u8, name: []const u8) !void {
+    var it = std.mem.splitScalar(u8, policyOf(html).?, ';');
+    while (it.next()) |raw| {
+        const d = std.mem.trim(u8, raw, " \n");
+        if (std.mem.startsWith(u8, d, name)) {
+            std.debug.print("expected no {s} in policy:\n  {s}\n", .{ name, policyOf(html).? });
+            return error.TestExpectedNoDirective;
+        }
+    }
+}
+
+test "a page carries no policy unless a driver asks for one" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    const html = try write(&app, plain("Hello"));
+    defer testing.allocator.free(html);
+    // Whether a document states its policy in its own bytes or takes
+    // one from the edge serving it is a fact about a deployment, so
+    // absent is a real answer and the default. A stub answers the same
+    // way for the same reason.
+    try testing.expectEqual(@as(?[]const u8, null), policyOf(html));
+    const stub = try writeStub(&app, plainStub());
+    defer testing.allocator.free(stub);
+    try testing.expectEqual(@as(?[]const u8, null), policyOf(stub));
+}
+
+test "a booting page grants the module, the workers and the fetch" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    var doc = plain("Hello");
+    doc.boot = .{ .wasm = "/app.wasm" };
+    doc.csp = .{};
+    const html = try write(&app, doc);
+    defer testing.allocator.free(html);
+
+    // The three a page with a runtime on it spends, and the wasm
+    // keyword beside the script source rather than instead of it: a
+    // browser compiling a module calls that script execution.
+    try expectDirective(html, "script-src 'self' 'wasm-unsafe-eval'");
+    try expectDirective(html, "worker-src 'self'");
+    try expectDirective(html, "connect-src 'self'");
+    // And the floor, which is what makes the absences above mean
+    // anything at all.
+    try expectDirective(html, "default-src 'none'");
+    // A screen is going into the body, so the serializer's inline style
+    // attributes are on this page and the split pair carries them.
+    try expectDirective(html, "style-src 'self' 'unsafe-inline'");
+    try expectDirective(html, "style-src-elem 'self'");
+    // One policy on the page: a second meta would be a second policy,
+    // and the intersection of two is not what either one says.
+    try testing.expectEqual(1, std.mem.count(u8, html, "Content-Security-Policy"));
+}
+
+test "a page that runs nothing grants nothing to run it with" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    // The screen a static site mostly publishes: prose and links, no
+    // module. `needsRuntime` says so, `boot` is null, and every power a
+    // runtime would spend is absent — which `default-src 'none'`
+    // answers as a refusal rather than as a gap.
+    var doc = plain("Hello");
+    doc.csp = .{};
+    const html = try write(&app, doc);
+    defer testing.allocator.free(html);
+    try expectNoDirective(html, "script-src");
+    try expectNoDirective(html, "worker-src");
+    try expectNoDirective(html, "connect-src");
+    try expectDirective(html, "default-src 'none'");
+    try expectDirective(html, "style-src-elem 'self'");
+    // No page this writer produces links a manifest; only the app
+    // shell's does (packaging.zig).
+    try expectNoDirective(html, "manifest-src");
+}
+
+test "a stub carries its chooser's one power and none of a document's" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    var stub = plainStub();
+    stub.csp = .{};
+    const html = try writeStub(&app, stub);
+    defer testing.allocator.free(html);
+
+    // A classic script the site serves, and that is the whole of what
+    // runs here: no module is compiled, no driver boots, and
+    // `location.replace` is a navigation rather than a fetch.
+    try expectDirective(html, "script-src 'self'");
+    try expectNoDirective(html, "worker-src");
+    try expectNoDirective(html, "connect-src");
+    // The markup on this page is written by hand in document.zig and
+    // carries no style attribute, so the split pair collapses to one
+    // directive — which the file itself has to keep true.
+    try expectDirective(html, "style-src 'self'");
+    try expectNoDirective(html, "style-src-elem");
+    try expectLacks(html, " style=\"");
+}
+
+test "the policy leads the head, where the seam cannot follow" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    var doc = plain("Hello");
+    doc.head = "<link rel=\"icon\" href=\"/favicon.svg\">\n";
+    doc.csp = .{};
+    const html = try write(&app, doc);
+    defer testing.allocator.free(html);
+
+    const charset = std.mem.indexOf(u8, html, "<meta charset=\"utf-8\">").?;
+    const policy = std.mem.indexOf(u8, html, "Content-Security-Policy").?;
+    const sheet = std.mem.indexOf(u8, html, "<link rel=\"stylesheet\"").?;
+    const seam = std.mem.indexOf(u8, html, "favicon").?;
+    // The charset keeps the first bytes, because a browser stops
+    // looking for it there and a policy is not a fetch.
+    try testing.expect(charset < policy);
+    // And this is the whole reason the policy is a field rather than
+    // bytes through `head`: it governs only what the parser meets past
+    // it, the stylesheet is one of those things, and the seam is
+    // spliced after both.
+    try testing.expect(policy < sheet);
+    try testing.expect(sheet < seam);
+    // What the seam does put on the page is an icon, which is why
+    // `img-src` is unconditional in a policy nokre's own markup never
+    // spends.
+    try expectDirective(html, "img-src 'self'");
+}
+
+test "a declared host joins connect-src and no other directive" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    var doc = plain("Hello");
+    doc.boot = .{ .wasm = "/app.wasm" };
+    doc.csp = .{ .connect_src = &.{ "https://api.example.com", "wss://live.example.com" } };
+    const html = try write(&app, doc);
+    defer testing.allocator.free(html);
+    try expectDirective(html, "connect-src 'self' https://api.example.com wss://live.example.com");
+
+    // The directive count did not move: a declared host is a source,
+    // never a directive.
+    var plain_doc = plain("Hello");
+    plain_doc.boot = .{ .wasm = "/app.wasm" };
+    plain_doc.csp = .{};
+    const bare = try write(&app, plain_doc);
+    defer testing.allocator.free(bare);
+    try testing.expectEqual(
+        std.mem.count(u8, policyOf(bare).?, ";"),
+        std.mem.count(u8, policyOf(html).?, ";"),
+    );
+}
+
+test "a policy a driver got wrong is refused before a byte" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+
+    // A source that could end the directive it lands in and start a
+    // friendlier one — the same check the app shell's declaration
+    // faces, in the seat a generated page has for it.
+    var smuggled = plain("Hello");
+    smuggled.boot = .{ .wasm = "/app.wasm" };
+    smuggled.csp = .{ .connect_src = &.{"x.com; script-src *"} };
+    try testing.expectError(error.InvalidConnectSrc, write(&app, smuggled));
+
+    // A host on a page with no runtime: nothing on it fetches, so the
+    // power would be granted to nobody, and a driver writing that has
+    // one of the two facts wrong.
+    var unbooted = plain("Hello");
+    unbooted.csp = .{ .connect_src = &.{"https://api.example.com"} };
+    try testing.expectError(error.ConnectSrcWithoutBoot, write(&app, unbooted));
+
+    // Every source in the emitted policy but those hosts is `'self'`,
+    // so an asset the page names anywhere else is one the browser
+    // refuses — a blank page with a console message, which is the
+    // silent direction.
+    var off_sheet = plain("Hello");
+    off_sheet.stylesheet = "https://cdn.example.com/style.css";
+    off_sheet.csp = .{};
+    try testing.expectError(error.AssetOffOrigin, write(&app, off_sheet));
+
+    for ([_]document.Boot{
+        .{ .wasm = "https://cdn.example.com/app.wasm" },
+        .{ .wasm = "/app.wasm", .driver_dir = "https://cdn.example.com/nokre/" },
+        .{ .wasm = "/app.wasm", .seed = "//cdn.example.com/md/docs.md" },
+    }) |boot| {
+        var doc = plain("Hello");
+        doc.boot = boot;
+        doc.csp = .{};
+        try testing.expectError(error.AssetOffOrigin, write(&app, doc));
+    }
+
+    // And the same three questions on the other writer, which has two
+    // of the destinations and no boot at all.
+    var stub = plainStub();
+    stub.csp = .{ .connect_src = &.{"https://api.example.com"} };
+    try testing.expectError(error.ConnectSrcWithoutBoot, writeStub(&app, stub));
+    stub = plainStub();
+    stub.driver_dir = "https://cdn.example.com/nokre/";
+    stub.csp = .{};
+    try testing.expectError(error.AssetOffOrigin, writeStub(&app, stub));
+}
+
+test "a refused policy leaves no bytes behind" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    var out: std.ArrayList(u8) = .empty;
+    defer out.deinit(testing.allocator);
+    var em: serialize.Emitter = .{ .gpa = testing.allocator, .app = &app, .out = &out };
+    defer em.deinit();
+    var doc = plain("Hello");
+    doc.csp = .{ .connect_src = &.{"https://api.example.com"} };
+    try testing.expectError(error.ConnectSrcWithoutBoot, document.document(&em, doc));
+    // Checked beside `checkMeta` and for its reason: a half-written
+    // file published is worse than a build that failed.
+    try testing.expectEqual(@as(usize, 0), out.items.len);
+}

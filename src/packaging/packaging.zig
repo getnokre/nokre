@@ -48,6 +48,15 @@ pub const apple_icon = @import("apple_icon.zig");
 /// it too.
 const driver_entry = @import("../render/dom/driver_files.zig").entry;
 
+/// The Content-Security-Policy this page carries, and the argument
+/// behind every directive in it (render/dom/csp.zig). It is a leaf with
+/// no imports for `driver_files`'s reason, and it is shared with the
+/// static writer for a different one: the policy is an inventory of what
+/// the *edition* fetches, the shell page and a generated page fetch the
+/// same things, and two lists of that would be two lists to keep in
+/// step.
+const csp = @import("../render/dom/csp.zig");
+
 /// App identity as build.zig declares it (the `pkg_*` options alias
 /// this struct). Packaging consumes the declaration directly, never the
 /// package_info service, so manifests can exist for an app that links
@@ -253,23 +262,11 @@ pub const Web = struct {
 };
 
 /// The first `connect_src` entry a page will not carry, or null when
-/// every one of them is a plain source expression. Two refusals. Anything
-/// a source cannot contain — whitespace, a quote, a semicolon, a comma —
-/// because that is exactly how one declared origin becomes a second
-/// directive. And the bare wildcard, because "every host there is" names
-/// no host at all: it is the directive's absence, and a consumer who
-/// truly wants that can say so in their own edge configuration rather
-/// than have nokre generate it into every page they ship.
-pub fn badConnectSrc(sources: []const []const u8) ?[]const u8 {
-    for (sources) |src| {
-        if (src.len == 0 or std.mem.eql(u8, src, "*")) return src;
-        for (src) |c| switch (c) {
-            'a'...'z', 'A'...'Z', '0'...'9', '.', '-', '_', ':', '/', '*', '+', '[', ']' => {},
-            else => return src,
-        };
-    }
-    return null;
-}
+/// every one of them is a plain source expression — the check the
+/// policy's one consumer-supplied source faces, stated where the policy
+/// is (csp.zig). Named here because build.zig calls it on the
+/// declaration, which is the earliest a declared host exists.
+pub const badConnectSrc = csp.badConnectSrc;
 
 pub const Error = error{ InvalidId, InvalidBuild };
 
@@ -1001,63 +998,16 @@ pub fn webBootJs(gpa: std.mem.Allocator, web: Web) error{OutOfMemory}![]u8 {
 /// knows every request its own page makes, and a consumer hand-editing
 /// a generated page would lose the policy on their next build.
 ///
-/// It is an inventory of what the DOM edition actually does, not a
-/// template — every directive below is here because something would
-/// break without it, and `default-src 'none'` is what makes that
-/// claim checkable: a fetch nobody named is a fetch nobody makes.
-///
-/// - `script-src 'self' 'wasm-unsafe-eval'` — boot.js and the driver's
-///   three modules are the site's own files. The wasm keyword is the
-///   module itself: compiling one is script execution to a browser, and
-///   under any script-src Chrome and Firefox refuse it without this.
-///   `'wasm-unsafe-eval'` and not `'unsafe-eval'` — nokre calls neither
-///   `eval` nor `new Function`, and the narrow keyword says so.
-/// - `worker-src 'self'` — two of them, both the site's own files:
-///   live-worker.js, the compute actor, which is the same module
-///   instantiated a second time (docs/services.md), and sw.js, the
-///   service worker the notification service registers
-///   (docs/internals/notifications.md — Chrome for Android serves
-///   `showNotification` from nowhere else, and a push arrives with no
-///   page open at all). Stated because worker-src falls back to
-///   child-src and then to default-src, which is 'none'; the service
-///   worker's own execution context is governed by the headers its file
-///   is served with, not by this page's policy.
-/// - `style-src 'self' 'unsafe-inline'` with `style-src-elem 'self'` —
-///   the generated stylesheet and this page's own are files, so no
-///   `<style>` block is admitted anywhere. The inline part is
-///   *attributes*, which the serializer writes on element after element:
-///   a list's measured gutter, a QR's whole-pixel side, a track's bleed,
-///   a container's own gap and padding (docs/internals/dom-edition.md
-///   says why each is a measured number and not a stylesheet guess).
-///   They cannot be hashed — every one of them is a value layout just
-///   computed — and they cannot be moved to script, because the static
-///   driver writes pages that run none. So the narrower pair carries the
-///   loosening: elements are files only, attributes are inline, and a
-///   browser too old for the split falls back to the style-src line,
-///   which a page shipping no `<style>` block never spends.
-/// - `img-src 'self'` — the two icons the page links. Nothing else: the
-///   QR is inline `<svg>` markup rather than an image request, and the
-///   element set has no image in it.
-/// - `font-src 'self'` — the four bundled faces, from `fonts/` beside
-///   the page.
-/// - `connect-src 'self'` plus `Web.connect_src` — the wasm module and
-///   any seed arrive by fetch, which is this directive and not
-///   script-src; so does every request the http service makes, and that
-///   is the one place an app outgrows what nokre can know. It is
-///   also the only directive a consumer extends, because a fetch is the
-///   only outbound request an app's own code can make: no app supplies
-///   script, style, fonts or images to this edition.
-/// - `manifest-src 'self'` — the web-app manifest, which likewise falls
-///   back to default-src.
-/// - `base-uri 'none'` and `form-action 'none'` — neither falls back to
-///   default-src, so 'none' has to be said. An injected `<base>` would
-///   re-point every relative URL in the page, and nokre emits no form.
-///
-/// What a meta tag cannot carry, whatever it says: `frame-ancestors`,
-/// `report-uri`/`report-to` and `sandbox` are ignored in one by spec, so
-/// they stay the deploying edge's — getting-started.md tells a consumer
-/// so in as many words, because a page that looked like the whole story
-/// would be worse than no policy at all.
+/// **The inventory is csp.zig's**, and every directive's argument is
+/// there rather than here, because the static writer emits the same
+/// policy over the same edition (render/dom/document.zig) and two lists
+/// of one fact is one list too many. What this page states is only what
+/// is true of *it*: it boots a module, so it compiles wasm and may
+/// spawn a worker; it fetches; it carries a serialized screen's inline
+/// style attributes once an app is running in it; and it is the one
+/// page here that links a web-app manifest. `Web.connect_src` is the
+/// one source a consumer supplies, already refused by `badConnectSrc`
+/// if it could end the directive it lands in.
 pub fn webIndexHtml(gpa: std.mem.Allocator, decl: Decl, web: Web) error{OutOfMemory}![]u8 {
     const name_html = try xmlEscapedAlloc(gpa, decl.name);
     defer gpa.free(name_html);
@@ -1080,30 +1030,17 @@ pub fn webIndexHtml(gpa: std.mem.Allocator, decl: Decl, web: Web) error{OutOfMem
         \\">
         \\<head>
         \\<meta charset="utf-8">
-        \\<meta http-equiv="Content-Security-Policy" content="
-        \\  default-src 'none';
-        \\  script-src 'self' 'wasm-unsafe-eval';
-        \\  worker-src 'self';
-        \\  style-src 'self' 'unsafe-inline';
-        \\  style-src-elem 'self';
-        \\  img-src 'self';
-        \\  font-src 'self';
-        \\  connect-src 'self'
+        \\
     );
-    // One space per source, on the line connect-src already owns: the
-    // consumer's own hosts are the only part of this policy that is not
-    // the same in every site nokre builds. `badConnectSrc` has already
-    // refused anything that could close the attribute or the directive.
-    for (web.connect_src) |src| {
-        try out.append(gpa, ' ');
-        try out.appendSlice(gpa, src);
-    }
+    try csp.write(gpa, &out, .{
+        .scripts = true,
+        .wasm = true,
+        .workers = true,
+        .connects = true,
+        .style_attrs = true,
+        .manifest = true,
+    }, web.connect_src);
     try out.appendSlice(gpa,
-        \\;
-        \\  manifest-src 'self';
-        \\  base-uri 'none';
-        \\  form-action 'none'
-        \\">
         \\<meta name="viewport" content="width=device-width, initial-scale=1">
         \\<title>
     );

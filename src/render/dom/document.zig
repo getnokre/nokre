@@ -71,6 +71,7 @@ const alternates_mod = @import("alternates.zig");
 const app_mod = @import("../../core/app.zig");
 const class_names = @import("class_names.zig");
 const color = @import("../../core/color.zig");
+const csp_mod = @import("csp.zig");
 const driver_files = @import("driver_files.zig");
 const element_mod = @import("../../core/element.zig");
 const layout = @import("../../core/layout.zig");
@@ -132,6 +133,82 @@ pub const Boot = struct {
     /// inside its first build — a URL, fetched before boot. Empty for a
     /// screen whose builder needs nothing it did not compile in.
     seed: []const u8 = "",
+};
+
+/// The page's own Content-Security-Policy, as a `<meta http-equiv>` —
+/// asked for, then **derived from what the page contains**.
+///
+/// **Why it is not the head seam.** `Document.head` takes a `<meta>`,
+/// and docs/static-sites.md names a CSP as the kind of thing a byte
+/// seam is legitimately for. That is true of every other tag in a head
+/// and false of exactly this one, on a fact about *position*: a policy
+/// applies only to what the parser meets after it, and the seam is
+/// spliced at the end of the head — after the stylesheet link, after
+/// the whole `Meta` block, and on a stub after the chooser script
+/// itself. A policy written there governs the body and lets through
+/// every subresource the head already asked for, which is a policy that
+/// reads correct and is not. So the tag goes where packaging.zig's has
+/// always gone, immediately behind the charset, and that seat is not
+/// one a seam can offer.
+///
+/// **Why it is derived and not a string.** The directive set is an
+/// inventory of what this edition fetches (csp.zig), and no consumer
+/// holds that inventory: whether a page compiles a module, whether a
+/// driver behind it can start a worker, whether anything on it fetches
+/// at all. nokre has just built the tree and knows all three. A string
+/// would be the second copy of a library fact, and the second copy is
+/// the one that goes stale — the argument that took `boot`'s own
+/// derivation off the driver, one field up.
+///
+/// **What is left is the one source nokre cannot know**, and it is the
+/// same one the app shell's page leaves: a fetch is the only outbound
+/// request an app's own code can make here, so the hosts it talks to
+/// are a field, checked by the function that checks the shell's
+/// (`csp.badConnectSrc`). A parameter is not a hole
+/// (docs/static-sites.md).
+///
+/// **Absent is a real answer and the default.** Whether a document
+/// carries its policy in its own bytes or takes one from the edge that
+/// serves it is a fact about a deployment, not about nokre — and the
+/// three directives a `<meta>` cannot carry at all (`frame-ancestors`,
+/// `report-to`, `sandbox`) are the edge's either way. A site behind an
+/// edge that already sends the header states nothing here.
+pub const Csp = struct {
+    /// Hosts the app fetches beyond the origin this page is served
+    /// from — `http.request`'s URLs, an OAuth provider's token
+    /// endpoint. They join `connect-src` and nothing else, so an added
+    /// host grants exactly one power; the default is empty, which is
+    /// this origin and nothing else.
+    ///
+    /// **Only a page that boots may state one.** Nothing on a page with
+    /// no runtime fetches, so a host on one is a power granted to
+    /// nobody — `error.ConnectSrcWithoutBoot`, for the reason
+    /// `default-src 'none'` is the floor at all.
+    connect_src: []const []const u8 = &.{},
+};
+
+/// What a driver can get wrong about a `Csp`, refused before a byte.
+///
+/// All three are relationships rather than values, which is the only
+/// kind of thing this library checks: a source that is not a source, a
+/// power granted on a page that cannot spend it, and an asset published
+/// somewhere the policy has no way to name.
+pub const CspError = error{
+    /// A `connect_src` entry is not a plain source expression, so it
+    /// could end the directive it lands in and start a friendlier one
+    /// (`csp.badConnectSrc`).
+    InvalidConnectSrc,
+    /// A host was declared on a page that boots nothing. Nothing on it
+    /// can fetch, so the directive would be granted to no one — and a
+    /// driver writing that has one of the two facts wrong.
+    ConnectSrcWithoutBoot,
+    /// The stylesheet, the wasm module, the driver directory or the
+    /// seed is published off this origin, and every source in this
+    /// policy but the declared hosts is `'self'` — so the browser would
+    /// refuse an asset the page itself names. It is a blank page with a
+    /// console message, which is the silent direction, and the only one
+    /// refused here.
+    AssetOffOrigin,
 };
 
 /// What the page says about *itself* to something that is not a
@@ -335,6 +412,13 @@ pub const Document = struct {
     /// is one this file has now paid for twice: markup nokre did not
     /// place is markup it cannot style, clear, audit or resolve
     /// (docs/static-sites.md).
+    ///
+    /// **The one thing it cannot carry is the policy beside it.** A
+    /// `<meta http-equiv="Content-Security-Policy">` here would sit
+    /// after the stylesheet link it has to govern, because a policy
+    /// only ever applies to what the parser meets past it. That is
+    /// `csp` below, and it is the one head tag with a seat rather than
+    /// a place in a list.
     head: []const u8 = "",
     /// The id of the element the framework's layers mount into
     /// (`mount({ into })`).
@@ -353,6 +437,10 @@ pub const Document = struct {
     /// page.
     skip: []const u8 = "",
     boot: ?Boot = null,
+    /// The policy this page carries about itself, or `null` for a page
+    /// whose edge states one (`Csp`). Its directives are derived from
+    /// the rest of this value — what the page loads is what it grants.
+    csp: ?Csp = null,
 };
 
 /// Writes the whole file: the screen, the chrome, and the document
@@ -375,6 +463,7 @@ pub fn document(em: *Emitter, doc: Document) !void {
     // config mistake a build should die on rather than publish.
     if (doc.meta) |m| try checkMeta(m);
     try checkRuntime(em, doc);
+    try checkCsp(doc);
 
     // One read of the app's locale, spent twice: the attribute a
     // browser, a screen reader and a hyphenation table act on, and the
@@ -419,7 +508,24 @@ pub fn document(em: *Emitter, doc: Document) !void {
     try documentAttr(em);
     try em.raw(">\n");
 
-    try headOpen(em, doc.title, doc.description, doc.stylesheet);
+    // The policy, if this page carries one — derived here and nowhere
+    // else, because every input to it is a field of the value being
+    // written. A page that boots is a page that loads a module, compiles
+    // it, may reach the driver's two workers and fetches at least the
+    // module itself; a page that does not is prose and links, and grants
+    // none of the four. The screen going into the body below is what
+    // spends the inline style attributes (csp.zig).
+    var policy: std.ArrayList(u8) = .empty;
+    defer policy.deinit(em.gpa);
+    if (doc.csp) |c| try csp_mod.write(em.gpa, &policy, .{
+        .scripts = doc.boot != null,
+        .wasm = doc.boot != null,
+        .workers = doc.boot != null,
+        .connects = doc.boot != null,
+        .style_attrs = true,
+    }, c.connect_src);
+
+    try headOpen(em, policy.items, doc.title, doc.description, doc.stylesheet);
     if (doc.meta) |m| try metaTags(em, doc, m);
     try em.raw(doc.head);
     // A bare `<body>`, and it stays bare. It carried one class for three
@@ -514,10 +620,29 @@ fn documentAttr(em: *Emitter) !void {
 /// bytes has one enforcer rather than one per page shape. Neither the
 /// element nor the seam is closed: the caller writes its own tags after
 /// this and closes the head itself.
-fn headOpen(em: *Emitter, title: []const u8, description: []const u8, sheet: []const u8) !void {
+///
+/// **The policy takes the second seat and it is not a preference.** A
+/// Content-Security-Policy governs only what the parser meets after it,
+/// so it leads every link, script and style below — which is also the
+/// whole reason it is a field rather than something a driver splices
+/// through `Document.head`, spliced as that is at the *end* of the head
+/// (`Csp`). It comes after the charset because that rule is older and
+/// narrower: a browser stops looking for the encoding after the first
+/// bytes, and a policy is not a fetch.
+fn headOpen(
+    em: *Emitter,
+    policy: []const u8,
+    title: []const u8,
+    description: []const u8,
+    sheet: []const u8,
+) !void {
     try em.raw(
         \\<head>
         \\<meta charset="utf-8">
+        \\
+    );
+    try em.raw(policy);
+    try em.raw(
         \\<meta name="viewport" content="width=device-width, initial-scale=1">
         \\<title>
     );
@@ -593,6 +718,35 @@ fn checkMeta(m: Meta) MetaError!void {
     // and is exactly that: a document with no URL of its own cannot be
     // one of the URLs a page exists at.
     try alternates_mod.check(m.alternates, m.path);
+}
+
+/// What a page asking for a policy owes it, checked before a byte for
+/// `checkMeta`'s reason: every one of these is a build-time mistake
+/// whose runtime shape is a browser refusing something silently.
+///
+/// The same three questions on both writers, which is why it takes the
+/// pieces rather than a `Document`: a stub has a stylesheet and a
+/// driver directory too, and no boot at all.
+fn checkCsp(doc: Document) CspError!void {
+    const c = doc.csp orelse return;
+    try checkCspParts(c, doc.stylesheet, doc.boot);
+}
+
+fn checkCspParts(c: Csp, sheet: []const u8, boot: ?Boot) CspError!void {
+    if (csp_mod.badConnectSrc(c.connect_src) != null) return error.InvalidConnectSrc;
+    if (boot == null and c.connect_src.len != 0) return error.ConnectSrcWithoutBoot;
+    // Every source in the emitted policy but the declared hosts is
+    // `'self'`, so an asset this page names off this origin is one the
+    // browser refuses. The one input to that claim nothing here can see
+    // is where the *faces* are published — `stylesheet.Options.fonts`,
+    // a different call with a rooted default — and it is stated in
+    // docs/static-sites.md rather than guessed at.
+    if (csp_mod.offOrigin(sheet)) return error.AssetOffOrigin;
+    if (boot) |b| {
+        if (csp_mod.offOrigin(b.wasm)) return error.AssetOffOrigin;
+        if (csp_mod.offOrigin(b.driver_dir)) return error.AssetOffOrigin;
+        if (b.seed.len != 0 and csp_mod.offOrigin(b.seed)) return error.AssetOffOrigin;
+    }
 }
 
 /// The first control on this page that an app has to answer, or null
@@ -950,6 +1104,13 @@ pub fn LocaleStub(comptime L: type) type {
         /// goes here: what an unprefixed address is *for* is indexing
         /// policy, which is the site resolver's.
         head: []const u8 = "",
+        /// The policy this page carries about itself (`Csp`), derived
+        /// the same way and from a much shorter page: a stub loads one
+        /// classic script of the library's, compiles no module, boots
+        /// no driver and fetches nothing at all, so it grants none of
+        /// the three powers a booting document needs. Declaring a
+        /// `connect_src` on one is `error.ConnectSrcWithoutBoot`.
+        csp: ?Csp = null,
         /// Where this stub itself is published — which is the whole of
         /// what it takes to put the alternate set on it. Absent writes
         /// none of it, which is right for a stub nobody indexes.
@@ -1073,7 +1234,16 @@ pub fn localeStub(em: *Emitter, comptime L: type, stub: LocaleStub(L)) !void {
     try documentAttr(em);
     try em.raw(">\n");
 
-    try headOpen(em, stub.title, "", stub.stylesheet);
+    // A chooser and nothing else: one classic script the site serves,
+    // over data in the page. No module is compiled, no driver boots, and
+    // `location.replace` is a navigation rather than a fetch — so the
+    // three directives a document spends on running an app are three
+    // this page does not carry (csp.zig).
+    var policy: std.ArrayList(u8) = .empty;
+    defer policy.deinit(em.gpa);
+    if (stub.csp) |c| try csp_mod.write(em.gpa, &policy, .{ .scripts = true }, c.connect_src);
+
+    try headOpen(em, policy.items, stub.title, "", stub.stylesheet);
 
     // In the head, and blocking, because everything below it is a page
     // the reader is not meant to see: a redirect that waits for the
@@ -1151,8 +1321,16 @@ pub fn localeStub(em: *Emitter, comptime L: type, stub: LocaleStub(L)) !void {
     try em.raw("</nav>\n</main>\n</body>\n</html>\n");
 }
 
-fn checkStub(comptime L: type, stub: LocaleStub(L)) (LocaleStubError || MetaError)!void {
+fn checkStub(comptime L: type, stub: LocaleStub(L)) (LocaleStubError || MetaError || CspError)!void {
     const locales = comptime std.enums.values(L.Locale);
+    // The same three questions the other writer asks, on the two
+    // destinations this page has: it links a stylesheet and it loads a
+    // chooser out of `driver_dir`, and a policy naming only this origin
+    // cannot reach either of them anywhere else.
+    if (stub.csp) |c| {
+        try checkCspParts(c, stub.stylesheet, null);
+        if (csp_mod.offOrigin(stub.driver_dir)) return error.AssetOffOrigin;
+    }
     var hrefs: [locales.len][]const u8 = undefined;
     inline for (locales, 0..) |loc, i| {
         const choice = @field(stub.choices, @tagName(loc));

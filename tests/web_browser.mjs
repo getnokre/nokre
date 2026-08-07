@@ -26,9 +26,15 @@
 // event, storing a string — and everything else a browser does is
 // absent: no layout (`measureText` charges three fifths of the size per
 // character, the Zig harness's own stand-in), no styling, no navigation
-// that fetches, no security model beyond the two checks services.js
-// makes itself. Which is exactly the split the check needs: the service
+// that fetches. Which is exactly the split the check needs: the service
 // seam is executed, and the page around it is furniture.
+//
+// The one security model it does keep is the one a *page* states.
+// `openPage` reads the Content-Security-Policy out of the file it is
+// served and every request made afterwards is held against it, because
+// the failure a derived policy has is a page that renders and cannot
+// boot — and a harness that ignored the policy would run the boot the
+// browser was about to refuse.
 
 import { readFileSync } from "node:fs";
 import { webcrypto } from "node:crypto";
@@ -665,6 +671,80 @@ class Location {
   }
 }
 
+// ---- the page's own policy ---------------------------------------
+
+/**
+ * A file's Content-Security-Policy, as a browser reads it: the one
+ * meta tag's directives, each a name and its source list. Null for a
+ * page carrying none, which is a page under no policy at all.
+ */
+export function policyOf(html) {
+  const found = /<meta http-equiv="Content-Security-Policy" content="([^"]*)"/.exec(html);
+  if (!found) return null;
+  const policy = new Map();
+  for (const part of found[1].split(";")) {
+    const tokens = part.trim().split(/\s+/).filter(Boolean);
+    if (tokens.length) policy.set(tokens[0], tokens.slice(1));
+  }
+  return policy;
+}
+
+// Which directive answers for a request when the one that names it is
+// absent. This is the whole reason `worker-src` and `manifest-src` are
+// stated on a page that spends them: every chain here ends at
+// `default-src`, and on these pages `default-src` is `'none'`.
+const FALLBACK = {
+  "script-src": ["default-src"],
+  "style-src-elem": ["style-src", "default-src"],
+  "connect-src": ["default-src"],
+  "worker-src": ["child-src", "script-src", "default-src"],
+  "img-src": ["default-src"],
+  "font-src": ["default-src"],
+  "manifest-src": ["default-src"],
+};
+
+function matchesSource(source, target) {
+  let rest = source;
+  const scheme = /^([a-zA-Z][a-zA-Z0-9+.-]*):\/\//.exec(rest);
+  if (scheme) {
+    if (target.protocol !== scheme[1].toLowerCase() + ":") return false;
+    rest = rest.slice(scheme[0].length);
+  }
+  const [host, port] = rest.split(":");
+  if (port !== undefined && port !== "*" && port !== target.port) return false;
+  if (host.startsWith("*.")) return target.hostname.endsWith(host.slice(1));
+  return target.hostname === host;
+}
+
+/**
+ * Whether a policy admits a URL fetched under a directive, from a page
+ * served at `pageOrigin`.
+ *
+ * A `file:` URL counts as the page's own origin, and that is this
+ * harness rather than a hole: the site is a directory on disk, so
+ * `import.meta.url` inside the driver is a file URL where a browser
+ * would hand it the https one the page was served from. Every URL a
+ * scenario states is stated the way a page states it.
+ */
+export function admits(policy, directive, url, pageOrigin) {
+  if (!policy) return true;
+  const name = [directive, ...(FALLBACK[directive] ?? [])].find((n) => policy.has(n));
+  if (name === undefined) return true;
+  const target = new URL(url, pageOrigin);
+  for (const source of policy.get(name)) {
+    if (source === "'none'") return false;
+    if (source === "'self'") {
+      if (target.protocol === "file:" || target.origin === new URL(pageOrigin).origin) return true;
+      continue;
+    }
+    // A keyword is not a URL source: `'wasm-unsafe-eval'` and
+    // `'unsafe-inline'` say what may run, never what may be reached.
+    if (source.startsWith("'")) continue;
+    if (matchesSource(source, target)) return true;
+  }
+  return false;
+}
+
 /**
  * Install a browser on the globals and hand back its controls.
  *
@@ -692,6 +772,17 @@ export function makeBrowser({
   const closes = [];
   const fetches = [];
   const serviceWorkers = [];
+  // Null until a file is served into this window: a `mount` call the
+  // harness typed is an app in someone else's page, and that page's
+  // policy is not this library's to invent.
+  let policy = null;
+  const enforce = (directive, url) => {
+    if (admits(policy, directive, url, location.href)) return;
+    throw new Error(
+      `Refused to load ${url}: it violates the page's Content-Security-Policy ` +
+        `directive "${directive} ${(policy.get(directive) ?? []).join(" ")}"`,
+    );
+  };
 
   const window = new Proxy(
     {
@@ -749,6 +840,11 @@ export function makeBrowser({
       serviceWorker: {
         register: (url) => {
           serviceWorkers.push(String(url));
+          // A service worker's file is fetched under `worker-src`,
+          // which on these pages is stated rather than inherited: it
+          // falls back to `child-src` and then to `default-src`, and
+          // `default-src` is `'none'`.
+          enforce("worker-src", String(url));
           return Promise.resolve({});
         },
         addEventListener() {},
@@ -771,6 +867,11 @@ export function makeBrowser({
     // build just wrote.
     fetch: async (url) => {
       fetches.push(String(url));
+      // The module, the seed and every request the http service makes
+      // are this directive and not `script-src` — so a policy that got
+      // `connect-src` wrong is a page that renders and never boots,
+      // which is the failure this stub exists to make loud.
+      enforce("connect-src", String(url));
       const path = site + new URL(url, location.href).pathname;
       const bytes = readFileSync(path);
       return {
@@ -859,6 +960,12 @@ export function makeBrowser({
     /// boot call is the scenario's, because a scenario has to hold the
     /// nodes from before the mount to say anything about after it.
     openPage(html) {
+      // The policy comes off the file rather than out of the parsed
+      // tree, because a browser reads it as it parses: everything below
+      // it is governed and nothing above it is, which is the whole
+      // reason the tag has a seat in the head rather than a place in a
+      // list (render/dom/document.zig's `Csp`).
+      policy = policyOf(html);
       const parsed = parseHtml(document, html);
       const root = parsed.querySelector("html") ?? parsed;
       for (const { name, value } of root.attributes ?? []) {

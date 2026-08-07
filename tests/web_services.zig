@@ -635,6 +635,12 @@ fn writeDocument(booted: bool) isize {
         .content_class = "page",
         .skip = "Skip to content",
         .boot = if (booted) .{ .wasm = "/app.wasm", .addressing = .documents } else null,
+        // The page states its own policy, which is what makes this gate
+        // the one that can hold it against a boot. Every directive in it
+        // is derived from the fields above, so a booted file and an
+        // unbooted one carry different ones — and the browser stub
+        // enforces whichever it is served (tests/web_browser.mjs).
+        .csp = .{},
     }) catch |err| {
         note(s, err);
         return -2;

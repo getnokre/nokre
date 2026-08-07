@@ -277,6 +277,11 @@ test {
     // analyzing the file it lives in, so its tests would silently not
     // run — checked by breaking one and watching the build stay green.
     _ = @import("render/dom/sitemap.zig");
+    // The same, and for one reason more: the policy's other reader is
+    // packaging.zig, which build.zig compiles in a graph this suite
+    // never enters — so a proof left to live over there is a proof
+    // nothing here runs.
+    _ = @import("render/dom/csp.zig");
     _ = @import("a11y/semantics_test.zig");
     _ = @import("testing/audit_test.zig");
     _ = @import("testing/harness_test.zig");

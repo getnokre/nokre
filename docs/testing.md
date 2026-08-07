@@ -931,7 +931,9 @@ behind its screens and a nav roster over them — into a site the same way
 `addApp` builds a consumer's, then boots that site in node against
 `tests/web_browser.mjs`, a browser stub carrying nothing but platform
 APIs (a document, a location, a session storage, a window that can open
-another and be posted to). The JavaScript under test is the site's own
+another and be posted to) — plus the one security model a *page* can
+state, since a served file's Content-Security-Policy is read at
+`openPage` and enforced on everything requested after it. The JavaScript under test is the site's own
 `live.js` and `services.js`, imported unmodified; every assertion reads
 back what the *wasm app* recorded through probe exports. So the seam
 that breaks — bytes crossing between Zig and JavaScript — is executed
@@ -997,6 +999,16 @@ rather than analyzed:
   these pages can be served under `script-src 'self'`: the arrangement
   is checked by reading in Zig and *run* here, and the two together are
   what say the page still boots with no executable byte in it.
+
+  It is also the gate on the **policy** that claim was made for. The
+  page these scenarios open states one (`Document.csp`), and the browser
+  stub reads it off the file it is served and holds every request after
+  it against the directives — so both boots above happen *under* the
+  policy their page published, and a directive dropped from nokre's
+  derivation stops being an argument about a string and becomes
+  `Refused to load app.wasm` in a scenario that was mounting an app.
+  That is the failure a derived policy has, and it is the one thing
+  about it no Zig test can reach.
 
 - **the nav's two shapes** — the one place the *tree* and the *sheet*
   are held against each other, which is where three releases running

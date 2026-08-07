@@ -118,6 +118,16 @@ pub const Meta = document_mod.Meta;
 /// What a driver can get wrong about a `Meta`, returned by `document`
 /// before it writes a byte.
 pub const MetaError = document_mod.MetaError;
+/// The page's own Content-Security-Policy, asked for and then derived
+/// from what the page contains — the directive set is the edition's
+/// inventory of its own fetches (csp.zig), and the one thing a driver
+/// states is the hosts its app talks to. A `<meta>` and not the head
+/// seam, because a policy governs only what the parser meets after it
+/// and the seam is spliced at the end of the head (document.zig).
+pub const Csp = document_mod.Csp;
+/// What a driver can get wrong about a `Csp`, returned by `document`
+/// and `localeStub` before either writes a byte.
+pub const CspError = document_mod.CspError;
 /// The document's language tag: the app's chosen locale, or the language
 /// nokre's own words are in when nothing has been chosen.
 pub const langTag = document_mod.langTag;
