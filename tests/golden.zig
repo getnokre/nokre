@@ -1429,15 +1429,15 @@ test "golden: RTL locale mirrors the chrome; text still aligns by content" {
     try renderGolden(&harness, "persian-rtl-chrome");
 }
 
-test "trace: PixelSink writes a PPM frame per step" {
+test "trace: PixelSink writes a frame per step, and installs the measurer a device has" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
     var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 280 }, .{ .build = buildForm });
     defer harness.deinit();
-    harness.app.setMeasurer(skia.measurer());
 
     var sink = try skia.PixelSink.init(std.testing.io, tmp.dir, std.testing.allocator, "frames");
+    sink.take = .{ .format = .ppm };
     try harness.startTrace(sink.observer());
 
     try harness.pressKey(.tab, .{});
@@ -1449,6 +1449,61 @@ test "trace: PixelSink writes a PPM frame per step" {
         try std.testing.expectEqual(@as(usize, 360), frame.w);
         try std.testing.expectEqual(@as(usize, 280), frame.h);
     }
+
+    // No `setMeasurer` above, deliberately: a take installs the Skia one
+    // itself, for `expectGolden`'s reason — the fixed measurer's glyph
+    // positions match no device, so a frame laid out with it is a picture
+    // of a screen that does not exist.
+    try std.testing.expect(harness.app.measurer.measureFn == skia.measurer().measureFn);
+}
+
+test "trace: a take carries its scale and its container into the file" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 280 }, .{ .build = buildForm });
+    defer harness.deinit();
+
+    // The hi-DPI knob `Surface.init` always had. A golden pins it at 1
+    // and must — a baseline that changed resolution is a different
+    // baseline — but nothing compares an inspection frame, so this is
+    // free to be 2.
+    var sink = try skia.PixelSink.init(std.testing.io, tmp.dir, std.testing.allocator, "frames");
+    sink.take = .{ .scale = 2, .format = .ppm };
+    try harness.startTrace(sink.observer());
+
+    const frame = try golden.readPpm(std.testing.io, tmp.dir, std.testing.allocator, "frames/0000-init.ppm");
+    defer frame.deinit(std.testing.allocator);
+    try std.testing.expectEqual(@as(usize, 720), frame.w);
+    try std.testing.expectEqual(@as(usize, 560), frame.h);
+
+    // And the default container, which is the one a CLI agent's image
+    // reader can open at all. The bytes are decoded by a decoder that is
+    // not the encoder in `tests/capture.zig`; here it is the extension
+    // and the header, because what this test owns is the plumbing.
+    var png_sink = try skia.PixelSink.init(std.testing.io, tmp.dir, std.testing.allocator, "shots");
+    try harness.startTrace(png_sink.observer());
+    const bytes = try tmp.dir.readFileAlloc(std.testing.io, "shots/0000-init.png", std.testing.allocator, .limited(64 << 20));
+    defer std.testing.allocator.free(bytes);
+    try std.testing.expectEqualSlices(u8, &.{ 0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n' }, bytes[0..8]);
+    try std.testing.expectEqual(@as(u32, 360), std.mem.readInt(u32, bytes[16..20], .big));
+    try std.testing.expectEqual(@as(u8, 2), bytes[25]); // color type 2: RGB
+}
+
+test "trace: capture takes one frame of a live app, at a path the caller names" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 360, .h = 280 }, .{ .build = buildForm });
+    defer harness.deinit();
+
+    // The engine under the sink, and the one a store-screenshot preset
+    // loops over: no numbering, no step, a path the caller owns.
+    try skia.capture(std.testing.io, tmp.dir, std.testing.allocator, &harness.app, "shots/sign-in.png", .{ .scale = 3 });
+    const bytes = try tmp.dir.readFileAlloc(std.testing.io, "shots/sign-in.png", std.testing.allocator, .limited(64 << 20));
+    defer std.testing.allocator.free(bytes);
+    try std.testing.expectEqual(@as(u32, 1080), std.mem.readInt(u32, bytes[16..20], .big));
+    try std.testing.expectEqual(@as(u32, 840), std.mem.readInt(u32, bytes[20..24], .big));
 }
 
 test "a chip's mark costs the same width whatever glyph it is" {

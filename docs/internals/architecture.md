@@ -72,7 +72,7 @@ nokre is a strict layer cake. Each layer knows only the layer below it.
 | [src/testing/queries.zig](../../src/testing/queries.zig) / [driver.zig](../../src/testing/driver.zig) | semantic queries — find by what users perceive, never by index — and the synthetic input driver, both through `App.dispatch` |
 | [src/testing/wait.zig](../../src/testing/wait.zig) / [device.zig](../../src/testing/device.zig) | the driver tier: deadline-bounded waits against a caller-injected clock, and `Device` — the harness's verb names over a live `App`, no mock in reach ([testing.md](../testing.md#driving-an-app-outside-zig-test)) |
 | [src/testing/audit.zig](../../src/testing/audit.zig) | the accessibility audit: the whole-tree content rules construction-time validation cannot cover |
-| [src/testing/trace.zig](../../src/testing/trace.zig) / [golden.zig](../../src/testing/golden.zig) / [diag.zig](../../src/testing/diag.zig) | per-step tracing, byte-exact PPM goldens, and the harness's one stderr gate |
+| [src/testing/trace.zig](../../src/testing/trace.zig) / [golden.zig](../../src/testing/golden.zig) / [diag.zig](../../src/testing/diag.zig) | per-step tracing (`TreeSink`, and `Tee` for fanning one step at both instruments), byte-exact PPM goldens, and the harness's one stderr gate |
 | [src/testing/shell.zig](../../src/testing/shell.zig) | the headless shell a driver binary names instead of hand-exporting the C hooks a shell owes ([internals/platform-shells.md](platform-shells.md)) |
 | [src/core/test_app.zig](../../src/core/test_app.zig) | the mocked App nokre's *own* unit tests build on — internal, not the consumer fixture above |
 | [src/platform/platform.zig](../../src/platform/platform.zig) | comptime backend selection |
@@ -94,6 +94,7 @@ nokre is a strict layer cake. Each layer knows only the layer below it.
 | [src/services/share/share.zig](../../src/services/share/share.zig) | one verb: put the OS share sheet up with UTF-8 text on it — and `available` where there is no sheet ([services.md](../services.md)) |
 | [src/services/notification/notification.zig](../../src/services/notification/notification.zig) | the OS's notification surface: ask, post, schedule, cancel, and one lane back for taps, arrivals and push tokens ([notifications.md](notifications.md)) |
 | [src/services/clock/clock.zig](../../src/services/clock/clock.zig) | one verb: the wall clock in milliseconds since the Unix epoch, UTC — the OS call direct, no shell hook; core and the renderers never call it ([services.md](../services.md)) |
+| [src/image/png.zig](../../src/image/png.zig) | the one PNG encoder, `std` and nothing else — below every layer, so the derived app icon and the testing tier's captures share it without either reaching across the cake ([contributing.md](contributing.md)) |
 | [shim/nokre_skia.cpp](../../shim/nokre_skia.cpp) | the entire C surface over Skia |
 
 ## Data flow

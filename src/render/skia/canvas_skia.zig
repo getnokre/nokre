@@ -19,6 +19,7 @@ const canvas_mod = @import("../canvas.zig");
 const renderer = @import("../renderer.zig");
 const trace = @import("../../testing/trace.zig");
 const golden = @import("../../testing/golden.zig");
+const png = @import("../../image/png.zig");
 
 const Rect = geometry.Rect;
 const Point = geometry.Point;
@@ -204,15 +205,79 @@ const vtable: Canvas.VTable = .{
     }.f,
 };
 
+/// What container a take is written in. Two, because the two readers
+/// have no format in common: a golden is a PPM and stays one — every
+/// image tool a person uses opens it and it needs no encoder — while a
+/// CLI agent's image reader takes PNG and JPEG and **cannot open a
+/// PPM**, which made every artifact this file produced invisible to the
+/// one reader that most needed it.
+pub const Format = enum {
+    ppm,
+    png,
+
+    pub fn ext(self: Format) []const u8 {
+        return @tagName(self);
+    }
+};
+
+/// One take's terms: how many device pixels per logical pixel, and what
+/// container the bytes land in.
+///
+/// `scale` is the hi-DPI knob `Surface.init` has always had and nothing
+/// reached. A golden pins it at 1 and must keep doing so — a baseline
+/// that changed resolution would be a different baseline — but an
+/// inspection frame is not compared against anything, so 2 or 3 costs
+/// only bytes, and a store submission wants exactly that.
+pub const Take = struct {
+    scale: i32 = 1,
+    format: Format = .png,
+};
+
+/// One frame of a live app, through the production renderer, onto disk.
+///
+/// **No window and no display server**: the surface is `SkSurfaces::Raster`
+/// (shim/nokre_skia.cpp), so this runs in a headless process — which is
+/// the whole point, since the alternative an agent reaches for today is
+/// launching the desktop app and leaving a window open for a human to
+/// close.
+///
+/// It installs the Skia measurer if the app is not already on it, for
+/// `Harness.expectGolden`'s reason: the fixed measurer's glyph positions
+/// match no device, so a frame laid out with it is a picture of a screen
+/// that does not exist. Like `expectGolden`, that means everything after
+/// this call sees device metrics — which is what a driver wanted anyway.
+///
+/// This is the whole engine: `PixelSink` is this per step, and a
+/// store-screenshot preset is this per (journey × device size × locale),
+/// with the naming and the loop belonging to whoever owns the journeys.
+pub fn capture(io: Io, dir: Io.Dir, gpa: std.mem.Allocator, app: *app_mod.App, sub_path: []const u8, take: Take) !void {
+    if (app.measurer.measureFn != skiaMeasure) app.setMeasurer(measurer());
+    var surface = try Surface.init(app.viewport.w, app.viewport.h, take.scale);
+    defer surface.deinit();
+    renderer.render(app, surface.canvas());
+    const w = surface.pixelWidth();
+    const h = surface.pixelHeight();
+    switch (take.format) {
+        .ppm => try golden.writePpm(io, dir, gpa, surface.pixels(), w, h, sub_path),
+        .png => {
+            const bytes = try png.rgbx(gpa, surface.pixels(), w, h);
+            defer gpa.free(bytes);
+            if (std.fs.path.dirname(sub_path)) |parent| try dir.createDirPath(io, parent);
+            try dir.writeFile(io, .{ .sub_path = sub_path, .data = bytes });
+        },
+    }
+}
+
 /// The pixel twin of `testing.trace.TreeSink`: renders the app through
-/// the production Skia pipeline after every step and writes a PPM per
-/// frame with the same numbering, so `.txt` and `.ppm` traces pair up.
+/// the production Skia pipeline after every step and writes one frame
+/// per step with the same numbering, so the tree and the raster pair
+/// file-for-file (`trace.Tee` is what puts both on one run).
 pub const PixelSink = struct {
     io: Io,
     dir: Io.Dir,
     gpa: std.mem.Allocator,
     sub_dir: []const u8,
-    scale: i32 = 1,
+    take: Take = .{},
 
     pub fn init(io: Io, dir: Io.Dir, gpa: std.mem.Allocator, sub_dir: []const u8) !PixelSink {
         try dir.createDirPath(io, sub_dir);
@@ -229,14 +294,10 @@ pub const PixelSink = struct {
     }
 
     pub fn onStep(self: *PixelSink, step: u32, action: []const u8, app: *app_mod.App) !void {
-        var surface = try Surface.init(app.viewport.w, app.viewport.h, self.scale);
-        defer surface.deinit();
-        renderer.render(app, surface.canvas());
-
         var name_buf: [64]u8 = undefined;
-        const name = trace.stepFileName(&name_buf, step, action, "ppm");
+        const name = trace.stepFileName(&name_buf, step, action, self.take.format.ext());
         const path = try std.fmt.allocPrint(self.gpa, "{s}/{s}", .{ self.sub_dir, name });
         defer self.gpa.free(path);
-        try golden.writePpm(self.io, self.dir, self.gpa, surface.pixels(), surface.pixelWidth(), surface.pixelHeight(), path);
+        try capture(self.io, self.dir, self.gpa, app, path, self.take);
     }
 };

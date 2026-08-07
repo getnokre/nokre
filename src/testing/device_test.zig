@@ -24,6 +24,7 @@ const router_mod = @import("../core/router.zig");
 const diag = @import("diag.zig");
 const device_mod = @import("device.zig");
 const queries = @import("queries.zig");
+const trace = @import("trace.zig");
 const wait = @import("wait.zig");
 
 const App = app_mod.App;
@@ -896,4 +897,89 @@ test "driver tier: quiesce pumps for a fixed span and never longer" {
     d.quiesce(35);
     try testing.expectEqual(@as(usize, 4), fake.naps);
     try testing.expectEqual(@as(i64, 40), fake.millis);
+}
+
+// ---- tracing ----
+// The seam that reaches the observer machinery from the live-app tier.
+// The sinks themselves are proved in `trace.zig` and `tests/golden.zig`;
+// what is proved here is that a `Device` numbers and names its steps
+// exactly as a `Harness` does, and that it writes them unconditionally.
+
+test "driver tier: startTrace numbers a live run, and the verbs name their own steps" {
+    var app = try plainApp(320, 240);
+    defer app.deinit();
+    const root = app.tree.rootId();
+    try app.tree.append(root, .{ .text_input = .{ .label = "Email", .value = "" } });
+    try app.tree.append(root, .{ .button = .{ .label = "Continue" } });
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var sink = try trace.TreeSink.init(testing.io, tmp.dir, testing.allocator, "run");
+
+    var fake: Fake = .{};
+    var d = deviceOn(&app, &fake, 60_000);
+    try d.startTrace(sink.observer());
+
+    try d.typeInto("Email", "ada@example.com");
+    try d.press(.button, "Continue");
+    // A moment with no action behind it, named in the driver's own
+    // words — the gap between verbs.
+    try d.step("after the reply landed");
+
+    // The step names are the harness's for the same verbs, so one
+    // scenario's trace reads like the other's.
+    for ([_][]const u8{
+        "run/0000-init.txt",
+        "run/0001-type-into-Email.txt",
+        "run/0002-press-Continue.txt",
+        "run/0003-after-the-reply-landed.txt",
+    }) |path| {
+        const back = try tmp.dir.readFileAlloc(testing.io, path, testing.allocator, .limited(1 << 20));
+        defer testing.allocator.free(back);
+        try testing.expect(std.mem.indexOf(u8, back, "viewport 320x240") != null);
+    }
+
+    // And the step carries what the action did, not merely that it ran.
+    const typed = try tmp.dir.readFileAlloc(testing.io, "run/0001-type-into-Email.txt", testing.allocator, .limited(1 << 20));
+    defer testing.allocator.free(typed);
+    try testing.expect(std.mem.indexOf(u8, typed, "value= \"ada@example.com\"") != null);
+}
+
+test "driver tier: a step is written for the action that failed" {
+    var app = try plainApp(320, 240);
+    defer app.deinit();
+    try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Continue", .disabled = true } });
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var sink = try trace.TreeSink.init(testing.io, tmp.dir, testing.allocator, "run");
+
+    var fake: Fake = .{};
+    var d: Device = .{ .app = &app, .pacer = fake.pacer(20) };
+    try d.startTrace(sink.observer());
+
+    var said: diag.Capture = .{};
+    said.start();
+    defer said.stop();
+    // A label that never arrives: the whole reason the artifacts are
+    // kept unconditionally is that this is the run someone needs to
+    // read, and it is the run a golden would have written nothing for.
+    try testing.expectError(error.WaitTimeout, d.press(.button, "Saved"));
+    said.stop();
+
+    const back = try tmp.dir.readFileAlloc(testing.io, "run/0000-init.txt", testing.allocator, .limited(1 << 20));
+    defer testing.allocator.free(back);
+    try testing.expect(std.mem.indexOf(u8, back, "\"Continue\" disabled") != null);
+}
+
+test "driver tier: no observer costs a null check and writes nothing" {
+    var app = try plainApp(320, 240);
+    defer app.deinit();
+    try app.tree.append(app.tree.rootId(), .{ .button = .{ .label = "Continue" } });
+
+    var fake: Fake = .{};
+    var d = deviceOn(&app, &fake, 60_000);
+    try d.press(.button, "Continue");
+    try d.step("nothing is listening");
+    try testing.expectEqual(@as(u32, 0), d.step_index);
 }

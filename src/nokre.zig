@@ -14,7 +14,7 @@ const std = @import("std");
 /// Hand-bumped on every consumer-visible contract change, never by
 /// machinery — the no-CI stance is deliberate
 /// (docs/getting-started.md).
-pub const revision: u32 = 50;
+pub const revision: u32 = 51;
 
 pub const geometry = @import("core/geometry.zig");
 pub const color = @import("core/color.zig");
@@ -32,6 +32,14 @@ pub const event = @import("core/event.zig");
 pub const focus = @import("core/focus.zig");
 pub const router = @import("core/router.zig");
 pub const app = @import("core/app.zig");
+
+/// Image containers, below every layer: `std` and nothing else. One
+/// encoder serves both the derived app icon and the frames the testing
+/// tier writes for inspection, because both want bytes this repository
+/// specifies rather than an upstream's (`src/image/png.zig`).
+pub const image = struct {
+    pub const png = @import("image/png.zig");
+};
 
 pub const render = struct {
     pub const canvas = @import("render/canvas.zig");
@@ -236,6 +244,7 @@ test {
     _ = a11y.accesskit;
     _ = workers;
     _ = @import("core/queue.zig");
+    _ = image.png;
     _ = l10n;
     _ = testing;
     _ = testing.queries;

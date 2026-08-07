@@ -1222,6 +1222,12 @@ pub fn build(b: *std.Build) void {
     // and native_test.zig drives `perform` without them.
     addHttpStressCheck(b, test_step, target);
 
+    // And the third: a driven app writing the artifacts an inspection
+    // run leaves behind — a text tree and a real PNG, out of a process
+    // with no window. It needs the Skia link, so it rides `-Dskia` with
+    // the goldens rather than the bare `test` step.
+    addCaptureCheck(b, test_step, target, enable_skia);
+
     // The other half of the web edition, which no Zig test can reach.
     addJsParseCheck(b, test_step, js_parse);
 
@@ -2111,6 +2117,64 @@ fn addHttpStressCheck(b: *std.Build, step: *std.Build.Step, target: std.Build.Re
     // A substring, on stderr, for addDevStoreCheck's reason: asserting
     // the program's last line asserts every step before it ran.
     run.expectStdErrMatch("http stress: 1920 requests");
+    run.expectExitCode(0);
+    step.dependOn(&run.step);
+}
+
+/// The inspection path's own gate: `tests/capture.zig` built as an
+/// executable — the shape a consumer's e2e binary is — and run.
+///
+/// It exists for the same reason the two above do: what it checks is a
+/// *program*, not a call. `Device` is the tier that drives a live app
+/// outside `zig test`, and the artifacts it writes are the only
+/// instrument a headless run leaves for someone who was not watching.
+/// A `zig test` proving the encoder is not a proof that a driven app in
+/// a windowless process produces a file an image reader opens, and the
+/// second claim is the one that was being made.
+///
+/// Skia-gated rather than always on, because the raster half is the
+/// half that needs the prebuilt linked into the binary — the same link
+/// a consumer's e2e executable must add (`nokre.linkSkia`) and the same
+/// one `addGoldenTests` makes for a screenshot suite. Native desktop
+/// only, for addHttpStressCheck's reason: a cross-compiled binary is one
+/// this machine could not run.
+fn addCaptureCheck(b: *std.Build, step: *std.Build.Step, target: std.Build.ResolvedTarget, enable_skia: bool) void {
+    if (!enable_skia) return;
+    const t = target.result;
+    const desktop = switch (t.os.tag) {
+        .macos, .windows => true,
+        .linux => !t.abi.isAndroid(),
+        else => false,
+    };
+    if (!desktop or t.os.tag != builtin.os.tag or t.cpu.arch != builtin.cpu.arch) return;
+
+    const decl: PackageDecl = .{ .name = "capture", .id = "dev.nokre.capture", .version = "0.0.0", .build = 0 };
+    const nokre_mod = b.createModule(.{
+        .root_source_file = b.path("src/nokre.zig"),
+        .target = target,
+        .optimize = .Debug,
+        .link_libc = true,
+    });
+    configureNokre(b, nokre_mod, decl, .{}, false);
+    const exe = b.addExecutable(.{ .name = "capture-check", .root_module = b.createModule(.{
+        .root_source_file = b.path("tests/capture.zig"),
+        .target = target,
+        .optimize = .Debug,
+        .imports = &.{.{ .name = "nokre", .module = nokre_mod }},
+    }) });
+    // The link `addApp` never makes and a consumer's e2e binary must:
+    // the frames come out of the production Skia renderer.
+    linkSkiaTo(b, exe);
+
+    const run = b.addRunArtifact(exe);
+    // Into the cache, not the working tree: this runs on every
+    // `zig build test -Dskia`, and a gate that wrote to the default
+    // `zig-out/inspect` would overwrite whatever a real inspection run
+    // had left there for someone to read.
+    run.addArg(b.cache_root.join(b.allocator, &.{"nokre-capture-check"}) catch @panic("OOM"));
+    // A substring, on stderr, for addDevStoreCheck's reason: asserting
+    // the program's last line asserts every step before it ran.
+    run.expectStdErrMatch("capture: 4 steps, tree and 2x RGB PNG paired");
     run.expectExitCode(0);
     step.dependOn(&run.step);
 }

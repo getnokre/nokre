@@ -237,9 +237,13 @@ pub const Harness = struct {
     // ---- tracing ----
 
     /// Installs a per-step observer (e.g. `trace.TreeSink.observer()`,
-    /// `render.skia.PixelSink.observer()`) and emits step 0, the
-    /// post-build state. When no observer is installed, steps cost a
-    /// single null check.
+    /// `render.skia.PixelSink.observer()`, or `trace.Tee` over both —
+    /// one observer, so pairing the tree and the raster goes through the
+    /// tee) and emits step 0, the post-build state. When no observer is
+    /// installed, steps cost a single null check.
+    ///
+    /// `Device.startTrace` is the same seam over a live app
+    /// (docs/testing.md, "Seeing a screen nobody watched").
     pub fn startTrace(self: *Harness, observer: trace.StepObserver) !void {
         self.step_observer = observer;
         try observer.call(observer.ctx, 0, "init", &self.app);

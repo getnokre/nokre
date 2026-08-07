@@ -314,6 +314,19 @@ way. The shell's complete job description is in
   crashes the process on 20 runs out of 20. Failures the *machine*
   produces — no thread to spawn, no ephemeral port left — are counted
   and reported, never failed on; a resource limit is not a defect.
+- **A driven app's artifacts, out of a windowless process**, in
+  `zig build test -Dskia` on a native desktop host:
+  [tests/capture.zig](../../tests/capture.zig) is built as an
+  *executable* and run. It drives a live `App` through `testing.Device`,
+  attaches `trace.TreeSink` and `render.skia.PixelSink` through one
+  `trace.Tee`, and then reads its own output back: the tree naming the
+  element the press produced, and the PNG walked chunk by chunk with
+  every CRC re-derived and its IDAT inflated by `std.compress.flate` —
+  a decoder this repository did not write. "The encoder returned without
+  error" is not the claim; "a reader opens this file" is. It is
+  Skia-gated because the raster half needs the prebuilt on the binary,
+  which is the same link a consumer's e2e executable must add
+  ([testing.md](../testing.md#seeing-a-screen-nobody-watched)).
 - **The three web-only service legs, executed**, in `zig build test`:
   [tests/web_services.zig](../../tests/web_services.zig) is an ordinary
   nokre app with deep_link, oauth and secure_store linked, built into a

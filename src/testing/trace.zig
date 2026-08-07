@@ -2,7 +2,14 @@
 //! default and free when off. `TreeSink` writes a text snapshot of the
 //! laid-out tree per step — pure Zig, no Skia. The pixel sink lives with
 //! the Skia bindings (`render.skia.PixelSink`) and pairs with this one
-//! file-for-file: `0007-tap-Show-done.txt` next to `0007-tap-Show-done.ppm`.
+//! file-for-file: `0007-tap-Show-done.txt` next to
+//! `0007-tap-Show-done.png`. `Tee` is what puts both on one run, since
+//! `startTrace` holds a single observer on either tier.
+//!
+//! The tree is the primary instrument, not the frame. A raster says
+//! something looks wrong; this says *what* — whether the screen mounted,
+//! whether a subtree is empty, whether a node exists with no size — and
+//! it greps, diffs, and fits in a report.
 
 const std = @import("std");
 const Io = std.Io;
@@ -16,6 +23,34 @@ const NodeId = tree_mod.NodeId;
 pub const StepObserver = struct {
     ctx: ?*anyopaque = null,
     call: *const fn (ctx: ?*anyopaque, step: u32, action: []const u8, app: *App) anyerror!void,
+};
+
+/// One step, fanned out to several observers in order — how a run gets
+/// its text tree *and* its raster on one numbering in one pass.
+///
+/// `startTrace` takes a single observer on both tiers, and until this
+/// existed the paired `0007-….txt` / `0007-….png` that this file's
+/// header describes was a thing a caller had to hand-roll a trampoline
+/// for, or get by running the scenario twice. Two runs is the wrong
+/// shape for the second instrument in particular: the pixel sink swaps
+/// the app onto Skia metrics, so a raster run and a tree run are not
+/// laid out identically and the pair would not describe one screen.
+///
+/// The first observer to fail ends the step; the ones after it do not
+/// run. That is deliberate — a sink that cannot write is a broken
+/// instrument, and a half-written step that reports success is worse
+/// than a loud one.
+pub const Tee = struct {
+    sinks: []const StepObserver,
+
+    pub fn observer(self: *Tee) StepObserver {
+        return .{ .ctx = self, .call = onStepErased };
+    }
+
+    fn onStepErased(ctx: ?*anyopaque, step: u32, action: []const u8, app: *App) anyerror!void {
+        const self: *Tee = @ptrCast(@alignCast(ctx.?));
+        for (self.sinks) |sink| try sink.call(sink.ctx, step, action, app);
+    }
 };
 
 /// `NNNN-action.ext`, action sanitized to filename-safe characters and
@@ -338,6 +373,42 @@ test "dump serializes sheets and notices" {
     try testing.expect(std.mem.indexOf(u8, out.items, "\"Options\"") != null);
     try testing.expect(std.mem.indexOf(u8, out.items, "\"Sync failed\" description= \"Changes kept locally.\" route= \"details\"") != null);
     try testing.expect(std.mem.indexOf(u8, out.items, "dismiss \"Dismiss: Sync failed\"") != null);
+}
+
+test "Tee fans one step out in order, and stops at the first refusal" {
+    var app = try test_app.init(100, 100);
+    defer app.deinit();
+
+    const Counting = struct {
+        var seen: [4][]const u8 = undefined;
+        var n: usize = 0;
+        var fail_at: usize = std.math.maxInt(usize);
+
+        fn call(_: ?*anyopaque, _: u32, action: []const u8, _: *App) anyerror!void {
+            if (n == fail_at) return error.SinkBroke;
+            seen[n] = action;
+            n += 1;
+        }
+        fn observer(tag: *const u8) StepObserver {
+            return .{ .ctx = @constCast(tag), .call = call };
+        }
+    };
+    const a: u8 = 1;
+    const b: u8 = 2;
+    Counting.n = 0;
+    Counting.fail_at = std.math.maxInt(usize);
+
+    var tee: Tee = .{ .sinks = &.{ Counting.observer(&a), Counting.observer(&b) } };
+    const obs = tee.observer();
+    try obs.call(obs.ctx, 7, "tap Done", &app);
+    try testing.expectEqual(@as(usize, 2), Counting.n);
+    try testing.expectEqualStrings("tap Done", Counting.seen[1]);
+
+    // A sink that cannot write is a broken instrument: the step fails
+    // rather than reporting success on a half-written pair.
+    Counting.fail_at = Counting.n + 1;
+    try testing.expectError(error.SinkBroke, obs.call(obs.ctx, 8, "tap Undo", &app));
+    try testing.expectEqual(@as(usize, 3), Counting.n);
 }
 
 test "TreeSink writes one numbered file per step" {

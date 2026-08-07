@@ -33,7 +33,11 @@ fact has one home; complement, never duplicate. Start with
   on PATH; the build **fails without it** rather than passing a check it
   did not run — `-Djs-parse=false` is how you say you meant to skip both.
   With `-Dskia` it also links the examples, which is the desktop link
-  `check-targets` cannot do. On a macOS or desktop-Linux host it also
+  `check-targets` cannot do, and builds `tests/capture.zig` as an
+  *executable* and runs it: a `Device`-driven app writing a step trace
+  and a real RGB PNG out of a process with no window, the PNG read back
+  by `std.compress.flate` rather than by the encoder that wrote it
+  (`docs/testing.md`, "Seeing a screen nobody watched"). On a macOS or desktop-Linux host it also
   builds `tests/dev_store.zig` as an *executable* and runs it: the one
   gate where a service's release verbs reach a store the OS answers,
   since under `zig test` a service is its mock

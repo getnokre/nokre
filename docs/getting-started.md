@@ -1683,8 +1683,11 @@ test "a step trace replays the run, one snapshot per action" {
 }
 ```
 
-(`nok.render.skia.PixelSink` is the pixel twin — one PPM frame per step
-through the production renderer, numbering matched file-for-file.)
+(`nok.render.skia.PixelSink` is the pixel twin — one frame per step
+through the production renderer, PNG by default and numbering matched
+file-for-file; `trace.Tee` is how both sinks ride one run. The same
+seam exists on `testing.Device`, which is where it earns its keep:
+[testing.md](testing.md#seeing-a-screen-nobody-watched).)
 
 Third, **golden screenshot tests**: byte-exact frames, no tolerance, no
 perceptual diffing — the pixel model makes exactness cheap, so any

@@ -18,8 +18,9 @@
 //! **What is shared, and how.** Not a base class and not a copy: the
 //! *ladders* moved one layer down, into `driver.zig`, where they are
 //! free functions over `*App` that name no mock. `Harness` calls them
-//! and adds a trace step and a re-audit; `Device` calls the same ones
-//! and adds a **wait** in front — because that is the only real
+//! and adds a trace step and a re-audit; `Device` calls the same ones,
+//! adds the same trace step and the same re-audit behind, and a **wait**
+//! in front — and that wait is the only real
 //! difference between the two tiers. Under the mocks nothing waits:
 //! every settle is a verb. Against a real server there is no settle
 //! verb, so a screen is done when it says what it came to say
@@ -48,6 +49,7 @@ const audit_mod = @import("audit.zig");
 const diag = @import("diag.zig");
 const driver = @import("driver.zig");
 const queries = @import("queries.zig");
+const trace = @import("trace.zig");
 const wait = @import("wait.zig");
 
 const App = app_mod.App;
@@ -87,6 +89,59 @@ pub const Device = struct {
     /// here runs against.
     pacer: wait.Pacer,
     notes: ?Notes = null,
+    /// Installed by `startTrace`; null until then, and a null check per
+    /// action when it stays that way.
+    step_observer: ?trace.StepObserver = null,
+    step_index: u32 = 0,
+
+    // ---- tracing ----
+
+    /// Installs a per-step observer over a *live* app and emits step 0,
+    /// the screen as the driver found it. The same observers a
+    /// `Harness` takes — `trace.TreeSink.observer()`,
+    /// `render.skia.PixelSink.observer()`, `trace.Tee` over both — and
+    /// the same numbering, because it is the same seam: the observer
+    /// runs after the same ladder, one tier up.
+    ///
+    /// **This is the tier where it matters most.** A `Harness` failure
+    /// already prints the tree; a driver's screen is one nobody watched.
+    /// Every step is written unconditionally, pass or fail, to a path
+    /// the driver named — the opposite of a golden, which writes nothing
+    /// when it succeeds and is right not to. What is being asked here is
+    /// not "did this match" but "what is on the screen", and that
+    /// question has no baseline to compare against.
+    pub fn startTrace(self: *Device, observer: trace.StepObserver) !void {
+        self.step_observer = observer;
+        self.app.performLayout();
+        return self.note(observer.call(observer.ctx, 0, "init", self.app));
+    }
+
+    /// A numbered step at a moment of the driver's own choosing, named
+    /// in the driver's own words: after a wait that has no action behind
+    /// it, or at the top of a scenario worth marking. The acting verbs
+    /// emit their own steps, so this is for the gaps between them.
+    pub fn step(self: *Device, action: []const u8) !void {
+        return self.observe("{s}", .{action});
+    }
+
+    fn observe(self: *Device, comptime fmt: []const u8, args: anytype) !void {
+        const obs = self.step_observer orelse return;
+        self.step_index += 1;
+        var buf: [64]u8 = undefined;
+        var w = std.Io.Writer.fixed(&buf);
+        w.print(fmt, args) catch {}; // overflow truncates the action name
+        return self.note(obs.call(obs.ctx, self.step_index, w.buffered(), self.app));
+    }
+
+    /// What every acting verb ends with: let the frame the action
+    /// produced settle, write the step, then audit — `settled` with the
+    /// trace in the middle, and the step names match the harness's for
+    /// the same verb so one scenario's trace reads like the other's.
+    fn afterStep(self: *Device, comptime fmt: []const u8, args: anytype) !void {
+        _ = self.app.runtime.pump();
+        try self.observe(fmt, args);
+        return self.note(audit_mod.audit(self.app));
+    }
 
     // ---- waiting ----
     // Each answers what it found, so the wait and the lookup are one
@@ -166,7 +221,7 @@ pub const Device = struct {
         self.app.performLayout();
         if (queries.queryFolded(&self.app.tree, role, label) == null) _ = try self.untilRole(role, label);
         try self.note(driver.press(self.app, role, label));
-        return self.settled();
+        return self.afterStep("press {s}", .{label});
     }
 
     /// Puts the caret in a named field and types, appending like
@@ -177,14 +232,14 @@ pub const Device = struct {
     pub fn typeInto(self: *Device, label: []const u8, bytes: []const u8) !void {
         _ = try self.untilAnyRole(text_field_roles, label);
         try self.note(driver.typeInto(self.app, label, bytes));
-        return self.settled();
+        return self.afterStep("type into {s}", .{label});
     }
 
     /// Empties a named field the way a user empties one.
     pub fn clearField(self: *Device, label: []const u8) !void {
         _ = try self.untilAnyRole(text_field_roles, label);
         try self.note(driver.clearField(self.app, label));
-        return self.settled();
+        return self.afterStep("clear {s}", .{label});
     }
 
     /// Chooses an option in a `segmented`, `radio_group` or `select` by
@@ -194,7 +249,7 @@ pub const Device = struct {
     pub fn selectOption(self: *Device, group_label: []const u8, option: []const u8) !void {
         const id = try self.untilAnyRole(choice_roles, group_label);
         try self.note(driver.selectOption(self.app, id, option));
-        return self.settled();
+        return self.afterStep("select {s}", .{option});
     }
 
     /// Crosses the nav to the destination with this title, whichever
@@ -208,7 +263,7 @@ pub const Device = struct {
     pub fn goTab(self: *Device, title: []const u8) !void {
         try self.note(wait.untilDestination(self.app, self.pacer, title));
         try self.note(driver.goTab(self.app, title));
-        return self.settled();
+        return self.afterStep("go to {s}", .{title});
     }
 
     /// What the harness does after every action, minus the mocks: let

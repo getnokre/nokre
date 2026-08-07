@@ -154,6 +154,31 @@ becomes an attribute (two writers, one silent rewrite), or leave it and say so i
 with `-`, `fa-AF` included — which is exactly why it should be settled before a
 locale is added by someone reading the ARB spec rather than this file.
 
+## Store screenshots are a preset nobody has asked for yet
+
+Revision 51 built the engine and stopped there, deliberately.
+`render.skia.capture(io, dir, gpa, app, path, .{ .scale, .format })` is
+one frame of a live app through the production renderer at a path the
+caller names, in a process with no window; `PixelSink` is that per step.
+A store submission is the same call in a loop over journeys × device
+sizes × locales, and `App.setViewport` and `Bundle.resolve` are what
+such a loop turns.
+
+**Whose half is whose was decided in rokovski's `HANDOFF.md`, not
+here**: nokre owes device-sized rendering plus optional hi-DPI off the
+e2e path — which is what shipped — and rokovski owes the journeys, the
+naming and the output paths. So what is open on this side is a question,
+not a task: whether that loop deserves a preset *in nokre* at all, or
+whether a consumer's device table and locale set are its own and the
+one-shot is the whole of nokre's contribution. Nothing argues for the
+preset yet, because there is exactly one consumer and it has not asked.
+
+What is known: it is release-blocking for a store submission, and it is
+blocked on rokovski's side rather than this one — that half wants seeded
+locale-tagged fixture data, and the seeding is itself an open blocker
+there. A preset designed before that data exists would be a shape
+argued from none.
+
 ## Two consumers want a link with a size
 
 Recorded as an observation. Nothing here has been designed, no shape has been

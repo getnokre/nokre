@@ -805,9 +805,23 @@ stack [0,0,480,640]
 ```
 
 `nok.render.skia.PixelSink` (requires `-Dskia`) is the pixel twin: one
-PPM frame per step through the production renderer, with identical
-numbering, so `.txt` and `.ppm` traces pair file-for-file. Custom sinks
-implement `trace.StepObserver`.
+frame per step through the production renderer, with identical
+numbering, so the two pair file-for-file. Its `take` says on what terms
+— `.{ .scale = 2, .format = .png }`; PNG by default, because the reader
+this exists for often cannot open a PPM, and `scale` is the hi-DPI knob
+`Surface.init` has always had. A take also installs the Skia measurer if
+the app is not already on it, for `expectGolden`'s reason: the fixed
+measurer's glyph positions match no device.
+
+`startTrace` takes one observer, so both instruments on one run go
+through `trace.Tee`, which fans a step out in order:
+
+```zig
+var tee: nok.testing.trace.Tee = .{ .sinks = &.{ trees.observer(), frames.observer() } };
+try t.startTrace(tee.observer());
+```
+
+Custom sinks implement `trace.StepObserver`.
 
 ## Golden screenshot tests
 
@@ -889,18 +903,20 @@ and a real socket would buy a little coverage and lose the property the
 whole design is built on. The gap is nokre's to close on its own side,
 in its own tier — never by making your tests heavier.
 
-That tier now has five gates, all of them on every `zig build test`:
+That tier now has six gates, five on every `zig build test` and one on
+every `zig build test -Dskia`:
 
 | gate | what reaches a real implementation |
 | --- | --- |
 | `tests/dev_store.zig` | the secure_store verbs, against a store the OS answers (desktop POSIX) |
 | `src/services/http/native_test.zig` | the native http transport's six verbs, over a real loopback socket inside the test binary |
 | `tests/http_stress.zig` | the native http transport's threads, against a loopback socket |
+| `tests/capture.zig` | a `Device`-driven app's artifacts, out of a process with no window — and the PNG read back by a decoder that is not the encoder (`-Dskia`, desktop) |
 | `node --check` × 5 | every JavaScript file a web build ships, parsed by the engine that runs it |
 | `tests/web_services.mjs` | the three service legs that exist **only** on the web, executed |
 
-The last one is the newest and the least obvious, so it is spelled out
-below. What no gate reaches is still a real list: the native backends of
+The web one is the least obvious, so it is spelled out below.
+What no gate reaches is still a real list: the native backends of
 secure_store (Keychain, CredMan, libsecret, the Android Keystore),
 oauth's `ASWebAuthenticationSession` and its Android and loopback legs,
 all four notification systems, StoreKit and Play Billing, and every
@@ -1345,6 +1361,82 @@ http verbs reach a socket the OS answers. `tests/web_services.zig` is
 the third, in the one place a driver cannot be a Zig program at all —
 the browser, where half of every service leg is JavaScript, so the
 driver is `tests/web_services.mjs` and the app it drives is a wasm site.
+
+### Seeing a screen nobody watched
+
+Every other instrument in this document is a comparison or an assertion.
+`expectGolden` is byte-exact against a committed baseline, the verbs
+above assert and refuse, and all of them answer *whether* — none of them
+can show you an unexpected state. For anything surprising — a screen
+that renders a heading and then nothing — the answer used to be to
+launch the windowed app and look at it, which is not an answer at all
+for a driver on a machine with no display, or for an agent that cannot
+close the window it opened.
+
+`Device.startTrace` is the same seam a `Harness` has, one tier up, and
+it is the answer. The observers are the same ones ([above](#step-traces)),
+the numbering is the same, and the step names are the harness's for the
+same verbs — a `Device` scenario's trace reads like a unit test's.
+
+```zig
+var trees  = try nok.testing.trace.TreeSink.init(io, .cwd(), gpa, "zig-out/inspect");
+var frames = try nok.render.skia.PixelSink.init(io, .cwd(), gpa, "zig-out/inspect");
+frames.take = .{ .scale = 2, .format = .png };
+var tee: nok.testing.trace.Tee = .{ .sinks = &.{ trees.observer(), frames.observer() } };
+try d.startTrace(tee.observer());          // 0000-init.txt + 0000-init.png
+
+try d.typeInto("Email", "ada@example.com"); // 0001-type-into-Email.*
+try d.press(.button, "Continue");           // 0002-press-Continue.*
+try d.step("after the reply landed");       // 0003-after-the-reply-landed.*
+```
+
+Four things about this are decisions rather than defaults:
+
+- **The artifacts are kept unconditionally**, pass or fail, at a path
+  the driver names. This is the opposite of a golden, and deliberately:
+  a golden writes nothing on success because it answers "did this
+  match", and there is nothing to keep when the answer is yes. The
+  question here is "what is on the screen", it has no baseline, and the
+  run worth reading is usually the one that failed. `zig-out/inspect` is
+  the convention nokre's own gate follows; the library imposes none, so
+  a driver that wants one directory per scenario writes one.
+- **The text tree is the primary instrument.** A raster says something
+  looks wrong; the tree says *what* — whether the screen mounted,
+  whether a subtree is empty, whether a node exists with no size — and
+  it is greppable, diffable, and small enough to paste into a report.
+  Take the raster when the tree is not enough, not the other way round.
+- **PNG, not PPM, by default.** A person's image viewer opens either; an
+  agent's image-reading tool opens PNG and JPEG and cannot open a P6
+  PPM, and an artifact its reader cannot open is not an instrument.
+  Goldens stay PPM — they are compared, not looked at, and their
+  byte-exactness is load-bearing.
+- **`step` is for the gaps.** The acting verbs number their own steps;
+  `step(action)` is how a driver marks a moment those do not cover —
+  after a wait with no action behind it, or at the top of a scenario.
+
+**What this costs a consumer's build.** The tree half costs nothing:
+`testing.trace` is pure Zig and rides in on the nokre module a driver
+already imports. The raster half needs the Skia prebuilt *on the driver
+binary*, which `addApp` does not link — for `expectGolden`'s reason, a
+driver binary is not the app binary. One line in the consumer's
+`build.zig`, beside where the e2e executable is created:
+
+```zig
+nokre.linkSkia(nokre_dep, e2e_exe);
+```
+
+That is the whole change, and it is the consumer's to make: a driver
+that never names `PixelSink` should not carry a 40 MB archive it does
+not use, so nokre cannot make the link on its behalf. Everything about
+the raster path is the golden path's machinery — `SkSurfaces::Raster`,
+no window, no display server, CoreText/CoreGraphics on macOS — so a
+driver that already runs headless keeps running headless.
+`render.skia.capture` is the one-shot underneath `PixelSink`: one app,
+one path, one `Take`, no numbering, for a driver that wants a named
+frame rather than a trace.
+
+`tests/capture.zig` is the worked example and the gate, on every
+`zig build test -Dskia`.
 
 What nokre tests for *itself* — and the guarantees those tests prove on
 your behalf — is catalogued in
