@@ -757,8 +757,12 @@ fn buildHome(state: *State, app: *h.App) !void {
         .detail = "A route tile: navigates, chevron and all",
         .route = "details",
     });
+    // Not "Save": the button row above already presses that, and two
+    // live controls doing different things under one name is what the
+    // audit refuses. The route tile beside this one may keep the link's
+    // name, because it goes where the link goes.
     try tiles.tile(.{
-        .label = "Save",
+        .label = "Save and close",
         .on_press = .bind(save, state),
     });
 

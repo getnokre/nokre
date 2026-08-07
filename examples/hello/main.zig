@@ -173,3 +173,24 @@ pub fn main() !void {
 
     try h.platform.run(&app, .{ .title = "nokre — hello" });
 }
+
+/// The same app on the heap, for a caller that owns no enclosing stack
+/// frame — the contract the DOM edition's live driver boots through, and
+/// the door `tests/example_screens.zig` builds this example's screens
+/// behind. The kitchen sink has carried it since the web edition landed;
+/// hello had no reason to until a gate wanted one.
+pub fn nokreWebBuild(gpa: std.mem.Allocator) !*h.App {
+    const state = try gpa.create(State);
+    errdefer gpa.destroy(state);
+    state.* = .{};
+    const app = try gpa.create(h.App);
+    errdefer gpa.destroy(app);
+    app.* = try h.App.init(gpa, .{
+        .viewport = .{ .w = 480, .h = 520 },
+        .routes = &routes,
+        .ctx = state,
+    });
+    state.app = app;
+    try app.navigate("home");
+    return app;
+}

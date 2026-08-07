@@ -1469,6 +1469,45 @@ pub fn build(b: *std.Build) void {
         // and makes `zig build test -Dskia -Dgolden` the gate that
         // would have caught it.
         test_step.dependOn(&app.artifact.step);
+        // And linking is where that stopped. A route builder is called by
+        // nothing until a window opens, so one that raises links, installs
+        // and passes every gate here — measured, by making the kitchen
+        // sink's `buildHome` raise and watching all three commands stay
+        // green. This driver imports the example's own module and stands
+        // its app up through the same `nokreWebBuild` the live driver
+        // boots through, then builds and audits every screen in the route
+        // table that app carries (tests/example_screens.zig).
+        const screens = b.addExecutable(.{
+            .name = b.fmt("{s}-screens", .{ex.name}),
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("tests/example_screens.zig"),
+                .target = target,
+                .optimize = optimize,
+                .imports = &.{
+                    // The example's own nokre instance, not a second one:
+                    // a screen has to be built by the library the example
+                    // links, services and all.
+                    .{ .name = "nokre", .module = app.nokre },
+                    .{ .name = "example", .module = app.module },
+                },
+            }),
+        });
+        // Inside a bundle on macOS where the example carries an identity,
+        // for the run step's reason and then some: hello's screen prints
+        // what `package_info` answers, and outside a bundle the OS half
+        // of that question raises an NSException before a screen exists
+        // to fail. A gate that skipped the example rather than bundling
+        // it would be covering one of the two.
+        const run_screens = if (target.result.os.tag == .macos and ex.pkg != null) blk: {
+            const inside = addMacosBundle(b, screens, ex.pkg.?, .{
+                .secure_store = true,
+                .notification = true,
+            }, b.fmt("{s}-screens", .{ex.name}));
+            const r = std.Build.Step.Run.create(b, b.fmt("build {s} screens", .{ex.name}));
+            r.addFileArg(inside);
+            break :blk r;
+        } else b.addRunArtifact(screens);
+        test_step.dependOn(&run_screens.step);
         // On macOS the run step drives the binary inside an assembled
         // bundle: without one there is no bundle identifier, and a
         // notification cannot be posted at all (addMacosBundle).

@@ -954,7 +954,7 @@ and a real socket would buy a little coverage and lose the property the
 whole design is built on. The gap is nokre's to close on its own side,
 in its own tier — never by making your tests heavier.
 
-That tier now has six gates, five on every `zig build test` and one on
+That tier now has seven gates, five on every `zig build test` and two on
 every `zig build test -Dskia`:
 
 | gate | what reaches a real implementation |
@@ -965,14 +965,36 @@ every `zig build test -Dskia`:
 | `tests/capture.zig` | a `Device`-driven app's artifacts, out of a process with no window — and the PNG read back by a decoder that is not the encoder (`-Dskia`, desktop) |
 | `node --check` × 5 | every JavaScript file a web build ships, parsed by the engine that runs it |
 | `tests/web_services.mjs` | the three service legs that exist **only** on the web, executed |
+| `tests/example_screens.zig` | every screen of every example, built and audited through the example's own entry point (`-Dskia`, one driver per example) |
 
 The web one is the least obvious, so it is spelled out below.
 What no gate reaches is still a real list: the native backends of
 secure_store (Keychain, CredMan, libsecret, the Android Keystore),
 oauth's `ASWebAuthenticationSession` and its Android and loopback legs,
 all four notification systems, StoreKit and Play Billing, and every
-shell's event translation. `zig build check-targets` compiles them; the
-examples link two of them; nothing runs them.
+shell's event translation. `zig build check-targets` compiles them and the
+examples link two of them — a link is not a call, and what a shell does
+when the OS hands it an event is still reached by nothing here.
+
+What the examples' link no longer covers alone is their own code. A route
+builder is called by nothing until a window opens, so one that raises
+compiled, linked, installed and passed every gate in this repository —
+measured, by making the kitchen sink's `buildHome` raise unconditionally
+and watching `zig build test`, `zig build test -Dskia -Dgolden` and
+`zig build check-targets` all stay green. `tests/example_screens.zig`
+closes that: an executable per example, standing the app up through the
+`nokreWebBuild` the live driver boots through, then walking the route
+table *that app is carrying* and building and auditing every screen on
+it. The table is read off the app rather than restated, so a route added
+to an example is covered by having been added. Its first clean run failed
+— the kitchen sink's home screen carried a button and a tile both labelled
+"Save", `duplicate_interactive_label`, on the screen that exists to
+demonstrate every element nokre has.
+
+On macOS an identity-carrying example is driven inside an assembled
+bundle, for the same reason its `run-` step is: hello's screen prints
+what `package_info` answers, and outside a bundle that question raises an
+NSException before a screen exists to fail.
 
 ### The web's own gate
 
