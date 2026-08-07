@@ -1133,6 +1133,31 @@ try dom.chrome(&em);    // notice, nav, sheet, picker
   padding written beside one is the reference's inset **less** that
   border. Nearly every off-by-one this edition had was one of those two.
 
+- **One breakpoint, and the two things that turn on it.** This edition
+  is the only one whose window resizes under a reader, so it is the only
+  one that answers a question about the *reader's* window rather than
+  the app's. The width is `sheet_max_w`, derived like everything else
+  here: at and below it a bottom-anchored surface *is* the screen — the
+  notice banner squares its corners and drops its side borders, the way
+  the reference does in `drawPaneChrome` — and above it each of them is
+  a pane standing in a window. The nav sorts on the same fact. Below the
+  width it is the bottom band, pills and all, with the section list
+  standing on it as a card and the screen keeping the reserve
+  underneath; above it the same markup is a header in flow above the
+  page, wrapping, its destinations words rather than plates and marked
+  by weight and tone, reserving nothing at the bottom and letting the
+  section list fall back to the ordinary bottom pane.
+
+  Both shapes are **one markup**, which is the whole reason this is a
+  sheet rule and not a tree decision: the wasm side knows nothing about
+  it, and a served file cannot disagree with the frame that patches it.
+  The one thing the sheet cannot see is whether the page has a driver at
+  all — that is `class_names.no_boot`, written by `document.zig` out of
+  `Document.boot` and by nobody else, and it keeps a page nothing will
+  ever mount over out of the band at every width. The reference edition
+  has no such rule and draws the band always: it lays out rects, and
+  what it laid out is what the reader sees.
+
 - **The reset is not tidiness.** It is the edition's half of matching
   the reference: `font-synthesis: none`, because the bundle ships real
   bold and italic and the Arabic companion ships no italic, so a

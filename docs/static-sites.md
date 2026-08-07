@@ -293,14 +293,16 @@ made a seam look necessary were a phone's rather than the library's:
   number less the row an off-roster screen may add, and it moves only if
   that one does. A site with more destinations than the bound
   restructures.
-- **The placement did not move, and will not.** The bar is the bottom
-  band in both editions and on both sides of a boot. It is not the
-  medium's to choose: the file that renders the roster is the file the
-  live driver patches, so a header drawn at the top before boot and at
-  the bottom after would move a site's navigation out from under the
-  reader one frame in — and the reference edition, drawing the same
-  tree, would disagree with both. There is no placement API here for the
-  reason there is none anywhere else
+- **The placement did not move in that round, and the ground it stood
+  on was half right.** The bar was the bottom band in both editions and
+  on both sides of a boot, because the file that renders the roster is
+  the file the live driver patches: a header drawn at the top before
+  boot and at the bottom after would move a site's navigation out from
+  under the reader one frame in. That much still holds and is what the
+  next section is built to keep. What did not hold is the conclusion —
+  the shape a *reader* gets is not the shape a *driver* stated, and the
+  argument above only ever ruled out the second. There is still no
+  placement API here for the reason there is none anywhere else
   ([elements.md](elements.md)).
 
 Which leaves what the finding actually reported. The header was below
@@ -310,6 +312,93 @@ mount is written before the content mount — the destinations lead the
 page's title in the markup and in the focus order. Nothing is reordered
 by CSS, which is the posture that ruled out the other workaround in the
 first place.
+
+## The semantics were right and the material was wrong
+
+The site that asked for the seam adopted the roster, and what its
+readers got was six filled capsules centred above an `h1`, on a page
+whose every other line is ranged left in a column. On a phone they wrapped
+into a grid of buttons. The site had worked the placement around with a
+stylesheet of its own that stood `.nav` up out of the fixed band, plus
+two tripwires: one failing the build if nokre's sheet ever stopped
+declaring `.nav { position: fixed`, and one failing it if any page's
+roster came out collapsed. Both existed because the override had no
+contract behind it.
+
+**A pill in a band across the bottom is a thumb affordance.** It is
+right for a phone, where reach is worst at the far edge, and it is the
+oddity anywhere else. The material was not a static-site problem: an app
+shell's web build wears the same capsules in a 1400px browser window.
+
+### The discriminator is the reader's window, not the writer
+
+The obvious seam was the attribute from the section below — `document.zig`
+stamps `data-nokre="document"` on exactly the pages a generator writes.
+It is refused, and the ground is worth keeping: **a browser is a
+browser.** Whether nokre's static writer or its packaging wrote the file
+is invisible to the reader and says nothing about how a nav should look.
+What says something is width. So the rule is one width rule in the DOM
+edition's stylesheet — band at a phone's width, header above it — and it
+holds for a generated page and an app shell alike.
+
+Everything a build-time answer would have cost is what a stylesheet does
+not spend. There is **one markup**, so the wasm side needs to know
+nothing and cannot disagree with the file. **Nothing is measured against
+a window nobody is looking at**: a generator hands core a viewport it
+invented, and the shape a reader gets no longer follows from it. And a
+page that boots carries exactly the nodes its first live frame rebuilds,
+so the handover stays a patch.
+
+**The breakpoint is derived, not picked** — a magic pixel value is what
+the round before this refused when it turned down a viewport-derived
+cap. It is `sheet_max_w`, the pane cap, which is already the sheet's only
+breakpoint: at and below it every bottom-anchored surface nokre draws
+*is* the screen, edge to edge with no side edges to round; above it each
+is a pane standing in a window with room beside it. A bar sorts on the
+same fact and spends the same number, so the two cannot drift.
+
+### A page with no boot script keeps the header at every width
+
+One thing the width rule cannot do alone. Which shape fits is a question
+a *driver* re-asks every time the window moves, and the answer it falls
+back to when a row will not make a line is a chip that opens a list. A
+page with no `boot` has neither: no driver to re-ask, and nothing to
+work the chip. The markup it was served in is the whole of what its
+reader will ever get, so it has to be the shape that answers every
+width — the header, which wraps.
+
+So `document` writes `class="nav no-boot"` when, and only when,
+`Document.boot` is null, and the sheet's band excludes it. This is not
+the attribute coming back in through a side door: the fact is not who
+wrote the file, it is whether anything on the page can reshape what is
+on it. A generated page that *does* boot carries no modifier and wears
+the band on a phone exactly as an app shell does, because there is a
+driver on it to work the chip.
+
+The same fact refuses the other half. A roster too wide for the viewport
+a generator ran at comes out as the chip, and on a page with no boot
+that chip cannot answer a press — a crawler reads one button where the
+site's sections should be, and the file renders. So `document` returns
+`error.NavChipNeedsBoot` rather than publishing it: the second tripwire,
+written by hand at the consumer, is now the library's, and the first has
+nothing left to pin.
+
+**What is still the driver's is the column.** nokre puts the header on
+the page's own 16px margin, inside whatever element the driver mounted
+the chrome into. Where the driver mounted the chrome and the screen into
+*two* boxes and centred one of them in a reading column, its own
+stylesheet has to bring the header into that column — the content class
+is a name the driver invented (the table above), and a library that
+guessed at the column would be styling a box it has never heard of.
+
+**Two things this does not fix, stated so they are not read as fixed.**
+A page that boots can still be served a row and then collapse to a chip
+when the reader's window turns out narrower than the generator's — the
+chip works there, so it is a reshape and not a dead control, but it is a
+reshape. And core measures the roster in *pills* whatever shape it is
+about to be drawn in, so an app shell in a smallish window can collapse
+where the header's words would have fitted. Both are the same residue:
+one measurement, taken against one viewport, for two shapes.
 
 ## A generated document has no host, so it has no unstyled half
 

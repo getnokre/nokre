@@ -1019,6 +1019,11 @@ test "chrome is separable from content, and the nav names where you are" {
 
     const bar = try renderChrome(&app);
     defer testing.allocator.free(bar);
+    // Bare `nav`, always: the modifier that keeps a roster out of the
+    // bottom band says the page has no boot script, and the driver
+    // emitting this frame is that boot (`class_names.no_boot`). A frame
+    // that carried it would also be a frame that no longer matched the
+    // file it is patching, byte for byte.
     try expectContains(bar, "<nav class=\"nav\" aria-label=\"Sections\">");
     // Consumers never manage selected state; the current route is
     // exposed as aria-current.
@@ -1437,6 +1442,52 @@ test "the stylesheet is generated from the library, not transcribed" {
     // The refusals, kept: no hover rule, and no motion to disable.
     try expectLacks(css.items, ":hover {");
     try expectContains(css.items, "transition: none !important;");
+}
+
+test "the roster has two shapes and the sheet's one breakpoint picks" {
+    const layout = @import("../../core/layout.zig");
+    var css: std.ArrayList(u8) = .empty;
+    defer css.deinit(testing.allocator);
+    try stylesheet.write(testing.allocator, &css, .{});
+
+    // The header is what the roster is by default: in flow, wrapping,
+    // words rather than plates, and the current destination marked by
+    // weight and tone. A fill would be the weakest mark in a thirteen
+    // gray system, and it is the band's only because a band has plates.
+    try expectContains(css.items, "\n.nav {\n  display: flex;");
+    try expectLacks(css.items, "\n.nav {\n  position: fixed;");
+    try expectContains(css.items, "\n.nav-row {\n  display: flex;\n  flex-wrap: wrap;");
+    try expectContains(css.items, "\n.chip.current { color: var(--ink); font-weight: 700; }");
+
+    // The band is the exception, and the width it hangs off is the pane
+    // cap itself — the sheet's only breakpoint, spent twice. A second
+    // number here would be a phone the library guessed at.
+    var expected: [64]u8 = undefined;
+    const query = try std.fmt.bufPrint(&expected, "@media (max-width: {d}px) {{", .{layout.metrics.sheet_max_w});
+    try expectContains(css.items, query);
+    try testing.expectEqual(
+        @as(?usize, null),
+        std.mem.indexOfPos(u8, css.items, std.mem.indexOf(u8, css.items, query).? + query.len, "@media (max-width:"),
+    );
+    const band = std.mem.indexOf(u8, css.items, query).?;
+    // Every declaration the band needs is inside it, and the reserve
+    // the screen keeps for it comes back with it.
+    for ([_][]const u8{
+        ".nav:not(.no-boot) {\n    position: fixed;",
+        ".nav:not(.no-boot) .nav-row {\n    flex-wrap: nowrap;",
+        ".nav:not(.no-boot) .chip {\n    height: var(--nav-slot);",
+        ".nav:not(.no-boot) .chip.current { background: var(--g10);",
+        ":root:has(.nav:not(.no-boot)) .nokre.has-chrome {",
+        ".picker.above-nav {",
+    }) |rule| {
+        const at = std.mem.indexOf(u8, css.items, rule) orelse {
+            std.debug.print("the band lost its rule: {s}\n", .{rule});
+            return error.TestExpectedContains;
+        };
+        try testing.expect(at > band);
+    }
+    // And a bar standing above the page reserves nothing under it.
+    try expectContains(css.items, "\n:root:has(.nav) .nokre.has-chrome { padding-bottom: var(--pad); }");
 }
 
 test "the modal surfaces share the scrims' z-index, so document order is the stacking" {

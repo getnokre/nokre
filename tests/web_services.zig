@@ -454,6 +454,21 @@ pub export fn nokre_probe_view() usize {
 /// document too long for the result buffer: a probe that outgrew its
 /// transport, not a fault in what it measured.
 pub export fn nokre_probe_document() isize {
+    return writeDocument(true);
+}
+
+/// The same file with the boot left off — the 1,124-in-1,126 page of a
+/// static site, which nothing will ever mount over.
+///
+/// The pair is the assertion: the two files differ in the nav's class
+/// list and in nothing else about the roster, because which shape a
+/// roster wears is the reader's window's to pick and a page with no
+/// driver cannot pick again (`class_names.no_boot`).
+pub export fn nokre_probe_document_unbooted() isize {
+    return writeDocument(false);
+}
+
+fn writeDocument(booted: bool) isize {
     const s = probe();
     doc_buf.clearRetainingCapacity();
     var em: dom.Emitter = .{
@@ -473,7 +488,7 @@ pub export fn nokre_probe_document() isize {
         .content_id = "content",
         .content_class = "page",
         .skip = "Skip to content",
-        .boot = .{ .wasm = "/app.wasm", .addressing = .documents },
+        .boot = if (booted) .{ .wasm = "/app.wasm", .addressing = .documents } else null,
     }) catch |err| {
         note(s, err);
         return -2;

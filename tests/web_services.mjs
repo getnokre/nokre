@@ -94,6 +94,13 @@ function probes(nk) {
       if (len === -2) throw failure();
       return text(len);
     },
+    /// The same file with no boot on it — the page of a static site
+    /// that nothing will ever mount over.
+    documentUnbooted() {
+      const len = nk.nokre_probe_document_unbooted();
+      if (len === -2) throw failure();
+      return text(len);
+    },
     /// Which chip the app believes is chosen.
     view: () => nk.nokre_probe_view(),
 
@@ -688,8 +695,28 @@ async function documentsPage() {
   assert.ok(content, "the file has a content mount");
   // The roster is what puts anything in the chrome mount at all: a page
   // whose first mount is empty would assert nothing about it.
-  assert.ok(chrome.querySelector("nav"), "the file's chrome mount holds the nav");
+  const bar = chrome.querySelector("nav");
+  assert.ok(bar, "the file's chrome mount holds the nav");
   assert.ok(content.querySelector("[data-n]"), "the file states node ids");
+
+  // Which shape the roster wears is the reader's window's, decided by
+  // the sheet over one markup — so this file, which boots, carries the
+  // same class list the frame below will rebuild, and the reader's
+  // window is free to change its mind afterwards without anything
+  // re-rendering. The page that will *never* boot is the other one: it
+  // says so on the nav, because nothing on it can re-ask the question
+  // or work the chip a narrow answer would collapse to.
+  assert.equal(bar.getAttribute("class"), "nav", "a page that boots states a shape");
+  const unbooted = generator.app.documentUnbooted();
+  assert.ok(
+    unbooted.includes('<nav class="nav no-boot"'),
+    "a page with no boot script does not say so on its nav",
+  );
+  assert.equal(
+    unbooted.replaceAll(' class="nav no-boot"', ' class="nav"').indexOf('class="chip'),
+    file.indexOf('class="chip'),
+    "the two files differ in more than the nav's own class list",
+  );
 
   // The nodes the reader is looking at, held from before the mount.
   // Identity is the whole assertion: nokre states every focus stop's

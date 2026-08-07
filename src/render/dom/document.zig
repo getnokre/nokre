@@ -55,6 +55,7 @@ const class_names = @import("class_names.zig");
 const color = @import("../../core/color.zig");
 const driver_files = @import("driver_files.zig");
 const element_mod = @import("../../core/element.zig");
+const layout = @import("../../core/layout.zig");
 const serialize = @import("serialize.zig");
 
 const Alternate = alternates_mod.Alternate;
@@ -80,6 +81,14 @@ pub const Addressing = enum {
 /// Present or absent, never half — a page with no `Boot` is a complete
 /// document that reads, navigates and prints, which is the whole point
 /// of the pair (dom-edition.md, "Live over a generated page").
+///
+/// Absence is a fact about the *page*, and two things read it. The nav
+/// keeps its header shape at every width rather than taking the phone's
+/// band, since nothing on the page can re-ask which shape fits or work
+/// the chip a narrow answer collapses to (`class_names.no_boot`). And a
+/// roster that already collapsed to that chip is `error.NavChipNeedsBoot`
+/// rather than a control published inert — generate at a width the row
+/// fits, which costs a document nothing.
 ///
 /// There is no locale field here, deliberately. The language the boot
 /// pins is the language the file was written in — `App.locale()`, the
@@ -330,6 +339,13 @@ pub fn document(em: *Emitter, doc: Document) !void {
     // leaves a truncated file behind, and every one of these is a
     // config mistake a build should die on rather than publish.
     if (doc.meta) |m| try checkMeta(m);
+    try checkNavShape(em, doc);
+    // One read of the declaration the driver already made, spent on the
+    // one thing the markup cannot derive from the reader's window
+    // (serialize.zig's `Emitter.unbooted`). Set on both arms rather than
+    // only the true one: an emitter a generator reuses page after page
+    // would otherwise carry the last file's answer into the next.
+    em.unbooted = doc.boot == null;
 
     // One read of the app's locale, spent twice: the attribute a
     // browser, a screen reader and a hyphenation table act on, and the
@@ -537,6 +553,32 @@ fn checkMeta(m: Meta) MetaError!void {
     // and is exactly that: a document with no URL of its own cannot be
     // one of the URLs a page exists at.
     try alternates_mod.check(m.alternates, m.path);
+}
+
+/// The one shape check this writer makes, and it is the same kind of
+/// thing `checkMeta` is: a relationship between two facts the driver
+/// stated, refused before a byte rather than published.
+///
+/// A roster too wide for the viewport it was built against comes out as
+/// the collapsed chip (`nav.syncNavChrome`), which is a control that
+/// opens a list — and a list is opened by the driver. On a page with no
+/// `boot` there is no driver: the chip cannot answer a press, and a
+/// crawler reading the file finds one button where the site's sections
+/// should be. Both failures are silent, and the file renders.
+///
+/// It is refused rather than reshaped. What shape the roster wears is
+/// core's answer to a question about a window (`layout.navCollapses`),
+/// and a writer that quietly overrode it would be a second answer to
+/// that question living in a serializer. The build's own fix is one
+/// line: generate at a width the row fits, which for a document is a
+/// free choice — the file is read at every width whatever it was
+/// measured at, since the shape it wears past that point is the
+/// reader's window's to pick (stylesheet.zig).
+fn checkNavShape(em: *const Emitter, doc: Document) error{NavChipNeedsBoot}!void {
+    if (doc.boot != null) return;
+    const tree = &em.app.tree;
+    const nav = layout.findNav(tree) orelse return;
+    if (layout.soleNavCurrent(tree, nav) != null) return error.NavChipNeedsBoot;
 }
 
 /// Canonical, Open Graph and the Twitter card, in one pass so the

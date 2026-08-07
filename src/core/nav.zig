@@ -183,17 +183,23 @@ fn marked(app: *const App) bool {
 /// `clearNav` for the teardown that only makes sense if this half is
 /// callable from the same place.
 ///
-/// It takes the bottom band of the viewport, centered at whatever width
+/// Which *shape* it takes is the framework's decision, and so is where
+/// it stands: the row where the labels fit, the collapsed chip where
+/// they do not; the bottom band at a phone's width, a header above the
+/// page anywhere wider. Consumers declare the set of places; nokre
+/// draws it and reshapes it as the viewport changes. There is no
+/// placement API and no shape API.
+///
+/// The band is the bottom of the viewport, centered at whatever width
 /// its own contents come to — not the sheet cap, which is a rule about
 /// line length and about nothing the bar holds — and none of a pane's
 /// surface: the nav is its items, each plated just enough to stay
-/// readable while the page scrolls behind them.
-///
-/// Which *shape* it takes is the framework's decision, like its
-/// placement: the row where the labels fit, the collapsed chip where
-/// they do not. Consumers declare the set of places; nokre draws it
-/// and reshapes it as the viewport changes. There is no placement API
-/// and no shape API.
+/// readable while the page scrolls behind them. The header is the same
+/// items as words in the page's own margin, wrapping. Which of the two
+/// a reader gets is decided against *their* window, by the sheet, over
+/// one markup (render/dom/stylesheet.zig, "two shapes and the reader's
+/// window picks"); the reference edition draws the band at every width,
+/// having no medium that reflows under a reader.
 ///
 /// **A generated document's header is one of these**, and that is the
 /// whole reason `Destination.icon` is optional. A static site's row of
@@ -205,10 +211,7 @@ fn marked(app: *const App) bool {
 /// (`nav_here`), every route resolved against the table at build time,
 /// and a navigation landmark ahead of the page's own `h1` in document
 /// and focus order (docs/static-sites.md, "A site's header is a
-/// roster"). What it does not buy is a different *placement*: the bar
-/// is the bottom band in both editions and on both sides of a boot,
-/// because a roster that moved when the page came alive would move the
-/// site's navigation out from under the reader.
+/// roster").
 pub fn setNav(app: *App, items: []const Destination) !void {
     // Fewer than two is not navigation. The upper bound is the
     // collapsed shape's list (`max_nav_items`), not the row's width —

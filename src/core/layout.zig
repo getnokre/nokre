@@ -738,7 +738,11 @@ fn navRowPillWidth(measurer: text.Measurer, el: *const element_mod.Element) ?i32
 
 /// The chip when the nav is wearing its collapsed shape: its only child,
 /// and a `nav_current`. Null for a row (or for a nav mid-rebuild).
-fn soleNavCurrent(tree: *const Tree, nav: NodeId) ?NodeId {
+///
+/// Public for the one caller outside this file: `dom.document` refuses
+/// to publish a chip on a page with no boot script, since nothing there
+/// can open the list it exists to open.
+pub fn soleNavCurrent(tree: *const Tree, nav: NodeId) ?NodeId {
     if (tree.childCount(nav) != 1) return null;
     var it = tree.children(nav);
     const only = it.next().?;

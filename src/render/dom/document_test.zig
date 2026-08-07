@@ -129,12 +129,96 @@ test "a site's header is a roster, and a roster is above the page's own title" {
     // the chrome mount, and the chrome mount is written before the
     // content mount — so they lead the `h1` in document order and in
     // the focus order both, without a line of CSS reordering anything.
-    const bar = std.mem.indexOf(u8, html, "<nav class=\"nav\"").?;
+    const bar = std.mem.indexOf(u8, html, "<nav class=\"nav").?;
     const main = std.mem.indexOf(u8, html, "<main id=\"content\"").?;
     const title = std.mem.indexOf(u8, html, "<h1").?;
     try testing.expect(bar < main);
     try testing.expect(main < title);
     try expectContains(html, "aria-current=\"page\">Pricing</a>");
+    // And it is a header rather than a bottom bar at every width this
+    // file will be read at, because nothing on it can reshape it: the
+    // page carries no boot (`plain`), so the shape it was served in is
+    // the whole of what its reader gets.
+    try expectContains(html, "<nav class=\"nav no-boot\"");
+}
+
+test "a page that boots keeps the shape the reader's window picks" {
+    const Screens = struct {
+        fn build(_: ?*anyopaque, app: *App) anyerror!void {
+            try app.tree.setTitle("Pricing");
+        }
+    };
+    var app = try App.init(testing.allocator, .{
+        .viewport = .{ .w = 1200, .h = 800 },
+        .services = .mocks(),
+        .routes = &.{
+            .{ .name = "pricing", .title = .{ .fixed = "Pricing" }, .build = Screens.build },
+            .{ .name = "docs", .title = .{ .fixed = "Docs" }, .build = Screens.build },
+        },
+    });
+    defer app.deinit();
+    try app.setNav(&.{
+        .{ .route = "pricing" },
+        .{ .route = "docs" },
+    });
+    try app.navigate("pricing");
+
+    var doc = plain("Pricing");
+    doc.boot = .{ .wasm = "/app.wasm" };
+    const html = try write(&app, doc);
+    defer testing.allocator.free(html);
+    // The modifier is about the file, not about the file's writer: a
+    // generated page with a driver on it collapses and reshapes exactly
+    // as an app shell does, so it wears the band on a phone and the
+    // header on anything wider, and the sheet is the only thing that
+    // ever decides which.
+    try expectContains(html, "<nav class=\"nav\"");
+    try expectLacks(html, "no-boot");
+}
+
+test "a chip nothing can open is refused rather than published" {
+    const Screens = struct {
+        fn build(_: ?*anyopaque, app: *App) anyerror!void {
+            try app.tree.setTitle("Explore");
+        }
+    };
+    // Narrow enough that the roster cannot make a row, which is the one
+    // way a document comes by the collapsed chip: `navCollapses` asked
+    // of the viewport the *generator* was run at.
+    var app = try App.init(testing.allocator, .{
+        .viewport = .{ .w = 320, .h = 640 },
+        .services = .mocks(),
+        .routes = &.{
+            .{ .name = "explore", .title = .{ .fixed = "Explore everything" }, .build = Screens.build },
+            .{ .name = "collections", .title = .{ .fixed = "Saved collections" }, .build = Screens.build },
+            .{ .name = "account", .title = .{ .fixed = "Your account" }, .build = Screens.build },
+        },
+    });
+    defer app.deinit();
+    try app.setNav(&.{
+        .{ .route = "explore" },
+        .{ .route = "collections" },
+        .{ .route = "account" },
+    });
+    try app.navigate("explore");
+
+    var out: std.ArrayList(u8) = .empty;
+    defer out.deinit(testing.allocator);
+    var em: serialize.Emitter = .{ .gpa = testing.allocator, .app = &app, .out = &out };
+    defer em.deinit();
+    // The chip opens a list, and a list is opened by the driver. With no
+    // boot on the page there is none, so the file would publish a
+    // control that cannot answer and a crawler would read one button
+    // where the site's sections are.
+    try testing.expectError(error.NavChipNeedsBoot, document.document(&em, plain("Explore")));
+    // Before a byte, like every other check this writer makes.
+    try testing.expectEqual(@as(usize, 0), out.items.len);
+
+    // The same tree with a module on the page is a working control.
+    var booted = plain("Explore");
+    booted.boot = .{ .wasm = "/app.wasm" };
+    try document.document(&em, booted);
+    try expectContains(out.items, "role=\"combobox\"");
 }
 
 test "a document nokre wrote whole says so, and the sheet styles the page for it" {
@@ -624,7 +708,14 @@ test "a mount holds the frame's bytes and no whitespace of the file's own" {
     });
     try app.navigate("library");
 
-    const html = try write(&app, plain("Library"));
+    // With a boot on it, because that is the only kind of page a live
+    // frame ever lands on — and because the file and the frame have to
+    // be the same bytes, which is what puts `no_boot` on the file rather
+    // than on the shape: a class the file carried and the frame did not
+    // would be this assertion failing at the nav's own open tag.
+    var doc = plain("Library");
+    doc.boot = .{ .wasm = "/app.wasm" };
+    const html = try write(&app, doc);
     defer testing.allocator.free(html);
 
     // The live driver's frame is `chrome` followed by `content` with
@@ -689,7 +780,7 @@ test "chrome comes before content, because the nav leads the focus order" {
     defer testing.allocator.free(html);
 
     const chrome_div = std.mem.indexOf(u8, html, "<div id=\"chrome\">").?;
-    const nav = std.mem.indexOf(u8, html, "<nav class=\"nav\"").?;
+    const nav = std.mem.indexOf(u8, html, "<nav class=\"nav").?;
     const main = std.mem.indexOf(u8, html, "<main id=\"content\"").?;
     const h1 = std.mem.indexOf(u8, html, "<h1 id=\"library\">").?;
     const footer = std.mem.indexOf(u8, html, "<footer>").?;

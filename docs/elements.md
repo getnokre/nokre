@@ -1457,15 +1457,36 @@ app.clearNav(); // and the bar is gone, roster and all
 
 The nav survives every router rebuild and leads the focus order as the
 navigation landmark. Placement and shape are both the framework's
-decisions, not the consumer's, and there is no API for either: the bar
-is always the bottom band of the viewport, and whatever it holds — the
-row of destinations, the collapsed chip, the minimized-notices square —
-is measured at its own width and centered there. That holds for a
-generated page too, where this call is also how a site states its header
-([static-sites.md](static-sites.md)): the roster leads the page's own
-title in document order, and it is still drawn at the bottom, because a
-roster that moved when the page came alive would move the site's
-navigation out from under the reader.
+decisions, not the consumer's, and there is no API for either.
+
+**Two shapes, and the reader's window picks.** At a phone's width the
+bar is the bottom band of the viewport, and whatever it holds — the row
+of destinations, the collapsed chip, the minimized-notices square — is
+measured at its own width and centered there. That is a thumb
+affordance: reach is worst at the far edge, and the bar is the chrome a
+hand goes to without looking. Anywhere wider it is a header instead —
+the same destinations as words in the page's own margin, above the
+page's own title, wrapping when there are more of them than fit a line.
+A pointer needs no thumb band, and a window with room beside its text
+column is a document.
+
+The web is where a window resizes under a reader, so the web is where
+this is decided: one rule in the DOM edition's stylesheet, over one
+markup, at the same width every other bottom-anchored surface there
+stops being the whole screen
+([internals/dom-edition.md](internals/dom-edition.md)). Nothing crosses
+a consumer call, nothing is measured at build time, and a page that
+boots carries exactly the markup its live frame rebuilds. The reference
+edition draws the band at every width — a native window is not a medium
+that reflows under a reader, and what it draws is what its own layout
+placed.
+
+A generated page states its header through this same call
+([static-sites.md](static-sites.md)) — the roster leads the page's own
+title in document order — with one difference the library reads off the
+page rather than off a flag: a document with no boot script has no
+driver to re-ask which shape fits, and nothing on it to work the chip a
+narrow answer would collapse to, so it keeps the header at every width.
 
 **`clearNav` is the counterpart**, and an app needs one whenever its bar
 belongs to a *session* rather than to the app: a rebuild preserves the
@@ -1516,6 +1537,13 @@ starts being typed into, the picker grows a filter field the section
 list deliberately does not have. So the bound is that count, less the
 one row an off-roster screen may add.
 
+It still binds where the roster is a header. A header wraps and needs
+no collapsed shape of its own, but a roster is declared **once** and
+any window can be narrowed to a phone's — so the set has to be one both
+shapes can carry, and the stricter shape is the one that sets the
+bound. A site with more destinations than the bound restructures; that
+is the price of one markup answering every width.
+
 **The bar has no ground.** There is no track, no fill, no hairline —
 the nav is its items and nothing else, each on a plate of its own, with
 `metrics.nav_item_gap` (8px) of page showing between them. The plates
@@ -1550,12 +1578,26 @@ a target, with nothing around it to square up against. The collapsed
 chip takes the same corner, and the notices indicator beside them — a
 pill as tall as it is wide — is a circle.
 
-Because nothing hides what passes behind it, every screen with bottom
-chrome reserves `metrics.nav_content_gap` (24px) below its last element,
-on top of the bar and the OS safe band. Scrolled to the end, a page
-stands clear of the nav; mid-scroll, lines pass behind the items and
-down into the safe band — that glimpse of a half-covered line is the
-only thing left saying there is more below.
+**As a header the same items are words.** No plate, no pill, no fill:
+the destinations take the same `dark` step-back tone they wear on their
+plates, and the one you are standing on takes `.ink` and the bold face.
+Weight and tone are how a grayscale system says *this one* — a fill is
+the weakest mark available in thirteen grays, and the band uses it only
+because a band has plates to fill. There is no underline either, though
+[`link`](#link) carries one: an underline says *this word is a
+destination* among words that are not, and in a row where every word is
+one it distinguishes nothing. The row sits in the page's own 16px
+margin, wraps at the page's own gap, and stands above the page's first
+block; the notices indicator, if there is one, keeps its plate, being a
+glyph target rather than a word.
+
+Because nothing hides what passes behind it, every screen whose bar is
+in the **band** reserves `metrics.nav_content_gap` (24px) below its last
+element, on top of the bar and the OS safe band. Scrolled to the end, a
+page stands clear of the nav; mid-scroll, lines pass behind the items
+and down into the safe band — that glimpse of a half-covered line is the
+only thing left saying there is more below. A header reserves nothing:
+it took its space where it stands, at the top, in flow.
 
 A slot is 52px tall, the one control in the library that grows *past*
 `touch_target` rather than up to it: it is the chrome a thumb reaches
@@ -1573,7 +1615,10 @@ edge, and the other destinations move behind a picker that opens above
 it — carrying their glyphs into the list, so a mark means the same
 thing in both shapes.
 
-The threshold is measured, not a breakpoint:
+The threshold is measured, not a breakpoint — the one breakpoint above
+is about *where the bar stands*, which is a fact about the reader's
+window, and this is about whether a particular set of words makes a
+line, which no width alone can answer:
 
 - **What "fits" means.** The row fits when its pills, the gaps between
   them, the bar's insets, and the indicator's reserved square fit the
@@ -1607,13 +1652,17 @@ and takes a choice. Its accessible name is the framework's own word for
 it ("Section" in English, `App.Chrome.section` in yours) and the
 current section is its *value*, so the control a screen-reader user
 looks for does not rename itself every time it is used. The list is the
-select's picker in behavior and a card in shape: it stands on the chip's
-leading edge, as wide as its longest row rather than as wide as the
-pane, with the current section marked. A select's picker is
+select's picker in behavior and a card in shape *where the bar is in the
+band*: it stands on the chip, as wide as its longest row rather than as
+wide as the pane, with the current section marked. A select's picker is
 bottom-anchored because its owner is somewhere in the page; this one's
 owner is right below it, so the list is measured from the chip and
 draws no title — "Sections" stays as the dialog's accessible name,
-which is the only place it was ever needed. Choosing one navigates
+which is the only place it was ever needed. Where the bar is a header
+the exception lapses with the reason for it: the chip is at the top,
+and a card floated over the bottom edge would be a list at the far end
+of the screen from the control that opened it, so the section list is a
+bottom pane like every other picker. Choosing one navigates
 exactly as tapping a row item does — a push — and choosing the screen
 you are already on does nothing: the shape must not decide what a
 choice costs.
@@ -1629,7 +1678,7 @@ That middle outcome is what makes the drag an addition rather than a
 replacement: a plain click, the Tab/↑/↓/Enter path, and a screen
 reader's own activation all reach every section without dragging
 anything (WCAG 2.5.1), and moving off before letting go always aborts
-(WCAG 2.5.2). The list opens *above* the chip rather than over it —
+(WCAG 2.5.2). The list opens clear of the chip rather than over it —
 a menu covering its own control would put a row under the finger still
 holding it, with nowhere to release that means "never mind". While the
 menu is open, moving the pointer moves **focus** to the row under it:

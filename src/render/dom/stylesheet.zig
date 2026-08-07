@@ -66,6 +66,13 @@ const root_sel_chromed = root_sel ++ "." ++ class_names.has_chrome;
 // they are a rule that silently matches nothing.
 const document_sel = class_names.document_attr ++ "=\"" ++ class_names.document_value ++ "\"";
 
+// The bar the band is for: every roster except the one on a page that
+// will never boot, which keeps the header at every width
+// (`class_names.no_boot`). Spliced once because the band's block names
+// it on every rule it has, and six typed copies of a class name is the
+// drift this file exists to rule out.
+const band_sel = ".nav:not(." ++ class_names.no_boot ++ ")";
+
 pub const Options = struct {
     /// Where the bundled faces are served from. The edition ships no
     /// font stack and no fallback list: nokre renders in these and
@@ -289,21 +296,140 @@ fn writeDerived(gpa: std.mem.Allocator, out: *std.ArrayList(u8)) !void {
         .{try std.unicode.utf8Decode(element.checkbox_check)},
     );
 
-    // A banner as wide as the viewport has no side edges to round: the
-    // reference squares the corners and drops the side borders there,
-    // keeping the boundary on the top hairline alone (`drawPaneChrome`).
-    // The breakpoint is the pane cap itself, so it cannot drift from
-    // `--pane` above.
-    try out.print(gpa,
-        \\
-        \\@media (max-width: {d}px) {{
+    // The phone's width, and the one breakpoint this sheet has. It is
+    // the pane cap itself, so it cannot drift from `--pane` above, and
+    // what it sorts is a single fact about the reader's window: at and
+    // below it a bottom-anchored surface *is* the screen, edge to edge;
+    // above it every one of them is a pane standing in a window with
+    // room beside it.
+    //
+    // Both things behind it are that fact spent twice. A banner as wide
+    // as the viewport has no side edges to round — the reference squares
+    // the corners and drops the side borders there, keeping the boundary
+    // on the top hairline alone (`drawPaneChrome`). And the destinations
+    // are a band a thumb reaches for rather than a header above the
+    // page: `sheet`'s nav block is the header, this is the exception,
+    // and every declaration here is one the header's own rule left it to
+    // state.
+    //
+    // A page with no boot script is not in it (`class_names.no_boot`).
+    // Which shape fits is a question a driver re-asks every time the
+    // window moves, and the answer it falls back to when a row will not
+    // fit is a chip that opens a list; a file nobody is going to boot
+    // has neither, so it keeps the one shape that answers every width.
+    try out.print(gpa, "\n@media (max-width: {d}px) {{\n", .{metrics.sheet_max_w});
+    try out.appendSlice(gpa,
         \\  /* No side border left to be part of the inset, so the words
         \\     take the whole pad from the screen edge — which is where
         \\     the reference puts them either way. */
-        \\  .notice {{ border-radius: 0; border-inline: 0; padding-inline: var(--notice-pad); }}
-        \\}}
+        \\  .notice { border-radius: 0; border-inline: 0; padding-inline: var(--notice-pad); }
         \\
-    , .{metrics.sheet_max_w});
+        \\  /* The bar has no ground: no track, no fill, no hairline. The
+        \\     nav is its items and nothing else, each on a plate of its
+        \\     own, with 8px of page showing between them. */
+        \\
+    ++ "  " ++ band_sel ++ " {\n" ++
+        \\    position: fixed;
+        \\    inset-inline: 0;
+        \\    bottom: 0;
+        \\    z-index: 2;
+        \\    justify-content: center;
+        \\    padding-top: var(--nav-bar-pad);
+        \\    padding-bottom: calc(var(--bar-bottom) + var(--safe-b));
+        \\    /* The layer spans the screen to centre one group in it, so
+        \\       it has to let the page through either side of that
+        \\       group. */
+        \\    pointer-events: none;
+        \\  }
+        \\  /* A *row* of destinations is measured and centred on the
+        \\     viewport as one group, and here it does not wrap:
+        \\     `navCollapses` asks whether the roster fits on one line and
+        \\     gives the nav its collapsed shape when it does not, so a
+        \\     second line is a state the library has already ruled out —
+        \\     for a screen whose window it measured. */
+        \\
+    ++ "  " ++ band_sel ++ " .nav-row {\n" ++
+        \\    flex-wrap: nowrap;
+        \\    justify-content: center;
+        \\    gap: var(--nav-item-gap);
+        \\    pointer-events: auto;
+        \\  }
+        \\  /* Pills: the corner is half the slot's height, derived rather
+        \\     than fixed, so the shape follows the slot instead of
+        \\     drifting back to a rounded rectangle the next time the row
+        \\     grows. Nothing else in the library is a pill. The pad is
+        \\     the reference's, less the border drawn inside it.
+        \\
+        \\     Three levels: the page, the destinations on .g11, and the
+        \\     current route one step above them on .g10, outlined in mid
+        \\     and lettered in ink — mid because .g6 is 2.7:1 against
+        \\     .g10, under the 1.4.11 floor. The plate is the mark here,
+        \\     so the regular face carries the words: bold *and* a fill
+        \\     would be two marks for one state. */
+        \\
+    ++ "  " ++ band_sel ++ " .chip {\n" ++
+        \\    height: var(--nav-slot);
+        \\    padding-inline: calc(var(--nav-item-pad-h) - var(--border));
+        \\    border: var(--border) solid transparent;
+        \\    border-radius: calc(var(--nav-slot) / 2);
+        \\    background: var(--g11);
+        \\    font-weight: 400;
+        \\  }
+        \\
+    ++ "  " ++ band_sel ++ " .chip.current { background: var(--g10); border-color: var(--mid); }\n" ++
+        \\  /* A plate has an edge of its own, so focus takes it over
+        \\     rather than drawing a second line beside it — the rule the
+        \\     header leaves to the band (`sheet`, the focus block). */
+        \\
+    ++ "  " ++ band_sel ++ " .chip:focus-visible {\n" ++
+        \\    outline: var(--focus) solid var(--ink);
+        \\    outline-offset: calc(-1 * var(--focus));
+        \\    border-color: transparent;
+        \\  }
+        \\  /* A screen whose bar is in the band owes it the clear space
+        \\     again: `trailingSpace` plus `navBarHeight` to the pixel, so
+        \\     nothing may *rest* behind the destinations. The OS band is
+        \\     inside `--bar-bottom`, exactly as `navBarBottomPad` puts it
+        \\     there. */
+        \\
+    ++ "  :root:has(" ++ band_sel ++ ") " ++ root_sel_chromed ++ " {\n" ++
+        \\    padding-bottom: calc(
+        \\      var(--nav-content-gap) + var(--nav-bar-pad) + var(--nav-slot) + var(--bar-bottom) + var(--safe-b)
+        \\    );
+        \\  }
+        \\  /* The section list is the tile group's card, not the modal
+        \\     pane's surface: it floats clear of every edge, so all four
+        \\     corners are its own and all four are drawn. It is sized to
+        \\     its longest row rather than to the pane — a card standing
+        \\     on a chip, not a slab across the screen — and its rows sit
+        \\     flush inside the 1px edge, exactly as a `tile_group` seats
+        \\     its tiles, so the border is the whole of its padding. */
+        \\  .picker.above-nav {
+        \\    bottom: calc(var(--bar-bottom) + var(--safe-b) + var(--nav-slot) + var(--nav-item-gap));
+        \\    width: max-content;
+        \\    /* Capped where the chip is capped — the bar's own inset off
+        \\       the viewport, not the pane's width: this card stands on
+        \\       the bar. */
+        \\    max-width: calc(100% - 2 * var(--nav-bar-pad-h));
+        \\    max-height: calc(100dvh - var(--sheet-min-top));
+        \\    padding: 0;
+        \\    /* Centred on the bar's group, which is centred on the
+        \\       viewport — so `auto` margins are the whole of it, and
+        \\       this layer needs no measured width from anywhere to land
+        \\       where `layoutNavMenu` puts it. Aligned to the chip's
+        \\       leading edge instead, it would have needed the chip's own
+        \\       width, which is a rect, and no rect reaches this
+        \\       edition. */
+        \\    inset-inline: 0;
+        \\    margin-inline: auto;
+        \\    /* The pane above gave every picker a bottom edge it did not
+        \\       draw, this one floating clear having four. */
+        \\    border-bottom: var(--border) solid var(--g6);
+        \\    border-radius: var(--radius-card);
+        \\  }
+        \\}
+        \\
+    );
 
     // The back control's vertical placement, per the scale of the line
     // it marks. `layoutRow` centres the 44px target on the *cap region*
@@ -652,6 +778,19 @@ const sheet =
     \\    var(--nav-content-gap) + var(--nav-bar-pad) + var(--nav-slot) + var(--bar-bottom) + var(--safe-b)
     \\  );
     \\}
+    \\/* …and a bar standing *above* the page in flow reserves nothing at
+    \\   the bottom: it took its space where it stands. `has-chrome` is
+    \\   one class over three layers (`hasBottomChrome`), so the test is
+    \\   which of them is on the page — a notice banner and the bare
+    \\   notices indicator are bottom-anchored at every width and keep the
+    \\   reserve, and neither is ever on the page beside the nav (`chrome`
+    \\   emits the banner *instead of* it). `writeDerived` gives the band
+    \\   its reserve back at the width the bar is in the band.
+    \\
+    \\   `:root` because the two mounts are siblings at best and the sheet
+    \\   does not know what a driver wrapped them in: the nav is somewhere
+    \\   in the page, and the page is what every document has. */
+++ "\n:root:has(.nav) " ++ root_sel_chromed ++ " { padding-bottom: var(--pad); }\n" ++
     \\
     \\/* A flex item will not shrink below its own min-content unless it
     \\   is told it may, and a code block's min-content is its longest
@@ -1535,16 +1674,21 @@ const sheet =
     \\   while every other button stayed quiet. A text input or textarea
     \\   matches `:focus-visible` however it was focused, so the typing
     \\   fields keep their ring either way. */
+    \\/* A destination is not in this list, and is added to it with the
+    \\   rest of the band (`writeDerived`): there it is a plate with an
+    \\   edge of its own to take over, and as a header it is a word — a
+    \\   stroke laid *inside* a word's box crosses the letters. So the
+    \\   header's destinations take the default two pixels of clear
+    \\   instead, which is this same rule read the same way. */
     \\.field-box:has(:focus-visible),
     \\.tile:focus-visible,
     \\.picker-item:focus-visible,
-    \\.chip:focus-visible,
     \\.btn.secondary:focus-visible {
     \\  outline: var(--focus) solid var(--ink);
     \\  outline-offset: calc(-1 * var(--focus));
     \\}
     \\.field-box:has(:focus-visible) { border-color: var(--ink); }
-    \\.btn.secondary:focus-visible, .chip:focus-visible { border-color: transparent; }
+    \\.btn.secondary:focus-visible { border-color: transparent; }
     \\
     \\/* Where the row is the control, the row is what carries the
     \\   indicator: the reference rings the whole checkbox or toggle row,
@@ -1571,59 +1715,74 @@ const sheet =
     \\
     \\/* ---- bottom chrome ----------------------------------------------- */
     \\
-    \\/* The bar has no ground: no track, no fill, no hairline. The nav is
-    \\   its items and nothing else, each on a plate of its own, with 8px
-    \\   of page showing between them. Three levels: the page, the
-    \\   destinations on .g11, and the current route one step above them
-    \\   on .g10, outlined in mid and lettered in ink — mid because .g6 is
-    \\   2.7:1 against .g10, under the 1.4.11 floor. */
+    \\/* The roster has two shapes and the *reader's window* picks, which
+    \\   is one rule and not a placement API: nothing about it reaches a
+    \\   consumer call, and the tree it renders is the same tree either
+    \\   way (`nav.zig`, "There is no placement API and no shape API").
+    \\
+    \\   A pill in a band across the bottom is a thumb affordance. It is
+    \\   right for a phone, where reach is worst at the far edge and the
+    \\   bar is the chrome a hand goes to without looking, and it is the
+    \\   oddity anywhere else: a page read with a pointer, at a width that
+    \\   leaves room beside its own text column, wants its destinations
+    \\   where a document's are — a row of words above the page, in the
+    \\   page's own margin, wrapping when there are more of them than fit.
+    \\
+    \\   So this block is the header, and the band is the exception, held
+    \\   behind the one width the sheet already turns on (`writeDerived`).
+    \\   At and below that width every bottom-anchored surface here *is*
+    \\   the screen, edge to edge with no side edges to round; above it
+    \\   each of them is a pane standing in a window. The bar sorts the
+    \\   same way, so it spends the same number and cannot drift from it.
+    \\
+    \\   Nothing is reordered to do it. The chrome mount is written before
+    \\   the content mount and the nav leads the focus order (`document`,
+    \\   `chrome`), so *in flow* the header is already above the page's
+    \\   own title — the band was the thing that had to take it out of
+    \\   flow, not this. */
     \\.nav {
-    \\  position: fixed;
-    \\  inset-inline: 0;
-    \\  bottom: 0;
-    \\  z-index: 2;
     \\  display: flex;
-    \\  justify-content: center;
-    \\  padding-top: var(--nav-bar-pad);
-    \\  padding-bottom: calc(var(--bar-bottom) + var(--safe-b));
-    \\  pointer-events: none;
+    \\  justify-content: flex-start;
+    \\  /* The page's own top margin, above the page's first block. The
+    \\     inline inset is the row's (`nav_bar_pad_h`), which is the same
+    \\     16 for the same reason: nav labels align with the page. */
+    \\  padding-top: var(--page-pad);
     \\}
-    \\/* A *row* of destinations is measured and centred on the viewport
-    \\   as one group, and it does not wrap: `navCollapses` asks whether
-    \\   the roster fits on one line and gives the nav its collapsed shape
-    \\   when it does not, so a second line is a state the library has
-    \\   already ruled out. */
+    \\/* It wraps, and that is the whole of what the header needs the
+    \\   collapsed chip for elsewhere: a second line is a shape a document
+    \\   has and a fixed one-line band does not. The row gap is the root
+    \\   stack's, the column gap the page's margin — words a reader scans
+    \\   as one set, spaced like the page rather than like plates. */
     \\.nav-row {
     \\  display: flex;
-    \\  flex-wrap: nowrap;
-    \\  justify-content: center;
-    \\  gap: var(--nav-item-gap);
+    \\  flex-wrap: wrap;
+    \\  align-items: center;
+    \\  gap: var(--page-gap) var(--page-pad);
     \\  padding-inline: var(--nav-bar-pad-h);
-    \\  pointer-events: auto;
     \\}
-    \\/* Pills: the corner is half the slot's height, derived rather than
-    \\   fixed, so the shape follows the slot instead of drifting back to
-    \\   a rounded rectangle the next time the row grows. Nothing else in
-    \\   the library is a pill. The pad is the reference's, less the
-    \\   border drawn inside it. */
+    \\/* Words, not capsules. The destinations take the step-back tone the
+    \\   plated row already gave them, and the one you are standing on
+    \\   takes ink and the bold face — weight and tone, which is how a
+    \\   grayscale system says "this one". A fill would have been the
+    \\   weakest mark available here and it is what the band uses only
+    \\   because a band has plates to fill.
+    \\
+    \\   No underline, though `link` carries one: an underline in prose
+    \\   says *this word is a destination* among words that are not, and
+    \\   in a row where every word is one it distinguishes nothing. */
     \\.chip {
     \\  display: inline-flex;
     \\  align-items: center;
     \\  gap: var(--icon-gap);
-    \\  height: var(--nav-slot);
-    \\  padding-inline: calc(var(--nav-item-pad-h) - var(--border));
-    \\  border: var(--border) solid transparent;
-    \\  border-radius: calc(var(--nav-slot) / 2);
-    \\  background: var(--g11);
     \\  color: var(--dark);
     \\  text-decoration: none;
     \\  white-space: nowrap;
     \\}
-    \\.chip.current { background: var(--g10); border-color: var(--mid); color: var(--ink); }
+    \\.chip.current { color: var(--ink); font-weight: 700; }
     \\
-    \\/* The collapsed chip needs no rule of its own: it is one control
-    \\   standing in for the bar, and the bar centres what it holds at
-    \\   that thing's own width whether it is a whole roster or one chip.
+    \\/* The collapsed chip needs no rule of its own in either shape: it
+    \\   is one control standing in for the bar, and the bar lays out what
+    \\   it holds the same way whether that is a whole roster or one chip.
     \\   Pinned to the pane's leading edge instead, it sat at one end of
     \\   a wide display with the notices control at the other.
     \\   `layoutNavChrome` centres the same group. */
@@ -1734,8 +1893,6 @@ const sheet =
     \\  border: var(--border) solid var(--g6);
     \\  overflow-y: auto;
     \\  overscroll-behavior: contain;
-    \\}
-    \\.sheet, .notices-pane, .picker:not(.above-nav) {
     \\  inset-inline: 0;
     \\  bottom: 0;
     \\  /* Never flush with the viewport sides: `sheet_margin` stands
@@ -1785,10 +1942,16 @@ const sheet =
     \\  inset-inline-end: calc(var(--sheet-pad-h) + var(--touch));
     \\}
     \\
-    \\/* A select's picker is a bottom-anchored pane because its owner is
-    \\   somewhere in the page. The nav's section list is the exception:
-    \\   its owner is on screen right below it, so it stands on the bar
-    \\   rather than covering it. */
+    \\/* A picker is a bottom-anchored pane because its owner is somewhere
+    \\   in the page and the pane cannot be beside it. The nav's section
+    \\   list is the exception *where the bar is in the band*: there its
+    \\   owner is on screen right below it, so it stands on the bar rather
+    \\   than covering it. That exception is written at the width the bar
+    \\   is in the band (`writeDerived`) and nowhere else — with the bar
+    \\   standing above the page, a card floated over the bottom edge
+    \\   would be a list at the far end of the screen from the control
+    \\   that opened it, so the section list is a pane like every other
+    \\   picker. */
     \\.picker, .notices-pane {
     \\  /* One scroller per layer. The pane is a surface with a height
     \\     cap; what moves inside it is the scroll_region the framework
@@ -1807,31 +1970,6 @@ const sheet =
     \\   gapped like free-flowing content — `layoutBlock` flows them at
     \\   `border` where a free region uses the control gap. */
     \\.picker > .scroll { gap: var(--border); }
-    \\/* The section list is the tile group's card, not the modal pane's
-    \\   surface: it floats clear of every edge, so all four corners are
-    \\   its own and all four are drawn. It is sized to its longest row
-    \\   rather than to the pane — a card standing on a chip, not a slab
-    \\   across the screen — and its rows sit flush inside the 1px edge,
-    \\   exactly as a `tile_group` seats its tiles, so the border is the
-    \\   whole of its padding. */
-    \\.picker.above-nav {
-    \\  bottom: calc(var(--bar-bottom) + var(--safe-b) + var(--nav-slot) + var(--nav-item-gap));
-    \\  width: max-content;
-    \\  /* Capped where the chip is capped — the bar's own inset off the
-    \\     viewport, not the pane's width: this card stands on the bar. */
-    \\  max-width: calc(100% - 2 * var(--nav-bar-pad-h));
-    \\  max-height: calc(100dvh - var(--sheet-min-top));
-    \\  padding: 0;
-    \\  /* Centred on the bar's group, which is centred on the viewport —
-    \\     so `auto` margins are the whole of it, and this layer needs no
-    \\     measured width from anywhere to land where `layoutNavMenu` puts
-    \\     it. Aligned to the chip's leading edge instead, it would have
-    \\     needed the chip's own width, which is a rect, and no rect
-    \\     reaches this edition. */
-    \\  inset-inline: 0;
-    \\  margin-inline: auto;
-    \\  border-radius: var(--radius-card);
-    \\}
     \\/* The row is 44px tall with its outline drawn *inside* that box —
     \\   the chip is a state, not an extra pixel of height — so the pad
     \\   is the tile's less the border it is drawn beside. */
