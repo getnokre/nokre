@@ -290,7 +290,6 @@ try dom.document(&em, .{
     .content_id = "content",
     .content_class = "page",
     .skip = "Skip to content",
-    .body_end = footer.items,
     .boot = .{ .wasm = "/app.wasm", .addressing = .documents, .seed = "/md/…" },
 });
 ```
@@ -390,10 +389,11 @@ half sits where it does.
   say. The sheet's type base is scoped to nokre's own surfaces because
   *the page around an embedded app is not this edition's to turn
   around* — right, and with nothing to protect in a file the library
-  wrote end to end, where a footer handed to `body_end` was rendering
-  in the browser's default serif. So the sheet keeps its scoping and
-  gains one block behind this attribute: ink, family, size, measure and
-  paper on `body`. It is the `dir` asymmetry a second time, and the live
+  wrote end to end. So the sheet keeps its scoping and gains one block
+  behind this attribute: ink, family, size, measure and paper on
+  `body`. The paper is the half that earns it — a driver that centred
+  the screen in a reading column leaves a band of `body` down each
+  side, and unpainted that band is the UA canvas. It is the `dir` asymmetry a second time, and the live
   driver's never stamping it is checked at comptime rather than trusted
   (`class_names.zig`). What the block covers and where it stops is
   [static-sites.md](../static-sites.md), "A generated document has no
@@ -405,7 +405,8 @@ half sits where it does.
   re-typed either.
 - **The charset first, the seam last.** A browser stops looking for the
   charset after the first bytes, so nokre's own head tags are written
-  before `head`, whose length is the driver's business.
+  before `head`, whose length is the driver's business — and the head is
+  the only seam there is.
 - **What the page says about itself** — `Document.meta`, and it is the
   one place in this call where the boundary needed stating rather than
   applying. [audit.zig](../../src/testing/audit.zig)'s `Options.skip`
@@ -464,38 +465,37 @@ half sits where it does.
   screen, and switching to it after the first frame would build and
   paint some other screen on the way past.
 
-**The two seams are bytes, not hooks.** `head` and `body_end` are markup
-the driver already built, spliced where their names say. `Emitter.raw`
-writes wherever the emitter is currently pointed and nothing in the type
+**The one seam is bytes, not a hook.** `head` is markup the driver
+already built, spliced where its name says. `Emitter.raw` writes
+wherever the emitter is currently pointed and nothing in the type
 distinguishes "into `<head>`" from "into the body" — a field does. A
 `fn (em)` hook would have said it too, and would have handed the driver
 `em.out`, which is the door `Refs`'s signature closed. To build those
 bytes with the same escaping the document gets, point a second emitter
 at a buffer of your own: `em.fragment(&out)`.
 
-**A seam that is used changes one thing the library owns.** Where
-`body_end` is non-empty, `<body>` gets `class_names.seam` — one class,
-saying only that something of the driver's stands below the screen — and
-the sheet lands the bottom chrome's clear space on the document instead
-of on the screen. Padding is inside the box it is on, so the old
-placement reserved the space *above* whatever the seam held: a footer
-sat under the fixed band at a phone's width, on every page that had one
-([static-sites.md](../static-sites.md), "A footer in the seam is the
-last thing in the document"). An empty seam writes no class and takes
-the rules it always took. The live driver may not write it, and that is
-a comptime check on live.js rather than a habit, exactly as `data-nokre`
-is.
+**One, at the head, and the test it passes is that nothing in it
+renders.** `<meta>`, a CSP, JSON-LD, a preload, a favicon: none of it is
+a thing a reader sees, so nothing about it is a thing the library could
+have styled, cleared, audited or resolved. Both refusals at the other
+end of the file are that one sentence read twice
+([static-sites.md](../static-sites.md), "A seam is for what does not
+render"):
 
-**And there are two of them, not three.** There is no `body_start`
-mirroring `body_end`, and the refusal is written where a driver author
-will meet it ([static-sites.md](../static-sites.md), "A site's header is
-a roster"): what wants to stand *above* the app on a generated page is a
-site's header, which is a set of destinations rather than markup, and a
-set of destinations is `App.setNav`. A seam there would have taken a
-string and thrown away which link you are standing on, what the screen
-that is none of them is called, whether the routes resolve, and that the
-set is a landmark at all. A footer is the other case and it is why
-`body_end` exists.
+- There is no `body_start`. What wants to stand *above* the app on a
+  generated page is a site's header, which is a set of destinations
+  rather than markup, and a set of destinations is `App.setNav`. A seam
+  there takes a string and throws away which link you are standing on,
+  what the screen that is none of them is called, whether the routes
+  resolve, and that the set is a landmark at all.
+- There is no `body_end` either, and there was for three revisions. What
+  every consumer put through it was a footer — a stack of links and a
+  line of text — which is the same content in the same disguise, and the
+  library paid for it twice before deleting it: once when the footer
+  came out in the browser's default serif, and once when the bottom
+  chrome's clear space landed above it instead of below. A footer is a
+  `stack` of `link`s the page builder appends last, inside the screen,
+  where all four of those things are already true of it.
 
 What the driver still owes when it boots over the page it wrote:
 
@@ -1053,12 +1053,12 @@ try dom.chrome(&em);    // notice, nav, sheet, picker
   `<urlset>` comes out into a buffer of the caller's ("The alternate set,
   and the two writers that spend it" above).
 - **`Emitter.fragment`.** A second emitter over a buffer of the caller's
-  own — how the bytes `Document.head` and `Document.body_end` take get
-  the escaping the rest of the document gets.
+  own — how the bytes `Document.head` takes get the escaping the rest of
+  the document gets.
 - **`Emitter.raw`, and when it is not a bypass.** Some of what a head
   needs is a block this library has no element for and never will —
   structured data, a preload, a favicon. Build it into a fragment and
-  hand it over at `Document.head` or `body_end`; inside that fragment
+  hand it over at `Document.head`; inside that fragment
   `raw` is the sanctioned writer, because those bytes are markup the
   driver invented end to end and no element of nokre's stands for them.
   The sanction is the seam's, not the function's: `raw` on the document

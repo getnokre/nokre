@@ -53,26 +53,15 @@ pub const skip = "skip";
 // driver — the row scrolls (stylesheet.zig). One markup, one band, and
 // nothing in the sheet asks whether anything is running.
 
-/// On `<body>`, and only on a page nokre wrote whole: the document has
-/// markup of the driver's standing *below* the screen
-/// (`Document.body_end`, non-empty).
-///
-/// It exists because `has_chrome` at the top says the clear space is
-/// owed and never said which box owes it. The reserve was
-/// `padding-bottom` on the screen, on the unstated
-/// assumption that the screen is the last thing in the document — true
-/// of every app mounted in someone else's page, and false of exactly
-/// the page this edition also writes, where the seam is below the
-/// screen and inside the file. A footer put there sat under the fixed
-/// band at a phone's width, on every page, in every locale: the band
-/// covered it whole and nothing said so.
-///
-/// So the clear space goes at the bottom of whatever is last, and this
-/// is how the sheet knows which that is. A fact nokre already holds —
-/// `document.zig` was handed the bytes — rather than a number a driver
-/// re-derives from the five properties the reserve is made of
-/// (docs/static-sites.md).
-pub const seam = "has-seam";
+// There was a `has-seam` here for three releases, on `<body>`, written
+// from `Document.body_end`'s bytes so the bottom reserve could land
+// under a footer standing outside the screen. Both are gone together
+// and the class is the tell: it asked *is this string non-empty?* as a
+// proxy for *is there content below the screen?* — an inference about
+// bytes nokre could not read. A footer is a `stack` of `link`s in the
+// tree now, so the screen is the last thing in the document again and
+// the reserve is one rule (docs/static-sites.md, "A seam is for what
+// does not render").
 
 /// The root attribute a page nokre wrote **whole** carries, and the
 /// only thing that distinguishes one from an app mounted in someone
@@ -82,10 +71,11 @@ pub const seam = "has-seam";
 /// around an embedded app is not this edition's to turn around*
 /// (stylesheet.zig). That reason runs out where there is no page
 /// around it — `document.zig` wrote the doctype, the head and the body,
-/// and everything in that body is either the screen or bytes a driver
-/// handed to a seam. It is the same asymmetry `dir` already resolved in
-/// the library's favour: the live driver stamps `data-direction` and
-/// deliberately never `dir`; a generated document stamps both.
+/// and everything in that body is the library's own: the skip link, the
+/// two mounts, and the paper between them. It is the same asymmetry
+/// `dir` already resolved in the library's favour: the live driver
+/// stamps `data-direction` and deliberately never `dir`; a generated
+/// document stamps both.
 ///
 /// So the sheet keeps its scoping and gains one block behind this
 /// attribute, and neither half moves for the other. The live driver
@@ -121,13 +111,5 @@ comptime {
     // checked here, where the file is already being read.
     if (std.mem.indexOf(u8, js, document_attr) != null) {
         @compileError("live.js stamps \"" ++ document_attr ++ "\", which claims a host page the live driver did not write");
-    }
-    // And `seam` for the same reason one step in: it is a class on
-    // `body`, it moves the bottom reserve off the screen and onto the
-    // document, and a mounted app writing it would take the clear space
-    // out of its host's page and put it somewhere it has no business
-    // padding.
-    if (std.mem.indexOf(u8, js, seam) != null) {
-        @compileError("live.js writes \"" ++ seam ++ "\", which is a claim about a document the live driver did not write");
     }
 }

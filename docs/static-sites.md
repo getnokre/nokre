@@ -247,22 +247,26 @@ whose top is eight links across it — a public site's header bar, drawn
 by the generator as an ordinary row of links. Since the round where the
 library began drawing the page's own `h1`, those links come out *under*
 the title, because a screen's content starts under the title by
-construction. The proposal was the obvious one: `body_end` already takes
+construction. The proposal was the obvious one: `body_end` took
 "whatever stands below the app but inside the document", so give the
 document a `body_start` for whatever stands above it.
 
 **It is refused, and the ground is that a header of destinations is not
-markup.** A byte seam is where a *footer* goes — a copyright line, a
-colophon, cross-locale links that reference nothing the route table
-knows — because none of that is a place the site has. Eight links to
-eight sections are eight places the site has, which is the one thing
-`App.setNav` models, and putting them through a seam would hand the
-library a string. Everything the library could otherwise say about them
-would go with it: which one you are standing on (`aria-current`), what
-to call a screen that is none of them, whether every destination
-resolves against the route table at build time, and that the set is a
-navigation landmark rather than a row of anchors. The seam answers
-"where do I put it" by throwing away "what is it".
+markup.** Eight links to eight sections are eight places the site has,
+which is the one thing `App.setNav` models, and putting them through a
+seam would hand the library a string. Everything the library could
+otherwise say about them would go with it: which one you are standing on
+(`aria-current`), what to call a screen that is none of them, whether
+every destination resolves against the route table at build time, and
+that the set is a navigation landmark rather than a row of anchors. The
+seam answers "where do I put it" by throwing away "what is it".
+
+This round said the footer at the other end of the page was the case a
+byte seam *was* for. That was wrong, and two revisions later the same
+sentence deleted `body_end` too ("A seam is for what does not render",
+below). The reasoning here is untouched; what it got wrong is that it
+looked at the destination rather than at the thing, and a footer is a
+set of links whatever it is called.
 
 The three questions say the same thing from the other end.
 **Question 1 answers**, and it answers the way it did for the title: the
@@ -493,10 +497,12 @@ mattered.
 ## A generated document has no host, so it has no unstyled half
 
 A footer spliced into `body_end` used to render in the browser's default
-serif. It sits outside the screen's own element, and every rule carrying
+serif. It sat outside the screen's own element, and every rule carrying
 the library's type is scoped to nokre's surfaces — deliberately, on the
 ground that *the page around an embedded app is not this edition's to
-turn around*.
+turn around*. That seam is gone two sections down and the footer is
+inside the screen now; the block it produced stayed, because what it
+turns around is the page itself.
 
 That ground is right and it is untouched. It also has nothing to protect
 here: `dom.document` wrote the doctype, the head and the body, so there
@@ -510,18 +516,18 @@ check on the live driver's own file keeps true.
 
 **What the block covers is the page's type and its paper**: ink, family,
 size, line height and the paper colour on `body`, plus the two
-font-smoothing hints and the tap highlight the screen already carries. A
-footer inherits the page it is on rather than the browser's defaults,
-and the band of page beside it is the same paper the screen is drawn on.
+font-smoothing hints and the tap highlight the screen already carries.
+The paper is what earns it now — a driver that centred the screen in a
+reading column of its own leaves a band of `body` down each side, and
+unpainted that band is the UA canvas, which on the dark ramp is a white
+margin around a black page. The type reaches the one element outside
+both mounts, which is the skip link.
 
-**Where it stops is inheritance.** A list you splice keeps its markers,
-an anchor keeps the UA's underline and colour, a table keeps the UA's
-borders. Those are the browser's decisions about markup nokre neither
-wrote nor has an element for, and normalizing them would turn one block
-into a second stylesheet to reason about — which is the failure a reset
-invites, not a gap in this one. It is the line the rest of this page
-draws: the library takes what it holds, and a shape you chose stays
-yours.
+**Where it stops is inheritance.** Every declaration in it is inherited
+or paints the page; none reaches into a shape somebody else chose. That
+was the line while a driver could splice a list into the body and keep
+its markers, and it is the line still — the head takes markup nokre did
+not write, and nothing in a head renders.
 
 ## The writer knew, and the reader beside it assumed
 
@@ -614,31 +620,138 @@ breakpoint literal** to work out a number the library already knew. A
 consumer coupled to nokre's arithmetic is a consumer that breaks
 silently the next time a metric moves.
 
-**The space now goes at the bottom of whatever is last, and nokre is
-told which that is rather than guessing.** `document.zig` was handed the
-seam's bytes; where they are non-empty it writes one class on `<body>`
-(`class_names.seam`), and the reserve lands on the document instead of
-on the screen. The screen keeps its ordinary page pad above the footer,
-the footer gets the full clearance below it, and the arithmetic never
-leaves the library. **A driver spends nothing.**
+**The space went at the bottom of whatever was last, and nokre was told
+which that was rather than guessing.** `document.zig` was handed the
+seam's bytes; where they were non-empty it wrote one class on `<body>`
+(`has-seam`), and the reserve landed on the document instead of on the
+screen. The arithmetic never left the library, and a driver spent
+nothing.
 
-Three things fall out, and each was a choice:
+Two things fell out of that and one of them survived the section below.
 
-- **A page with no seam is unchanged to the byte.** The class is absent,
-  every rule is the one it always was, and the app shell — which is also
-  a page this writer produces — never enters the new branch. The web
-  gate asserts the two files against each other: strip the class and the
-  footer from the seamed one and it *is* the other.
-- **`--chrome-reserve` is published anyway.** The sum had been written
-  out twice in longhand, which is the drift this file exists to rule
-  out, so it is now a `:root` property spent by all four of its rules.
-  A driver that puts something below the app by a route no seam can
-  reach may spend it too — but it should not have to, and it no longer
-  does.
-- **This is not a `body_start` in disguise.** The seam class says one
-  thing about the document's *shape* — something is below the screen —
-  and nothing about what. The refusal above stands: a header of
-  destinations is still a roster, not markup.
+- **`--chrome-reserve` is published.** The sum had been written out
+  twice in longhand, which is the drift this file exists to rule out, so
+  it is a `:root` property spent by all four of its rules. It is still
+  there, for the case that outlived the seam: a *host* page with an app
+  of nokre's mounted in it, which may have something below that mount
+  and which this edition may not touch.
+- **The class did not survive**, and the next section is why. It asked
+  *is this string non-empty?* as a proxy for *is there content below the
+  screen?* — a fact about bytes the library could not read.
+
+## A seam is for what does not render
+
+The section above and "A site's header is a roster" are the same finding
+approached from two ends of one page, and the round after them collapsed
+both into a rule that can be applied before the fact:
+
+> **A byte seam is legitimate exactly where the thing in it is not
+> content.**
+
+`Document.head` passes and always did. A `<meta>`, a CSP, a JSON-LD
+block, a preload, a favicon: nothing in a head is a thing a reader sees,
+so nothing in it is a thing the library could have styled, cleared,
+audited or resolved, and handing it over as bytes gives up nothing. It
+is a real need with no element behind it and there never will be one.
+
+`Document.body_end` failed. Every consumer that ever used it put a
+**footer** through — a stack of links and a line of text — which is
+content wearing markup's clothes, and the disguise was billed to this
+repo over three revisions:
+
+- The footer rendered in the browser's default serif, because bytes
+  outside `.nokre` are styled by nobody. Fixed with a document reset.
+- The fixed band covered 73px of it at 375px on every page, because the
+  reserve is padding *inside* the screen and the seam was outside it.
+  Fixed with a class and a second set of rules.
+- And what was never fixed, because no round had been bitten by it yet:
+  no landmark, no a11y audit coverage, no route resolution through
+  `Refs`, and nothing anywhere checking what was in there at all.
+
+So `body_end` is deleted, and a footer is what it always was — a `stack`
+of `link`s and a `text`, appended last by the page builder, exactly as
+that consumer's header became `App.setNav`. It is then inside `.nokre`
+(styled), inside the reserve (cleared), in the tree (audited), and its
+destinations resolve against the route table at build time. `has-seam`
+went with it, the paired reserve rules collapsed back to one, and the
+comptime check keeping the live driver off the class went too.
+
+**Nothing in the library grants any of that**, which is the part worth
+keeping. They are not four features the footer was given; they are four
+things that were already true of everything in the tree and that a seam
+was the only way to opt out of.
+
+### The `contentinfo` landmark is the loss, and it is a small one
+
+A `stack` serialises as a `div`, so a footer that used to be `<footer>`
+no longer announces itself as `contentinfo`. That is a real thing to
+give up and it is weighed on what it does for a reader rather than on
+whether the tag is standard.
+
+It does little here. No WCAG success criterion requires it; the
+sufficient technique that names landmarks (ARIA11) is one route to
+**2.4.1 Bypass Blocks**, and a page this writer produces already
+satisfies 2.4.1 twice — a skip link straight to the content mount, and
+the roster as a `nav` landmark ahead of it. What `contentinfo` adds on
+top is a shortcut to the *end* of a page a reader has already been given
+two ways past. This is the same class of claim `multiple_h1` was retired
+for carrying no citation of ([accessibility.md](accessibility.md)), and
+it is measured the same way.
+
+Against that: an element for it would be the full checklist — layout,
+markup, a11y, validate/audit, input, tests, golden, renderer contract,
+docs — for something meaningless on five of the six platforms nokre
+draws on. A native app has no page footer. The doctrine's answer is the
+right one: **an element earns its place if an app needs it, and
+document furniture is ceremony.**
+
+### What the deletion actually costs, measured
+
+One thing, and it is worth naming rather than being quiet about. A
+site's footer often carries a **language row** — each language named in
+its own language — and the anchors under it want `hreflang`, `lang` and
+`dir`. Of the three:
+
+- `hreflang` is already the library's and already correct: the head
+  carries the whole `<link rel="alternate" hreflang>` set from
+  `Meta.alternates`, checked for reciprocity and self-inclusion
+  ([alternates.zig](../src/render/dom/alternates.zig)). The copy on the
+  anchor told a crawler nothing new.
+- `dir` on a run that is wholly right-to-left is what the bidi algorithm
+  answers anyway, in both editions.
+- **`lang` is the residue, and it is real**: WCAG 2.2 **3.1.2 Language
+  of Parts** (AA), and a language chooser is that criterion's textbook
+  case. nokre has no per-element language, so an element cannot carry
+  it.
+
+That is not a reason to keep a general byte escape hatch for one
+attribute. The seam did not make the attribute *correct* — nothing in
+the library ever read it, so a footer claiming `lang="fs"` would have
+published — it only made it unchecked. And the fact underneath is one
+nokre already holds twice: `Alternates` is one path per bundled locale,
+and `localeStub` already writes `<a hreflang lang dir>` over exactly
+that set. A third writer of it in a consumer's bytes is the failure this
+whole page is about. **The open question is per-part language, and it is
+recorded here as an open question rather than answered by a seam.**
+
+### The rest of `Document`, against the same test
+
+Asked of every other field, and none of them fails:
+
+- `head` passes, above, and is the only seam left.
+- `title`, `description`, `meta` are head content: a `<title>` and a
+  string of `<meta>` tags, none of which renders.
+- `chrome_id`, `content_id`, `content_class`, `stylesheet`, `boot` are
+  names and destinations the driver invented. `content_class` is the
+  nearest call — it is a class list, so it is *styling* — and it passes
+  because a driver that mounted the screen in a reading column of its
+  own is the authority on that column's name, which is the same ground
+  the two ids stand on.
+- `skip` is the interesting one, because it **is** content: words a
+  reader can see, in the document's language. It is not a seam, and the
+  difference is the whole distinction. nokre writes the anchor, its
+  class, its target and its rule; the driver supplies a string into an
+  element the library owns. A parameter is not a hole.
 
 ## A default is not an opinion about your site
 

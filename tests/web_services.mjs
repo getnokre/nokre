@@ -115,14 +115,6 @@ function probes(nk) {
       if (len === -2) throw failure();
       return text(len);
     },
-    /// The same page with a footer through `body_end`. The seam is the
-    /// only difference between this file and the one above, so anything
-    /// that differs downstream is the seam's doing and nothing else's.
-    documentSeam() {
-      const len = nk.nokre_probe_document_seam();
-      if (len === -2) throw failure();
-      return text(len);
-    },
     /// Which chip the app believes is chosen.
     view: () => nk.nokre_probe_view(),
 
@@ -996,31 +988,30 @@ function rootLengths(rules) {
   return value;
 }
 
-/// Which box carries the bottom chrome's clear space, for a page with
-/// or without a seam below its screen, at a width. The answer is a pair
-/// and exactly one half of it is ever set: the screen's, or the
-/// document's.
+/// The bottom chrome's clear space at a width, on the one box that ever
+/// carries it: the screen. There was a second — `body`, keyed on a class
+/// written from `Document.body_end`'s bytes — for as long as a footer
+/// could stand outside the screen; a footer is content now, so the
+/// reserve is back to one rule and this reads it.
 ///
 /// `computed` above cannot read these — every one of them is a
 /// descendant selector qualified on `:root` — and the shape is stated
 /// here rather than matched loosely, so a rule the sheet stops writing
 /// is an `undefined` and not a silent pass.
-function reserveAt(rules, { nav, seam, width }) {
-  const shape = /^:root(:has\(\.nav\))? body(?:(\.has-seam):has\(\.nokre\.has-chrome\)|:not\(\.has-seam\) \.nokre\.has-chrome)$/;
+function reserveAt(rules, { nav, width }) {
+  const shape = /^:root(:has\(\.nav\))? \.nokre\.has-chrome$/;
   const hits = [];
   for (const rule of rules) {
     if (rule.media !== null && width > rule.media) continue;
     const m = shape.exec(rule.sel);
     if (!m) continue;
     if (m[1] && !nav) continue;
-    const onBody = Boolean(m[2]);
-    if (onBody !== seam) continue;
-    hits.push({ onBody, spec: m[1] ? 1 : 0, order: rule.order, value: rule.decls["padding-bottom"] });
+    hits.push({ spec: m[1] ? 1 : 0, order: rule.order, value: rule.decls["padding-bottom"] });
   }
   hits.sort((a, b) => a.spec - b.spec || a.order - b.order);
-  const out = { screen: undefined, body: undefined };
-  for (const hit of hits) out[hit.onBody ? "body" : "screen"] = hit.value;
-  return out;
+  let screen;
+  for (const hit of hits) screen = hit.value;
+  return screen;
 }
 
 /// Which shape the *sheet* draws at this width, in the two words the
@@ -1221,25 +1212,39 @@ async function tilesAreAnchorsOrButtons() {
   done("the tile — a row that navigates is an anchor, and only the row that acts needs an app");
 }
 
-/// The reserve the bottom chrome owes the page, and the box it lands
-/// in. It was `padding-bottom` on the *screen*, on the unstated
-/// assumption that the screen is the last thing in the document — and
-/// `Document.body_end` is a seam whose whole job is to put something
-/// below it. A consumer's footer, seven links and a language row, sat
-/// under a fixed band at 375px on every page in every locale.
+/// A footer is content, and this is the whole of what that buys.
 ///
-/// Both halves are needed and neither is enough. The sheet has to put
-/// the space in the box the footer is *inside*, and the arithmetic has
-/// to cover the band — a rule naming `--chrome-reserve` says nothing
-/// about how tall the thing it is clearing is, which is how a check on
-/// the sum passed while a reader saw a covered footer.
-async function theSeamClearsTheBand() {
-  const css = parseCss(await fs.readFile(path.join(site, "style.css"), "utf8"));
+/// It was a byte seam for three revisions — `Document.body_end`, spliced
+/// after `</main>` — and every consumer that ever used it put a footer
+/// through: a stack of links and a line of text, which is content
+/// wearing markup's clothes. The library paid for the disguise twice. A
+/// footer outside `.nokre` rendered in the browser's default serif,
+/// because bytes outside the screen are styled by nobody. Then the
+/// bottom chrome's clear space, which is `padding-bottom` on the screen,
+/// reserved the band *above* the footer instead of below it: 73px of
+/// copyright and links under a fixed band at 375px, on every page, in
+/// every locale.
+///
+/// So the seam is gone and a footer is a `stack` of `link`s the page
+/// builder appends last. Four claims, and the point is that no rule in
+/// the library grants any of them — they are what being in the tree
+/// already means: the sheet styles it, the reserve clears it, the routes
+/// resolve through `Refs`, and the document ends at `</main>`.
+async function theFooterIsContent() {
+  const style = await fs.readFile(path.join(site, "style.css"), "utf8");
+  const css = parseCss(style);
   const px = rootLengths(css);
+
+  // Nothing left anywhere asks whether the document has bytes below the
+  // screen.
+  assert.ok(!style.includes("has-seam"), "the sheet still branches on a seam that cannot exist");
 
   // What a reader on a phone is actually looking at, from the sheet's
   // own numbers: the bar's top pad, one slot, and the clear space below
-  // it with the OS band inside `--bar-bottom`.
+  // it with the OS band inside `--bar-bottom`. A rule naming
+  // `--chrome-reserve` says nothing about how tall the thing it clears
+  // is, which is how a check on the sum once passed while a reader saw a
+  // covered footer.
   const band = px("--nav-bar-pad") + px("--nav-slot") + px("--bar-bottom") + px("--safe-b");
   assert.ok(band > 0, "the band has no height, so this proves nothing");
   assert.equal(
@@ -1250,51 +1255,72 @@ async function theSeamClearsTheBand() {
 
   const { app } = await page({}, { route: "home", locale: "" }, 1200);
   app.wideNav();
-  app.switchTo("hub");
+  app.switchTo("footed");
 
-  // The file a site publishes: a screen, and a footer through the seam.
-  const withSeam = app.documentSeam();
+  // The file a site publishes: a hub of rows, then its footer. Nothing
+  // on it needs a runtime, so it goes out with no module — a footer of
+  // links costs a page nothing it was not already paying.
+  const file = app.documentUnbooted();
   const served = makeBrowser({ site });
-  served.openPage(withSeam);
+  served.openPage(file);
+
+  // The document ends at the screen. Three elements in the body and no
+  // class on it: there is no longer anything that could put a fourth
+  // one there, and nothing infers a shape from a string's length.
   assert.deepEqual(
     document.body.childNodes.filter((n) => n.nodeType === 1).map((n) => n.nodeName),
-    ["A", "DIV", "MAIN", "FOOTER"],
-    "the seam is not where the reserve has to reach past",
+    ["A", "DIV", "MAIN"],
+    "something stands outside the screen in a page nokre wrote whole",
   );
-  assert.ok(
-    document.body.getAttribute("class").split(" ").includes("has-seam"),
-    "the document does not say it has anything below the screen",
-  );
-  assert.ok(document.body.querySelector("main").getAttribute("class").split(" ").includes("has-chrome"));
+  assert.equal(document.body.getAttribute("class"), null, "the body still claims something below the screen");
 
-  // At a phone's width the bar is a fixed band over the page, and the
-  // clear space for it is on the box the footer is inside rather than
-  // on the box above the footer.
-  const narrow = reserveAt(css, { nav: true, seam: true, width: 375 });
-  assert.equal(narrow.screen, undefined, "the space is still inside the screen, which the footer is not in");
-  assert.equal(narrow.body, "var(--chrome-reserve)", "the document reserves nothing for the band");
-  assert.ok(px("--chrome-reserve") >= band, "the document reserves less than the band is tall");
+  // The footer is the last thing *inside* the screen, which is the box
+  // the reserve is on.
+  const screen = document.body.querySelector("main");
+  assert.ok(screen.getAttribute("class").split(" ").includes("has-chrome"));
+  const stack = screen.querySelectorAll(".stack").at(-1);
+  assert.ok(stack, "the footer is not in the tree");
+  assert.equal(screen.childNodes.filter((n) => n.nodeType === 1).at(-1), stack, "the footer is not last");
+
+  // Styling: every anchor in it carries nokre's own classes, so every
+  // rule in the sheet that reaches a link reaches these. A seam's
+  // anchor carried none and kept the UA's underline and colour.
+  const links = stack.querySelectorAll("a");
+  assert.equal(links.length, 3, "the footer lost links");
+  for (const a of links) {
+    assert.equal(a.getAttribute("class"), "link block", "a footer link is not one of nokre's");
+  }
+
+  // Resolution: the two internal destinations went through `Refs` like
+  // every other route on the page, and the external one took the
+  // new-tab posture every external anchor here takes.
+  const hrefs = links.map((a) => a.getAttribute("href"));
+  assert.deepEqual(hrefs.slice(0, 2), ["#terms", "#privacy"], "a footer route did not resolve");
+  assert.equal(links.at(-1).getAttribute("rel"), "noopener noreferrer");
+
+  // The audit reads it, which is the claim bytes could never answer:
+  // every node in there is a node the tree has, with a role and a
+  // reachable name. A footer in a seam had none of that, and nothing
+  // anywhere said so.
+  for (const a of links) {
+    assert.ok(a.getAttribute("data-n"), "a footer link is not a node the tree knows");
+    assert.ok(a.textContent.trim().length > 0, "a footer link has no accessible name");
+  }
+
+  // And the reserve. At a phone's width the bar is a fixed band over the
+  // page, and the clear space for it is on the box the footer is inside
+  // — which it now is, without the library being told anything.
+  assert.equal(
+    reserveAt(css, { nav: true, width: 375 }),
+    "var(--chrome-reserve)",
+    "the screen the footer is in reserves nothing for the band",
+  );
+  assert.ok(px("--chrome-reserve") >= band, "the reserve is shorter than the band is tall");
 
   // Above the cap the bar is a header in flow: it took its space where
   // it stands, and a reserve there is an inch of nothing.
-  assert.equal(reserveAt(css, { nav: true, seam: true, width: 900 }).body, "0");
-
-  // And the page with no seam is the page it always was. Strip the one
-  // class and the footer and the two files are the same bytes, which is
-  // what makes this safe for every generated page that never used the
-  // seam — the app shell's own included.
-  const plain = app.documentUnbooted();
-  served.openPage(plain);
-  assert.equal(document.body.getAttribute("class"), null, "a page with nothing below the screen grew a class");
-  assert.equal(
-    withSeam.replace(" class=\"has-seam\"", "").replace(/<footer>[\s\S]*?<\/footer>\n/, ""),
-    plain,
-    "the seam changed something other than the seam",
-  );
-  const bare = reserveAt(css, { nav: true, seam: false, width: 375 });
-  assert.equal(bare.screen, "var(--chrome-reserve)", "a screen that is the last thing lost its reserve");
-  assert.equal(bare.body, undefined);
-  done("the reserve — the clear space lands under the last thing in the document, footer included");
+  assert.equal(reserveAt(css, { nav: true, width: 900 }), "var(--pad)");
+  done("the footer — content in the tree is styled, cleared, resolved and audited, with no seam");
 }
 
 // ---- the run -----------------------------------------------------
@@ -1326,7 +1352,7 @@ const scenarios = [
   navBandCarriesEveryDestination,
   bootIsDerivedFromWhatIsOnThePage,
   tilesAreAnchorsOrButtons,
-  theSeamClearsTheBand,
+  theFooterIsContent,
 ];
 
 for (const scenario of scenarios) {

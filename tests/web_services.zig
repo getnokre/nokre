@@ -280,6 +280,32 @@ fn buildActions(state: *State, app: *h.App) !void {
     try app.tree.append(group, .{ .tile = .{ .label = "Sign out", .on_press = .bind(onSignOut, state) } });
 }
 
+/// The hub with a **footer**, in the shape a site's page builder gives
+/// one: a stack of links and a line of text, appended last.
+///
+/// It used to be a string. `Document.body_end` spliced a driver's
+/// `<footer>` after `</main>`, and the three revisions that seam
+/// survived were three rounds of paying for it — the browser's default
+/// serif, then 73px of it under a fixed band, and never an audit, a
+/// landmark or a resolved route (docs/static-sites.md, "A seam is for
+/// what does not render"). Here it is content: inside the screen, so
+/// the reserve already clears it and the sheet already styles it.
+///
+/// Everything on it is answered by the browser, so the page still
+/// publishes with no module — which is what lets this one screen carry
+/// both halves of the claim.
+fn buildFooted(state: *State, app: *h.App) !void {
+    try buildHub(state, app);
+    const stack = try app.tree.appendId(app.tree.rootId(), .{ .stack = .{} });
+    try app.tree.append(stack, .{ .link = .{ .label = "Terms", .route = "terms" } });
+    try app.tree.append(stack, .{ .link = .{ .label = "Privacy", .route = "privacy" } });
+    try app.tree.append(stack, .{ .link = .{
+        .label = "Source",
+        .external = "https://github.com/getnokre/nokre",
+    } });
+    try app.tree.append(stack, .{ .text = .{ .content = "© nokre" } });
+}
+
 /// The four extra destinations `nokre_probe_wide_nav` declares. Long
 /// names on purpose: a roster is measured in the words it holds, so
 /// this is the set that makes the row's width a real question in a
@@ -293,6 +319,14 @@ const routes = h.Routes(State).table(&.{
     .{ .name = "documentation", .title = .{ .fixed = "Documentation" }, .build = buildSecond },
     .{ .name = "hub", .title = .{ .fixed = "Everything here" }, .build = buildHub },
     .{ .name = "actions", .title = .{ .fixed = "Things to do" }, .build = buildActions },
+    .{ .name = "footed", .title = .{ .fixed = "Everything here" }, .build = buildFooted },
+    // The two a footer points at, and the reason they are in the table
+    // rather than typed into an href: a footer's links are the site's
+    // own places, so they resolve through `Refs` like every other route
+    // and a reference to a page that does not exist is a build failure
+    // rather than a dead anchor a reader finds.
+    .{ .name = "terms", .title = .{ .fixed = "Terms" }, .build = buildSecond },
+    .{ .name = "privacy", .title = .{ .fixed = "Privacy" }, .build = buildSecond },
 });
 
 comptime {
@@ -495,7 +529,7 @@ pub export fn nokre_probe_view() usize {
 /// document too long for the result buffer: a probe that outgrew its
 /// transport, not a fault in what it measured.
 pub export fn nokre_probe_document() isize {
-    return writeDocument(true, false);
+    return writeDocument(true);
 }
 
 /// The same file with the boot left off — the 1,124-in-1,126 page of a
@@ -509,22 +543,7 @@ pub export fn nokre_probe_document() isize {
 /// the booted file's, because which shape a roster wears is the
 /// reader's window's and nothing about the file is a term in it.
 pub export fn nokre_probe_document_unbooted() isize {
-    return writeDocument(false, false);
-}
-
-/// The same file with a footer in `body_end` — the seam a site puts its
-/// copyright, its cross-locale links and its colophon through, which
-/// `document.zig` documents as "whatever stands below the app but
-/// inside the document".
-///
-/// It is a probe of its own rather than a flag on the one above because
-/// what it proves is a *difference*: a page with no seam is byte for
-/// byte the page it always was, and a page with one puts the bottom
-/// chrome's clear space under the footer instead of over it. Both files
-/// come out of the same app on the same screen, so nothing but the seam
-/// is different between them.
-pub export fn nokre_probe_document_seam() isize {
-    return writeDocument(false, true);
+    return writeDocument(false);
 }
 
 /// Puts the app on a screen by name, arriving rather than pushing —
@@ -560,15 +579,7 @@ pub export fn nokre_probe_wide_nav() i32 {
     return 1;
 }
 
-/// A driver's own footer, in the shape sites actually hand the seam: a
-/// copyright line and a row of links, none of which is a place the
-/// route table knows (docs/static-sites.md, "A site's header is a
-/// roster, not a seam" — the footer is the half that stays bytes).
-const footer =
-    "<footer><p>© nokre</p><ul><li><a href=\"/terms/\">Terms</a></li>" ++
-    "<li><a href=\"/privacy/\">Privacy</a></li></ul></footer>\n";
-
-fn writeDocument(booted: bool, seam: bool) isize {
+fn writeDocument(booted: bool) isize {
     const s = probe();
     doc_buf.clearRetainingCapacity();
     var em: dom.Emitter = .{
@@ -588,7 +599,6 @@ fn writeDocument(booted: bool, seam: bool) isize {
         .content_id = "content",
         .content_class = "page",
         .skip = "Skip to content",
-        .body_end = if (seam) footer else "",
         .boot = if (booted) .{ .wasm = "/app.wasm", .addressing = .documents } else null,
     }) catch |err| {
         note(s, err);

@@ -37,15 +37,23 @@
 //! rather than one written in a locale — which is why it is a second
 //! writer instead of a flag on `Document`.
 //!
-//! **The two seams are bytes, not hooks.** `head` and `body_end` are
-//! markup the driver already built, spliced where their names say. A
-//! `fn (em)` hook would hand the driver `em.out` and re-open the door
-//! `Refs`'s signature closed — and `Emitter.raw` writes wherever the
-//! emitter is currently pointed, which is exactly why a driver could
-//! not otherwise say "into the head". A field says it. A driver that
-//! wants the emitter's escaping while building those bytes points a
-//! second `Emitter` at a buffer of its own; nothing here needs the
-//! first one to be somewhere else.
+//! **The one seam is bytes, not a hook, and it takes nothing that
+//! renders.** `head` is markup the driver already built, spliced where
+//! its name says. A `fn (em)` hook would hand the driver `em.out` and
+//! re-open the door `Refs`'s signature closed — and `Emitter.raw`
+//! writes wherever the emitter is currently pointed, which is exactly
+//! why a driver could not otherwise say "into the head". A field says
+//! it. A driver that wants the emitter's escaping while building those
+//! bytes points a second `Emitter` at a buffer of its own; nothing here
+//! needs the first one to be somewhere else.
+//!
+//! There was a second seam at the other end of the body for three
+//! revisions, and what every consumer put through it was a footer —
+//! links and a line of text, which is *content* (docs/static-sites.md,
+//! "A seam is for what does not render"). It is gone: a footer is a
+//! `stack` of `link`s appended last by the page builder, inside the
+//! screen, where the sheet styles it, the reserve clears it, the audit
+//! reads it and its routes resolve.
 
 const std = @import("std");
 
@@ -305,11 +313,17 @@ pub const Document = struct {
     /// it. Every destination inside is the driver's; what is nokre's is
     /// that they cannot disagree (`Meta`).
     meta: ?Meta = null,
-    /// Markup spliced at the end of `<head>` — the head seam. Structured
-    /// data, a preload, a favicon: everything whose destination is the
-    /// site's and whose *shape* nokre has no element and no opinion for.
-    /// Written after the tags above so the charset stays in the first
-    /// bytes, where a browser stops looking for it.
+    /// Markup spliced at the end of `<head>` — the one seam, and the
+    /// test it passes is that **none of it renders**. Structured data, a
+    /// preload, a favicon, a robots directive: everything whose
+    /// destination is the site's and whose *shape* nokre has no element
+    /// and no opinion for. Written after the tags above so the charset
+    /// stays in the first bytes, where a browser stops looking for it.
+    ///
+    /// A byte seam anywhere a reader can see is refused, and the ground
+    /// is one this file has now paid for twice: markup nokre did not
+    /// place is markup it cannot style, clear, audit or resolve
+    /// (docs/static-sites.md).
     head: []const u8 = "",
     /// The id of the element the framework's layers mount into
     /// (`mount({ into })`).
@@ -327,10 +341,6 @@ pub const Document = struct {
     /// forgot the rule ships a permanent link across the top of every
     /// page.
     skip: []const u8 = "",
-    /// Markup spliced after the screen and before the boot script — a
-    /// footer, a colophon line, whatever stands below the app but
-    /// inside the document.
-    body_end: []const u8 = "",
     boot: ?Boot = null,
 };
 
@@ -401,20 +411,15 @@ pub fn document(em: *Emitter, doc: Document) !void {
     try headOpen(em, doc.title, doc.description, doc.stylesheet);
     if (doc.meta) |m| try metaTags(em, doc, m);
     try em.raw(doc.head);
-    // The one class on `<body>`, and it says one thing: something of the
-    // driver's stands below the screen in this file. It is written from
-    // `body_end` and from nothing else, because that is the only way
-    // anything can — a page nokre wrote whole has the screen, the chrome
-    // mount, the skip link, the boot script and the seam in it, and the
-    // seam is the only one of them the library did not place.
-    //
-    // What it buys is the bottom reserve landing under the last thing
-    // rather than under the screen (`stylesheet.zig`'s reserve block,
-    // `class_names.seam`). Absent, and every rule is the one it always
-    // was, which is why a page with no footer is unchanged to the byte.
-    try em.raw("</head>\n<body");
-    if (doc.body_end.len != 0) try em.print(" class=\"{s}\"", .{class_names.seam});
-    try em.raw(">\n");
+    // A bare `<body>`, and it stays bare. It carried one class for three
+    // revisions — written from a body seam's bytes, so the bottom
+    // reserve could land under a footer standing outside the screen —
+    // and that class was the library inferring *is there content below
+    // the screen?* from *is this string non-empty?*, about bytes it
+    // could not read. The footer is in the tree now, so the screen is
+    // the last thing in the document again and the reserve is back to
+    // one rule (`stylesheet.zig`'s reserve block).
+    try em.raw("</head>\n<body>\n");
 
     if (doc.skip.len != 0) {
         try em.print("<a class=\"{s}\" href=\"#", .{class_names.skip});
@@ -461,7 +466,6 @@ pub fn document(em: *Emitter, doc: Document) !void {
     try serialize.content(em);
     try em.raw("</main>\n");
 
-    try em.raw(doc.body_end);
     if (doc.boot) |b| try bootScript(em, doc, b, chosen);
     try em.raw("</body>\n</html>\n");
 }
@@ -470,14 +474,18 @@ pub fn document(em: *Emitter, doc: Document) !void {
 /// it: nokre wrote this whole document, so the page around the screen
 /// is nokre's to style as well as the screen.
 ///
-/// Without it a footer handed to `body_end` rendered in the browser's
-/// default serif. It sits outside the content mount, and the sheet's
-/// type base is scoped to nokre's own surfaces on the ground that *the
-/// page around an embedded app is not this edition's to turn around*
-/// (stylesheet.zig). That ground holds and is not weakened here — it
-/// has nothing to protect in a file nokre wrote end to end, which is
-/// the same reading of the same rule that makes this writer stamp `dir`
-/// where the live driver stamps only `data-direction`.
+/// The sheet's type base and its paper are scoped to nokre's own
+/// surfaces on the ground that *the page around an embedded app is not
+/// this edition's to turn around* (stylesheet.zig). That ground holds
+/// and is not weakened here — it has nothing to protect in a file nokre
+/// wrote end to end, which is the same reading of the same rule that
+/// makes this writer stamp `dir` where the live driver stamps only
+/// `data-direction`.
+///
+/// What it covers is `body`: the skip link above the mounts, and the
+/// band of page beside a screen whose driver centred it in a reading
+/// column — unpainted, that band is the UA canvas, which on a dark
+/// ramp is a white margin around a black page.
 ///
 /// Unconditional on both writers here, and written by nobody else —
 /// `class_names.document_attr` carries the name and the comptime check

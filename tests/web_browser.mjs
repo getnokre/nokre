@@ -849,10 +849,11 @@ export function makeBrowser({
         document.documentElement.setAttribute(name, value);
       }
       const body = root.querySelector("body") ?? root;
-      // The body's own attributes and not only its children: a page
-      // nokre wrote whole says on `<body>` whether anything of the
-      // driver's stands below the screen, and the sheet's bottom
-      // reserve is selected on that (`class_names.seam`).
+      // The body's own attributes and not only its children. It carried
+      // a class for three revisions, saying whether anything of the
+      // driver's stood below the screen, and the reserve was selected on
+      // it; the assertion now is that a generated page's body carries
+      // *nothing*, which needs the attributes read just the same.
       document.body.attrs = new Map();
       for (const { name, value } of body.attributes ?? []) document.body.setAttribute(name, value);
       document.body.childNodes = [];

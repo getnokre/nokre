@@ -3,7 +3,7 @@
 //!
 //! The screen inside the file is [serialize_test.zig](serialize_test.zig)'s
 //! subject and is not re-asserted here. These are about the file: the
-//! two locale attributes, the seams landing where their names say, the
+//! two locale attributes, the head seam landing where its name says, the
 //! ids and the module name reaching the boot script, and the escapes on
 //! the two paths whose bytes are not markup.
 
@@ -358,52 +358,65 @@ test "a tile that navigates needs nothing, and the one beside it that acts needs
     try testing.expectError(error.PageNeedsBoot, document.document(&em, plain("Things")));
 }
 
-test "a seam below the screen moves the bottom reserve onto the document" {
+test "a footer is content, so the body carries nothing and the screen is still last" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    // The class is written from the seam's bytes and from nothing else.
-    // Whether the page *owes* a reserve is `has-chrome` on the screen and
-    // stays there; this says which box the space lands in when it does
-    // (`stylesheet.writeReserve`, and serialize_test's own reserve test).
+    // The shape a footer takes now: a stack of links and a line, the
+    // last thing the page builder appends. It is *in the screen*, which
+    // is the whole of the change — `Document.body_end` used to splice
+    // the same footer after `</main>`, and `<body>` grew a class saying
+    // so, because the reserve had to find the box the footer was in.
+    const root = app.tree.rootId();
+    const stack = try app.tree.appendId(root, .{ .stack = .{} });
+    try app.tree.append(stack, .{ .link = .{ .label = "Colophon", .route = "colophon" } });
+    try app.tree.append(stack, .{ .link = .{
+        .label = "Source",
+        .external = "https://github.com/getnokre/nokre",
+    } });
+    try app.tree.append(stack, .{ .text = .{ .content = "© nokre" } });
 
-    // No seam, no class: every page that never used `body_end` is the
-    // page it always was, which is what makes this safe for the app
-    // shell and for every document already published.
-    const bare = try write(&app, plain("Hello"));
-    defer testing.allocator.free(bare);
-    try expectContains(bare, "\n<body>\n");
+    const html = try write(&app, plain("Hello"));
+    defer testing.allocator.free(html);
 
-    var doc = plain("Hello");
-    doc.body_end = "<footer><p>© nokre</p></footer>\n";
-    const seamed = try write(&app, doc);
-    defer testing.allocator.free(seamed);
-    try expectContains(seamed, "\n<body class=\"" ++ class_names.seam ++ "\">\n");
-    // And the footer is where the class says it is: below the screen,
-    // outside the box the reserve used to be inside.
-    const screen_end = std.mem.indexOf(u8, seamed, "</main>").?;
-    try testing.expect(std.mem.indexOf(u8, seamed, "<footer>").? > screen_end);
+    // No class on the body, on any page: there is nothing left that
+    // could put anything below the screen.
+    try expectContains(html, "\n<body>\n");
+    // And the footer is inside the screen's own element, which is the
+    // box the reserve has always been on.
+    const screen_end = std.mem.indexOf(u8, html, "</main>").?;
+    const link = std.mem.indexOf(u8, html, "Colophon").?;
+    const line = std.mem.indexOf(u8, html, "© nokre").?;
+    try testing.expect(link < screen_end);
+    try testing.expect(line < screen_end);
+    // Nothing at all stands between the screen and the document's end.
+    try expectContains(html, "</main>\n</body>\n</html>\n");
+    // The links are nokre's own, which is the styling half: a seam's
+    // anchor kept the UA's underline and colour because no scoped rule
+    // reached it. This one carries the class the sheet selects on, and
+    // its route went through `Refs`.
+    try expectContains(html, "<a class=\"link block\" href=\"#colophon\">Colophon</a>");
+    try expectContains(html, "rel=\"noopener noreferrer\"");
 }
 
-test "a document nokre wrote whole says so, and the sheet styles the page for it" {
+test "a document nokre wrote whole says so, and the sheet paints the page for it" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
-    var doc = plain("Hello");
-    // A footer is the case: raw markup, outside `.nokre`, which every
-    // scoped rule in the sheet deliberately does not reach.
-    doc.body_end = "<footer><p>© nokre</p></footer>";
-    const html = try write(&app, doc);
+    const html = try write(&app, plain("Hello"));
     defer testing.allocator.free(html);
     try expectContains(html, "data-nokre=\"document\"");
-    try expectContains(html, "<footer><p>© nokre</p></footer>");
 
     var css: std.ArrayList(u8) = .empty;
     defer css.deinit(testing.allocator);
     try stylesheet.write(testing.allocator, &css, .{});
-    // The block, and the fact that it is the *body* it reaches: without
-    // this the footer above renders in the browser's default serif, and
-    // nothing anywhere says so.
-    try expectContains(css.items, ":root[data-nokre=\"document\"] body {");
-    try expectContains(css.items, "font-family: prose");
+    // The block, and the fact that it is the *body* it reaches. Two
+    // things in a generated page are outside both mounts: the skip link,
+    // which would otherwise render in the browser's default serif, and
+    // the band of page beside a screen a driver centred in a column of
+    // its own, which would otherwise be the UA canvas.
+    const at = std.mem.indexOf(u8, css.items, ":root[data-nokre=\"document\"] body {").?;
+    const block_end = std.mem.indexOfPos(u8, css.items, at, "\n}").?;
+    try expectContains(css.items[at..block_end], "font-family: prose");
+    try expectContains(css.items[at..block_end], "background: var(--paper)");
 }
 
 test "an auto scheme stamps no appearance, because the media query is the design there" {
@@ -920,6 +933,11 @@ test "chrome comes before content, because the nav leads the focus order" {
     const Screens = struct {
         fn build(_: ?*anyopaque, app: *App) anyerror!void {
             try app.tree.setTitle("Library");
+            // The last thing the builder appends, which is where a
+            // footer goes: the destinations lead the title in the
+            // markup and the footer trails everything, all four inside
+            // one document order rather than three plus a seam.
+            try app.tree.append(app.tree.rootId(), .{ .text = .{ .content = "MIT" } });
         }
     };
     var app = try App.init(testing.allocator, .{
@@ -937,22 +955,22 @@ test "chrome comes before content, because the nav leads the focus order" {
     });
     try app.navigate("library");
 
-    var doc = plain("Library");
-    doc.body_end = "<footer>MIT</footer>\n";
-    const html = try write(&app, doc);
+    const html = try write(&app, plain("Library"));
     defer testing.allocator.free(html);
 
     const chrome_div = std.mem.indexOf(u8, html, "<div id=\"chrome\">").?;
     const nav = std.mem.indexOf(u8, html, "<nav class=\"nav").?;
     const main = std.mem.indexOf(u8, html, "<main id=\"content\"").?;
     const h1 = std.mem.indexOf(u8, html, "<h1 id=\"library\">").?;
-    const footer = std.mem.indexOf(u8, html, "<footer>").?;
+    const footer = std.mem.indexOf(u8, html, "MIT").?;
+    const main_close = std.mem.indexOf(u8, html, "</main>").?;
     const body_close = std.mem.indexOf(u8, html, "</body>").?;
     try testing.expect(chrome_div < nav);
     try testing.expect(nav < main);
     try testing.expect(main < h1);
     try testing.expect(h1 < footer);
-    try testing.expect(footer < body_close);
+    try testing.expect(footer < main_close);
+    try testing.expect(main_close < body_close);
 }
 
 // ------------------------------------------------------- the boot half

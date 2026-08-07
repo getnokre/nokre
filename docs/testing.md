@@ -997,19 +997,21 @@ rather than analyzed:
   `PageNeedsBoot`, and booted must hold the button and the anchor beside
   each other. Both halves, because either alone is the wrong fix — a
   `tile` that never needed a runtime would publish a page of dead rows.
-- **the bottom reserve** — the sheet's arithmetic against the sheet's
-  own geometry, and the second place the tree and the sheet are held
-  against each other. The band's height is computed from the resolved
-  `:root` properties (`var()` followed, `calc()` evaluated, `env()`
-  standing down to its fallback), and the reserve must exceed it by the
-  gap nothing may rest inside. Then the file: a page with a footer
-  through `body_end` must carry the seam class and hold that footer
-  *below* the screen in the body, and at 375px the reserve must resolve
-  onto the document rather than onto the screen the footer is not
-  inside. And the control: the same page with no seam must be the same
-  bytes minus the class and the footer, with the reserve back on the
-  screen — which is what makes the change safe for every page that never
-  used the seam.
+- **the footer, and the reserve under it** — the sheet's arithmetic
+  against the sheet's own geometry, and the second place the tree and
+  the sheet are held against each other. The band's height is computed
+  from the resolved `:root` properties (`var()` followed, `calc()`
+  evaluated, `env()` standing down to its fallback), and the reserve
+  must exceed it by the gap nothing may rest inside. Then the file: a
+  page whose footer is a `stack` of `link`s must have three elements in
+  its body and no class on it — nothing stands outside the screen in a
+  page nokre wrote whole — with the stack last inside the screen, every
+  anchor in it carrying nokre's own classes and a `data-n` the tree
+  knows, the two internal destinations resolved through `Refs` and the
+  external one wearing the new-tab pair. And at 375px the reserve must
+  resolve onto the screen the footer is inside. It is one scenario
+  because it is one claim: a footer in the tree is styled, cleared,
+  resolved and audited, and no rule in the library grants any of it.
 
 What that gate is **not** is a browser. Layout, styling, the real event
 loop, a real popup's window management and a real storage's quota

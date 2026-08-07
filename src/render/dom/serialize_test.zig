@@ -1529,10 +1529,10 @@ test "the roster has two shapes and the sheet's one breakpoint picks" {
         std.mem.indexOfPos(u8, css.items[0..row_end], row, "justify-content"),
     );
     // And a bar standing above the page reserves nothing under it.
-    try expectContains(css.items, "\n:root:has(.nav) body:not(.has-seam) .nokre.has-chrome { padding-bottom: var(--pad); }\n");
+    try expectContains(css.items, "\n:root:has(.nav) .nokre.has-chrome { padding-bottom: var(--pad); }\n");
 }
 
-test "the bottom reserve lands under the last thing in the document, seam included" {
+test "the bottom reserve lands on the screen, which is the last thing in the document" {
     const layout = @import("../../core/layout.zig");
     var css: std.ArrayList(u8) = .empty;
     defer css.deinit(testing.allocator);
@@ -1547,38 +1547,39 @@ test "the bottom reserve lands under the last thing in the document, seam includ
         \\  );
     );
 
-    // Four rules, and each is a pair: the screen carries the space in a
-    // page nokre did not write whole, and `body` carries it in the one
-    // it did — where `Document.body_end` may put a footer *below* the
-    // screen, which is the box the old reserve was inside.
-    const seam = ".has-seam:has(.nokre.has-chrome)";
+    // Four rules, one box. There was a second box for three revisions —
+    // `body`, keyed on a class written from `Document.body_end`'s bytes
+    // — because a footer spliced after `</main>` is outside the padding
+    // that clears the band. A footer is a `stack` inside the screen now,
+    // so the space lands where it always did and the pair collapses.
     for ([_][]const u8{
         // Bottom chrome at any width: a notice banner, the notices
         // indicator, the band.
-        "\n:root body:not(.has-seam) .nokre.has-chrome { padding-bottom: var(--chrome-reserve); }\n",
-        "\n:root body" ++ seam ++ " { padding-bottom: var(--chrome-reserve); }\n",
+        "\n:root .nokre.has-chrome { padding-bottom: var(--chrome-reserve); }\n",
         // A bar above the page in flow took its space where it stands.
-        "\n:root:has(.nav) body:not(.has-seam) .nokre.has-chrome { padding-bottom: var(--pad); }\n",
-        "\n:root:has(.nav) body" ++ seam ++ " { padding-bottom: 0; }\n",
+        "\n:root:has(.nav) .nokre.has-chrome { padding-bottom: var(--pad); }\n",
     }) |rule| try expectContains(css.items, rule);
 
-    // Owed again inside the band's width, and the seam is owed it there
-    // too — which is the whole finding: 375px, a fixed 72px band, and a
-    // footer with nothing reserving for it.
+    // Owed again inside the band's width — which is the finding that
+    // put the reserve in one writer: 375px, a fixed 72px band, and the
+    // last thing on the page with nothing reserving for it.
     var expected: [64]u8 = undefined;
-    const narrow = try std.fmt.bufPrint(&expected, "@media (max-width: {d}px) {{\n  :root:has(.nav) body", .{layout.metrics.sheet_max_w});
+    const narrow = try std.fmt.bufPrint(&expected, "@media (max-width: {d}px) {{\n  :root:has(.nav) ", .{layout.metrics.sheet_max_w});
     const at = std.mem.lastIndexOf(u8, css.items, narrow).?;
     try expectContains(css.items[at..],
-        \\:root:has(.nav) body.has-seam:has(.nokre.has-chrome) { padding-bottom: var(--chrome-reserve); }
+        \\  :root:has(.nav) .nokre.has-chrome { padding-bottom: var(--chrome-reserve); }
     );
 
     // Print takes it away in both quals. The second is not decoration:
     // the band's rule above outranks a bare one, and a page box narrower
     // than the pane cap is a paper size rather than a phone.
-    const print_at = std.mem.indexOf(u8, css.items, "\n@media print {\n  :root body:not(.has-seam)").?;
+    const print_at = std.mem.indexOf(u8, css.items, "\n@media print {\n  :root .nokre.has-chrome").?;
     try testing.expect(print_at > at);
-    try expectContains(css.items[print_at..], "\n  :root:has(.nav) body:not(.has-seam) .nokre.has-chrome { padding-bottom: var(--pad); }\n");
-    try expectContains(css.items[print_at..], "\n  :root:has(.nav) body.has-seam:has(.nokre.has-chrome) { padding-bottom: 0; }\n");
+    try expectContains(css.items[print_at..], "\n  :root:has(.nav) .nokre.has-chrome { padding-bottom: var(--pad); }\n");
+
+    // And nothing anywhere in the sheet still asks whether the document
+    // has bytes below the screen.
+    if (std.mem.indexOf(u8, css.items, "has-seam") != null) return error.TestUnexpectedResult;
 }
 
 test "the modal surfaces share the scrims' z-index, so document order is the stacking" {

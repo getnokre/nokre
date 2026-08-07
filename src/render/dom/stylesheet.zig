@@ -206,13 +206,15 @@ pub fn write(gpa: std.mem.Allocator, out: *std.ArrayList(u8), options: Options) 
     // which is two copies of a five-term sum in a file whose whole point
     // is that a derivation travels rather than the pixel it lands on.
     //
-    // Published rather than private, and that is deliberate: a driver
-    // that puts something of its own below the app can spend this
-    // instead of re-deriving it from the five properties under it. It
-    // should not have to — `class_names.seam` is how the seam gets the
-    // space without asking — but a name a consumer can read is the
-    // difference between a stylesheet that couples to nokre's arithmetic
-    // and one that couples to nokre's answer.
+    // Published rather than private, and that is deliberate: a *host*
+    // page with an app of nokre's mounted in it may have something of
+    // its own below that mount, and this is the number it clears the
+    // band with instead of re-deriving it from the five properties
+    // under it. A page nokre wrote whole never needs it — everything on
+    // one is inside the screen, where the reserve already lands — but a
+    // name a consumer can read is the difference between a stylesheet
+    // that couples to nokre's arithmetic and one that couples to
+    // nokre's answer.
     try out.appendSlice(gpa,
         \\  --chrome-reserve: calc(
         \\    var(--nav-content-gap) + var(--nav-bar-pad) + var(--nav-slot) + var(--bar-bottom) + var(--safe-b)
@@ -549,63 +551,47 @@ fn writeDerived(gpa: std.mem.Allocator, out: *std.ArrayList(u8)) !void {
     try out.appendSlice(gpa, "}\n");
 }
 
-/// One statement of the bottom reserve, at both of the boxes it can land
-/// in. `qual` is what else must be true of `:root` for this to be the
-/// answer; `owed` is whether the clear space is owed at all.
+/// One statement of the bottom reserve. `qual` is what else must be
+/// true of `:root` for this to be the answer; `owed` is whether the
+/// clear space is owed at all.
 ///
-/// **Two selectors because the last thing in the document is not always
-/// the screen.** The reserve is `padding-bottom`, and padding is inside
-/// the box it is on — so putting it on the screen reserved the space
-/// *above* anything standing below the screen. For an app mounted in a
-/// page it did not write there is nothing below the screen this edition
-/// may touch, and the screen is right. For a page nokre wrote whole
-/// there is: `Document.body_end` is a seam by design, documented as
-/// "whatever stands below the app but inside the document", and a
-/// driver's footer put there sat under the fixed band at a phone's
-/// width on every page it published — the band covered it whole, and
-/// the arithmetic could not see it because the arithmetic was inside
-/// the wrong box.
+/// **One selector, because the screen is the last thing in the
+/// document.** That is true of an app mounted in a page it did not
+/// write, and it is true again of the page this library writes whole:
+/// there is nothing in that body but the skip link and the two mounts.
 ///
-/// So the space goes at the bottom of whatever *is* last, and the sheet
-/// is told which that is rather than guessing: `class_names.seam` on
-/// `<body>`, written from the seam's own bytes (`document.zig`). A page
-/// with no seam takes the first selector and is what it always was, to
-/// the byte; a page with one takes the second, the screen keeps its
-/// ordinary page pad above the footer, and the footer gets the clear
-/// space it is the last thing before.
+/// It was not always. `Document.body_end` used to splice a driver's
+/// bytes after the screen — a footer, in every consumer that ever used
+/// it — and padding is inside the box it is on, so the reserve cleared
+/// the band for the screen and left the footer under it: 73px of
+/// copyright and links beneath a fixed band at a phone's width, on
+/// every page, in every locale. The answer that round was a second
+/// selector keyed on a class written from the seam's bytes. The answer
+/// now is that a footer is a `stack` of `link`s inside the screen
+/// (docs/static-sites.md, "A seam is for what does not render"), where
+/// this one rule has always cleared it.
 ///
-/// A driver spends nothing for this. `--chrome-reserve` is published
-/// beside it for the case no seam can reach, but the seam is the case
-/// there was, and a consumer re-deriving five of nokre's custom
-/// properties and its breakpoint literal to fix its own footer is the
-/// coupling this removes.
+/// `--chrome-reserve` stays published all the same, and its case is the
+/// mirror one: an app mounted in someone else's document, where the
+/// host page may have its own footer under nokre's mount and nothing
+/// here may touch it. A name a consumer can read is the difference
+/// between a stylesheet that couples to nokre's arithmetic and one that
+/// couples to nokre's answer.
 fn writeReserve(gpa: std.mem.Allocator, out: *std.ArrayList(u8), indent: []const u8, qual: []const u8, owed: bool) !void {
     // `:root` for the qual because the two mounts are siblings at best
     // and the sheet does not know what a driver wrapped them in: the nav
     // is somewhere in the page, and the page is what every document has.
-    // `body` on both sides because it is the one element between the
-    // root and the screen in every arrangement either writer makes.
     try out.print(
         gpa,
-        "{s}:root{s} body:not(.{s}) " ++ root_sel_chromed ++ " {{ padding-bottom: {s}; }}\n" ++
-            "{s}:root{s} body.{s}:has(" ++ root_sel_chromed ++ ") {{ padding-bottom: {s}; }}\n",
+        "{s}:root{s} " ++ root_sel_chromed ++ " {{ padding-bottom: {s}; }}\n",
         .{
             indent,
             qual,
-            class_names.seam,
             // Not the reserve is the page's own pad, which is what the
             // screen's `padding` shorthand already says — restated so
             // this rule is the last word rather than a rule that has to
             // be absent to be right.
             if (owed) "var(--chrome-reserve)" else "var(--pad)",
-            indent,
-            qual,
-            class_names.seam,
-            // …and zero for the document, which owes the space only
-            // while something is anchored over the bottom of it. The
-            // screen keeps its own pad in this branch, so the footer
-            // still stands clear of the words above it.
-            if (owed) "var(--chrome-reserve)" else "0",
         },
     );
 }
@@ -872,19 +858,19 @@ const sheet =
     \\   the same asymmetry `dir` already has, read the same way.
     \\
     \\   What it turns around is exactly the block above, plus the paper
-    \\   under it: a `body_end` footer inherits nokre's ink, family, size
-    \\   and measure instead of the browser's default serif, and the band
-    \\   of page beside it is `--paper` rather than the UA canvas.
+    \\   under it. The paper is the load-bearing half: a driver that
+    \\   centred the screen in a reading column of its own leaves a band
+    \\   of `body` down each side, and unpainted that band is the UA
+    \\   canvas — a white margin around a black page on the dark ramp.
+    \\   The type reaches the one element outside both mounts, which is
+    \\   the skip link.
     \\
-    \\   And it stops at inheritance, deliberately. A driver's own list
-    \\   keeps its markers, its own anchor keeps the UA's underline and
-    \\   colour, its own table keeps the UA's borders — those are the
-    \\   browser's decisions about markup nokre neither wrote nor has an
-    \\   element for, and normalizing them would make this file a second
-    \\   stylesheet a consumer has to reason about rather than one block
-    \\   that hands a seam the page's type. Every declaration here is
-    \\   inherited or paints the page; none of them reaches into a shape
-    \\   the driver chose. */
+    \\   And it stops at inheritance, deliberately. Every declaration
+    \\   here is inherited or paints the page; none of them reaches into
+    \\   a shape somebody else chose. Normalizing the browser's own
+    \\   decisions about markup nokre did not write would make this file
+    \\   a second stylesheet a consumer has to reason about, and there is
+    \\   no such markup in a page this edition writes any more. */
 ++ "\n:root[" ++ document_sel ++ "] body {\n" ++
     \\  color: var(--ink);
     \\  font-family: prose;
