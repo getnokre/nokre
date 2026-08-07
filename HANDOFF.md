@@ -129,3 +129,27 @@ multi-locale form, RTL served statically, or a translated document body. Those
 meet a consumer for the first time at `rokovski.com` — three locales, one of them
 RTL, and roughly 4,250 generated pages. **A green reference site is not evidence
 for any of them**, and the first migration is where the API gets its real test.
+
+## A bundle's own tag faces no grammar, and now two paths disagree about that
+
+Revision 50 gave `Link` and `Span` a `lang`, held at `append` to
+`element.validLangTag` — a BCP 47 tag, `-` separators, `error.InvalidLangTag`.
+An ARB `@@locale` faces no such rule: `l10n.localeIdent` accepts letters, digits
+and *either* separator, so `"@@locale": "pt_BR"` compiles and `L.tag` hands the
+underscore straight back out.
+
+Nothing in the bundle is wrong about that — `resolve` and `directionOfTag` both
+ignore the separator deliberately. What is wrong is where the tag lands as
+**markup**: `document.localeStub` writes `L.tag(loc)` into `hreflang` and `lang`
+on every choice, and `alternates.Alternates` writes it into every
+`<link rel="alternate" hreflang>`; neither checks it, and `pt_BR` is not a value
+a crawler or a screen reader parses. So one path in the library now refuses a tag
+the other two publish.
+
+Three ways out, none obviously right: hold `@@locale` to the same grammar at
+`Bundle` (a compile error for any consumer spelling one with `_`, which is a
+contract change and wants its own round), normalize `_` to `-` where a tag
+becomes an attribute (two writers, one silent rewrite), or leave it and say so in
+`localization.md`. The bug is unexploded — every ARB in this repo spells its tag
+with `-`, `fa-AF` included — which is exactly why it should be settled before a
+locale is added by someone reading the ARB spec rather than this file.

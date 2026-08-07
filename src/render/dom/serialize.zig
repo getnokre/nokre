@@ -309,6 +309,21 @@ pub const Emitter = struct {
         try self.text(url);
         try self.raw("\" target=\"_blank\" rel=\"noopener noreferrer\"");
     }
+
+    /// A run's own language, where it stated one — `element.Span.lang`
+    /// has the argument, and `element.Link.lang` is its twin on the
+    /// element a footer's language row is built from.
+    /// Empty writes nothing at all rather than `lang=""`: an empty
+    /// attribute is a *claim* in HTML — "unknown language" — and the
+    /// run's honest claim is the document's, which it inherits by not
+    /// speaking. One writer for both places a run can land, so the
+    /// anchor and the span cannot spell it differently.
+    fn langAttr(self: *Emitter, tag: []const u8) !void {
+        if (tag.len == 0) return;
+        try self.raw(" lang=\"");
+        try self.text(tag);
+        try self.raw("\"");
+    }
 };
 
 // ---------------------------------------------------------------- entry
@@ -578,6 +593,11 @@ pub fn node(em: *Emitter, id: NodeId) anyerror!void {
             // metric says instead.
             try em.raw("<a class=\"link block\"");
             if (l.external) |url| try em.hrefExternal(url) else try em.href(l.route);
+            // After the destination and before the node's own name, so
+            // an anchor here and an anchor `localeStub` writes read the
+            // same way: what it is, where it goes, what language its
+            // words are in.
+            try em.langAttr(l.lang);
             try em.stop(id);
             try em.raw(">");
             try em.text(l.label);
@@ -1171,6 +1191,10 @@ fn inlines(em: *Emitter, owner: NodeId, plain: []const u8, spans: []const elemen
         if (s.isLink()) {
             try em.raw("<a class=\"link\"");
             if (s.route.len > 0) try em.href(s.route) else try em.hrefExternal(s.external.?);
+            // The language rides the anchor, which is the run's own
+            // element — the same seat, in the same order, as the `link`
+            // element's.
+            try em.langAttr(s.lang);
             // A link inside a paragraph is its own focus stop, so it
             // carries the node *and* which span it is.
             try em.stop(owner);
@@ -1178,7 +1202,21 @@ fn inlines(em: *Emitter, owner: NodeId, plain: []const u8, spans: []const elemen
             try em.raw(">");
         }
         const tinted = if (s.ink) |g| g != Gray.ink else false;
-        if (tinted) try em.print("<span class=\"{t}\">", .{s.ink.?});
+        // A prose run states its language on a wrapper of its own,
+        // because there is nothing else here to hang it on. It is the
+        // only thing in this function that puts an element around words
+        // for a reason other than Markdown's vocabulary, and it is not
+        // a styling hook by the test that matters: it draws nothing.
+        // A tinted run already has the wrapper, so the two share it
+        // rather than nesting — one `<span>` cannot become two because
+        // a run happened to say both.
+        const wrapped = tinted or (!s.isLink() and s.lang.len > 0);
+        if (wrapped) {
+            try em.raw("<span");
+            if (tinted) try em.print(" class=\"{t}\"", .{s.ink.?});
+            if (!s.isLink()) try em.langAttr(s.lang);
+            try em.raw(">");
+        }
         if (s.strong) try em.raw("<strong>");
         if (s.emphasis) try em.raw("<em>");
         if (s.strike) try em.raw("<s>");
@@ -1188,7 +1226,7 @@ fn inlines(em: *Emitter, owner: NodeId, plain: []const u8, spans: []const elemen
         if (s.strike) try em.raw("</s>");
         if (s.emphasis) try em.raw("</em>");
         if (s.strong) try em.raw("</strong>");
-        if (tinted) try em.raw("</span>");
+        if (wrapped) try em.raw("</span>");
         if (s.isLink()) try em.raw("</a>");
     }
 }

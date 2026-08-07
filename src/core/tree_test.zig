@@ -722,6 +722,68 @@ test "append holds external destinations to open_url's closed scheme set, spans 
     try std.testing.expectEqualStrings("https://x.co", spans[0].external.?);
 }
 
+test "append holds a stated language to the tag grammar, spans and link element alike" {
+    var tree = try Tree.init(std.testing.allocator);
+    defer tree.deinit();
+    const root = tree.rootId();
+
+    // The four ways a tag arrives malformed, in the order they actually
+    // happen: the language's English name instead of its code, an ARB
+    // `@@locale` spelled with the underscore `l10n`'s own tag reading
+    // tolerates and a `lang` attribute does not, a trailing separator
+    // from a join, and an unterminated attribute smuggled in as a
+    // value.
+    try std.testing.expectError(error.InvalidLangTag, tree.append(root, .{ .link = .{
+        .label = "فارسی",
+        .route = "fa",
+        .lang = "Persian",
+    } }));
+    try std.testing.expectError(error.InvalidLangTag, tree.append(root, .{ .link = .{
+        .label = "Português",
+        .route = "pt",
+        .lang = "pt_BR",
+    } }));
+    try std.testing.expectError(error.InvalidLangTag, tree.append(root, .{ .link = .{
+        .label = "Türkçe",
+        .route = "tr",
+        .lang = "tr-",
+    } }));
+    try std.testing.expectError(error.InvalidLangTag, tree.append(root, .{ .link = .{
+        .label = "English",
+        .route = "en",
+        .lang = "en\" onclick=\"x",
+    } }));
+    // The span carries the same rule, and it is not conditional on the
+    // run being a control: a quoted phrase is 3.1.2's case too.
+    try std.testing.expectError(error.InvalidLangTag, tree.append(root, .{ .text = .{ .spans = &.{
+        .{ .text = "Guten Tag", .lang = "german" },
+    } } }));
+
+    // What passes: a bare language, a language with a script, one with
+    // a region, and the whole three-part form. And empty, which is
+    // every run that is in the document's own language — the default,
+    // and the overwhelming case.
+    var tag = [_]u8{ 'z', 'h', '-', 'H', 'a', 'n', 's' };
+    const row = try tree.appendId(root, .{ .stack = .{} });
+    try tree.append(row, .{ .link = .{ .label = "English", .route = "en", .lang = "en" } });
+    try tree.append(row, .{ .link = .{ .label = "فارسی", .route = "fa", .lang = "fa" } });
+    const zh = try tree.appendId(row, .{ .link = .{ .label = "简体中文", .route = "zh", .lang = &tag } });
+    try tree.append(row, .{ .link = .{ .label = "srpski", .route = "sr", .lang = "sr-Latn-RS" } });
+    try tree.append(row, .{ .link = .{ .label = "Terms", .route = "terms" } });
+    const para2 = try tree.appendId(root, .{ .text = .{ .spans = &.{
+        .{ .text = "the phrase " },
+        .{ .text = "Guten Tag", .emphasis = true, .lang = "de" },
+    } } });
+
+    // Copied like every other string, so a tag assembled into a caller's
+    // buffer survives the buffer.
+    @memset(&tag, 0);
+    try std.testing.expectEqualStrings("zh-Hans", tree.getConst(zh).?.link.lang);
+    const spans2 = tree.getConst(para2).?.text.spans;
+    try std.testing.expectEqualStrings("", spans2[0].lang);
+    try std.testing.expectEqualStrings("de", spans2[1].lang);
+}
+
 test "append holds a blockquote to the document block set" {
     var tree = try Tree.init(std.testing.allocator);
     defer tree.deinit();

@@ -230,6 +230,63 @@ pub const SelectAction = struct {
     }
 };
 
+/// Whether `s` can be the BCP 47 language tag a `lang` claims to be: a
+/// primary subtag of two or three ASCII letters, then any number of
+/// `-`-joined subtags of one to eight ASCII letters or digits.
+///
+/// It is a **grammar**, checked at `Tree.append` beside
+/// `Heading.validAnchor`, and the line it draws is the same one the
+/// origin rule draws in `Alternates`: nokre cannot know your value, it
+/// can see that your value is not one. `en`, `fa`, `tr`, `zh-Hans`,
+/// `pt-BR`, `sr-Latn-RS` pass. `English`, `en_US`, `en-`, `fa `, and
+/// anything carrying a quote or an angle bracket do not.
+///
+/// **What it deliberately does not do is tell a language from a typo.**
+/// `fs` is well-formed and is no language, and refusing it would take
+/// the IANA subtag registry, which nokre will no more ship than it
+/// ships `lastmod`'s clock. That refusal and this check are the same
+/// question with different answers, and what separates them is the
+/// failure mode: a wrong tag degrades to "read it in the page's voice",
+/// which is what the reader had before the attribute existed, while a
+/// *malformed* one is markup a browser drops on the floor without
+/// saying so. The value in honest use is `L.tag(loc)` off the app's own
+/// bundle, and the caller who types one by hand has left the road this
+/// field paves.
+///
+/// Two narrowings are deliberate. The primary subtag stops at three
+/// letters: four is BCP 47's reserved space and five to eight are ISO
+/// 639-5 collections, neither of which names a language a document is
+/// written in. And `_` is not a separator, though an ARB `@@locale` may
+/// be spelled with one and `l10n`'s own tag reading ignores which is
+/// used: a `lang` attribute is BCP 47 and BCP 47 joins with `-`, so
+/// `pt_BR` is caught here rather than emitted as an attribute value
+/// nothing parses.
+pub fn validLangTag(s: []const u8) bool {
+    var start: usize = 0;
+    var index: usize = 0;
+    var i: usize = 0;
+    while (i <= s.len) : (i += 1) {
+        if (i != s.len and s[i] != '-') continue;
+        const sub = s[start..i];
+        if (index == 0) {
+            if (sub.len < 2 or sub.len > 3) return false;
+            for (sub) |c| switch (c) {
+                'A'...'Z', 'a'...'z' => {},
+                else => return false,
+            };
+        } else {
+            if (sub.len < 1 or sub.len > 8) return false;
+            for (sub) |c| switch (c) {
+                'A'...'Z', 'a'...'z', '0'...'9' => {},
+                else => return false,
+            };
+        }
+        index += 1;
+        start = i + 1;
+    }
+    return true;
+}
+
 /// One styled run inside a `text` or `heading`. Spans are semantic, not
 /// free styling — Markdown's inline vocabulary: `strong` (bold),
 /// `emphasis` (italic), `code` (the mono family, verbatim voice),
@@ -286,6 +343,46 @@ pub const Span = struct {
     /// null inherits the element's ink. Gated by the same append-time
     /// contrast check as the element's own ink.
     ink: ?color.Gray = null,
+    /// The language *these words* are in, as a BCP 47 tag, where it is
+    /// not the language the rest of the document is in — WCAG 2.2
+    /// **3.1.2 Language of Parts** (AA). Empty, which is nearly every
+    /// run, means the document's own (`App.locale()`, on `<html lang>`).
+    ///
+    /// A language chooser is the criterion's textbook case and the one
+    /// this field was built for: `English`, `فارسی`, `Türkçe`, each
+    /// named in its own language because that is the only form a reader
+    /// who cannot read this page can act on, and all three sitting in a
+    /// page of a fourth. Without the tag a screen reader says `فارسی`
+    /// with English phonemes, which is not an accent — it is noise
+    /// where the one word that mattered was.
+    ///
+    /// **It is stated because nothing can derive it.** Script is
+    /// derivable from the bytes and is not the question: Persian and
+    /// Urdu share one, Turkish and English share another, and 3.1.2 is
+    /// about language. Direction *is* derivable, twice over — the bidi
+    /// algorithm resolves a wholly-directional run without being told,
+    /// and `l10n.directionOfTag` reads a tag if it ever has to be
+    /// written — so there is no `dir` beside this and there will not be
+    /// one from a second field.
+    ///
+    /// **What `append` checks is the grammar, not the truth**
+    /// (`validLangTag`) — the seat `Heading.anchor` sits in, and the
+    /// bar a browser and a screen reader actually act on. nokre will
+    /// not ship the IANA subtag registry to tell a language from a
+    /// typo, and the value a caller actually has to hand is
+    /// `L.tag(loc)`: the chooser names one anchor per bundled locale,
+    /// so the tags come off the bundle the same way `Alternates` and
+    /// `localeStub` take theirs.
+    /// A tag typed by hand is where this goes wrong, and typing one is
+    /// already the mistake.
+    ///
+    /// Only the DOM edition acts on it, as only it acts on
+    /// `Heading.anchor`: it becomes `lang` on the run's own element —
+    /// the `<a>` where the run is a link, a `<span>` where it is prose.
+    /// No native accessibility bridge here carries a per-node language
+    /// (AccessKit has no such property), so on the five drawing
+    /// platforms it is inert rather than wrong.
+    lang: []const u8 = "",
 
     /// Whether this run is a link at all — one question for the six
     /// places that ask (focus, hit testing, a11y, both editions'
@@ -695,6 +792,13 @@ pub const Link = struct {
     /// the system browser on activation (`Span.external` has the whole
     /// argument; the allowlist is checked at append here too).
     external: ?[]const u8 = null,
+    /// The language this link's `label` is in, where it is not the
+    /// document's — `Span.lang` in every respect, on the element a
+    /// footer's language row is actually built from (a `stack` of
+    /// `link`s, docs/static-sites.md). Same tag, same `validLangTag`
+    /// grammar at `append`, same DOM-only effect: it lands on this
+    /// anchor's own `lang`.
+    lang: []const u8 = "",
     /// Folded away by an overflowing row of actions, exactly as
     /// `Button.folded` — a row of things to press is a row of things to
     /// press whether the press acts or goes somewhere. Written by

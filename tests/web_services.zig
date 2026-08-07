@@ -294,6 +294,18 @@ fn buildActions(state: *State, app: *h.App) !void {
 /// Everything on it is answered by the browser, so the page still
 /// publishes with no module — which is what lets this one screen carry
 /// both halves of the claim.
+///
+/// It carries the **language row** too, which is the thing a footer
+/// actually has on a site published in more than one language: one link
+/// per bundled locale, each named in its own language, all of them
+/// sitting in a page that is in English. That is WCAG 3.1.2's textbook
+/// case, and until revision 50 nothing in the element set could say
+/// which language a run of words was in — so a screen reader read
+/// `فارسی` with English phonemes and the only word that could have
+/// helped the reader was the one it got wrong. The tag is on the
+/// element now (`element.Link.lang`) and this is where it reaches a
+/// browser: an attribute in a unit test is a string comparison, and an
+/// attribute on a parsed document is an anchor with a language.
 fn buildFooted(state: *State, app: *h.App) !void {
     try buildHub(state, app);
     const stack = try app.tree.appendId(app.tree.rootId(), .{ .stack = .{} });
@@ -303,6 +315,13 @@ fn buildFooted(state: *State, app: *h.App) !void {
         .label = "Source",
         .external = "https://github.com/getnokre/nokre",
     } });
+    // English is the page's own language and still states it: a chooser
+    // is a set, and a set whose members are annotated except one is a
+    // reader's question about the one. What states nothing is the link
+    // above that is not part of the set.
+    try app.tree.append(stack, .{ .link = .{ .label = "English", .route = "en", .lang = "en" } });
+    try app.tree.append(stack, .{ .link = .{ .label = "فارسی", .route = "fa", .lang = "fa" } });
+    try app.tree.append(stack, .{ .link = .{ .label = "Türkçe", .route = "tr", .lang = "tr" } });
     try app.tree.append(stack, .{ .text = .{ .content = "© nokre" } });
 }
 
@@ -327,6 +346,14 @@ const routes = h.Routes(State).table(&.{
     // rather than a dead anchor a reader finds.
     .{ .name = "terms", .title = .{ .fixed = "Terms" }, .build = buildSecond },
     .{ .name = "privacy", .title = .{ .fixed = "Privacy" }, .build = buildSecond },
+    // This page's own copies, one per language it is published in. On a
+    // real site a generator's `Refs` sends these three at `/en/…`,
+    // `/fa/…` and `/tr/…`; here the default fragment resolver answers,
+    // which is enough — what the gate is about is the language on the
+    // anchor, not the address under it.
+    .{ .name = "en", .title = .{ .fixed = "English" }, .build = buildFooted },
+    .{ .name = "fa", .title = .{ .fixed = "English" }, .build = buildFooted },
+    .{ .name = "tr", .title = .{ .fixed = "English" }, .build = buildFooted },
 });
 
 comptime {

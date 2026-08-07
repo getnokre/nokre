@@ -641,6 +641,13 @@ pub const Tree = struct {
                     if (l.route.len != 0) return error.RouteAndExternal;
                     if (!open_url.schemeAllowed(url)) return error.UnsupportedScheme;
                 } else if (l.route.len == 0) return error.EmptyRoute;
+                // A stated language faces its grammar here, exactly
+                // where a stated anchor and an external scheme face
+                // theirs — so an anchor that can be built is one whose
+                // `lang` a browser, a screen reader and a hyphenation
+                // table can all read (`element.validLangTag`).
+                if (l.lang.len != 0 and !element_mod.validLangTag(l.lang))
+                    return error.InvalidLangTag;
             },
             // The form quartet's illegal pairings (a glyph form without
             // a glyph, or with an emphasis; a vendor mark beside an
@@ -908,6 +915,12 @@ pub const Tree = struct {
                 if (!open_url.schemeAllowed(url)) return error.UnsupportedScheme;
                 if (std.mem.trim(u8, span.text, " \t\n\r").len == 0) return error.UnlabeledInteractive;
             }
+            // The `link` element's language rule, span-shaped. It is
+            // not conditional on the run being a control: a quoted
+            // phrase in another language is 3.1.2's case as much as a
+            // chooser's anchor is.
+            if (span.lang.len != 0 and !element_mod.validLangTag(span.lang))
+                return error.InvalidLangTag;
             if (std.mem.trim(u8, span.text, " \t\n\r").len == 0) continue;
             try color.checkTextPair(span.ink orelse base_ink, bg);
         }
@@ -1084,6 +1097,11 @@ pub const Tree = struct {
                 l.label = try dupeValid(a, l.label);
                 l.route = try dupeValid(a, l.route);
                 if (l.external) |url| l.external = try dupeValid(a, url);
+                // Copied unconditionally like the empty route beside
+                // it: the tree borrows no consumer memory, and a tag
+                // that came off a bundle is still a slice into whatever
+                // the caller had.
+                l.lang = try dupeValid(a, l.lang);
             },
             .toggle => |*t| t.label = try dupeValid(a, t.label),
             .checkbox => |*c| c.label = try dupeValid(a, c.label),
@@ -1231,6 +1249,11 @@ pub const Tree = struct {
                 dst.route = try dupeValid(a, src.route);
             } else dst.route = "";
             if (src.external) |url| dst.external = try dupeValid(a, url);
+            // A language tag is its own string too, on the same rule,
+            // and empty is spelled the way the route beside it is.
+            if (src.lang.len > 0) {
+                dst.lang = try dupeValid(a, src.lang);
+            } else dst.lang = "";
             off += len;
         }
         content.* = buf;

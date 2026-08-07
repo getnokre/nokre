@@ -367,6 +367,31 @@ the set is a plain `[]const u8` defaulting to `""`, never an optional,
 so "no route" has one spelling and every reader asks one question
 (`route.len > 0`).
 
+`lang` is the one thing a span carries that is neither vocabulary nor
+destination: the BCP 47 tag of the language *these words* are in, where
+it is not the document's — WCAG 2.2 **3.1.2 Language of Parts** (AA).
+Empty, the default and nearly every run, means the page's own
+(`App.locale()`, on `<html lang>`). A language chooser is the
+criterion's textbook case and the one it was built for: `English`,
+`فارسی`, `Türkçe` in a page of a fourth language, where without the tag
+a screen reader says each of them with the wrong phonemes. `append`
+holds the value to the tag grammar — two or three ASCII letters, then
+`-`-joined subtags of one to eight letters or digits, so `zh-Hans` and
+`pt-BR` pass while `Persian`, `pt_BR` and `tr-` are
+`error.InvalidLangTag` — and stops there: it is a grammar, not a
+registry, and the value in honest use is `L.tag(loc)` off your own
+bundle rather than a string you typed
+([static-sites.md](static-sites.md), "What the deletion cost"). There is
+no `dir` beside it: a wholly-directional run is what the bidi algorithm
+answers, and a direction that ever has to be written is derived from the
+tag. Only the [DOM edition](internals/dom-edition.md) acts on it —
+`lang` on the run's own element, the `<a>` where the run is a link and a
+`<span>` where it is prose — as only it acts on `Heading.anchor`; no
+native accessibility bridge here carries a per-node language, so on the
+five drawing platforms it is inert rather than wrong. A whole passage in
+another language is one span over the whole content, which is why
+neither `text` nor `heading` has a field of its own.
+
 A link that wraps — or that a bidi line splits into separate visual
 runs — occupies several rectangles, and every one of them underlines,
 rings when focused, and takes taps; the prose between them does none of
@@ -915,6 +940,12 @@ browser on activation, held to the [open_url](services.md) scheme
 allowlist (https/http/mailto) at `append`; it draws identically to a
 routed link, because where a link goes is semantics, not a visual
 variant. Setting both, or neither, is rejected at `append`.
+
+`lang` says which language the `label` is in, where it is not the
+document's — `Span.lang` above has the whole argument, and this is the
+element a site's footer language row is actually built from (a `stack`
+of `link`s, [static-sites.md](static-sites.md)). Same tag, same grammar
+at `append`, same DOM-only effect: it lands on this anchor's own `lang`.
 
 ### `toggle`
 On/off state as an iOS-style pill switch: `label`, `on`, `on_toggle`,

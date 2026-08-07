@@ -1005,6 +1005,47 @@ deep-copying it before `deinit` is holding bookkeeping and calling it an
 answer. Ownership transfers on the call, and it is called once, when the
 document is finished.
 
+### A run may be in a language of its own, and only this edition hears it
+
+`<html lang>` is the document's, written from `App.locale()` and never
+from a driver ("The document is the library's" above). What sits inside
+a page of that language and is *not* in it is a **part**, and WCAG 2.2
+**3.1.2 Language of Parts** (AA) is about exactly that: a language
+chooser naming `English`, `فارسی` and `Türkçe` in a page of a fourth,
+where an untagged endonym is read out with the wrong phonemes and the
+one word the reader wanted is the one word that came out wrong.
+
+The tag is on the element (`element.Link.lang`, `element.Span.lang`),
+and this edition is the only reader — `Heading.anchor`'s situation
+exactly. It lands on the run's **own** element, so there is one place
+per run and no wrapper invented for the occasion:
+
+| The run | The element it lands on |
+| --- | --- |
+| a `link` element | its `<a class="link block">` |
+| a span with a destination | its `<a class="link">` |
+| a prose span | a `<span>` written for it, shared with the ink wrapper when the run is also tinted |
+
+It is written after the destination and before the node's own name, so
+an anchor here reads the way an anchor `document.localeStub` writes does
+— what it is, where it goes, what language its words are in. Empty
+writes **nothing**: `lang=""` is a claim in HTML, and the claim a run in
+the page's own language is making is the one it inherits by staying
+quiet.
+
+The prose wrapper is the only element `inlines` writes for a reason
+other than Markdown's inline vocabulary, and it earns the exception on
+the test that matters here: it draws nothing. It is also the only
+`<span>` in this edition whose presence is decided by something other
+than a class, which is why a tinted run shares it rather than nesting
+inside a second one — a run cannot become two elements because it
+happened to say two things.
+
+Nothing native reads it. AccessKit carries no per-node language, so on
+the five drawing platforms the field is inert; the reference edition
+draws the same pixels with it and without it, which is why the goldens
+did not move when it shipped.
+
 ### IME
 
 Composition is the browser's while it lasts and the tree's when it

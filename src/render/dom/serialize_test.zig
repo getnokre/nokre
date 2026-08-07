@@ -554,6 +554,65 @@ test "an external link is a real anchor: new tab, opener severed, href escaped" 
         " target=\"_blank\" rel=\"noopener noreferrer\">Mail us</a>");
 }
 
+test "a language row states each language in its own, and every anchor says which" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    // The footer a static site publishes: one link per bundled locale,
+    // labelled with the endonym, sitting in a page of another language
+    // (WCAG 3.1.2). The tag goes between the destination and the node's
+    // own name, which is where `localeStub` writes its own.
+    const row = try app.tree.appendId(app.tree.rootId(), .{ .stack = .{} });
+    try app.tree.append(row, .{ .link = .{ .label = "English", .route = "en", .lang = "en" } });
+    try app.tree.append(row, .{ .link = .{ .label = "فارسی", .route = "fa", .lang = "fa" } });
+    try app.tree.append(row, .{ .link = .{ .label = "Türkçe", .route = "tr", .lang = "tr" } });
+    // The link beside them that is in the page's own language says
+    // nothing: `lang=""` is a claim in HTML — "unknown" — and the
+    // honest claim is the one it inherits.
+    try app.tree.append(row, .{ .link = .{ .label = "Terms", .route = "terms" } });
+
+    const html = try render(&app);
+    defer testing.allocator.free(html);
+    try expectContains(html, "<a class=\"link block\" href=\"#fa\" lang=\"fa\">فارسی</a>");
+    try expectContains(html, "<a class=\"link block\" href=\"#tr\" lang=\"tr\">Türkçe</a>");
+    try expectContains(html, "<a class=\"link block\" href=\"#terms\">Terms</a>");
+    try expectLacks(html, "lang=\"\"");
+}
+
+test "an inline run in another language wraps itself; a link in one keeps its anchor" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    try app.tree.append(app.tree.rootId(), .{
+        .text = .{
+            .spans = &.{
+                .{ .text = "The German for hello is " },
+                // Prose: there is nothing else to hang the tag on, so the run
+                // gets a wrapper of its own — the one element this walk writes
+                // that draws nothing.
+                .{ .text = "Guten Tag", .emphasis = true, .lang = "de" },
+                .{ .text = ", and the Persian page is " },
+                // A control: the anchor is already the run's element, so the
+                // tag lands there rather than on a second wrapper inside it.
+                .{ .text = "فارسی", .route = "fa", .lang = "fa" },
+                .{ .text = "." },
+            },
+        },
+    });
+    // A tinted run that also states a language shares one wrapper: a
+    // run cannot become two elements because it happened to say both.
+    try app.tree.append(app.tree.rootId(), .{ .text = .{ .spans = &.{
+        .{ .text = "Türkçe", .lang = "tr", .ink = .g4 },
+    } } });
+
+    const html = try render(&app);
+    defer testing.allocator.free(html);
+    try expectContains(html, "<span lang=\"de\"><em>Guten Tag</em></span>");
+    try expectContains(html, "<a class=\"link\" href=\"#fa\" lang=\"fa\">فارسی</a>");
+    try expectContains(html, "<span class=\"g4\" lang=\"tr\">Türkçe</span>");
+    // A run that states neither still writes no element at all: the
+    // wrapper exists for the tag, not for every span.
+    try expectContains(html, "<p>The German for hello is <span lang=\"de\">");
+}
+
 test "the default reference is the fragment the web shell mirrors routes into" {
     var app = try test_app.init(400, 400);
     defer app.deinit();

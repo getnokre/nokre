@@ -1286,7 +1286,7 @@ async function theFooterIsContent() {
   // rule in the sheet that reaches a link reaches these. A seam's
   // anchor carried none and kept the UA's underline and colour.
   const links = stack.querySelectorAll("a");
-  assert.equal(links.length, 3, "the footer lost links");
+  assert.equal(links.length, 6, "the footer lost links");
   for (const a of links) {
     assert.equal(a.getAttribute("class"), "link block", "a footer link is not one of nokre's");
   }
@@ -1296,7 +1296,7 @@ async function theFooterIsContent() {
   // new-tab posture every external anchor here takes.
   const hrefs = links.map((a) => a.getAttribute("href"));
   assert.deepEqual(hrefs.slice(0, 2), ["#terms", "#privacy"], "a footer route did not resolve");
-  assert.equal(links.at(-1).getAttribute("rel"), "noopener noreferrer");
+  assert.equal(links[2].getAttribute("rel"), "noopener noreferrer");
 
   // The audit reads it, which is the claim bytes could never answer:
   // every node in there is a node the tree has, with a role and a
@@ -1305,6 +1305,36 @@ async function theFooterIsContent() {
   for (const a of links) {
     assert.ok(a.getAttribute("data-n"), "a footer link is not a node the tree knows");
     assert.ok(a.textContent.trim().length > 0, "a footer link has no accessible name");
+  }
+
+  // The language row, which is what a footer on a multi-locale site has
+  // on it and the one thing the seam's deletion actually cost (WCAG
+  // 3.1.2, Language of Parts). Each anchor names its language *in* that
+  // language, and each says which language that is — the tag arrives on
+  // the anchor itself, so a screen reader switches voice on the one
+  // word a reader who cannot read this page is looking for.
+  const chooser = links.slice(3);
+  assert.deepEqual(
+    chooser.map((a) => [a.getAttribute("lang"), a.textContent]),
+    [
+      ["en", "English"],
+      ["fa", "فارسی"],
+      ["tr", "Türkçe"],
+    ],
+    "the language row does not say which language each of its words is in",
+  );
+
+  // The document's own language is still the document's, written from
+  // the app and not from any of these — which is what makes the three
+  // above *parts*. Two writers of one fact was the failure the seam's
+  // deletion was about; this is the same fact with one writer each.
+  assert.equal(document.documentElement.getAttribute("lang"), "en");
+
+  // And the residue: a link that is not part of the set states nothing.
+  // `lang=""` is a claim in HTML — "unknown language" — so the honest
+  // way to say "the page's own" is to say nothing at all.
+  for (const a of links.slice(0, 3)) {
+    assert.equal(a.getAttribute("lang"), null, "a footer link claims a language it was never given");
   }
 
   // And the reserve. At a phone's width the bar is a fixed band over the

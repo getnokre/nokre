@@ -82,6 +82,20 @@ annotate each other with — `dom.Alternates` takes the bundle rather than
 a list of tags, as everything here does, and the `x-default` it adds is
 the chooser's address rather than any language's
 ([the alternate set](internals/dom-edition.md#the-alternate-set-and-the-two-writers-that-spend-it)).
+What it does **not** write for you is the chooser a reader finds in a
+page's footer rather than at an unprefixed address — that is a `stack`
+of `link`s your page builder appends, one per `L.Locale`, each labelled
+with the language's name in that language. Two things about those
+anchors are worth stating because both are easy to get wrong from the
+outside. Their `hreflang` is already in the head, over the whole
+alternate set, so a copy on the anchor tells a crawler nothing. Their
+**`lang` is not**, and it is the one a reader hears: `Link.lang` carries
+the tag so a screen reader says `فارسی` in Persian rather than with
+English phonemes (WCAG 3.1.2, and [elements.md](elements.md#link) has
+the grammar `append` holds it to). Pass `L.tag(loc)` — the same tag the
+alternate set takes, off the same bundle — because a string typed by
+hand is the mistake the field exists around.
+
 Which half of a generated site is the library's and which is the
 generator's, past the locale axis, is
 [static-sites.md](static-sites.md).

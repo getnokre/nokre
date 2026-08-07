@@ -200,6 +200,14 @@ after the fact would mean the bad state existed:
   options, empty option labels, or a selection out of range
 - empty badges, valueless copyables, wordless or out-of-range meters,
   unlabeled/valueless/unencodable QR codes
+- a `link` or a span stating a language that is not a language tag —
+  `error.InvalidLangTag`. A run in a language other than the page's says
+  so with `lang` (WCAG 2.2 **3.1.2 Language of Parts**, AA — a language
+  chooser is that criterion's textbook case), and a malformed tag is an
+  attribute a browser drops without saying so, which fails the reader
+  exactly as no tag would. It is a grammar and not a registry: nokre
+  checks that your value is a tag, never that it is *the* tag, on the
+  line the origin rule draws ([static-sites.md](static-sites.md))
 - text that would be illegible where it sits: any element drawing text on
   the ambient background (text, headings, links, toggles, inputs) must
   clear WCAG AA contrast (4.5:1) against the nearest box fill, **in both

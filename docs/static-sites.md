@@ -44,6 +44,7 @@ because those are what a hand-written head gets wrong:
 | the mount ids, the content class, the addressing mode, the skip link's words, the URL you published the stylesheet at | nothing — they are names you invented, and a library default would be a guess |
 | the title, the description, the labels, a language's name in its own language | the escaping, on every one of them |
 | the address a section is linked to by, where something outside the page names one (`Heading.anchor`) | that it can be an `id`, a fragment and a CSS selector at once; that it is unique in the document; that a collision fails the build rather than renaming it; and that it is on the roster `takeAnchors` exports |
+| the language a run of words is in, where it is not the page's (`Link.lang`, `Span.lang` — the chooser's anchors) | that the tag is a tag: `error.InvalidLangTag` at `append`, before a document can carry an attribute a browser would drop |
 | the structured data you serialized | that no byte of it can end the `<script>` block it lands in — `Emitter.json`, one escape and no opinion about the graph, which is why it does not write the tag either |
 
 And what the library writes without asking is what it already holds:
@@ -705,12 +706,12 @@ draws on. A native app has no page footer. The doctrine's answer is the
 right one: **an element earns its place if an app needs it, and
 document furniture is ceremony.**
 
-### What the deletion actually costs, measured
+### What the deletion cost, and what answered it
 
-One thing, and it is worth naming rather than being quiet about. A
-site's footer often carries a **language row** — each language named in
-its own language — and the anchors under it want `hreflang`, `lang` and
-`dir`. Of the three:
+One thing, and the round after named it rather than being quiet about
+it. A site's footer often carries a **language row** — each language
+named in its own language — and the anchors under it want `hreflang`,
+`lang` and `dir`. Measured one at a time:
 
 - `hreflang` is already the library's and already correct: the head
   carries the whole `<link rel="alternate" hreflang>` set from
@@ -719,20 +720,55 @@ its own language — and the anchors under it want `hreflang`, `lang` and
   anchor told a crawler nothing new.
 - `dir` on a run that is wholly right-to-left is what the bidi algorithm
   answers anyway, in both editions.
-- **`lang` is the residue, and it is real**: WCAG 2.2 **3.1.2 Language
+- **`lang` was the residue, and it was real**: WCAG 2.2 **3.1.2 Language
   of Parts** (AA), and a language chooser is that criterion's textbook
-  case. nokre has no per-element language, so an element cannot carry
-  it.
+  case. Without it a screen reader says `فارسی` with English phonemes,
+  which is not an accent — it is noise where the one word a reader who
+  cannot read this page was looking for should have been.
 
-That is not a reason to keep a general byte escape hatch for one
+That was never a reason to keep a general byte escape hatch for one
 attribute. The seam did not make the attribute *correct* — nothing in
 the library ever read it, so a footer claiming `lang="fs"` would have
-published — it only made it unchecked. And the fact underneath is one
-nokre already holds twice: `Alternates` is one path per bundled locale,
-and `localeStub` already writes `<a hreflang lang dir>` over exactly
-that set. A third writer of it in a consumer's bytes is the failure this
-whole page is about. **The open question is per-part language, and it is
-recorded here as an open question rather than answered by a seam.**
+published — it only made it unchecked. It is a **field** now:
+`element.Link.lang` and `element.Span.lang`, a BCP 47 tag on the two
+elements a run of words can be, empty on every run that is in the
+document's own language.
+
+**The library reads it, which is the whole of the difference.** The tag
+faces `element.validLangTag` at `append`, in the same seat and on the
+same argument as `Heading.anchor`'s grammar and an external link's
+scheme: `error.InvalidLangTag`, and a page that would have carried a
+malformed attribute does not build. It is question 2 above, answered the
+way the origin answers it — nokre cannot know your language, it can see
+that `Persian`, `pt_BR` and `tr-` are not tags — and it stops exactly
+where question 3 starts. `fs` is well-formed and is not a language, and
+telling the two apart takes the IANA subtag registry, which nokre will
+no more ship than it ships `lastmod`'s clock. The difference between the
+two refusals is the failure mode: a wrong tag degrades to the page's own
+voice, which is what the reader had before the attribute existed, while
+a *malformed* one is markup a browser drops on the floor without saying
+so.
+
+There is no `dir` beside it and there will not be a second field for
+one. 49 measured it redundant; if a mixed-direction label ever proves
+the measurement wrong, the direction is **derived** from the tag
+(`l10n.directionOfTag`, which is exactly that function and is what
+`L.dir` already calls), never stated a second time.
+
+And the fact underneath is still one nokre holds twice — `Alternates` is
+one path per bundled locale, `localeStub` writes `<a hreflang lang dir>`
+over exactly that set — so the value a driver passes is `L.tag(loc)`
+off its own bundle, the same way the alternate set takes its tags. A tag
+typed by hand is where this goes wrong, and typing one is already the
+mistake.
+
+Two things it deliberately is not. It is not on `text` or `heading`: a
+whole passage in another language is one span over the whole content,
+which the set already spells, and a field would be a second spelling.
+And it is not an audit rule — the only rule anyone could write is *this
+run's script disagrees with the document's language and states nothing*,
+which is script inference standing in for language, and the library
+guessing is what question 3 refuses.
 
 ### The rest of `Document`, against the same test
 

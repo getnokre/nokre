@@ -1012,6 +1012,15 @@ rather than analyzed:
   resolve onto the screen the footer is inside. It is one scenario
   because it is one claim: a footer in the tree is styled, cleared,
   resolved and audited, and no rule in the library grants any of it.
+  The footer carries a **language row** too — what a footer actually has
+  on a site published in more than one language — and it is asserted
+  here rather than only in a unit test because an attribute in a string
+  comparison is a string and an attribute on a parsed document is an
+  anchor with a language: each of the three must carry the tag of the
+  language its own words are in (`element.Link.lang`, WCAG 3.1.2), the
+  document root must still carry the page's own and not any of theirs,
+  and the links beside them that are not part of the set must carry no
+  `lang` at all.
 
 What that gate is **not** is a browser. Layout, styling, the real event
 loop, a real popup's window management and a real storage's quota
