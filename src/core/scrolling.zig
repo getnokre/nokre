@@ -194,7 +194,7 @@ pub fn revealSegSelected(app: *App, id: NodeId) void {
 pub fn handleRootScrollKey(app: *App, key: event_mod.Key) void {
     if (layout.modalOpen(&app.tree)) return; // background is inert
     const line = text.Scale.body.lineHeight();
-    const page = layout.contentArea(&app.tree, app.viewport, app.safe_bottom, app.medium).h;
+    const page = layout.contentArea(&app.tree, app.viewport, app.safe_bottom).h;
     switch (key) {
         .up => scrollRootBy(app, -line),
         .down => scrollRootBy(app, line),
@@ -223,7 +223,7 @@ pub fn scrollRegionBy(app: *App, id: NodeId, delta: i32) i32 {
 }
 
 pub fn scrollRootBy(app: *App, delta: i32) void {
-    const limit = layout.contentArea(&app.tree, app.viewport, app.safe_bottom, app.medium).h;
+    const limit = layout.contentArea(&app.tree, app.viewport, app.safe_bottom).h;
     const max_offset = @max(0, app.root_content_height - limit);
     const new_offset = std.math.clamp(app.root_scroll + delta, 0, max_offset);
     if (new_offset != app.root_scroll) app.scroll_hot = .window;

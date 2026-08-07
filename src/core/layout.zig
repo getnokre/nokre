@@ -611,20 +611,38 @@ pub fn navBarHeight(safe_bottom: i32) i32 {
 /// below. What the reservation guarantees is the resting state: at
 /// either end of the scroll, nothing sits behind the chrome.
 ///
-/// Sideways it is `paneWidth`, centered — the same cap the sheet, the
-/// notices pane and a picker already spend, because it is a rule about
-/// line length and the page is the surface with the most prose on it.
-/// Without it a page had no maximum at all: every screen grew to
-/// whatever window it was opened in, so a desktop got a measure no one
-/// can read and a screen of short blocks got a huddle in one corner of
-/// an empty frame. A cap is not a knob — no element carries it and no
-/// consumer sets it — and below the cap it changes nothing, which is
-/// why every baseline narrower than `sheet_max_w` is untouched.
+/// Full width, always: this is the *window's* band, and what reads it
+/// sideways rather than vertically — the scroll indicator — belongs to
+/// the window. Where the words go is `pageColumn`.
+pub fn contentArea(tree: *const Tree, viewport: Size, safe_bottom: i32) Rect {
+    var h = viewport.h - safe_bottom;
+    if (findNotice(tree)) |n| {
+        h -= tree.getConst(n).?.notice.height;
+    } else if (findNav(tree) != null or findIndicator(tree) != null) {
+        h -= navBarHeight(safe_bottom);
+    }
+    return .{ .x = 0, .y = 0, .w = viewport.w, .h = h };
+}
+
+/// Where the page's words actually go: the band above, capped at
+/// `paneWidth` and centered in whatever is left.
 ///
-/// The whole rect, not just the flow: the hit test clips to it
-/// (`input.hitRect`) and the window's scroll indicator rides its
-/// trailing edge, so the page is one surface to a tap, to a reader and
-/// to the renderer rather than a column drawn inside a wider claim.
+/// The cap is the one the sheet, the notices pane and a picker already
+/// spend, because it was always a rule about line length rather than a
+/// rule about sheets, and the page is the surface with the most prose on
+/// it. Without it a page had no maximum: every screen grew to whatever
+/// window it was opened in, so a desktop drew a measure nobody can
+/// follow, and a screen of three short blocks drew a huddle in the
+/// corner of an empty frame. Not a knob — no element carries it and no
+/// consumer sets it — and below the cap it is the identity, which is why
+/// every baseline narrower than `sheet_max_w` is untouched.
+///
+/// Separate from the band because the two disagree about one thing, and
+/// the pixels settled it: the window's scroll indicator rides the band's
+/// trailing edge, and moved to the column's it stops reading as a
+/// scrollbar and starts reading as a rule ruled down the middle of the
+/// page. A bar at the frame's edge is a bar on the thing that scrolls;
+/// the column has no drawn edge for one to attach to.
 ///
 /// **Only where the viewport is the window.** A reflowing medium is
 /// mounted in a container somebody else sized, and that container is
@@ -634,17 +652,12 @@ pub fn navBarHeight(safe_bottom: i32) i32 {
 /// Capping again would be core overruling it, and worse, core would
 /// then measure wrapping, folding and bleed against a width the browser
 /// is not laying out — the one desync that file's cap exists to
-/// prevent. So the page column is the clipping medium's, where no such
+/// prevent. So the column is the clipping medium's, where no such
 /// container exists and the window is all there is.
-pub fn contentArea(tree: *const Tree, viewport: Size, safe_bottom: i32, medium: Medium) Rect {
-    var h = viewport.h - safe_bottom;
-    if (findNotice(tree)) |n| {
-        h -= tree.getConst(n).?.notice.height;
-    } else if (findNav(tree) != null or findIndicator(tree) != null) {
-        h -= navBarHeight(safe_bottom);
-    }
-    if (medium == .reflows) return .{ .x = 0, .y = 0, .w = viewport.w, .h = h };
-    return .{ .x = paneX(viewport), .y = 0, .w = paneWidth(viewport), .h = h };
+pub fn pageColumn(tree: *const Tree, viewport: Size, safe_bottom: i32, medium: Medium) Rect {
+    const band = contentArea(tree, viewport, safe_bottom);
+    if (medium == .reflows) return band;
+    return .{ .x = paneX(viewport), .y = band.y, .w = paneWidth(viewport), .h = band.h };
 }
 
 /// Space the root's flow keeps below its last element — the empty band
@@ -709,7 +722,7 @@ pub fn computeScrolled(tree: *Tree, measurer: text.Measurer, viewport: Size, scr
     const picker = findPicker(tree);
     const anchored: Size = .{ .w = viewport.w, .h = viewport.h - safe_bottom };
     if (nav == null and notice == null and pane == null and indicator == null and sheet == null and picker == null) {
-        const bare = contentArea(tree, viewport, safe_bottom, medium);
+        const bare = pageColumn(tree, viewport, safe_bottom, medium);
         var ctx: Ctx = .{ .tree = tree, .measurer = measurer, .bottom = anchored.h, .scroll = scroll, .rtl = rtl, .more_label = more_label };
         const content_h = ctx.layoutBlock(root, bare.x, -scroll, bare.w);
         tree.setRect(root, .{ .x = 0, .y = 0, .w = viewport.w, .h = viewport.h });
@@ -719,7 +732,7 @@ pub fn computeScrolled(tree: *Tree, measurer: text.Measurer, viewport: Size, scr
     if (nav) |n| layoutNavChrome(tree, measurer, n, anchored, safe_bottom, rtl);
     if (indicator) |n| layoutIndicator(tree, n, anchored, safe_bottom, rtl);
     if (notice) |n| layoutNoticeChrome(tree, measurer, n, anchored, rtl);
-    const area = contentArea(tree, viewport, safe_bottom, medium);
+    const area = pageColumn(tree, viewport, safe_bottom, medium);
     const s = tree.getConst(root).?.stack;
     const trailing = trailingSpace(tree, s.padding);
     var ctx: Ctx = .{ .tree = tree, .measurer = measurer, .bottom = area.bottom() - trailing, .scroll = scroll, .rtl = rtl, .more_label = more_label };

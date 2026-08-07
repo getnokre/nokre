@@ -1013,7 +1013,7 @@ test "layout: safe_bottom anchors chrome above the band and shrinks content" {
         try testing.expectEqual(600 - inset - metrics.nav_bar_pad, tree.rectOf(item).bottom());
     }
 
-    const area = layout.contentArea(&tree, .{ .w = 400, .h = 600 }, inset, .clips);
+    const area = layout.contentArea(&tree, .{ .w = 400, .h = 600 }, inset);
     try testing.expectEqual(600 - inset - bar_h, area.h);
     try testing.expect(tree.rectOf(body).bottom() <= area.h);
 }
@@ -1144,7 +1144,7 @@ test "layout: a page with bottom chrome ends a clear band above it" {
     var i: usize = 0;
     while (i < 40) : (i += 1) try tree.append(tree.rootId(), .{ .text = .{ .content = "line" } });
     const long_h = layout.computeScrolled(&tree, text.Measurer.fixed, viewport, 0, 34, .ltr, element.default_chrome.more, .clips);
-    const area = layout.contentArea(&tree, viewport, 34, .clips);
+    const area = layout.contentArea(&tree, viewport, 34);
     _ = layout.computeScrolled(&tree, text.Measurer.fixed, viewport, long_h - area.h, 34, .ltr, element.default_chrome.more, .clips);
 
     var last: NodeId = body;

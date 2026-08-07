@@ -3105,7 +3105,7 @@ test "the banner reserves its band at the viewport bottom" {
     const banner = app.tree.rectOf(layout.findNotice(&app.tree).?);
     try testing.expect(banner.h > 0);
     try testing.expectEqual(@as(i32, 600), banner.bottom());
-    try testing.expectEqual(banner.y, layout.contentArea(&app.tree, app.viewport, app.safe_bottom, app.medium).bottom());
+    try testing.expectEqual(banner.y, layout.contentArea(&app.tree, app.viewport, app.safe_bottom).bottom());
     try testing.expectEqual(before, app.tree.rectOf(btn).y);
 }
 

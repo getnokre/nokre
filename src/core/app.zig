@@ -882,7 +882,7 @@ pub const App = struct {
     /// turned out too short for where it was scrolled to.
     fn flow(self: *App) void {
         self.root_content_height = layout.computeScrolled(&self.tree, self.measurer, self.viewport, self.root_scroll, self.safe_bottom, self.direction, self.chrome.more, self.medium);
-        const limit = layout.contentArea(&self.tree, self.viewport, self.safe_bottom, self.medium).h;
+        const limit = layout.contentArea(&self.tree, self.viewport, self.safe_bottom).h;
         const clamped = std.math.clamp(self.root_scroll, 0, @max(0, self.root_content_height - limit));
         if (clamped != self.root_scroll) {
             self.root_scroll = clamped;
