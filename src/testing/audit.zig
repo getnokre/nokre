@@ -12,6 +12,7 @@ const element_mod = @import("../core/element.zig");
 const color = @import("../core/color.zig");
 const focus = @import("../core/focus.zig");
 const layout = @import("../core/layout.zig");
+const nav_mod = @import("../core/nav.zig");
 const text = @import("../core/text.zig");
 
 const App = app_mod.App;
@@ -66,8 +67,9 @@ pub const Violation = struct {
         /// different context pointer, so sameness cannot be read off
         /// the tree.
         duplicate_interactive_label,
-        /// A nav needs 2–5 destinations. `App.setNav` enforces this up
-        /// front; removal can degrade it afterwards.
+        /// A nav needs at least two destinations and no more than
+        /// `nav.max_nav_items`. `App.setNav` enforces this up front;
+        /// removal can degrade it afterwards.
         nav_item_count,
         /// Options and selection can be mutated after append; a segmented
         /// control must keep ≥2 labeled options and a selection in range.
@@ -338,7 +340,7 @@ pub fn collect(app: *App, out: *std.ArrayList(Violation), options: Options) !voi
                     if (app.tree.getConst(c).?.role() == .nav_item) destinations += 1;
                 }
                 const rendered = if (collapsedNav(app, id)) roster else destinations;
-                if (rendered < 2 or rendered > 5 or roster != rendered) {
+                if (rendered < 2 or rendered > nav_mod.max_nav_items or roster != rendered) {
                     try out.append(app.gpa, .{ .id = id, .rule = .nav_item_count });
                 }
             },

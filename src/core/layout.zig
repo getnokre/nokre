@@ -341,7 +341,7 @@ pub fn navCollapses(measurer: text.Measurer, items: anytype, viewport: Size) boo
 
 /// The collapsed chip's natural width: a destination's pill plus the
 /// chevron that says a list opens above it, and the gap before it.
-pub fn navChipWidth(measurer: text.Measurer, icon: element_mod.IconName, section: []const u8) i32 {
+pub fn navChipWidth(measurer: text.Measurer, icon: ?element_mod.IconName, section: []const u8) i32 {
     return navItemPillWidth(measurer, icon, section) + metrics.icon_gap +
         measurer.measure(.icons, text.Scale.body.px(), element_mod.nav_chevron);
 }
@@ -351,7 +351,7 @@ pub fn navChipWidth(measurer: text.Measurer, icon: element_mod.IconName, section
 /// ends curve away from the words — the flat ground beside a label is
 /// shorter than the number suggests, and 16 that reads as 16 on a
 /// square-cornered control reads as less than that here.
-pub fn navItemPillWidth(measurer: text.Measurer, icon: element_mod.IconName, label: []const u8) i32 {
+pub fn navItemPillWidth(measurer: text.Measurer, icon: ?element_mod.IconName, label: []const u8) i32 {
     return navItemWidth(measurer, icon, label) + 2 * metrics.nav_item_pad_h;
 }
 
@@ -379,13 +379,22 @@ pub fn navItemPlate(slot: Rect) Rect {
     };
 }
 
-/// The ink a nav slot holds: glyph, gap, words. The row's collapse
-/// threshold and the renderer both derive the group from this, so what
-/// layout calls "fits" is exactly what gets drawn.
-pub fn navItemWidth(measurer: text.Measurer, icon: element_mod.IconName, label: []const u8) i32 {
+/// The ink a nav slot holds: glyph, gap, words — or just the words on a
+/// roster that wears no marks (`nav.Destination.icon`). The row's
+/// collapse threshold and the renderer both derive the group from this,
+/// so what layout calls "fits" is exactly what gets drawn.
+///
+/// The gap goes with the glyph rather than standing on its own: an
+/// absent mark leaves no hole where one would have been, which is the
+/// whole difference between a roster that wears no marks and one
+/// whose glyphs failed to load.
+pub fn navItemWidth(measurer: text.Measurer, icon: ?element_mod.IconName, label: []const u8) i32 {
     const size = text.Scale.body.px();
-    return measurer.measure(.icons, size, icon.utf8()) + metrics.icon_gap +
-        measurer.measure(.prose, size, label);
+    const mark: i32 = if (icon) |ic|
+        measurer.measure(.icons, size, ic.utf8()) + metrics.icon_gap
+    else
+        0;
+    return mark + measurer.measure(.prose, size, label);
 }
 
 /// A labeled field's height: the label at the small scale, the gap,
@@ -722,7 +731,7 @@ fn layoutNavChrome(tree: *Tree, measurer: text.Measurer, nav: NodeId, viewport: 
 fn navRowPillWidth(measurer: text.Measurer, el: *const element_mod.Element) ?i32 {
     return switch (el.*) {
         .nav_item => |n| navItemPillWidth(measurer, n.icon, n.label),
-        .nav_here => |n| navItemPillWidth(measurer, element_mod.nav_here_icon, n.value),
+        .nav_here => |n| navItemPillWidth(measurer, n.icon, n.value),
         else => null,
     };
 }
@@ -938,11 +947,21 @@ fn layoutPicker(tree: *Tree, measurer: text.Measurer, picker: NodeId, viewport: 
 /// into it (`docs/internals/dom-edition.md`); the two would have drifted
 /// apart by those 26px in exactly this state.
 ///
-/// It never scrolls. `nav.max_nav_items` plus the screen's own entry is
-/// six rows, and six rows over the bar fit every viewport nokre lays
-/// out; the `sheet_min_top` clamp below is a guard against pathology,
-/// not a scrolling story. There is likewise no header to subtract and no
-/// filter to reserve — `overlays.openNavPicker` builds neither.
+/// It is as tall as its rows and no taller, clamped at `sheet_min_top`
+/// like every other bottom-anchored surface — so a full roster over a
+/// short window scrolls rather than running off the top edge. That is
+/// the `scroll_region` doing its job rather than a degradation: the
+/// rows nearest the control that opened the list are the ones on
+/// screen. The claim that used to stand here — that the list never
+/// scrolls — was already false at the viewport heights the goldens
+/// render at, which is why it is now a test rather than a sentence
+/// (layout_test.zig, "the section list is as tall as its rows, and
+/// clamps rather than overrunning").
+///
+/// There is no header to subtract and no filter field to reserve.
+/// `overlays.openNavPicker` builds neither, and `nav.max_nav_items` is
+/// derived to keep the second half true: the whole roster stays under
+/// the count at which a picker gains a filter.
 fn layoutNavMenu(tree: *Tree, measurer: text.Measurer, picker: NodeId, viewport: Size, safe_bottom: i32, rtl: bool) void {
     // Rows flush inside the 1px edge, exactly as a `tile_group` seats
     // its tiles — the shape is the point, so it is the same number.

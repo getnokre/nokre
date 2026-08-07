@@ -1460,7 +1460,12 @@ navigation landmark. Placement and shape are both the framework's
 decisions, not the consumer's, and there is no API for either: the bar
 is always the bottom band of the viewport, and whatever it holds — the
 row of destinations, the collapsed chip, the minimized-notices square —
-is measured at its own width and centered there.
+is measured at its own width and centered there. That holds for a
+generated page too, where this call is also how a site states its header
+([static-sites.md](static-sites.md)): the roster leads the page's own
+title in document order, and it is still drawn at the bottom, because a
+roster that moved when the page came alive would move the site's
+navigation out from under the reader.
 
 **`clearNav` is the counterpart**, and an app needs one whenever its bar
 belongs to a *session* rather than to the app: a rebuild preserves the
@@ -1481,17 +1486,35 @@ screen, so a rebuild landing after the clear puts the bar back up;
 nokre cannot tell that reinstall from a wanted one, and moving both
 halves out to the transitions is what makes the order stop mattering.
 
-A destination is a `route` — never an action — and an `icon` (any
-[`IconName`](#icon)), and nothing else. **It carries no label**: what a
-screen is called is its route's [`title`](routing.md), declared once at
-the route table, so the nav and the screen cannot disagree about where
-you are. `setNav` accepts 2–5 destinations, and refuses a route the
-table does not have or one that takes arguments — a destination is a
-place the app always has, and an argument would make it one particular
-screen. The glyph is **required**, not optional: a row where some
-destinations have marks and others do not is worse than either uniform
-answer. It leads the label at the label's own 16px, both always
-visible; it is decorative to assistive tech, which hears the words.
+A destination is a `route` — never an action — and optionally an `icon`
+(any [`IconName`](#icon)), and nothing else. **It carries no label**:
+what a screen is called is its route's [`title`](routing.md), declared
+once at the route table, so the nav and the screen cannot disagree about
+where you are. `setNav` refuses a route the table does not have or one
+that takes arguments — a destination is a place the app always has, and
+an argument would make it one particular screen.
+
+**The glyph is uniform, not required.** A row where some destinations
+have marks and others do not is worse than either uniform answer, so
+both uniform answers are statable and the mixture is not: a roster
+carrying some of each is `error.NavIconsMixed`, refused whole before
+anything is drawn. A phone's tab bar wears marks; a generated site's
+header usually wears none ([static-sites.md](static-sites.md)). Where there is a glyph it leads
+the label at the label's own 16px, both always visible, and it is
+decorative to assistive tech, which hears the words; where there is
+none, there is no gap left where one would have been. The marker for a
+screen that is none of the destinations follows the roster, because it
+stands in that same row.
+
+**The roster is 2 to `nav.max_nav_items`** (`error.NavItemCount`), and
+the upper bound is derived rather than picked. Whether a row *fits* is
+never a constant's question — it is asked of the reader's viewport every
+time one changes, and the answer is the collapsed chip. What the bound
+protects is that collapsed shape: the whole roster becomes the section
+picker's list, and past the count where a list stops being scanned and
+starts being typed into, the picker grows a filter field the section
+list deliberately does not have. So the bound is that count, less the
+one row an off-roster screen may add.
 
 **The bar has no ground.** There is no track, no fill, no hairline —
 the nav is its items and nothing else, each on a plate of its own, with

@@ -1027,6 +1027,50 @@ test "chrome is separable from content, and the nav names where you are" {
     try expectLacks(bar, "href=\"#settings\" aria-current");
 }
 
+test "an unmarked roster carries no glyph anywhere, marker included" {
+    const Screens = struct {
+        fn build(_: ?*anyopaque, app: *App) anyerror!void {
+            try app.tree.setTitle("Pricing");
+        }
+    };
+    var app = try App.init(testing.allocator, .{
+        .viewport = .{ .w = 1200, .h = 800 },
+        .services = .mocks(),
+        .routes = &.{
+            .{ .name = "pricing", .title = .{ .fixed = "Pricing" }, .build = Screens.build },
+            .{ .name = "docs", .title = .{ .fixed = "Docs" }, .build = Screens.build },
+            .{ .name = "about", .title = .{ .fixed = "About" }, .build = Screens.build },
+        },
+    });
+    defer app.deinit();
+    // A generated site's header: destinations with no glyphs, which is
+    // the second of the two uniform answers `setNav` allows.
+    try app.setNav(&.{
+        .{ .route = "pricing" },
+        .{ .route = "docs" },
+    });
+    try app.navigate("pricing");
+
+    const bar = try renderChrome(&app);
+    defer testing.allocator.free(bar);
+    try expectContains(bar, "<nav class=\"nav\" aria-label=\"Sections\">");
+    try expectContains(bar, "href=\"#pricing\" aria-current=\"page\">Pricing</a>");
+    // Not one glyph in the bar, and no empty span standing in for one:
+    // `.chip`'s flex gap would otherwise hold a hole open on the
+    // leading side of every destination.
+    try expectLacks(bar, "class=\"icon\"");
+
+    // The marker for a screen that is none of them stands in that same
+    // row, so it takes the same answer — a file-text mark beside two
+    // bare words is exactly the mixed row the roster refuses.
+    try app.navigate("about");
+    const off = try renderChrome(&app);
+    defer testing.allocator.free(off);
+    try expectContains(off, "<span class=\"chip current here\">");
+    try expectContains(off, "About</span>");
+    try expectLacks(off, "class=\"icon\"");
+}
+
 test "a mark costs its glyph; only the icon element takes the square box" {
     var app = try test_app.init(400, 400);
     defer app.deinit();

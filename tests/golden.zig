@@ -986,6 +986,22 @@ test "golden: narrow viewport gives the bottom pane the full width" {
     try renderGolden(&harness, "nav-bottom");
 }
 
+// The other uniform answer a roster may wear — no marks, which is what
+// a generated site's header usually is (docs/static-sites.md). Same
+// three plate levels at the same slot height; what is gone is the glyph
+// and the gap that stood after it, so each destination is exactly as
+// wide as its own word.
+const unmarked_nav_items = [_]h.Destination{
+    .{ .route = "library" },
+    .{ .route = "settings" },
+};
+
+test "golden: an unmarked roster leaves no room where a mark would be" {
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 400, .h = 300 }, .{ .routes = &nav_routes, .nav = &unmarked_nav_items, .initial_route = "library" });
+    defer harness.deinit();
+    try renderGolden(&harness, "nav-unmarked");
+}
+
 // A page long enough to scroll under a nav that no longer hides
 // anything: the two states the groundless bar has to get right.
 fn buildLongNavScreen(_: ?*anyopaque, app: *h.App) anyerror!void {

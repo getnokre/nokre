@@ -1584,9 +1584,9 @@ const sheet =
     \\
     \\/* The collapsed chip needs no rule of its own: it is one control
     \\   standing in for the bar, and the bar centres what it holds at
-    \\   that thing's own width whether it is five destinations or one
-    \\   chip. Pinned to the pane's leading edge instead, it sat at one
-    \\   end of a wide display with the notices control at the other.
+    \\   that thing's own width whether it is a whole roster or one chip.
+    \\   Pinned to the pane's leading edge instead, it sat at one end of
+    \\   a wide display with the notices control at the other.
     \\   `layoutNavChrome` centres the same group. */
     \\
     \\/* The banner owns the bottom pane — the nav is hidden and inert

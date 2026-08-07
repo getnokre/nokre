@@ -1097,21 +1097,31 @@ fn drawNavHere(app: *App, canvas: Painter, r: Rect, n: element_mod.NavHere) void
     const plate = layout.navItemPlate(r);
     canvas.fillRect(plate, layout.navItemRadius(), .g10);
     canvas.strokeRect(plate, layout.navItemRadius(), metrics.border, .mid);
-    const group = layout.navItemWidth(app.measurer, element_mod.nav_here_icon, n.value);
-    drawNavGroup(app, canvas, r, element_mod.nav_here_icon, n.value, .ink, r.x + @divTrunc(r.w - group, 2), metrics.nav_item_pad_v);
+    const group = layout.navItemWidth(app.measurer, n.icon, n.value);
+    drawNavGroup(app, canvas, r, n.icon, n.value, .ink, r.x + @divTrunc(r.w - group, 2), metrics.nav_item_pad_v);
 }
 
 /// Glyph, gap, words, starting at `gx` — mirrored whole under RTL so
 /// the mark stays on the leading side. The group's width is
 /// `layout.navItemWidth`, the same sum the collapse threshold measures,
 /// so what fits is what is drawn.
-fn drawNavGroup(app: *App, canvas: Painter, r: Rect, icon: element_mod.IconName, label: []const u8, ink: Gray, gx: i32, pad_v: i32) void {
+///
+/// An unmarked roster draws its labels and nothing else — no glyph,
+/// and no gap where one would have been, which is how `navItemWidth`
+/// measures it too. The branch reads as per-item and is per *bar*:
+/// `setNav` refuses a roster carrying both answers, so every slot in
+/// one row takes the same side of it.
+fn drawNavGroup(app: *App, canvas: Painter, r: Rect, icon: ?element_mod.IconName, label: []const u8, ink: Gray, gx: i32, pad_v: i32) void {
     const size = text.Scale.body.px();
-    const glyph = icon.utf8();
+    const ty = r.y + pad_v + text.Scale.body.baseline();
+    const mark = icon orelse {
+        canvas.drawText(gx, ty, .prose, size, label, ink);
+        return;
+    };
+    const glyph = mark.utf8();
     const gw = app.measurer.measure(.icons, size, glyph);
     const lw = app.measurer.measure(.prose, size, label);
     const total = gw + metrics.icon_gap + lw;
-    const ty = r.y + pad_v + text.Scale.body.baseline();
     // The glyph centers in its em box while the label stands on its
     // baseline — an icon is not a letter, the same split `button` makes
     // for its leading mark.

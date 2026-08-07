@@ -45,15 +45,43 @@ pub const Destination = struct {
     /// app always has, and an argument would make it one particular
     /// screen. `setNav` refuses a route that takes any.
     route: []const u8,
-    /// The destination's glyph, leading its label. Required, not
-    /// optional: the roster is a closed 2–5 set drawn as one row, and
-    /// a row where some items have icons and others do not is worse
-    /// than either uniform answer.
-    icon: element_mod.IconName,
+    /// The destination's glyph, leading its label — or `null` on a
+    /// roster that wears no marks.
+    ///
+    /// **Uniform, not required**, and the difference is the whole of
+    /// this field's history. The rule was always that *a row where some
+    /// items have icons and others do not is worse than either uniform
+    /// answer*; requiring the glyph was one way of reaching a uniform
+    /// row, and it was the only one while a roster was a phone's tab
+    /// bar. A generated document's header wears no marks, so the other
+    /// uniform answer had to become statable — and mixing them did not:
+    /// `setNav` reads the whole set and refuses one carrying both
+    /// (`error.NavIconsMixed`), the way it already refuses a route the
+    /// table does not have.
+    icon: ?element_mod.IconName = null,
 };
 
-/// The most destinations a roster may declare (`setNav`).
-pub const max_nav_items = 5;
+/// The most destinations a roster may declare (`setNav`) — derived, not
+/// chosen.
+///
+/// It used to be five, on the ground that *more does not fit a bottom
+/// bar at any viewport width*, and that ground was never the one doing
+/// the work: whether a row fits is `layout.navCollapses`'s question,
+/// asked of the reader's own viewport, and a roster of two with long
+/// enough labels collapses on a phone exactly as readily as a roster of
+/// six. A constant cannot answer a question about a window it has never
+/// seen, and it was not answering it.
+///
+/// What a constant *can* protect is the other shape. Collapsed, the
+/// whole roster is the section picker's list, and `overlays` already
+/// names the count at which a list stops being scanned and starts being
+/// typed into: `picker_filter_min`. Past it a picker grows a filter
+/// field, and a filtered list is one whose row position is no longer
+/// its roster index — a split the section picker deliberately does not
+/// carry (`openNavPicker`). So the bound is that list's, less the one
+/// row the screen standing in for itself may add (`effectiveRoster`),
+/// and it moves if that number ever does.
+pub const max_nav_items = overlays.picker_filter_min - 2;
 
 /// One line of the list both shapes draw: a declared destination, or the
 /// screen standing in for itself. Also what the App keeps its roster in,
@@ -76,7 +104,10 @@ pub const RosterItem = struct {
     /// arguments and all, so `isCurrent` recognizes it and declines. The
     /// name alone would push a bare `ticket` and fail its arity.
     route: []const u8,
-    icon: element_mod.IconName,
+    /// Uniform across the whole list — every declared destination's
+    /// `Destination.icon`, and the same answer again on the entry the
+    /// screen makes for itself (`effectiveRoster`).
+    icon: ?element_mod.IconName,
     /// Set on the one entry that is not a destination: the row draws it
     /// as a `nav_here` rather than a `nav_item`, and the picker offers
     /// it as the row you are already on.
@@ -113,15 +144,30 @@ pub fn effectiveRoster(app: *const App, buf: *RosterBuf) []const RosterItem {
         }
         // Off the roster: the route names itself. `currentRef` is
         // non-null whenever `current` is — both read the same top entry.
+        //
+        // Its mark follows the roster's rather than being the constant
+        // outright: the marker stands *in the row*, so a file-text
+        // glyph beside a bar of bare words would be the one mixed item
+        // `setNav` refuses to let a consumer state. The roster is
+        // uniform by then, so the first entry answers for all of them.
         buf[n] = .{
             .label = app.router.currentTitle(app.locale()).?,
             .route = app.router.currentRef().?,
-            .icon = element_mod.nav_here_icon,
+            .icon = if (marked(app)) element_mod.nav_here_icon else null,
             .here = true,
         };
         n += 1;
     }
     return buf[0..n];
+}
+
+/// Whether this bar wears marks. One question of the whole roster, and
+/// the first entry is the whole answer: `setNav` refuses a mixed set,
+/// so there is no second entry that could disagree. False for no roster
+/// at all, which draws nothing either way.
+fn marked(app: *const App) bool {
+    const items = app.nav_items.items;
+    return items.len != 0 and items[0].icon != null;
 }
 
 /// Installs app-level navigation chrome: the destinations, preserved
@@ -148,9 +194,25 @@ pub fn effectiveRoster(app: *const App, buf: *RosterBuf) []const RosterItem {
 /// they do not. Consumers declare the set of places; nokre draws it
 /// and reshapes it as the viewport changes. There is no placement API
 /// and no shape API.
+///
+/// **A generated document's header is one of these**, and that is the
+/// whole reason `Destination.icon` is optional. A static site's row of
+/// links across the top is a set of places the site always has, which
+/// is what this call models — so it is stated here rather than spliced
+/// into the document as markup, and it arrives with everything markup
+/// would have thrown away: the current destination marked
+/// (`aria-current`), the screen that is on none of them named
+/// (`nav_here`), every route resolved against the table at build time,
+/// and a navigation landmark ahead of the page's own `h1` in document
+/// and focus order (docs/static-sites.md, "A site's header is a
+/// roster"). What it does not buy is a different *placement*: the bar
+/// is the bottom band in both editions and on both sides of a boot,
+/// because a roster that moved when the page came alive would move the
+/// site's navigation out from under the reader.
 pub fn setNav(app: *App, items: []const Destination) !void {
-    // 2–5 destinations: fewer is not navigation, more does not fit a
-    // bottom bar at any viewport width.
+    // Fewer than two is not navigation. The upper bound is the
+    // collapsed shape's list (`max_nav_items`), not the row's width —
+    // that is `navCollapses`'s question and it is asked of a viewport.
     if (items.len < 2 or items.len > max_nav_items) return error.NavItemCount;
     // The whole roster is read before anything moves. The route table
     // is what names a destination, so a route it has never heard of is
@@ -159,9 +221,16 @@ pub fn setNav(app: *App, items: []const Destination) !void {
     // arguments would fail its arity on every press — better a refused
     // roster than an inert one. Checking first is also what lets a
     // refused call leave a bar that is already up exactly as it was.
+    //
+    // The marks are read the same way and for the same reason. A row
+    // where some items carry a glyph and others do not is worse than
+    // either uniform answer, and the two answers are both legitimate —
+    // so the *mixture* is what is refused, at the roster, before a
+    // ransom-note bar exists to look at.
     for (items) |item| {
         const def = app.router.lookup(item.route) orelse return error.UnknownRoute;
         if (def.args != 0) return error.RouteArgCount;
+        if ((item.icon == null) != (items[0].icon == null)) return error.NavIconsMixed;
     }
     // All or nothing past here: only an allocation can still fail, and
     // a roster half-copied would outlive the error describing a nav
@@ -288,7 +357,7 @@ pub fn syncNavChrome(app: *App) !void {
         try clearChildren(app, nav);
         for (roster) |item| {
             _ = if (item.here)
-                try app.tree.append(nav, .{ .nav_here = .{ .value = item.label, .name = app.chrome.current_screen } })
+                try app.tree.append(nav, .{ .nav_here = .{ .value = item.label, .name = app.chrome.current_screen, .icon = item.icon } })
             else
                 try app.tree.append(nav, .{ .nav_item = .{ .label = item.label, .route = item.route, .icon = item.icon } });
         }
@@ -368,11 +437,17 @@ fn rowMatches(app: *const App, nav: NodeId, roster: []const RosterItem) bool {
     for (roster) |item| {
         const el = app.tree.getConst(it.next() orelse return false).?;
         if (item.here) {
-            // The value is the whole of it: the marker's glyph is a
-            // constant, and two routes sharing a title render alike. Its
+            // The value, and whether the row wears marks at all: two
+            // routes sharing a title render alike, but a roster
+            // re-declared from glyphs to words keeps every label and
+            // changes every mark, and the marker is in that row. Its
             // *name* is chrome and is re-said in place (`setChrome`).
-            if (el.* != .nav_here or !std.mem.eql(u8, el.nav_here.value, item.label)) return false;
-        } else if (el.* != .nav_item or !std.mem.eql(u8, el.nav_item.label, item.label)) return false;
+            if (el.* != .nav_here or
+                !std.mem.eql(u8, el.nav_here.value, item.label) or
+                el.nav_here.icon != item.icon) return false;
+        } else if (el.* != .nav_item or
+            !std.mem.eql(u8, el.nav_item.label, item.label) or
+            el.nav_item.icon != item.icon) return false;
     }
     return true;
 }

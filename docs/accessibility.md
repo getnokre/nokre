@@ -254,11 +254,13 @@ the append contrast check once the new content has visible words
 and on a field it clamps a stale caret to a codepoint boundary rather
 than leave it dangling mid-sequence.
 
-`App.setNav` additionally rejects fewer than 2 or more than 5 destinations
-(`error.NavItemCount`), a destination the route table does not have
-(`error.UnknownRoute`), and one whose route takes arguments
-(`error.RouteArgCount`) — an unnamed or unpressable destination is
-refused at the roster rather than drawn.
+`App.setNav` additionally rejects a roster outside 2 to
+`nav.max_nav_items` (`error.NavItemCount`), a destination the route
+table does not have (`error.UnknownRoute`), one whose route takes
+arguments (`error.RouteArgCount`), and a set where some destinations
+carry a glyph and others do not (`error.NavIconsMixed`) — an unnamed,
+unpressable or half-marked destination is refused at the roster rather
+than drawn.
 
 The design system itself is proven, not reviewed: unit tests in
 [src/core/color.zig](../src/core/color.zig) assert that every text alias
@@ -299,9 +301,10 @@ fails on:
   audit re-runs when the layer closes, catching a pair the moment both
   are live
 - `unlabeled_interactive` — a label emptied by mutation after append
-- `nav_item_count` — a nav whose destinations fell outside 2–5, or whose
-  rendered shape stopped matching the set it was given (removal). The
-  off-roster marker is not a destination and is not counted
+- `nav_item_count` — a nav whose destinations fell outside 2 to
+  `nav.max_nav_items`, or whose rendered shape stopped matching the set
+  it was given (removal). The off-roster marker is not a destination and
+  is not counted
 - `empty_nav_here` — the off-roster marker's title emptied by mutation
   after append; a plate with no words says you are nowhere
 - `malformed_segmented` / `malformed_radio_group` / `malformed_select` —

@@ -392,7 +392,13 @@ fn teardownSheet(app: *App) void {
 
 /// Option count at which the picker gains a filter field: fewer
 /// rows scan faster by eye than by typing.
-const picker_filter_min = 8;
+///
+/// Exported because it bounds something outside this file. A collapsed
+/// nav's whole roster is one of these lists and the section picker
+/// carries no filter, so `nav.max_nav_items` is this number less the
+/// row an off-roster screen may add — a derivation rather than a second
+/// guess at where scanning ends.
+pub const picker_filter_min = 8;
 
 /// Opens the modal option picker for a select: its label as the
 /// title, one row per option, focus on the current choice. Long
@@ -506,10 +512,12 @@ pub fn openNavPicker(app: *App, nav_current: NodeId) !void {
         .above_nav = true,
     } });
     const region = try app.tree.appendId(picker, .{ .scroll_region = .{ .height = 0 } });
-    // A 2–5 roster (plus at most the screen's own entry) is always under
+    // A roster (plus at most the screen's own entry) is always under
     // `picker_filter_min`, so there is no filter field to build and no
     // filtered/unfiltered split to keep: row position and roster index
-    // stay the same number.
+    // stay the same number. That is not a hope about how many
+    // destinations an app declares — `nav.max_nav_items` is derived
+    // from this bound, so the list cannot reach it.
     for (roster, 0..) |item, i| {
         try app.tree.append(region, .{ .picker_item = .{
             .label = item.label,

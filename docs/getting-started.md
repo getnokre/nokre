@@ -391,8 +391,9 @@ framework-enforced:
   `navigate`. Activating an item pushes that destination, so Back
   returns to the section you crossed from (and the one you are already
   on does nothing). Everything else about the bar — its placement, its
-  shape, why a destination is a route and a required `icon` with no
-  label, when the row collapses to a chip — is the framework's
+  shape, why a destination is a route and an `icon` with no label, why
+  the whole roster wears marks or none of it does, when the row
+  collapses to a chip — is the framework's
   contract, not the app's:
   [elements.md](elements.md#navigation-chrome) specifies it once.
 - Every route carries a `title`, and the field has no default — omitting

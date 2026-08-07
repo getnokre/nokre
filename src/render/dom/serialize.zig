@@ -740,7 +740,11 @@ pub fn node(em: *Emitter, id: NodeId) anyerror!void {
             if (current) try em.raw(" aria-current=\"page\"");
             try em.stop(id);
             try em.raw(">");
-            try icon(em, n.icon, "", if (current) .ink else .dark, .body, .mark);
+            // Absent on an unmarked roster, and absent whole: no glyph
+            // and no empty span standing in for one, so `.chip`'s flex
+            // gap has nothing left to hold apart. The reference draws
+            // the same nothing (`renderer.drawNavGroup`).
+            if (n.icon) |mark| try icon(em, mark, "", if (current) .ink else .dark, .body, .mark);
             try em.text(n.label);
             try em.raw("</a>");
         },
@@ -766,8 +770,11 @@ pub fn node(em: *Emitter, id: NodeId) anyerror!void {
             try em.raw("><span class=\"visually-hidden\">");
             try em.text(n.name);
             try em.raw(": </span>");
-            try icon(em, n.icon, "", .ink, .body, .mark);
+            if (n.icon) |mark| try icon(em, mark, "", .ink, .body, .mark);
             try em.text(n.section);
+            // The chevron is not the roster's mark and does not follow
+            // it: it says a list opens above, which is true of the
+            // control whatever the destinations wear.
             try icon(em, .chevron_up, "", .ink, .body, .mark);
             try em.raw("</button>");
         },
@@ -777,7 +784,7 @@ pub fn node(em: *Emitter, id: NodeId) anyerror!void {
             try em.raw("<span class=\"chip current here\"><span class=\"visually-hidden\">");
             try em.text(n.name);
             try em.raw(": </span>");
-            try icon(em, element_mod.nav_here_icon, "", .ink, .body, .mark);
+            if (n.icon) |mark| try icon(em, mark, "", .ink, .body, .mark);
             try em.text(n.value);
             try em.raw("</span>");
         },

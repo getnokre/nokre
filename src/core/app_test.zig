@@ -1211,17 +1211,113 @@ test "clearNav takes what was pointing at the bar: the open picker and focus" {
     try testing.expect(app.focused == null);
 }
 
+// A route table wide enough for a full roster plus one screen that is
+// on none of it — the section list's worst case, which is
+// `max_nav_items` rows and the off-roster marker's.
+const full_routes = blk: {
+    var defs: [nav_mod.max_nav_items + 1]router_mod.RouteDef = undefined;
+    for (&defs, 0..) |*d, i| {
+        const name = std.fmt.comptimePrint("r{d}", .{i});
+        d.* = .{ .name = name, .title = .{ .fixed = name }, .build = buildNavSection };
+    }
+    break :blk defs;
+};
+
+const full_nav = blk: {
+    var items: [nav_mod.max_nav_items]nav_mod.Destination = undefined;
+    for (&items, 0..) |*d, i| d.* = .{ .route = full_routes[i].name, .icon = .circle };
+    break :blk items;
+};
+
+fn navMenuRegion(app: *App) NodeId {
+    const picker = layout.findPicker(&app.tree).?;
+    var it = app.tree.children(picker);
+    while (it.next()) |c| {
+        if (app.tree.getConst(c).?.role() == .scroll_region) return c;
+    }
+    unreachable;
+}
+
+test "the section list is as tall as its rows, and clamps rather than overrunning" {
+    const rows = nav_mod.max_nav_items + 1;
+    const content: i32 = @intCast(rows * layout.pickerItemHeight() + (rows - 1) * layout.metrics.border);
+    // The full roster over a tall window: every row on screen, and the
+    // list exactly its rows tall — no header and no filter field, which
+    // is what deriving `max_nav_items` from `picker_filter_min` buys.
+    {
+        var app = try App.init(testing.allocator, .{
+            .viewport = .{ .w = 360, .h = 700 },
+            .routes = &full_routes,
+            .services = .mocks(),
+        });
+        defer app.deinit();
+        try app.setNav(&full_nav);
+        // A screen that is none of them, so the list is at its longest.
+        try app.navigate(full_routes[full_routes.len - 1].name);
+        app.performLayout();
+        try app.tap(app.tree.rectOf(navChip(&app).?).center());
+        app.performLayout();
+        const reg = navMenuRegion(&app);
+        try testing.expectEqual(@as(usize, rows), app.tree.childCount(reg));
+        try testing.expectEqual(content, app.tree.getConst(reg).?.scroll_region.height.?);
+    }
+    // Over a short one it clamps instead of running off the top, and
+    // the region is what scrolls. The claim this replaced was that the
+    // list never scrolls — already false at the heights the goldens
+    // render at, which is why it is a test now.
+    {
+        var app = try App.init(testing.allocator, .{
+            .viewport = .{ .w = 360, .h = 300 },
+            .routes = &full_routes,
+            .services = .mocks(),
+        });
+        defer app.deinit();
+        try app.setNav(&full_nav);
+        try app.navigate(full_routes[full_routes.len - 1].name);
+        app.performLayout();
+        try app.tap(app.tree.rectOf(navChip(&app).?).center());
+        app.performLayout();
+        const reg = navMenuRegion(&app);
+        try testing.expect(app.tree.getConst(reg).?.scroll_region.height.? < content);
+        // And never above the clamp every bottom-anchored surface keeps.
+        try testing.expect(app.tree.rectOf(layout.findPicker(&app.tree).?).y >= layout.metrics.sheet_min_top);
+    }
+}
+
 test "setNav rejects too few or too many destinations" {
     var app = try test_app.init(400, 400);
     defer app.deinit();
     try testing.expectError(error.NavItemCount, app.setNav(&.{
         .{ .route = "only", .icon = .circle },
     }));
-    try testing.expectError(error.NavItemCount, app.setNav(&.{
-        .{ .route = "a", .icon = .circle }, .{ .route = "b", .icon = .circle },
-        .{ .route = "c", .icon = .circle }, .{ .route = "d", .icon = .circle },
-        .{ .route = "e", .icon = .circle }, .{ .route = "f", .icon = .circle },
+    // One past the bound, whatever the bound has become: the count is
+    // read before any route is looked up, so none of these has to be a
+    // name the table knows.
+    var too_many: [nav_mod.max_nav_items + 1]nav_mod.Destination = undefined;
+    for (&too_many) |*d| d.* = .{ .route = "a", .icon = .circle };
+    try testing.expectError(error.NavItemCount, app.setNav(&too_many));
+}
+
+test "a roster wears marks or none, and never some" {
+    var app = try offRosterApp(900);
+    defer app.deinit();
+    // The mixture is the one thing neither uniform answer allows, and
+    // it is refused at the roster rather than drawn as a ransom note.
+    try testing.expectError(error.NavIconsMixed, app.setNav(&.{
+        .{ .route = "home", .icon = .house },
+        .{ .route = "settings" },
     }));
+    try testing.expectEqual(@as(usize, 0), app.nav_items.items.len);
+    // Words alone install, and the row carries no mark anywhere in it —
+    // the off-roster marker included, since it stands in that row.
+    try app.setNav(&.{
+        .{ .route = "home" },
+        .{ .route = "settings" },
+    });
+    try app.navigate("terms");
+    try testing.expectEqual(@as(?element_mod.IconName, null), app.nav_items.items[0].icon);
+    const here = navHere(&app).?;
+    try testing.expectEqual(@as(?element_mod.IconName, null), app.tree.getConst(here).?.nav_here.icon);
 }
 
 test "a destination is a route the table has, taking no arguments" {

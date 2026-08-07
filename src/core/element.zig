@@ -1112,8 +1112,11 @@ pub const Copyable = struct {
 };
 
 /// App-level navigation chrome; children must be `nav_item`s. Installed
-/// once via `App.setNav` and preserved across router rebuilds. Always a
-/// bottom pane, centered and capped at the sheet width.
+/// once via `App.setNav` and preserved across router rebuilds. Always
+/// the bottom band of the viewport, holding whatever it holds at that
+/// thing's own width and centered there — not the sheet's 560, which is
+/// a rule about line length and about nothing a bar carries
+/// (`layout.navCollapses`).
 pub const Nav = struct {};
 
 /// Every string nokre itself puts on a screen or into the accessibility
@@ -1491,8 +1494,12 @@ pub const NavItem = struct {
     /// Activation pushes this route, so the screen it was crossed from
     /// keeps its way back; standing on it already is a no-op (nav.zig).
     route: []const u8,
-    /// The destination's glyph, leading its label.
-    icon: IconName,
+    /// The destination's glyph, leading its label — `null` on a roster
+    /// that wears no marks. Never *some* of them: `setNav` refuses a
+    /// mixed roster (`error.NavIconsMixed`), so this field is the same
+    /// answer on every item of one bar and the row is uniform by the
+    /// time it is built.
+    icon: ?IconName = null,
 };
 
 /// The collapsed nav: the current section's name, and the control that
@@ -1518,8 +1525,10 @@ pub const NavCurrent = struct {
     section: []const u8,
     /// The current section's glyph, refreshed by the same sync and
     /// leading the label exactly as the row item's does. The chip
-    /// stands in for one destination; it wears that destination's mark.
-    icon: IconName,
+    /// stands in for one destination; it wears that destination's mark,
+    /// and `null` on a roster that wears none — the chip cannot be the
+    /// one marked thing on an unmarked bar, because it *is* the bar.
+    icon: ?IconName = null,
     /// The framework's own word for the control (`App.Chrome.section`),
     /// copied in at construction — the other half of the name/value
     /// split above, and the half a catalog has to supply.
@@ -1555,13 +1564,25 @@ pub const NavHere = struct {
     /// And this is its name (`App.Chrome.current_screen`), copied in at
     /// construction like `nav_current`'s.
     name: []const u8 = default_chrome.current_screen,
+    /// The marker's own glyph — `nav_here_icon` on a roster that wears
+    /// marks, `null` on one that does not.
+    ///
+    /// A field rather than the constant it used to read directly,
+    /// because the marker stands *in the row* and the row is uniform or
+    /// it is nothing: a file-text mark beside eight unmarked
+    /// destinations is exactly the ransom note `Destination.icon`
+    /// refuses. Which of the two it is, is not this element's to decide
+    /// — `nav.effectiveRoster` reads it off the roster, where the answer
+    /// is already settled.
+    icon: ?IconName = nav_here_icon,
 };
 
-/// file-text: the mark every off-roster screen wears. One glyph for all
-/// of them, deliberately — a per-route mark would make each of these
-/// look like a destination the roster forgot, and the roster is closed
-/// (`setNav`). A destination earns a recognizable mark by being somewhere
-/// you return to; this is only ever *here*.
+/// file-text: the mark every off-roster screen wears, on a roster that
+/// wears marks at all. One glyph for all of them, deliberately — a
+/// per-route mark would make each of these look like a destination the
+/// roster forgot, and the roster is closed (`setNav`). A destination
+/// earns a recognizable mark by being somewhere you return to; this is
+/// only ever *here*.
 pub const nav_here_icon: IconName = .file_text;
 
 pub const Role = enum {
