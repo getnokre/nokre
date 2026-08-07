@@ -60,6 +60,12 @@ const root_stack = tree_mod.root_stack;
 const root_sel = "." ++ class_names.root;
 const root_sel_chromed = root_sel ++ "." ++ class_names.has_chrome;
 
+// The attribute test for a page nokre wrote whole, spliced for the same
+// reason the classes are: `document.zig` stamps it and this file is the
+// only thing that reads it, so the two spellings are one constant or
+// they are a rule that silently matches nothing.
+const document_sel = class_names.document_attr ++ "=\"" ++ class_names.document_value ++ "\"";
+
 pub const Options = struct {
     /// Where the bundled faces are served from. The edition ships no
     /// font stack and no fallback list: nokre renders in these and
@@ -585,6 +591,39 @@ const sheet =
     \\  font-family: prose;
     \\  font-size: var(--px-body);
     \\  line-height: var(--lh-body);
+    \\}
+    \\
+    \\/* …and the one page where "its host" names nobody. `dom.document`
+    \\   writes the doctype, the head and the body, so there is no
+    \\   surrounding authority to defer to: the page is nokre's, and it
+    \\   says so on the root element (`class_names.document_attr`). The
+    \\   live driver never stamps it, so the refusal above is untouched
+    \\   for every app mounted in a document it did not write — this is
+    \\   the same asymmetry `dir` already has, read the same way.
+    \\
+    \\   What it turns around is exactly the block above, plus the paper
+    \\   under it: a `body_end` footer inherits nokre's ink, family, size
+    \\   and measure instead of the browser's default serif, and the band
+    \\   of page beside it is `--paper` rather than the UA canvas.
+    \\
+    \\   And it stops at inheritance, deliberately. A driver's own list
+    \\   keeps its markers, its own anchor keeps the UA's underline and
+    \\   colour, its own table keeps the UA's borders — those are the
+    \\   browser's decisions about markup nokre neither wrote nor has an
+    \\   element for, and normalizing them would make this file a second
+    \\   stylesheet a consumer has to reason about rather than one block
+    \\   that hands a seam the page's type. Every declaration here is
+    \\   inherited or paints the page; none of them reaches into a shape
+    \\   the driver chose. */
+++ "\n:root[" ++ document_sel ++ "] body {\n" ++
+    \\  color: var(--ink);
+    \\  font-family: prose;
+    \\  font-size: var(--px-body);
+    \\  line-height: var(--lh-body);
+    \\  background: var(--paper);
+    \\  -webkit-font-smoothing: antialiased;
+    \\  -moz-osx-font-smoothing: grayscale;
+    \\  -webkit-tap-highlight-color: transparent;
     \\}
     \\
     \\/* The tree root is a vertical stack; a driver puts `rootClass` on

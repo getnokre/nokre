@@ -240,6 +240,110 @@ supposed to — the part nokre can check stayed the library's, and the
 part it could only guess stayed the driver's, even as the value around
 them moved sides.
 
+## A site's header is a roster, not a seam
+
+The migration that produced the two sections above came back with a page
+whose top is eight links across it — a public site's header bar, drawn
+by the generator as an ordinary row of links. Since the round where the
+library began drawing the page's own `h1`, those links come out *under*
+the title, because a screen's content starts under the title by
+construction. The proposal was the obvious one: `body_end` already takes
+"whatever stands below the app but inside the document", so give the
+document a `body_start` for whatever stands above it.
+
+**It is refused, and the ground is that a header of destinations is not
+markup.** A byte seam is where a *footer* goes — a copyright line, a
+colophon, cross-locale links that reference nothing the route table
+knows — because none of that is a place the site has. Eight links to
+eight sections are eight places the site has, which is the one thing
+`App.setNav` models, and putting them through a seam would hand the
+library a string. Everything the library could otherwise say about them
+would go with it: which one you are standing on (`aria-current`), what
+to call a screen that is none of them, whether every destination
+resolves against the route table at build time, and that the set is a
+navigation landmark rather than a row of anchors. The seam answers
+"where do I put it" by throwing away "what is it".
+
+The three questions say the same thing from the other end.
+**Question 1 answers**, and it answers the way it did for the title: the
+set of places a site always has is the *route table*, which is the app,
+and the words on them are `RouteDef.title` in the reader's language. A
+driver spelling those into markup restates a fact the app already holds,
+and the second copy is the one that goes stale — a renamed section keeps
+its old word in the header until somebody notices.
+
+**What did move is the roster's shape**, because the constraints that
+made a seam look necessary were a phone's rather than the library's:
+
+- **The glyph is uniform rather than required.** The rule was always
+  that a row where some destinations have marks and others do not is
+  worse than either uniform answer — and requiring one was only the
+  first way of reaching a uniform row. `Destination.icon` is optional
+  and the *mixture* is what `setNav` refuses
+  (`error.NavIconsMixed`), which is the rule that sentence always
+  stated.
+- **The cap is derived rather than chosen.** It was five, on the ground
+  that more does not fit a bottom bar at any width — and that ground was
+  never doing the work, since whether a row fits is asked of the
+  reader's own viewport, and a roster of two with long enough labels
+  collapses on a phone just the same. What a constant *can* bound is the
+  collapsed shape: there the whole roster is the section picker's list,
+  and the picker already names the count at which a list stops being
+  scanned and starts being typed into. So `nav.max_nav_items` is that
+  number less the row an off-roster screen may add, and it moves only if
+  that one does. A site with more destinations than the bound
+  restructures.
+- **The placement did not move, and will not.** The bar is the bottom
+  band in both editions and on both sides of a boot. It is not the
+  medium's to choose: the file that renders the roster is the file the
+  live driver patches, so a header drawn at the top before boot and at
+  the bottom after would move a site's navigation out from under the
+  reader one frame in — and the reference edition, drawing the same
+  tree, would disagree with both. There is no placement API here for the
+  reason there is none anywhere else
+  ([elements.md](elements.md)).
+
+Which leaves what the finding actually reported. The header was below
+the `h1` in *document order*, and that is what a roster fixes outright:
+a nav is a chrome layer, so the title seats after it, and the chrome
+mount is written before the content mount — the destinations lead the
+page's title in the markup and in the focus order. Nothing is reordered
+by CSS, which is the posture that ruled out the other workaround in the
+first place.
+
+## A generated document has no host, so it has no unstyled half
+
+A footer spliced into `body_end` used to render in the browser's default
+serif. It sits outside the screen's own element, and every rule carrying
+the library's type is scoped to nokre's surfaces — deliberately, on the
+ground that *the page around an embedded app is not this edition's to
+turn around*.
+
+That ground is right and it is untouched. It also has nothing to protect
+here: `dom.document` wrote the doctype, the head and the body, so there
+is no surrounding authority whose page could be restyled. It is the
+`lang`/`dir` asymmetry again and it is resolved the same way — a
+generated document stamps `data-nokre="document"` on its root element,
+the live driver stamps the appearance and the direction and deliberately
+never this, and the sheet gains one block behind the attribute. An app
+mounted in someone else's page cannot reach it, which a compile-time
+check on the live driver's own file keeps true.
+
+**What the block covers is the page's type and its paper**: ink, family,
+size, line height and the paper colour on `body`, plus the two
+font-smoothing hints and the tap highlight the screen already carries. A
+footer inherits the page it is on rather than the browser's defaults,
+and the band of page beside it is the same paper the screen is drawn on.
+
+**Where it stops is inheritance.** A list you splice keeps its markers,
+an anchor keeps the UA's underline and colour, a table keeps the UA's
+borders. Those are the browser's decisions about markup nokre neither
+wrote nor has an element for, and normalizing them would turn one block
+into a second stylesheet to reason about — which is the failure a reset
+invites, not a gap in this one. It is the line the rest of this page
+draws: the library takes what it holds, and a shape you chose stays
+yours.
+
 ## A default is not an opinion about your site
 
 A handful of these fields do carry defaults, and the rule is worth

@@ -68,7 +68,7 @@ test "an app that never chose a locale still says which language it is in" {
 
     const html = try write(&app, plain("Hello"));
     defer testing.allocator.free(html);
-    try expectContains(html, "<html lang=\"en\" dir=\"ltr\" data-direction=\"ltr\">");
+    try expectContains(html, "<html lang=\"en\" dir=\"ltr\" data-direction=\"ltr\" data-nokre=\"document\">");
     // …and it is the language nokre's own words are in on that page,
     // not a literal typed here.
     try testing.expectEqualStrings("en", element_mod.default_chrome_tag);
@@ -99,6 +99,64 @@ test "direction is two attributes, because one of them styles nothing" {
     defer css.deinit(testing.allocator);
     try stylesheet.write(testing.allocator, &css, .{});
     try expectContains(css.items, ":root[data-direction=\"rtl\"]");
+}
+
+test "a site's header is a roster, and a roster is above the page's own title" {
+    const Screens = struct {
+        fn build(_: ?*anyopaque, app: *App) anyerror!void {
+            try app.tree.setTitle("Pricing");
+        }
+    };
+    var app = try App.init(testing.allocator, .{
+        .viewport = .{ .w = 1200, .h = 800 },
+        .services = .mocks(),
+        .routes = &.{
+            .{ .name = "pricing", .title = .{ .fixed = "Pricing" }, .build = Screens.build },
+            .{ .name = "docs", .title = .{ .fixed = "Docs" }, .build = Screens.build },
+        },
+    });
+    defer app.deinit();
+    try app.setNav(&.{
+        .{ .route = "pricing" },
+        .{ .route = "docs" },
+    });
+    try app.navigate("pricing");
+
+    const html = try write(&app, plain("Pricing"));
+    defer testing.allocator.free(html);
+    // The whole of what a byte seam above the body could not have
+    // given: the destinations are a navigation landmark, they are in
+    // the chrome mount, and the chrome mount is written before the
+    // content mount — so they lead the `h1` in document order and in
+    // the focus order both, without a line of CSS reordering anything.
+    const bar = std.mem.indexOf(u8, html, "<nav class=\"nav\"").?;
+    const main = std.mem.indexOf(u8, html, "<main id=\"content\"").?;
+    const title = std.mem.indexOf(u8, html, "<h1").?;
+    try testing.expect(bar < main);
+    try testing.expect(main < title);
+    try expectContains(html, "aria-current=\"page\">Pricing</a>");
+}
+
+test "a document nokre wrote whole says so, and the sheet styles the page for it" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    var doc = plain("Hello");
+    // A footer is the case: raw markup, outside `.nokre`, which every
+    // scoped rule in the sheet deliberately does not reach.
+    doc.body_end = "<footer><p>© nokre</p></footer>";
+    const html = try write(&app, doc);
+    defer testing.allocator.free(html);
+    try expectContains(html, "data-nokre=\"document\"");
+    try expectContains(html, "<footer><p>© nokre</p></footer>");
+
+    var css: std.ArrayList(u8) = .empty;
+    defer css.deinit(testing.allocator);
+    try stylesheet.write(testing.allocator, &css, .{});
+    // The block, and the fact that it is the *body* it reaches: without
+    // this the footer above renders in the browser's default serif, and
+    // nothing anywhere says so.
+    try expectContains(css.items, ":root[data-nokre=\"document\"] body {");
+    try expectContains(css.items, "font-family: prose");
 }
 
 test "an auto scheme stamps no appearance, because the media query is the design there" {
@@ -864,7 +922,7 @@ test "the stub is in the template's language, whatever the app is in" {
     app.setDirection(.rtl);
     const html = try writeStub(&app, plainStub());
     defer testing.allocator.free(html);
-    try expectContains(html, "<html lang=\"en\" dir=\"ltr\" data-direction=\"ltr\">");
+    try expectContains(html, "<html lang=\"en\" dir=\"ltr\" data-direction=\"ltr\" data-nokre=\"document\">");
     // …and it is the same locale the script falls back to, so the
     // document a reader passes through claims the language they are
     // about to be sent to.
@@ -892,7 +950,10 @@ test "the stub carries no screen, no boot and no ids" {
     defer testing.allocator.free(html);
     try expectLacks(html, "Docs");
     try expectLacks(html, "mount(");
-    try expectLacks(html, "data-n");
+    // Spelled with its `=`: the focus-stop id is what has to be absent,
+    // and `data-n` alone is also the first seven bytes of the attribute
+    // saying who wrote the page (`class_names.document_attr`).
+    try expectLacks(html, "data-n=");
     // No mount points either: there is nothing to boot into, so there
     // are no ids for a driver to have invented.
     try expectLacks(html, "id=\"");

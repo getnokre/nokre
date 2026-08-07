@@ -1,5 +1,6 @@
-//! The class names this edition's markup and its stylesheet both name,
-//! as data.
+//! The names this edition's markup and its stylesheet both write — the
+//! classes it puts on elements, and the one attribute that says who
+//! wrote the page around them — as data.
 //!
 //! The root pair, four writers: [stylesheet.zig](stylesheet.zig)
 //! selects on them, [live.zig](live.zig)'s `buildFrame` writes them onto
@@ -40,6 +41,32 @@ pub const has_chrome = "has-chrome";
 /// how the pair above got into trouble.
 pub const skip = "skip";
 
+/// The root attribute a page nokre wrote **whole** carries, and the
+/// only thing that distinguishes one from an app mounted in someone
+/// else's document.
+///
+/// Every scoped rule in the sheet is scoped for one reason: *the page
+/// around an embedded app is not this edition's to turn around*
+/// (stylesheet.zig). That reason runs out where there is no page
+/// around it — `document.zig` wrote the doctype, the head and the body,
+/// and everything in that body is either the screen or bytes a driver
+/// handed to a seam. It is the same asymmetry `dir` already resolved in
+/// the library's favour: the live driver stamps `data-direction` and
+/// deliberately never `dir`; a generated document stamps both.
+///
+/// So the sheet keeps its scoping and gains one block behind this
+/// attribute, and neither half moves for the other. The live driver
+/// never writes it, and that absence is the guarantee rather than a
+/// habit: an attribute a mounted app could stamp would be an edition
+/// restyling its host, so the comptime block below refuses a live.js
+/// that names it at all.
+pub const document_attr = "data-nokre";
+
+/// Its value. An attribute rather than a bare boolean one so that what
+/// the page is saying is legible in the markup, and named for the thing
+/// it asserts: nokre wrote this document.
+pub const document_value = "document";
+
 comptime {
     // The browser half cannot import a Zig constant, so it is checked
     // against one instead: live.js keeps the modifier's spelling in a
@@ -52,5 +79,14 @@ comptime {
     @setEvalBranchQuota(8 * js.len);
     if (std.mem.indexOf(u8, js, "\"" ++ has_chrome ++ "\"") == null) {
         @compileError("live.js no longer names the \"" ++ has_chrome ++ "\" class it toggles; the two spellings have drifted");
+    }
+    // And the inverse, for the attribute below it. `document_attr` says
+    // nokre wrote the whole file, which is exactly what a mounted app
+    // cannot say — stamping it from the browser side would turn the
+    // sheet's one unscoped block loose on somebody else's page. There
+    // is no runtime test that would catch it there, so the absence is
+    // checked here, where the file is already being read.
+    if (std.mem.indexOf(u8, js, document_attr) != null) {
+        @compileError("live.js stamps \"" ++ document_attr ++ "\", which claims a host page the live driver did not write");
     }
 }

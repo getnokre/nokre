@@ -384,6 +384,20 @@ half sits where it does.
   the query gets wrong: it was answering a question the app had already
   answered, and answering it differently. `App.appearance()` resolves
   the pin, so the attribute is core's own answer.
+- **`data-nokre="document"`, unconditionally, and it is about the file
+  rather than the app.** It says nokre wrote this whole page, which is
+  the one thing an app mounted in someone else's document can never
+  say. The sheet's type base is scoped to nokre's own surfaces because
+  *the page around an embedded app is not this edition's to turn
+  around* — right, and with nothing to protect in a file the library
+  wrote end to end, where a footer handed to `body_end` was rendering
+  in the browser's default serif. So the sheet keeps its scoping and
+  gains one block behind this attribute: ink, family, size, measure and
+  paper on `body`. It is the `dir` asymmetry a second time, and the live
+  driver's never stamping it is checked at comptime rather than trusted
+  (`class_names.zig`). What the block covers and where it stops is
+  [static-sites.md](../static-sites.md), "A generated document has no
+  host".
 - **The class list, the paper and the module.** `rootClass` on the
   content mount ("The seams" below), `Gray.paper` in the two
   `theme-color` metas, and `driver_files.entry` in the boot script's
@@ -458,6 +472,17 @@ distinguishes "into `<head>`" from "into the body" — a field does. A
 `em.out`, which is the door `Refs`'s signature closed. To build those
 bytes with the same escaping the document gets, point a second emitter
 at a buffer of your own: `em.fragment(&out)`.
+
+**And there are two of them, not three.** There is no `body_start`
+mirroring `body_end`, and the refusal is written where a driver author
+will meet it ([static-sites.md](../static-sites.md), "A site's header is
+a roster"): what wants to stand *above* the app on a generated page is a
+site's header, which is a set of destinations rather than markup, and a
+set of destinations is `App.setNav`. A seam there would have taken a
+string and thrown away which link you are standing on, what the screen
+that is none of them is called, whether the routes resolve, and that the
+set is a landmark at all. A footer is the other case and it is why
+`body_end` exists.
 
 What the driver still owes when it boots over the page it wrote:
 

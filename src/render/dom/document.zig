@@ -371,6 +371,7 @@ pub fn document(em: *Emitter, doc: Document) !void {
     if (em.app.scheme != .auto) {
         try em.print(" data-appearance=\"{s}\"", .{@tagName(em.app.appearance())});
     }
+    try documentAttr(em);
     try em.raw(">\n");
 
     try headOpen(em, doc.title, doc.description, doc.stylesheet);
@@ -426,6 +427,26 @@ pub fn document(em: *Emitter, doc: Document) !void {
     try em.raw(doc.body_end);
     if (doc.boot) |b| try bootScript(em, doc, b, chosen);
     try em.raw("</body>\n</html>\n");
+}
+
+/// The root attribute that is about the *file* rather than the app in
+/// it: nokre wrote this whole document, so the page around the screen
+/// is nokre's to style as well as the screen.
+///
+/// Without it a footer handed to `body_end` rendered in the browser's
+/// default serif. It sits outside the content mount, and the sheet's
+/// type base is scoped to nokre's own surfaces on the ground that *the
+/// page around an embedded app is not this edition's to turn around*
+/// (stylesheet.zig). That ground holds and is not weakened here — it
+/// has nothing to protect in a file nokre wrote end to end, which is
+/// the same reading of the same rule that makes this writer stamp `dir`
+/// where the live driver stamps only `data-direction`.
+///
+/// Unconditional on both writers here, and written by nobody else —
+/// `class_names.document_attr` carries the name and the comptime check
+/// that keeps the live driver off it.
+fn documentAttr(em: *Emitter) !void {
+    try em.print(" {s}=\"{s}\"", .{ class_names.document_attr, class_names.document_value });
 }
 
 /// `<head>` and the tags every page this module writes carries,
@@ -907,7 +928,11 @@ pub fn localeStub(em: *Emitter, comptime L: type, stub: LocaleStub(L)) !void {
     try em.raw("<!doctype html>\n<html lang=\"");
     try em.text(L.tag(def));
     const dir = @tagName(L.dir(def));
-    try em.print("\" dir=\"{s}\" data-direction=\"{s}\">\n", .{ dir, dir });
+    try em.print("\" dir=\"{s}\" data-direction=\"{s}\"", .{ dir, dir });
+    // A whole file of nokre's too, and one that is almost nothing but
+    // seam: a `head` the driver wrote and a list of links.
+    try documentAttr(em);
+    try em.raw(">\n");
 
     try headOpen(em, stub.title, "", stub.stylesheet);
 
