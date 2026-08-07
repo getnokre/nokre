@@ -176,6 +176,24 @@ pub const metrics = struct {
     /// fit into on any display. Whatever shape the bar wears is a group
     /// of its own width, centered on the viewport (`navGroupX`).
     pub const sheet_max_w = 560;
+    /// The page's cap, and the one width here that is not also a
+    /// sheet's. 560 is the phone's answer and reads as a phone emulator
+    /// on a 1400px display; 760 is still inside the 65-75 character band
+    /// prose wants, which is the whole argument for capping at all. Held
+    /// at 560 a docs site's code samples went into a horizontal scroll
+    /// they had always fitted inside, which is what settled the number.
+    ///
+    /// Not `sheet_max_w` retuned: that would move every pane and the
+    /// geometry core derives from them. A pane is not a page — a sheet
+    /// narrower than the page it covers is what a modal looks like.
+    ///
+    /// Flat, with no step. The DOM edition used to buy 560-then-760 with
+    /// a media query, and the step's whole purchase was holding windows
+    /// between the two caps to the phone's answer — which is a poor
+    /// description of a 700px window, and cost a breakpoint written in
+    /// two languages that had to agree. Below 760 the cap is the
+    /// identity either way, so dropping it moves nothing a phone sees.
+    pub const page_max_w = 760;
     /// Minimum clear space above an open sheet; also its height cap.
     pub const sheet_min_top = 48;
     pub const sheet_pad = 16;
@@ -644,20 +662,26 @@ pub fn contentArea(tree: *const Tree, viewport: Size, safe_bottom: i32) Rect {
 /// page. A bar at the frame's edge is a bar on the thing that scrolls;
 /// the column has no drawn edge for one to attach to.
 ///
-/// **Only where the viewport is the window.** A reflowing medium is
-/// mounted in a container somebody else sized, and that container is
-/// what the driver reports here as the viewport — a host page that
-/// holds the screen to a column has already answered this, with its own
-/// number (`packaging.web_page_css` ships one: 560 stepping to 760).
-/// Capping again would be core overruling it, and worse, core would
-/// then measure wrapping, folding and bleed against a width the browser
-/// is not laying out — the one desync that file's cap exists to
-/// prevent. So the column is the clipping medium's, where no such
-/// container exists and the window is all there is.
-pub fn pageColumn(tree: *const Tree, viewport: Size, safe_bottom: i32, medium: Medium) Rect {
+/// **Both media, one number.** The DOM edition used to buy this by
+/// capping the box it mounts into, because core had no page column and a
+/// cap the page kept to itself would be one core never heard of. Core
+/// has one now, so the container hack is not just redundant but the
+/// worse half: it left the number in three consumer stylesheets, which
+/// promptly disagreed (560, 560 stepping to 760, 720 stepping to 960).
+/// The stylesheet states this same rule on the root
+/// (`dom/stylesheet.zig`), the arithmetic matches to the pixel, and the
+/// container is the window again — so what core measures wrapping,
+/// folding and bleed against is exactly what the browser lays out.
+pub fn pageColumn(tree: *const Tree, viewport: Size, safe_bottom: i32) Rect {
     const band = contentArea(tree, viewport, safe_bottom);
-    if (medium == .reflows) return band;
-    return .{ .x = paneX(viewport), .y = band.y, .w = paneWidth(viewport), .h = band.h };
+    const w = pageWidth(viewport);
+    return .{ .x = @divTrunc(viewport.w - w, 2), .y = band.y, .w = w, .h = band.h };
+}
+
+/// The page's width: its own cap (`metrics.page_max_w`), never past the
+/// viewport.
+pub fn pageWidth(viewport: Size) i32 {
+    return @min(viewport.w, metrics.page_max_w);
 }
 
 /// Space the root's flow keeps below its last element — the empty band
@@ -689,7 +713,7 @@ pub fn hasBottomChrome(tree: *const Tree) bool {
 /// with the framework's own English on the one control that is measured
 /// before it exists (`more_label`, below).
 pub fn compute(tree: *Tree, measurer: text.Measurer, viewport: Size) void {
-    _ = computeScrolled(tree, measurer, viewport, 0, 0, .ltr, element_mod.default_chrome.more, .clips);
+    _ = computeScrolled(tree, measurer, viewport, 0, 0, .ltr, element_mod.default_chrome.more);
 }
 
 /// Same, with the window content shifted up by `scroll` px. Returns the
@@ -708,10 +732,8 @@ pub fn compute(tree: *Tree, measurer: text.Measurer, viewport: Size) void {
 /// app state layout must know and cannot read off the tree. Every other
 /// framework string rides on the node it names, but the fold claims that
 /// control's width before the control is built, so this one arrives on
-/// its own. `medium` arrives for the third time on that same argument
-/// and decides one thing here: whether the page column is core's to cap
-/// (`contentArea`).
-pub fn computeScrolled(tree: *Tree, measurer: text.Measurer, viewport: Size, scroll: i32, safe_bottom: i32, dir: bidi.Direction, more_label: []const u8, medium: Medium) i32 {
+/// its own.
+pub fn computeScrolled(tree: *Tree, measurer: text.Measurer, viewport: Size, scroll: i32, safe_bottom: i32, dir: bidi.Direction, more_label: []const u8) i32 {
     const root = tree.rootId();
     const rtl = dir == .rtl;
     const nav = findNav(tree);
@@ -722,7 +744,7 @@ pub fn computeScrolled(tree: *Tree, measurer: text.Measurer, viewport: Size, scr
     const picker = findPicker(tree);
     const anchored: Size = .{ .w = viewport.w, .h = viewport.h - safe_bottom };
     if (nav == null and notice == null and pane == null and indicator == null and sheet == null and picker == null) {
-        const bare = pageColumn(tree, viewport, safe_bottom, medium);
+        const bare = pageColumn(tree, viewport, safe_bottom);
         var ctx: Ctx = .{ .tree = tree, .measurer = measurer, .bottom = anchored.h, .scroll = scroll, .rtl = rtl, .more_label = more_label };
         const content_h = ctx.layoutBlock(root, bare.x, -scroll, bare.w);
         tree.setRect(root, .{ .x = 0, .y = 0, .w = viewport.w, .h = viewport.h });
@@ -732,7 +754,7 @@ pub fn computeScrolled(tree: *Tree, measurer: text.Measurer, viewport: Size, scr
     if (nav) |n| layoutNavChrome(tree, measurer, n, anchored, safe_bottom, rtl);
     if (indicator) |n| layoutIndicator(tree, n, anchored, safe_bottom, rtl);
     if (notice) |n| layoutNoticeChrome(tree, measurer, n, anchored, rtl);
-    const area = pageColumn(tree, viewport, safe_bottom, medium);
+    const area = pageColumn(tree, viewport, safe_bottom);
     const s = tree.getConst(root).?.stack;
     const trailing = trailingSpace(tree, s.padding);
     var ctx: Ctx = .{ .tree = tree, .measurer = measurer, .bottom = area.bottom() - trailing, .scroll = scroll, .rtl = rtl, .more_label = more_label };

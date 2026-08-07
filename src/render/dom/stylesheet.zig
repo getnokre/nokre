@@ -117,6 +117,9 @@ pub fn write(gpa: std.mem.Allocator, out: *std.ArrayList(u8), options: Options) 
     // the page's 16.
     inline for (.{
         .{ "pane", metrics.sheet_max_w },
+        // The page's own cap (`layout.pageWidth`), which is not the
+        // pane's: a sheet is 560 over a page that may be 760.
+        .{ "page-cap", metrics.page_max_w },
         // The root stack's own two numbers (tree.zig): the page margin,
         // and the space between two blocks.
         .{ "page-pad", root_stack.padding },
@@ -885,7 +888,25 @@ const sheet =
     \\/* The tree root is a vertical stack; a driver puts `rootClass` on
     \\   whatever it wraps the screen in. Its padding and gap are the root
     \\   stack's own fields, not a page style — `tree.root_stack` is where
-    \\   both numbers live. */
+    \\   both numbers live.
+    \\
+    \\   `padding-inline` is `layout.pageColumn`, said the one way this
+    \\   edition can say it, and it is the library's precisely so that it
+    \\   is not three consumers'. Every site here had hand-written this
+    \\   rule against the box it mounts into — the only place to put it
+    \\   while core had no page column — and the copies had already
+    \\   drifted to three widths. The cap is core's now, so the mount is
+    \\   the window again and this is the whole of it.
+    \\
+    \\   An inset rather than a width, because the root is what paints the
+    \\   paper: shrink the element and the band down each side is the UA
+    \\   canvas, which is the white margin around a black page the block
+    \\   above refuses. The trailing `--page-pad` is the margin the column
+    \\   keeps inside the cap — border-box makes `--pane` an element
+    \\   width, so this and `paneWidth` less its two paddings agree on the
+    \\   content span at every viewport. Below the cap the halved term
+    \\   goes negative and `max` returns the plain page margin, so a
+    \\   phone's page is the pixel it always was. */
 ++ "\n" ++ root_sel ++ " {\n" ++
     \\  --pad: var(--page-pad);
     \\  --gap: var(--page-gap);
@@ -894,6 +915,7 @@ const sheet =
     \\  flex-direction: column;
     \\  gap: var(--gap);
     \\  padding: var(--pad);
+    \\  padding-inline: max(var(--page-pad), calc((100% - var(--page-cap)) / 2 + var(--page-pad)));
     \\  background: var(--paper);
     \\}
     \\
@@ -1862,13 +1884,23 @@ const sheet =
     \\   collapsed chip for elsewhere: a second line is a shape a document
     \\   has and a fixed one-line band does not. The row gap is the root
     \\   stack's, the column gap the page's margin — words a reader scans
-    \\   as one set, spaced like the page rather than like plates. */
+    \\   as one set, spaced like the page rather than like plates.
+    \\
+    \\   Its inline inset is the page's column, not the row's own 16: a
+    \\   driver may mount the chrome and the screen in two different
+    \\   boxes, and left on the bare inset the header's first word takes
+    \\   its margin off the window while the `h1` written under it takes
+    \\   its own off a centred column. That misalignment is what sent
+    \\   every static site here to cap its chrome mount by hand. Same
+    \\   expression as the screen's, so the two cannot drift; at a phone's
+    \\   width it is the 16 it always was, and there the nav is a fixed
+    \\   band laid out against the viewport anyway. */
     \\.nav-row {
     \\  display: flex;
     \\  flex-wrap: wrap;
     \\  align-items: center;
     \\  gap: var(--page-gap) var(--page-pad);
-    \\  padding-inline: var(--nav-bar-pad-h);
+    \\  padding-inline: max(var(--nav-bar-pad-h), calc((100% - var(--page-cap)) / 2 + var(--nav-bar-pad-h)));
     \\}
     \\/* Words, not capsules. The destinations take the step-back tone the
     \\   plated row already gave them, and the one you are standing on

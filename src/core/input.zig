@@ -340,7 +340,7 @@ pub fn visibleRect(app: *App, id: NodeId) geometry.Rect {
         }
     }
     // Content scrolled under chrome must not steal its taps.
-    if (!inChrome(app, id)) r = r.intersect(layout.pageColumn(&app.tree, app.viewport, app.safe_bottom, app.medium));
+    if (!inChrome(app, id)) r = r.intersect(layout.pageColumn(&app.tree, app.viewport, app.safe_bottom));
     return r;
 }
 

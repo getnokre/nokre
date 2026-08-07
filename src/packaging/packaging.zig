@@ -913,27 +913,25 @@ pub const web_page_files: []const []const u8 = &.{
 };
 
 /// The page's own stylesheet, and the whole of what a page around a
-/// nokre app has to say: everything on screen comes out of the tree, so
-/// the one thing left over is what the tree cannot say — how wide a
-/// window may get before its prose stops being readable.
+/// nokre app has to say. Which is now almost nothing: a body with no
+/// margin, on paper.
 ///
-/// That number is the page's own, not `--pane`: that variable is
-/// `sheet_max_w`, which the library spends on the surfaces holding prose
-/// *inside* an app — a sheet, the notices pane, a select's picker.
-/// Borrowing it would make this cap look like a library rule rather than
-/// a page agreeing with one, and retuning it would move all of those
-/// panes. 560 is the phone's answer; a desktop window reading 560px of
-/// 1400 looks like a phone emulator, so it steps once and no further.
-///
-/// It goes on the mount container rather than on the screen inside it,
+/// It used to hold the reading column, capped on the mount container
 /// because the driver reports that container's width to core as the
-/// viewport (docs/internals/dom-edition.md): a cap the page kept to
-/// itself would be a column core never heard of, and every measured
-/// decision core makes — where prose wraps, whether a row of actions
-/// folds, whether a track has to bleed — would be answered against a
-/// width nobody is looking at. Which is also why the step at 900px is
-/// not a page style: it hands core a wider viewport and has it answer
-/// those questions again.
+/// viewport — a cap the page kept to itself would have been a column
+/// core never heard of, and every measured decision (where prose wraps,
+/// whether a row of actions folds, whether a track may bleed) would have
+/// been answered against a width nobody was looking at. That was the
+/// only place to put it while core had no page column.
+///
+/// Core has one now (`layout.pageColumn`), the stylesheet states it on
+/// the root, and the two agree to the pixel — so the container goes back
+/// to being the window and this file stops being a second owner of the
+/// number. It was the worse owner: a `--page-col` published here is a
+/// styling hook in a library that has none, and the three consumers
+/// holding it had already drifted to three widths (560, 560→760,
+/// 720→960). One of them was a marketing site quietly reading 400px
+/// wider than the app it advertises.
 ///
 /// A file rather than the `<style>` block this used to be, for the
 /// reason webBootJs is a file: a policy that admitted inline blocks
@@ -941,10 +939,7 @@ pub const web_page_files: []const []const u8 = &.{
 /// be one no consumer could lift to their own edge without carrying
 /// hashes that change under them (`webIndexHtml` states the policy).
 pub const web_page_css: []const u8 =
-    \\:root { --page-col: 560px; }
-    \\@media (min-width: 900px) { :root { --page-col: 760px; } }
     \\body { margin: 0; background: var(--paper); }
-    \\#app { max-width: calc(var(--page-col) + 2 * var(--page-pad)); margin-inline: auto; }
     \\
 ;
 
