@@ -282,6 +282,7 @@ test {
     // never enters — so a proof left to live over there is a proof
     // nothing here runs.
     _ = @import("render/dom/csp.zig");
+    _ = @import("surface_test.zig");
     _ = @import("a11y/semantics_test.zig");
     _ = @import("testing/audit_test.zig");
     _ = @import("testing/harness_test.zig");

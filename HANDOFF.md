@@ -117,6 +117,26 @@ each deliberately: none is a comment defect, so none belonged in a comment commi
   `stylesheet.zig:911`, `live.js`, and `dom-edition.md:250-257`. The docs page looks
   like the owner and the three code sites should cite it.
 
+## No gate runs an example's route builders
+
+`zig build test -Dskia` links the examples, which is the desktop link
+`check-targets` cannot do — and linking is where it stops. A builder that
+compiles and raises when it runs is invisible to every gate in this repository,
+and reportedly has been: three kitchen-sink screens are said to have raised at
+build time and passed everything. That half is second-hand — recorded here
+because the hole itself is checkable and the receipt is not.
+
+It is the same species as the two closed at revisions 53 and 54 and the one
+`docs/testing.md` already names one line below the tier table ("the examples link
+two of them; nothing runs them"): something linked, never executed, and
+therefore green. The examples have no `Device` driver and no harness of their
+own; what a gate would need is to build each screen once, off the route table,
+against a real `App` — which `tests/capture.zig` already does for one app and
+could do for the examples' route tables without a window.
+
+Deferred rather than open-ended: it was scoped beside the revision gate and lost
+to it.
+
 ## The static-site API is unvalidated where it matters most
 
 `getnokre.github.io` exercises it at one locale, in LTR, with English Markdown

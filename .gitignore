@@ -14,3 +14,8 @@ examples/kitchen_sink/android/app/build/
 examples/kitchen_sink/android/app/.cxx/
 examples/kitchen_sink/android/.gradle/
 examples/kitchen_sink/android/local.properties
+
+# What a gate writes beside its record when the two disagree: the live
+# reading, for a diff and a review. Never committed — the record is.
+*.actual
+*.actual.ppm

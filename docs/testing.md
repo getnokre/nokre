@@ -871,6 +871,57 @@ Workflow:
    pixel model ([internals/pixel-model.md](internals/pixel-model.md))
    makes exactness cheap; any variance is a bug by definition.
 
+## The revision's own gate
+
+`nokre.revision` is what four pins in three repositories assert, and it is
+hand-bumped. A hand-bumped constant is only as good as the memory behind it:
+revision 53 shipped `dom.Csp`, `dom.CspError`, `Document.csp` and
+`LocaleStub.csp` and left the number at 52. Every gate here passed. It surfaced
+a revision later, when a consumer tried to move its own pin and the build told
+it the truth.
+
+So the surface is written down. `src/surface.zig` walks every public
+declaration reachable from the root module — namespaces, types, their fields
+and whether each has a default, enum and error members, function signatures,
+and the values of scalar constants — into one deterministic document, and
+`src/surface_test.zig` holds `src/public_surface.txt` to it on every
+`zig build test`.
+
+**The revision is a line inside that document, not a header beside it.** It is
+what makes the omission impossible rather than merely visible:
+
+- Surface matches the record: pass.
+- Surface moved and `nokre.revision` did not: **fail, and write nothing**. There
+  is no `.actual` to move into place, so the only way forward is to bump the
+  constant. This is the case that shipped once.
+- `nokre.revision` moved: the live surface is written to
+  `src/public_surface.txt.actual` and the test fails naming the first line that
+  differs. Review that diff — it *is* the contract change, stated — then
+  `mv` it over the record and commit both.
+
+Every revision bump therefore touches two files, which is the point: the record
+says which revision it is the surface of.
+
+**What counts as the surface is everything a consumer can name.** Zig has no
+`pub(crate)`, so a helper that is `pub` for a sibling module is reachable at
+`nokre.layout.pageColumn` and is contract whether or not anyone meant it to be.
+Measured against the twenty-five most recent commits touching `src/`, that costs
+a bump on about one in ten that no consumer could have observed. Take it: a bump
+nobody needed is an integer and a scheduled adoption; a bump nobody made is a
+consumer compiling against a library it did not expect. Over-bumping is the
+sanctioned direction, and the failure message says so.
+
+Enum members are in the record because a `switch` without an `else` is
+exhaustive — adding one member breaks every consumer that switches on that enum,
+which makes `IconName`'s glyph list contract by the same rule as anything else.
+
+Two limits, both stated where the walk is. The document is read under `zig test`
+on the host that runs it, so a decl that forks on `builtin.is_test` or on the OS
+is recorded in that flavour (goldens are host-specific for the same reason). And
+it is the surface's *shape*, never its meaning: a function whose signature stands
+still while its behaviour moves is a contract change no walk can see, and that
+bump is still a judgement.
+
 ## Where the harness stops
 
 "End to end" is relative to whose system is under test. For **your app**
