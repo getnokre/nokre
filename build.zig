@@ -4,7 +4,8 @@ const packaging = @import("src/packaging/packaging.zig");
 /// The web driver's file set, from its one home: `addWebSite` copies
 /// it, the js-parse gate parses it, and consumers read the same list
 /// as `dom.driver_files` (driver_files.zig).
-const dom_driver_files = @import("src/render/dom/driver_files.zig").driver_files;
+const dom_files = @import("src/render/dom/driver_files.zig");
+const dom_driver_files = dom_files.driver_files;
 
 // ---------------------------------------------------------------------------
 // Consumer-facing build API (docs/getting-started.md). A consumer's
@@ -1778,21 +1779,26 @@ fn configureNokre(b: *std.Build, mod: *std.Build.Module, pkg: ?PackageDecl, serv
 }
 
 /// Every JavaScript file that reaches a browser, and the goal each one is
-/// loaded with. The four in `src/render/dom` are copied verbatim into
+/// loaded with. The six in `src/render/dom` are copied verbatim into
 /// every consumer's site by `addWebSite`; `boot.js` is emitted by
 /// packaging.zig into the generated page's directory, and the testdata
 /// copy checked here is the byte-exact golden of that emitter
 /// (packaging_test.zig's "web boot.js is byte-exact"), so parsing it
-/// parses what ships. One more reaches a browser without ever being a
-/// file a site serves — `locale_stub.js` is written inline into a
-/// generated page, stated at the entry that adds it below.
+/// parses what ships. Nothing reaches a browser from outside this list:
+/// the two scripts a generated document runs — live-boot.js and
+/// locale-stub.js — used to be written *inline* into the page and are
+/// files now, which is what lets such a page be served under
+/// `script-src 'self'` (render/dom/document.zig).
 ///
-/// The goal is not decoration. live.js, live-worker.js and services.js
-/// are ES modules — the driver imports them and the compute actor is a
-/// `{ type: "module" }` Worker — while sw.js is a classic script,
-/// because `navigator.serviceWorker.register` is called without that
-/// option. A module is strict-mode and a classic script is not, so
-/// checking one as the other would be checking a file no browser loads.
+/// The goal is not decoration. live.js, live-boot.js, live-worker.js and
+/// services.js are ES modules — a page loads the boot as one, the driver
+/// imports the rest, and the compute actor is a `{ type: "module" }`
+/// Worker — while sw.js and locale-stub.js are classic scripts, because
+/// `navigator.serviceWorker.register` is called without that option and
+/// because a chooser deferred to after the parse is a chooser that runs
+/// once the page it was meant to replace has been painted. A module is
+/// strict-mode and a classic script is not, so checking one as the other
+/// would be checking a file no browser loads.
 const JsShipped = struct {
     path: []const u8,
     /// The extension the check copies the file under, which is the only
@@ -1810,24 +1816,21 @@ const JsShipped = struct {
 /// added to one list but not the other would ship unparsed — or be
 /// parsed and never shipped. Only the *goal* is stated here, because
 /// only this check needs it.
-const js_shipped: [dom_driver_files.len + 2]JsShipped = blk: {
-    var list: [dom_driver_files.len + 2]JsShipped = undefined;
+const js_shipped: [dom_driver_files.len + 1]JsShipped = blk: {
+    var list: [dom_driver_files.len + 1]JsShipped = undefined;
     for (dom_driver_files, 0..) |f, i| {
         list[i] = .{
             .path = "src/render/dom/" ++ f,
-            // sw.js is the one classic script of the set (the goal note
-            // in the doc comment above says why that distinction is the
-            // whole point of `ext`).
-            .ext = if (std.mem.eql(u8, f, "sw.js")) ".cjs" else ".mjs",
+            // The two classic scripts of the set (the goal note in the
+            // doc comment above says why that distinction is the whole
+            // point of `ext`).
+            .ext = if (std.mem.eql(u8, f, "sw.js") or std.mem.eql(u8, f, "locale-stub.js"))
+                ".cjs"
+            else
+                ".mjs",
         };
     }
     list[dom_driver_files.len] = .{ .path = "src/packaging/testdata/boot.js", .ext = ".mjs" };
-    // The stub's script is the one file here that ships in no site: it
-    // is `@embedFile`d and written *inline* into every page
-    // `dom.localeStub` produces, which is why it is not in
-    // `driver_files` and why it is a classic script — a module in a
-    // `<script>` with no `type` is not what a browser would run.
-    list[dom_driver_files.len + 1] = .{ .path = "src/render/dom/locale_stub.js", .ext = ".cjs" };
     break :blk list;
 };
 
@@ -1857,7 +1860,8 @@ fn addJsParseCheck(b: *std.Build, step: *std.Build.Step, enabled: bool) void {
     const node = b.findProgram(&.{"node"}, &.{}) catch {
         step.dependOn(&b.addFail(
             "the JavaScript that ships in every web build went unparsed: `node` is not on PATH. " ++
-                "live.js, live-worker.js, services.js, sw.js and the generated boot.js are copied " ++
+                "live.js, live-boot.js, live-worker.js, services.js, locale-stub.js, sw.js and the " ++
+                "generated boot.js are copied " ++
                 "into a consumer's site verbatim, no Zig test reads them, and a browser answers a " ++
                 "syntax error in any of them by refusing to boot the app — so this build fails " ++
                 "rather than reporting a green it did not earn. Install node, or pass " ++
@@ -1993,6 +1997,11 @@ fn addLocaleStubCheck(b: *std.Build, step: *std.Build.Step, target: std.Build.Re
     run.addFileArg(b.path("tests/locale_stub.mjs"));
     run.addFileArg(page);
     run.addFileArg(answers);
+    // The chooser itself, since it stopped being bytes in the page: the
+    // gate loads the file the *page asks for by name* and holds that
+    // name against this one, so a rename that reached only one of the
+    // two fails here rather than in a reader's browser.
+    run.addFileArg(b.path("src/render/dom/" ++ dom_files.stub_entry));
     run.setName("run tests/locale_stub.mjs");
     // A substring, on stderr, for addDevStoreCheck's reason: asserting
     // the program's last line asserts every case before it ran.

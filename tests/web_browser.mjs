@@ -443,6 +443,22 @@ class Document {
     return new Element(this, tag);
   }
 
+  // The document-level finders. They are here because the two scripts a
+  // generated page loads are written against them and nothing else: a
+  // boot looks up its data block and its two mounts before it holds a
+  // single node.
+  querySelector(selector) {
+    return this.documentElement.querySelector(selector);
+  }
+
+  querySelectorAll(selector) {
+    return this.documentElement.querySelectorAll(selector);
+  }
+
+  getElementById(id) {
+    return this.documentElement.querySelector(`#${id}`);
+  }
+
   importNode(node, deep) {
     if (node.nodeType === 3) return new TextNode(this, node.data);
     const copy = this.createElement(node.nodeName.toLowerCase());

@@ -1,6 +1,7 @@
 //! The names this edition's markup and its stylesheet both write — the
 //! classes it puts on elements, and the one attribute that says who
-//! wrote the page around them — as data.
+//! wrote the page around them and which of the library's own nodes a
+//! node is — as data.
 //!
 //! The root pair, four writers: [stylesheet.zig](stylesheet.zig)
 //! selects on them, [live.zig](live.zig)'s `buildFrame` writes them onto
@@ -90,6 +91,26 @@ pub const document_attr = "data-nokre";
 /// it asserts: nokre wrote this document.
 pub const document_value = "document";
 
+/// The same attribute on the `application/json` block a page hands its
+/// boot (`document.zig`'s `configBlock`), and the value `live-boot.js`
+/// looks for.
+///
+/// **One attribute and not an id**, because an id would be a name in the
+/// driver's own namespace: the mount points, the heading anchors and the
+/// skip target are all ids a consumer invented or a heading derived, and
+/// a library reserving a word in that space is a collision waiting for
+/// the page that spells it. `data-nokre` is already the attribute that
+/// says *this node is the library's*; a value saying which is a
+/// vocabulary rather than a second mechanism.
+pub const boot_value = "boot";
+
+/// The same, on the block a locale stub hands `locale-stub.js`. A stub
+/// has no boot and a booting page has no chooser, so the two never stand
+/// in one document — they are two values because what reads them are two
+/// files, and a script that found the wrong block would be a page that
+/// redirected somewhere it was never told about.
+pub const locale_value = "locale";
+
 comptime {
     // The browser half cannot import a Zig constant, so it is checked
     // against one instead: live.js keeps the modifier's spelling in a
@@ -111,5 +132,21 @@ comptime {
     // checked here, where the file is already being read.
     if (std.mem.indexOf(u8, js, document_attr) != null) {
         @compileError("live.js stamps \"" ++ document_attr ++ "\", which claims a host page the live driver did not write");
+    }
+    // And the two files that *do* name it, each looking for its own
+    // value in a selector no compiler reads. A rename here that did not
+    // reach them is a page whose boot never fires and a chooser that
+    // never chooses, in a browser, with nothing failing anywhere.
+    selects("live-boot.js", @embedFile("live-boot.js"), boot_value);
+    selects("locale-stub.js", @embedFile("locale-stub.js"), locale_value);
+}
+
+/// One of those two, held to the selector it has to carry.
+fn selects(comptime file: []const u8, comptime bytes: []const u8, comptime value: []const u8) void {
+    @setEvalBranchQuota(8 * bytes.len + 1000);
+    const selector = "script[" ++ document_attr ++ "=\"" ++ value ++ "\"]";
+    if (std.mem.indexOf(u8, bytes, selector) == null) {
+        @compileError("nokre: " ++ file ++ " no longer selects '" ++ selector ++
+            "', so it cannot find the block a document writes for it");
     }
 }

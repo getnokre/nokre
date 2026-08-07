@@ -983,6 +983,20 @@ rather than analyzed:
   probe says which chip core believes is chosen, and the sentence under
   the control is written by `build`, so it only moves if the screen was
   rebuilt and patched in.
+- **the boot** — the same page again, booted by *the file the page asks
+  for* rather than by a `mount` call the harness typed. Every scenario
+  above hands `mount` an option object written in JavaScript, so until
+  this one the page's own half of the boot — the `<script src>` it
+  names, the `application/json` block it states, and the module that
+  reads them — was the half nothing executed. Here the file is swept for
+  any `<script` that is neither a `src` nor a data block, the named
+  module is resolved to a file the site actually serves, and it is
+  imported with nothing passed in; when the import resolves the app is
+  running, and a press on the segmented chip has to change the sentence
+  `build` writes under it. It is the gate on the claim that a site of
+  these pages can be served under `script-src 'self'`: the arrangement
+  is checked by reading in Zig and *run* here, and the two together are
+  what say the page still boots with no executable byte in it.
 
 - **the nav's two shapes** — the one place the *tree* and the *sheet*
   are held against each other, which is where three releases running
@@ -1086,7 +1100,7 @@ locale-prefixed site, and the script in it has to resolve the reader's
 `Bundle.resolve` does — but it cannot call it. `resolve` is comptime
 Zig, and the stub loads no wasm on purpose: a redirect that first
 fetches an app is a redirect nobody waits for. So
-`src/render/dom/locale_stub.js` transcribes the algorithm, and a
+`src/render/dom/locale-stub.js` transcribes the algorithm, and a
 transcription with nothing under it is two policies waiting to disagree.
 
 `zig build test` runs both halves against each other.
@@ -1099,6 +1113,18 @@ browser with nothing to say produces. `tests/locale_stub.mjs` then
 executes **that page's own script** once per tag, against a `location`
 and a `navigator` of its own, and asserts it navigates where Zig said it
 would.
+
+"That page's own script" is now two halves, and the gate takes both the
+way a browser does. The chooser is a *file* the site serves, so the
+check resolves the `<script src>` the page wrote, holds that name
+against the file this repository ships, and executes those bytes; its
+one argument is the `application/json` block the emitter wrote above the
+tag, read out of the page and parsed rather than restated. So a stub
+that named a file nobody publishes, or escaped its data wrongly, fails
+here — and the gate also sweeps every `<script` on the page and refuses
+one that is neither a `src` nor a data block, which is the page's half
+of the claim that a site of these can be served under
+`script-src 'self'`.
 
 Neither file states an expected locale. The bundle states them, so a
 change to the resolution rule moves both sides at once and a change to

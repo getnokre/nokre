@@ -783,6 +783,73 @@ async function documentsPage() {
   done("the document — two mounts hydrate node for node, and a press repaints");
 }
 
+/// The same page, booted by **the file the page asks for** instead of by
+/// a `mount` call this harness typed.
+///
+/// It is the scenario the whole shape exists for. `dom.document` used to
+/// write the boot as an inline `<script>` block, which is precisely what
+/// `script-src 'self'` refuses — and a static site cannot hash its way
+/// out, because every page's block carries that page's route and locale.
+/// The first migration to publish one turned its entire `script-src`
+/// over to `'unsafe-inline'` for 1,132 blocks the library had written
+/// itself. So the code is a file the site serves and the per-page bytes
+/// are an `application/json` data block, which a browser never executes.
+///
+/// Nothing below asserts that arrangement by reading the markup, which
+/// `document_test.zig` already does. It *runs* it: the page's own
+/// `<script src>` is resolved to the site's own file, the module is
+/// imported with nothing handed to it, and it finds its data, resolves
+/// its two mounts and mounts — after which a real press has to reach the
+/// app and the repaint has to land. Every earlier scenario here passes a
+/// hand-written option object to `mount`, so until this one the page's
+/// half of the boot was the half nothing executed.
+async function theBootIsAFileThePageNames() {
+  const generator = await page({}, { route: "home", locale: "", addressing: "documents" });
+  const file = generator.app.document();
+
+  // Not one executable byte in the file. Asserted here rather than only
+  // in Zig because this is the run that proves the page still boots
+  // *with* that being true — the two halves of one claim.
+  for (const [, tag] of file.matchAll(/<script([^>]*)>/g)) {
+    assert.ok(
+      / src="/.test(tag) || /type="application\/json"/.test(tag),
+      `the document carries an inline script: <script${tag}>`,
+    );
+  }
+
+  const named = /<script type="module" src="([^"]*)"><\/script>/.exec(file);
+  assert.ok(named, "the document names no boot module");
+  // The site really serves what the page asks for. `site.manifest` and
+  // the directory agree by another scenario; what is checked here is
+  // that the *page* names a member of that set, which is the failure
+  // mode a re-typed file name has — a page that renders and never boots.
+  const boot = path.join(site, path.basename(named[1]));
+  assert.equal((await fs.stat(boot)).isFile(), true, `the site serves no ${named[1]}`);
+
+  const browser = makeBrowser({ site });
+  browser.openPage(file);
+  const content = document.body.querySelector("#content");
+  assert.ok(content, "the file has a content mount");
+
+  // The import *is* the boot: live-boot.js reads the block, resolves
+  // the mounts by the ids the markup used, and awaits `mount` at the top
+  // level — so when this resolves the app is running over the page.
+  // Nothing is passed in, because a page passes nothing in.
+  await import(pathToFileURL(boot).href);
+
+  const chip = document.body
+    .querySelectorAll("[data-i]")
+    .find((el) => el.textContent.includes("Grid"));
+  assert.ok(chip, "the file carries the segmented control");
+  chip.dispatchEvent(new PageEvent("click"));
+  assert.ok(
+    content.textContent.includes("Showing a grid."),
+    "a page booted by its own file never answered a press",
+  );
+
+  done("the boot — a page names a file, the file finds its data, and the press lands");
+}
+
 // ---- the nav's two shapes ----------------------------------------
 //
 // Three releases in a row shipped a nav that passed its tests and was
@@ -1449,6 +1516,7 @@ const scenarios = [
   localeChangeAfterBoot,
   scratchIsClamped,
   documentsPage,
+  theBootIsAFileThePageNames,
   navShapeFollowsTheWindow,
   navBandCarriesEveryDestination,
   bootIsDerivedFromWhatIsOnThePage,

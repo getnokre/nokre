@@ -14,24 +14,52 @@
 
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
+import path from "node:path";
 import vm from "node:vm";
 
-const [pagePath, tablePath] = process.argv.slice(2);
-if (!pagePath || !tablePath) {
-  console.error("usage: node tests/locale_stub.mjs <page.html> <table.json>");
+const [pagePath, tablePath, scriptPath] = process.argv.slice(2);
+if (!pagePath || !tablePath || !scriptPath) {
+  console.error("usage: node tests/locale_stub.mjs <page.html> <table.json> <locale-stub.js>");
   process.exit(2);
 }
 
 const page = await fs.readFile(pagePath, "utf8");
 const table = JSON.parse(await fs.readFile(tablePath, "utf8"));
 
-// The script as the browser gets it: the bytes between the tags, not a
-// re-import of the source file. A stub whose emitter mangled the data,
-// or wrote the call wrong, fails here.
-const opened = page.indexOf("<script>");
-const closed = page.indexOf("</script>", opened);
-assert.ok(opened !== -1 && closed !== -1, "the stub carries no script");
-const script = page.slice(opened + "<script>".length, closed);
+// The script as the browser gets it, which is now two halves: a file
+// the site serves, and the `application/json` block the page states for
+// it. Both are read the way a browser reads them — the file by the name
+// the page asked for, the data by the tag it stands in — so a stub whose
+// emitter mangled the data, named the wrong file, or wrote the block
+// where the script cannot reach it fails here.
+//
+// The file is *not* re-imported from the source path handed in: that
+// path is only what proves the two names agree. The bytes executed are
+// the ones the page asked for by name.
+const wanted = /<script src="([^"]*)"><\/script>/.exec(page);
+assert.ok(wanted, "the stub names no chooser to load");
+assert.equal(
+  path.basename(wanted[1]),
+  path.basename(scriptPath),
+  "the stub asks for a file this repository does not ship",
+);
+const source = await fs.readFile(scriptPath, "utf8");
+
+const block = /<script type="application\/json" data-nokre="locale">(.*?)<\/script>/s.exec(page);
+assert.ok(block, "the stub carries no data block for its chooser");
+const data = block[1];
+// Nothing executable is on this page. That is the whole reason the two
+// halves are split, and it is asserted rather than assumed: a policy of
+// `script-src 'self'` admits the file above and the data block beside
+// it, and an inline block would put the directive back where it was.
+for (const [, tag] of page.matchAll(/<script([^>]*)>/g)) {
+  assert.ok(
+    / src="/.test(tag) || /type="application\/json"/.test(tag),
+    `the stub carries an inline script: <script${tag}>`,
+  );
+}
+
+const script = source;
 
 const origin = "https://nokre.test";
 
@@ -48,7 +76,17 @@ function load(language, at) {
       went = to;
     },
   };
-  vm.runInNewContext(script, { navigator: { language }, location, URL });
+  // The one DOM read the chooser makes: its own argument, out of the
+  // block the emitter wrote above it. The bytes are the page's, not a
+  // restatement — a data block the emitter escaped wrongly fails at
+  // `JSON.parse` here exactly as it would in a browser.
+  const document = {
+    querySelector(selector) {
+      assert.equal(selector, 'script[data-nokre="locale"]');
+      return { textContent: data };
+    },
+  };
+  vm.runInNewContext(script, { navigator: { language }, location, URL, document, JSON });
   return went;
 }
 

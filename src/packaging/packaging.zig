@@ -954,15 +954,16 @@ pub const web_page_css: []const u8 =
 /// is escaped as a JSON string because JSON's escapes are JavaScript's,
 /// and a module name is a consumer's string.
 ///
-/// **It is the second writer of a boot call, and the differences are
-/// each a fact about a file rather than a drift.** document.zig's
-/// `bootScript` writes the same call inline, and escapes through a
-/// private `js` that spells `<` as `\x3C` — because a `<script>` block
-/// ends at the first `</script>` in its raw text. This one is a module
-/// *file*, where those bytes are three characters of nothing, so the
-/// JSON escape is the whole of what a string literal owes. What is not
-/// a difference is the module name: it is `driver_files.entry` in both,
-/// since that set is data precisely so nobody types it twice.
+/// **It is the second writer of a boot call, and the one difference
+/// left is a fact about the page rather than a drift.** document.zig's
+/// boot is a file too now — `driver_files.boot_entry`, which reads its
+/// options out of an `application/json` block the page states, because a
+/// generated page's options differ per page and this one's do not. Here
+/// there is exactly one host page and its two arguments are the
+/// declaration's, so they are written into the file and there is nothing
+/// for a block to carry. What is not a difference is the module name: it
+/// is `driver_files.entry` on both paths, since that set is data
+/// precisely so nobody types it twice.
 ///
 /// The call also pins no `locale`, and that is the one page where an
 /// absent one is right — `mount` reads absence as "follow the device",

@@ -19,7 +19,7 @@ fact has one home; complement, never duplicate. Start with
 
 ## Commands
 
-- `zig build test` — pure unit tests, plus a real parse of the five
+- `zig build test` — pure unit tests, plus a real parse of the seven
   JavaScript files that ship into a web build (the one thing here no Zig
   test can read), plus `tests/web_services.mjs`, which *runs* them: a
   real wasm app in `tests/web_services.zig` is built into a site and

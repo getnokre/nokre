@@ -4,9 +4,19 @@
 // in bundle order, then the fallback the bundle names.
 //
 // Every line's argument lives at document.zig's `localeStub` and is
-// deliberately not repeated here: these bytes are written *inline* into
-// every stub page, so a paragraph in this file is a paragraph on every
-// page. tests/locale_stub.mjs is what holds it to `L.resolve`.
+// deliberately not repeated here. tests/locale_stub.mjs is what holds it
+// to `L.resolve`.
+//
+// **A file a site serves, and a classic script.** It used to be written
+// *inline* into every stub, which is what `script-src 'self'` exists to
+// refuse — and a site with a stub per page cannot hash its way out, so
+// the whole policy went to `'unsafe-inline'` for a script that is the
+// library's own on every one of them. What differs per page is *data*,
+// and the data is in the `application/json` block the emitter writes
+// above this tag: a browser does not execute a data block, so no policy
+// ever has to admit one. Classic and not a module because a module is
+// deferred, and everything under this script is a page the reader is
+// not meant to see.
 function nokreLocaleStub(c) {
   const norm = (t) => t.replace(/[A-Z]/g, (u) => u.toLowerCase()).replace(/-/g, "_");
   const language = (t) => t.split("_")[0];
@@ -22,3 +32,5 @@ function nokreLocaleStub(c) {
   if (!to.hash) to.hash = location.hash;
   if (to.href !== location.href) location.replace(to.href);
 }
+
+nokreLocaleStub(JSON.parse(document.querySelector('script[data-nokre="locale"]').textContent));

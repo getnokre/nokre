@@ -154,6 +154,33 @@ becomes an attribute (two writers, one silent rewrite), or leave it and say so i
 with `-`, `fa-AF` included — which is exactly why it should be settled before a
 locale is added by someone reading the ARB spec rather than this file.
 
+## Two writers of a boot call, and they just got much closer together
+
+Revision 53 moved the static writer's boot and its locale chooser out of
+inline `<script>` blocks and into files
+([dom-edition.md](docs/internals/dom-edition.md), "Neither script on a
+generated page is an inline one"). Which leaves
+`packaging.webBootJs` — the app shell's `boot.js` — as the second writer
+of a `mount` call, and the argument that kept the two apart is thinner
+than it was: it used to be *one is a file and one is a block*, and now
+both are files loading the same module. What is actually different is
+only that a shell has one page per site with two arguments out of the
+declaration, so it writes them into the file, where a generated page has
+one per screen and states them as data.
+
+**The candidate is deleting `webBootJs` and `web_page_files`' `boot.js`
+outright**: `index.html` would carry a `data-nokre="boot"` block and a
+`<script type="module" src="live-boot.js">`, and there would be one boot
+module in the repository. It is not free and that is why it is here
+rather than done. `live-boot.js` resolves `content` with
+`document.getElementById(config.content)`, and a shell has no content
+mount — `mount` reads an *absent* `content` and an absent `locale` as
+real answers, so an explicit `null` from a missing key is not the same
+value, and the file would need to say so. That is a change to the one
+file every generated page loads, weighed against removing an emitter,
+its testdata golden, a `web_page_files` entry and one of two writers.
+Nobody has made the case either way.
+
 ## Store screenshots are a preset nobody has asked for yet
 
 Revision 51 built the engine and stopped there, deliberately.

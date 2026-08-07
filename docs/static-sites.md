@@ -41,7 +41,7 @@ because those are what a hand-written head gets wrong:
 | this page's path, `null` for a page with no URL of its own | that a path is rooted, and that a page with no URL claims neither a canonical nor an `og:url` |
 | the same path once | that the canonical **is** the `og:url` — one field written twice, so there is no second field to keep in step |
 | each locale's copy, and the chooser's address | that the set is complete — one required field per bundled locale, so a missing one is a compile error and an unbundled one is unstatable — that the tags are `L.tag`'s and not strings you typed, that the page is among its own alternates, and that the graph closes across the sitemap |
-| the mount ids, the content class, the addressing mode, the skip link's words, the URL you published the stylesheet at | nothing — they are names you invented, and a library default would be a guess |
+| the mount ids, the content class, the addressing mode, the skip link's words, the URL you published the stylesheet at, the directory you published the driver set under | nothing — they are names you invented, and a library default would be a guess |
 | the title, the description, the labels, a language's name in its own language | the escaping, on every one of them |
 | the address a section is linked to by, where something outside the page names one (`Heading.anchor`) | that it can be an `id`, a fragment and a CSS selector at once; that it is unique in the document; that a collision fails the build rather than renaming it; and that it is on the roster `takeAnchors` exports |
 | the language a run of words is in, where it is not the page's (`Link.lang`, `Span.lang` — the chooser's anchors) | that the tag is a tag: `error.InvalidLangTag` at `append`, before a document can carry an attribute a browser would drop |
@@ -51,8 +51,8 @@ And what the library writes without asking is what it already holds:
 `lang` and both direction attributes from `App.locale()` and
 `App.direction`, `data-appearance` when the app pinned a scheme, the
 locale the boot script pins, the route from `Router.current`, the class
-list from `rootClass`, the module name from `driver_files.entry`, and the
-charset in the first bytes of the head. A driver restating any of those
+list from `rootClass`, the names of the two scripts a page loads from
+`driver_files`, and the charset in the first bytes of the head. A driver restating any of those
 is a second copy of a fact the app already answered, and the second copy
 is the one that goes stale.
 
@@ -789,6 +789,57 @@ Asked of every other field, and none of them fails:
   class, its target and its rule; the driver supplies a string into an
   element the library owns. A parameter is not a hole.
 
+## Two scripts run on your pages, and neither is written into them
+
+A page that boots runs one script and a chooser stub runs another. Both
+are the library's own JavaScript, and for three revisions both were
+`<script>` blocks written into every page.
+
+**That is a policy your site cannot afford.** `script-src 'self'` is the
+largest single thing a Content-Security-Policy buys — it is what turns
+an injected `<script>` from a compromise into a console message — and it
+refuses an inline block whatever wrote it. The usual escape is a
+per-block hash, and a static site has none available: a boot block
+carries that page's route and that page's locale, a chooser block
+carries that page's destinations, so the number of distinct bodies is
+the number of pages you publish. The first site to publish one had 1,132
+of them behind a single response header, which cannot carry a per-page
+hash, and turned the whole directive over to `'unsafe-inline'` — for
+scripts the library had written itself.
+
+So the bytes that differ per page are stated as **data** and the code is
+a **file you already publish**:
+
+```html
+<script type="application/json" data-nokre="boot">{"wasm":"/app.wasm", …}</script>
+<script type="module" src="/live-boot.js"></script>
+```
+
+**What this costs you is one field and one habit.** `Boot.driver_dir`
+already said where you published `dom.driver_files`; `LocaleStub` now
+takes the same field, because a stub loads a file too. And the set has
+two more members in it — `live-boot.js` and `locale-stub.js` — which
+costs nothing at all if you install `App.web` whole or copy
+`dom.driver_sources`, and is a page that renders and never boots if you
+re-typed the list. That set is data for exactly this reason.
+
+**What you get is a directive you can actually write.** A page out of
+this writer carries no executable byte of its own: every `<script>` on
+it is a `src` or an `application/json` data block, and a browser never
+runs a data block — HTML calls it a data block and stops before the
+policy is consulted, which is why `application/ld+json` has always
+ridden under a strict policy and why your own structured data in the
+head seam is free too. `script-src 'self' 'wasm-unsafe-eval'` is
+reachable, and the wasm keyword is the module rather than a loosening.
+
+`style-src` is the one that does not follow, and it is unrelated: the
+serializer writes inline style *attributes* carrying numbers layout just
+computed — a list's measured gutter, a QR's whole-pixel side — which
+cannot be hashed and cannot move into script, since a page that never
+boots must still render right. The narrow pair is `style-src-elem
+'self'` with `'unsafe-inline'` left only where an attribute needs it
+([internals/dom-edition.md](internals/dom-edition.md)).
+
 ## A default is not an opinion about your site
 
 A handful of these fields do carry defaults, and the rule is worth
@@ -796,8 +847,9 @@ stating because it is what keeps a default from becoming a decision the
 library made for you: **where a field has one, the default is a fact
 about nokre — never a guess about your site.** `Boot.addressing` is
 `.fragments` because that is `mount`'s own default in the live driver,
-not because a site should prefer it. `Boot.driver_dir` is `/` because
-that is where installing `App.web` whole puts the driver set.
+not because a site should prefer it. `Boot.driver_dir` — and
+`LocaleStub.driver_dir` beside it — is `/` because that is where
+installing `App.web` whole puts the driver set.
 `packaging.Web.lang` is `"en"` because that is the language nokre's own
 nav bar, close control and notices pane are in on an app that never
 localized — the same stand-in `langTag` takes for an empty tag, and a
@@ -809,7 +861,10 @@ content is yours.
 Everything a driver invents is required and has no default at all —
 `Meta.origin`, `Alternates.stub`, both mount ids, the stylesheet URL. A
 default there would be a URL the library made up, and the failure would
-be a page that renders and is wrong.
+be a page that renders and is wrong. The two `driver_dir`s are the
+near miss and they land on the other side for a stated reason: `/` is
+not a guess about where you put things, it is where `App.web` puts them
+if you did nothing.
 
 ## The rule runs in both directions
 

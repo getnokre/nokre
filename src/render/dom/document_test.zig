@@ -1005,22 +1005,58 @@ test "the boot script names the mount points, the route, and the module the edit
     const html = try write(&app, doc);
     defer testing.allocator.free(html);
 
-    const import = try std.fmt.allocPrint(
+    // The module is a file the site serves, named out of the set that
+    // is data precisely so nobody types it twice — and the tag is
+    // `src`, not a block, which is what a page under
+    // `script-src 'self'` can carry at all.
+    const tag = try std.fmt.allocPrint(
         testing.allocator,
-        "import {{ mount }} from \"/{s}\";",
-        .{driver_files.entry},
+        "<script type=\"module\" src=\"/{s}\"></script>",
+        .{driver_files.boot_entry},
     );
-    defer testing.allocator.free(import);
-    try expectContains(html, import);
-    try expectContains(html, "wasm: \"/app.wasm\"");
-    try expectContains(html, "into: document.getElementById(\"chrome\")");
-    try expectContains(html, "content: document.getElementById(\"content\")");
-    try expectContains(html, "addressing: \"documents\"");
-    // The route is the router's answer, never a second copy of it: a
-    // boot argument naming some other screen builds and paints that one
-    // on the way past.
-    try expectContains(html, "route: \"docs\"");
-    try expectContains(html, "seed: \"/md/docs.md\"");
+    defer testing.allocator.free(tag);
+    try expectContains(html, tag);
+
+    // And the whole of what differs from page to page is one JSON
+    // block, whose keys are `mount`'s own option names because
+    // live-boot.js spreads it straight in. The route is the router's
+    // answer, never a second copy of it: a boot argument naming some
+    // other screen builds and paints that one on the way past.
+    try expectContains(html,
+        \\<script type="application/json" data-nokre="boot">{"wasm":"/app.wasm","into":"chrome","content":"content","addressing":"documents","route":"docs","locale":"","seed":"/md/docs.md"}</script>
+    );
+    // The data leads the code: a module is deferred so the order does
+    // not decide this one, but the two blocks are one arrangement with
+    // the stub's, where it does.
+    try testing.expect(std.mem.indexOf(u8, html, "application/json").? <
+        std.mem.indexOf(u8, html, "type=\"module\"").?);
+}
+
+test "a booting page carries no executable byte of its own" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    var doc = plain("Hello");
+    doc.boot = .{ .wasm = "/app.wasm", .seed = "/seed.json" };
+    const html = try write(&app, doc);
+    defer testing.allocator.free(html);
+
+    // The claim the whole shape exists for, read out of the output: a
+    // policy of `script-src 'self'` admits a `src` and never has to
+    // look at a data block, so every `<script` here is one or the
+    // other. An inline one would put a site's whole directive back on
+    // `'unsafe-inline'`, which is what the first migration had to do
+    // for 1,132 blocks the library wrote itself.
+    var at: usize = 0;
+    var seen: usize = 0;
+    while (std.mem.indexOfPos(u8, html, at, "<script")) |i| {
+        const close = std.mem.indexOfScalarPos(u8, html, i, '>').?;
+        const open_tag = html[i .. close + 1];
+        try testing.expect(std.mem.indexOf(u8, open_tag, " src=\"") != null or
+            std.mem.indexOf(u8, open_tag, "type=\"application/json\"") != null);
+        at = close + 1;
+        seen += 1;
+    }
+    try testing.expectEqual(@as(usize, 2), seen);
 }
 
 test "the boot call carries the language the file was written in" {
@@ -1039,10 +1075,10 @@ test "the boot call carries the language the file was written in" {
     // boot over this file swaps every string, flips the direction back,
     // keeps the reader's scroll offset, and reports nothing at all.
     try expectContains(html, "lang=\"fa-IR\"");
-    try expectContains(html, "locale: \"fa-IR\"");
+    try expectContains(html, "\"locale\":\"fa-IR\"");
     // Both from one read of `App.locale()`: there is no `Boot` field
     // beside `lang` for a driver to set differently.
-    try expectLacks(html, "locale: \"en\"");
+    try expectLacks(html, "\"locale\":\"en\"");
 }
 
 test "an app that chose no locale pins the empty tag, not the attribute's fallback" {
@@ -1063,12 +1099,14 @@ test "an app that chose no locale pins the empty tag, not the attribute's fallba
     // Persian-template app wrote — the defect, re-introduced by the
     // fallback.
     try expectContains(html, "<html lang=\"en\"");
-    try expectContains(html, "locale: \"\",");
+    try expectContains(html, "\"locale\":\"\"");
     // …and it is written even though it is empty, because an *absent*
     // `locale` is `mount`'s "follow the device", which is the answer for
     // an app shell booting into an empty body and not for a page that
-    // already has a screen in it.
-    try testing.expectEqual(@as(usize, 1), std.mem.count(u8, html, "locale:"));
+    // already has a screen in it. The other three optionals are absent
+    // here and mean it, which is why an empty string cannot be spelled
+    // by leaving the key off.
+    try testing.expectEqual(@as(usize, 1), std.mem.count(u8, html, "\"locale\""));
 }
 
 test "the default addressing is mount's own, and says nothing" {
@@ -1081,8 +1119,39 @@ test "the default addressing is mount's own, and says nothing" {
     try expectLacks(html, "addressing");
     // No route table, so no route: the app is on no screen and the
     // boot argument would be a lie rather than a default.
-    try expectLacks(html, "route:");
-    try expectLacks(html, "seed:");
+    try expectLacks(html, "\"route\"");
+    try expectLacks(html, "\"seed\"");
+}
+
+test "both scripts are loaded out of the directory the driver published the set under" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+
+    var doc = plain("Hello");
+    doc.boot = .{ .wasm = "/app.wasm", .driver_dir = "/nokre/" };
+    const html = try write(&app, doc);
+    defer testing.allocator.free(html);
+    const boot = try std.fmt.allocPrint(
+        testing.allocator,
+        "src=\"/nokre/{s}\"",
+        .{driver_files.boot_entry},
+    );
+    defer testing.allocator.free(boot);
+    try expectContains(html, boot);
+
+    // The stub takes the same field for the same reason: it loads a
+    // file too, and nokre does not know where a site put one.
+    var stub = plainStub();
+    stub.driver_dir = "/nokre/";
+    const page = try writeStub(&app, stub);
+    defer testing.allocator.free(page);
+    const chooser = try std.fmt.allocPrint(
+        testing.allocator,
+        "src=\"/nokre/{s}\"",
+        .{driver_files.stub_entry},
+    );
+    defer testing.allocator.free(chooser);
+    try expectContains(page, chooser);
 }
 
 test "a boot script cannot be closed by a string a driver put in it" {
@@ -1096,17 +1165,21 @@ test "a boot script cannot be closed by a string a driver put in it" {
     try app.setLocale("</script>");
     const html = try write(&app, doc);
     defer testing.allocator.free(html);
-    // The block ends exactly once, where the writer ended it. `<` goes
-    // out as a hex escape, which closes `</script>`, `<!--` and
-    // `<script` in one rule — and HTML escaping would have been the
-    // wrong answer here, since a `<script>`'s contents are raw text and
-    // `&lt;` there is four characters of nothing.
-    try testing.expectEqual(@as(usize, 1), std.mem.count(u8, html, "</script>"));
-    const script = html[std.mem.indexOf(u8, html, "<script type=\"module\">").?..];
-    try expectLacks(script, "&lt;");
-    try expectContains(script, "\\x3C/script>");
-    try expectContains(html, "wasm: \"a\\\"b\\\\c\"");
-    try expectContains(html, "locale: \"\\x3C/script>\"");
+    // The data block ends exactly once, where the writer ended it — the
+    // module tag beside it is self-closing markup with no raw text in
+    // it at all, so the two `</script>` in the file are the two the
+    // writer wrote. `<` goes out of the block as `\u003C`, which is
+    // JSON's own escape and closes `</script`, `<!--` and `<script`
+    // together; HTML escaping would have been the wrong answer, since a
+    // `<script>`'s contents are raw text and `&lt;` there is four
+    // characters of nothing.
+    try testing.expectEqual(@as(usize, 2), std.mem.count(u8, html, "</script>"));
+    const block = html[std.mem.indexOf(u8, html, "application/json").?..];
+    const ends = std.mem.indexOf(u8, block, "</script>").?;
+    try expectLacks(block[0..ends], "&lt;");
+    try expectContains(block[0..ends], "\\u003C/script>");
+    try expectContains(html, "\"wasm\":\"a\\\"b\\\\c\"");
+    try expectContains(html, "\"locale\":\"\\u003C/script>\"");
     // …and the same id in the markup took the markup escape instead.
     try expectContains(html, "<div id=\"&lt;/script&gt;");
 }
@@ -1207,11 +1280,24 @@ test "the script's data is the bundle's tags and the driver's destinations" {
     const html = try writeStub(&app, plainStub());
     defer testing.allocator.free(html);
     try expectContains(html,
-        \\nokreLocaleStub({"tags":["en","fa"],"hrefs":["/en/docs/","/fa/docs/"],"fallback":0});
+        \\<script type="application/json" data-nokre="locale">{"tags":["en","fa"],"hrefs":["/en/docs/","/fa/docs/"],"fallback":0}</script>
     );
-    // The whole resolution, once, in the library's own file — a driver
-    // states no part of it and cannot state it differently.
-    try expectContains(html, "function nokreLocaleStub(c) {");
+    // The whole resolution, once, in the library's own *file* — a
+    // driver states no part of it, cannot state it differently, and
+    // does not carry a byte of it in the page. The data leads the
+    // script here and has to: a classic script runs where it stands.
+    const tag = try std.fmt.allocPrint(
+        testing.allocator,
+        "<script src=\"/{s}\"></script>",
+        .{driver_files.stub_entry},
+    );
+    defer testing.allocator.free(tag);
+    try expectContains(html, tag);
+    try testing.expect(std.mem.indexOf(u8, html, "application/json").? <
+        std.mem.indexOf(u8, html, tag).?);
+    // Nothing else names a script, and nothing on this page is one a
+    // policy would have to admit.
+    try testing.expectEqual(@as(usize, 2), std.mem.count(u8, html, "<script"));
 }
 
 test "the stub carries no screen, no boot and no ids" {
@@ -1238,12 +1324,13 @@ test "a label cannot end the script block, and takes the other escape in the mar
     stub.choices.fa = .{ .href = "/fa/</script>/", .label = "</script><script>alert(1)</script>" };
     const html = try writeStub(&app, stub);
     defer testing.allocator.free(html);
-    // The stub's own block ends exactly once, where the writer ended
-    // it. Inside it the driver's bytes went through `Emitter.json`,
-    // which is the escape a JSON document in raw text needs; in the
-    // anchor the same bytes went through `Emitter.text`, which is the
-    // one markup needs. Neither would do the other's job.
-    try testing.expectEqual(@as(usize, 1), std.mem.count(u8, html, "</script>"));
+    // The stub's data block ends exactly once, where the writer ended
+    // it; the second `</script>` is the chooser's own empty tag. Inside
+    // the block the driver's bytes went through `Emitter.json`, which
+    // is the escape a JSON document in raw text needs; in the anchor
+    // the same bytes went through `Emitter.text`, which is the one
+    // markup needs. Neither would do the other's job.
+    try testing.expectEqual(@as(usize, 2), std.mem.count(u8, html, "</script>"));
     try expectContains(html, "\\u003C/script>");
     try expectContains(html, "&lt;/script&gt;");
 }
@@ -1292,7 +1379,7 @@ test "the stub's head keeps the charset in the first bytes and the seam last" {
     const html = try writeStub(&app, stub);
     defer testing.allocator.free(html);
     const charset = std.mem.indexOf(u8, html, "<meta charset=\"utf-8\">").?;
-    const script = std.mem.indexOf(u8, html, "<script>").?;
+    const script = std.mem.indexOf(u8, html, "<script").?;
     const seam = std.mem.indexOf(u8, html, "robots").?;
     const head_end = std.mem.indexOf(u8, html, "</head>").?;
     try testing.expect(charset < script);

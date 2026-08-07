@@ -28,6 +28,16 @@
 //! and the facts it already holds: the locale, the direction, the class
 //! list, the paper of both ramps, the module the page boots.
 //!
+//! **Neither of the two scripts here is an inline one.** The boot and
+//! the locale chooser are both files the site already serves
+//! (`driver_files`), and what a page states is the *data* each of them
+//! reads — an `application/json` block a browser never executes. That
+//! is what lets a site published out of this writer carry
+//! `script-src 'self'`, which is the largest single thing a policy
+//! buys; it is the move packaging.zig made for the app shell's page two
+//! revisions earlier, and this writer was the half that had not made
+//! it.
+//!
 //! **The one page here with no screen in it** is `localeStub`, and it
 //! is in this file rather than beside it because it is the same
 //! document minus everything: the doctype, the head's fixed tags and
@@ -83,8 +93,9 @@ pub const Addressing = enum {
     documents,
 };
 
-/// The upgrade, one script tag wide: the same `App` over the same route
-/// table, booting on top of the file it wrote.
+/// The upgrade, two tags wide — the library's own module, and the data
+/// this page hands it: the same `App` over the same route table, booting
+/// on top of the file it wrote.
 ///
 /// Present or absent, never half — a page with no `Boot` is a complete
 /// document that reads, navigates and prints, which is the whole point
@@ -112,9 +123,9 @@ pub const Boot = struct {
     wasm: []const u8,
     /// The directory the driver published `driver_files` under, with
     /// its trailing slash. The file name inside it is not the driver's
-    /// to type: `driver_files.entry` is the module a page boots, and a
-    /// consumer that spelled it here would be the fifth writer of a set
-    /// that is data precisely so it cannot be re-typed.
+    /// to type: `driver_files.boot_entry` is the module a page loads,
+    /// and a consumer that spelled it here would be one more writer of a
+    /// set that is data precisely so it cannot be re-typed.
     driver_dir: []const u8 = "/",
     addressing: Addressing = .fragments,
     /// The bytes the page was generated from, for the app to read
@@ -757,111 +768,116 @@ fn url(em: *Emitter, origin: []const u8, path: []const u8) !void {
     try em.text(path);
 }
 
+/// Exactly `mount`'s option set, as one value — which is the whole
+/// reason it is a struct here rather than lines of JavaScript written
+/// out one field at a time. `live-boot.js` spreads the parsed object
+/// straight into `mount`, so the names below *are* the option names, and
+/// an option that grows on one side reaches the other with no second
+/// list to keep in step.
+///
+/// The two mounts travel as **ids** rather than elements, because a
+/// document is text: they are the two names the markup above already
+/// used, and the boot resolves them the way any reader of that markup
+/// would.
+///
+/// The optionals are absent when null, and absence is a value `mount`
+/// reads: no `seed` is a builder that needs nothing fetched, no `route`
+/// is an app on no screen, and no `addressing` is `mount`'s own default
+/// — a driver reading its own output should see the choice it made and
+/// not the one it did not.
+const BootConfig = struct {
+    wasm: []const u8,
+    into: []const u8,
+    content: []const u8,
+    addressing: ?[]const u8 = null,
+    route: ?[]const u8 = null,
+    locale: []const u8,
+    seed: ?[]const u8 = null,
+};
+
+/// The boot, in two tags: the data this page states, then the module
+/// that reads it.
+///
+/// **Neither of them is an inline script**, and that is the whole shape.
+/// A `<script>` block with the call written into it is exactly what
+/// `script-src 'self'` exists to refuse, and a static site cannot hash
+/// its way out of one — each page's block carries that page's route and
+/// that page's locale, so a policy would have to name one hash per
+/// published page, which a response header cannot carry and a consumer
+/// cannot maintain. The first migration to meet it turned the whole
+/// directive over to `'unsafe-inline'` for 1,132 blocks the library had
+/// written itself.
+///
+/// So the code is a file the site already serves
+/// (`driver_files.boot_entry`) and the per-page bytes are an
+/// `application/json` **data block**, which a browser never executes —
+/// HTML's own script preparation calls a non-JavaScript type a data
+/// block and returns before the policy is ever consulted — so no policy
+/// has to admit one. It is the same move packaging.zig made when its
+/// `<style>` and its inline mount became page.css and boot.js, for the
+/// same reason, and this writer was the half that had not made it.
 fn bootScript(em: *Emitter, doc: Document, b: Boot, chosen: []const u8) !void {
-    try em.raw("<script type=\"module\">\nimport { mount } from \"");
-    try js(em, b.driver_dir);
-    try js(em, driver_files.entry);
-    try em.raw("\";\nmount({\n  wasm: \"");
-    try js(em, b.wasm);
-    try em.raw("\",\n  into: document.getElementById(\"");
-    try js(em, doc.chrome_id);
-    try em.raw("\"),\n  content: document.getElementById(\"");
-    try js(em, doc.content_id);
-    try em.raw("\"),\n");
-    // Omitted when it is `mount`'s own default: a driver reading its own
-    // output should see the choice it made, not the one it did not.
-    if (b.addressing == .documents) {
-        try em.print("  addressing: \"{s}\",\n", .{@tagName(b.addressing)});
-    }
-    // The route is the app's, not the driver's: the screen this document
-    // holds is the one the router is on, and a boot argument that named
-    // some other one would build and paint a screen on the way past.
-    if (em.app.router.current()) |route| {
-        try em.raw("  route: \"");
-        try js(em, route);
-        try em.raw("\",\n");
-    }
-    // The language this file was written in, so the module that boots
-    // on top of it rebuilds the same words. Unconditional, and the
-    // empty tag is a value here rather than an omission: `mount` reads
-    // an absent `locale` as "follow the device", which is right for an
-    // app shell booting into an empty body and wrong for every page
-    // that already has a screen in it. A document generated by an app
-    // that chose no locale was rendered from its catalog's *template*,
-    // and "" is the tag that resolves back to exactly that.
-    //
-    // It is `App.locale()` raw, and not the `lang` above: the fallback
-    // that attribute takes is `Chrome`'s own language, a stand-in for a
-    // browser that cannot act on "" — pinning it here would boot an
-    // English catalog over a page a Persian-template app rendered,
-    // which is the defect this line exists to close.
-    try em.raw("  locale: \"");
-    try js(em, chosen);
-    try em.raw("\",\n");
-    if (b.seed.len != 0) {
-        try em.raw("  seed: \"");
-        try js(em, b.seed);
-        try em.raw("\",\n");
-    }
-    try em.raw("});\n</script>\n");
+    const config = try std.json.Stringify.valueAlloc(em.gpa, BootConfig{
+        .wasm = b.wasm,
+        .into = doc.chrome_id,
+        .content = doc.content_id,
+        .addressing = if (b.addressing == .documents) @tagName(b.addressing) else null,
+        // The route is the app's, not the driver's: the screen this
+        // document holds is the one the router is on, and a boot
+        // argument that named some other one would build and paint a
+        // screen on the way past.
+        .route = em.app.router.current(),
+        // The language this file was written in, so the module that
+        // boots on top of it rebuilds the same words. Unconditional,
+        // and the empty tag is a value here rather than an omission:
+        // `mount` reads an absent `locale` as "follow the device",
+        // which is right for an app shell booting into an empty body
+        // and wrong for every page that already has a screen in it. A
+        // document generated by an app that chose no locale was
+        // rendered from its catalog's *template*, and "" is the tag
+        // that resolves back to exactly that.
+        //
+        // It is `App.locale()` raw, and not the `lang` above: the
+        // fallback that attribute takes is `Chrome`'s own language, a
+        // stand-in for a browser that cannot act on "" — pinning it
+        // here would boot an English catalog over a page a
+        // Persian-template app rendered, which is the defect this line
+        // exists to close.
+        .locale = chosen,
+        .seed = if (b.seed.len != 0) b.seed else null,
+    }, .{ .emit_null_optional_fields = false });
+    defer em.gpa.free(config);
+
+    try configBlock(em, class_names.boot_value, config);
+    try em.raw("<script type=\"module\" src=\"");
+    try em.text(b.driver_dir);
+    try em.text(driver_files.boot_entry);
+    try em.raw("\"></script>\n");
 }
 
-/// One driver-supplied string, inside a JavaScript string literal
-/// inside a `<script>` block — which is *not* the escape `Emitter.text`
-/// does. A `<script>`'s contents are raw text: `&amp;` there is four
-/// characters of URL, not an ampersand, and the tag ends at the first
-/// `</script>` the bytes contain whether or not it is inside a quote.
+/// One `application/json` block, named for what reads it.
 ///
-/// So: the two the literal needs, and `<` as a hex escape, which is what
-/// closes the block-ending case whole — `</script>`, `<!--` and
-/// `<script` all start with it, and `\x3C` is the same character to
-/// every JavaScript engine.
+/// Shared by the two writers here so that the arrangement is one thing
+/// rather than two that happen to look alike: a script of nokre's finds
+/// its argument by `data-nokre`, whose value says which of the library's
+/// pages this is — the same attribute the root element carries and the
+/// same vocabulary (`class_names`), so a driver's own ids and classes
+/// are never a term in it.
 ///
-/// **It stays private, and `Emitter.json` is not it.** They share the
-/// second half of that argument and nothing else. This one writes the
-/// inside of a *JavaScript string literal*, where `\x3C` is the escape;
-/// a JSON document has no `\x` escape at all, so the public writer
-/// spells the same character `\u003C`. Collapsing them would mean one
-/// function whose output is valid in exactly one of its two
-/// destinations. And there is no second caller to export it for: the
-/// boot script is the library's own, the strings above are ids and URLs
-/// the driver stated as *parameters*, and a driver that wanted to hand
-/// this function executable JavaScript would be writing a `<script>`
-/// this edition has no other support for.
-fn js(em: *Emitter, s: []const u8) !void {
-    for (s) |c| switch (c) {
-        '\\' => try em.raw("\\\\"),
-        '"' => try em.raw("\\\""),
-        '<' => try em.raw("\\x3C"),
-        '\n' => try em.raw("\\n"),
-        '\r' => try em.raw("\\r"),
-        else => try em.out.append(em.gpa, c),
-    };
+/// The bytes go out through `Emitter.json`, which is the escape a JSON
+/// document written into raw text needs: a `<` becomes `\u003C`, and
+/// that one rule closes `</script`, `<script` and `<!--` together. An
+/// HTML escape would be the wrong answer — a `<script>`'s contents are
+/// raw text, and `&lt;` there is four characters of nothing.
+fn configBlock(em: *Emitter, value: []const u8, json_doc: []const u8) !void {
+    try em.print("<script type=\"application/json\" {s}=\"{s}\">", .{
+        class_names.document_attr, value,
+    });
+    try em.json(json_doc);
+    try em.raw("</script>\n");
 }
 
 // ------------------------------------------------------- the locale stub
-
-/// The whole browser half of the stub, inlined into every one of them.
-/// It is `Bundle.resolve` transcribed into the one language that cannot
-/// call it — see `localeStub` for why a transcription is the only shape
-/// available here, and tests/locale_stub.mjs for the gate that holds the
-/// two identical.
-const locale_stub_js = @embedFile("locale_stub.js");
-
-comptime {
-    // These bytes go *inline* into a `<script>`, where three sequences
-    // end or re-open the block (serialize.zig's `json` carries the
-    // tokenizer's argument). Driver strings reach it through `json`,
-    // which escapes them; this file is the library's own and is checked
-    // instead — the class_names.zig arrangement, where a fact the
-    // compiler cannot follow into a `.js` file is grepped at comptime.
-    @setEvalBranchQuota(8 * locale_stub_js.len + 1000);
-    for ([_][]const u8{ "</script", "<!--", "<script" }) |hazard| {
-        if (std.mem.indexOf(u8, locale_stub_js, hazard) != null)
-            @compileError("nokre: locale_stub.js carries '" ++ hazard ++
-                "', which ends or re-opens the script block it is written into");
-    }
-}
 
 /// What a driver can get wrong about a `LocaleStub`, returned before it
 /// writes a byte — a page that fails halfway is worse than none, and
@@ -919,6 +935,13 @@ pub fn LocaleStub(comptime L: type) type {
         /// Required for `Document`'s reason: a page that does not link
         /// it is unstyled markup and nothing says so.
         stylesheet: []const u8,
+        /// The directory the driver published `driver_files` under,
+        /// with its trailing slash — `Boot.driver_dir` asked of the one
+        /// page here that boots nothing. The chooser is a file the site
+        /// already serves (`driver_files.stub_entry`) rather than bytes
+        /// written into the page, so a stub costs a policy nothing; the
+        /// file name inside the directory is not the driver's to type.
+        driver_dir: []const u8 = "/",
         /// The words above the list, if the driver wants any. Empty
         /// writes no heading — a stub is a list of languages and reads
         /// as one without a sentence over it.
@@ -978,7 +1001,7 @@ pub fn LocaleStub(comptime L: type) type {
 /// The script cannot call `L.resolve` — that function is comptime Zig
 /// in a wasm module this page deliberately does not load, since a
 /// redirect that first fetches an app is a redirect nobody waits for.
-/// So the algorithm is transcribed into locale_stub.js *once, in the
+/// So the algorithm is transcribed into locale-stub.js *once, in the
 /// library*, over the tags the bundle itself hands out here: exact tag
 /// (case and `-`/`_` ignored), then bare language in bundle order, then
 /// `L.default_locale`. A driver states none of it and cannot state it
@@ -1020,11 +1043,16 @@ pub fn LocaleStub(comptime L: type) type {
 /// stub over a locale's page gets a page that stands still rather than
 /// a browser that spins.
 ///
-/// The script's own bytes are the library's, written to the page
-/// unescaped — a comptime check refuses a `locale_stub.js` carrying
-/// anything that could end the block. Every driver-supplied byte in
-/// there is a string inside the JSON argument, and goes through
-/// `Emitter.json`.
+/// **The script is a file the site serves, not bytes in the page**, and
+/// it is the same change `bootScript` made beside it and for the same
+/// reason. A stub per published page is a stub per published page's
+/// worth of distinct inline blocks; there is no hashing a policy out of
+/// that, and the one migration to meet it spent `script-src` on
+/// `'unsafe-inline'` for a script the library had written itself. What
+/// differs from stub to stub is the destinations, which are *data*, so
+/// they go in an `application/json` block a browser never executes and
+/// the chooser reads its argument out of that. Every driver-supplied
+/// byte in it is a string inside JSON and goes through `Emitter.json`.
 pub fn localeStub(em: *Emitter, comptime L: type, stub: LocaleStub(L)) !void {
     const locales = comptime std.enums.values(L.Locale);
     try checkStub(L, stub);
@@ -1049,18 +1077,27 @@ pub fn localeStub(em: *Emitter, comptime L: type, stub: LocaleStub(L)) !void {
 
     // In the head, and blocking, because everything below it is a page
     // the reader is not meant to see: a redirect that waits for the
-    // body is a chooser that flashes up and disappears. Nothing here
-    // touches the DOM — `location` and `navigator` are all it reads —
-    // so there is nothing to wait for either.
+    // body is a chooser that flashes up and disappears. That is also
+    // why the file is a classic script and not a module — a module is
+    // deferred, and a deferred chooser runs after the page it was meant
+    // to replace has been laid out and painted.
     //
-    // No `data-appearance` above it for the reason stylesheet.zig's
-    // `write` gives: no app boots on this page, so the media query is
-    // all it has to go on and is exactly right.
-    try em.raw("<script>\n");
-    try em.raw(locale_stub_js);
-    try em.raw("nokreLocaleStub(");
-    try stubData(em, L, stub);
-    try em.raw(");\n</script>\n");
+    // The data leads the script for the same reason the charset leads
+    // the head: a classic script runs where it stands, so the block it
+    // reads has to be behind it in the parse.
+    //
+    // No `data-appearance` above either of them for the reason
+    // stylesheet.zig's `write` gives: no app boots on this page, so the
+    // media query is all it has to go on and is exactly right.
+    {
+        const data = try stubData(em.gpa, L, stub);
+        defer em.gpa.free(data);
+        try configBlock(em, class_names.locale_value, data);
+    }
+    try em.raw("<script src=\"");
+    try em.text(stub.driver_dir);
+    try em.text(driver_files.stub_entry);
+    try em.raw("\"></script>\n");
 
     // The same block the copies carry, written by the same function
     // over the same shape — `choices` is one path per bundled locale,
@@ -1137,20 +1174,18 @@ fn checkStub(comptime L: type, stub: LocaleStub(L)) (LocaleStubError || MetaErro
     }
 }
 
-/// The script's one argument: the bundle's tags in the bundle's order,
+/// The chooser's one argument: the bundle's tags in the bundle's order,
 /// the driver's destinations beside them, and the index the bundle
 /// falls back to.
-///
-/// Serialized with `std.json` and written through `Emitter.json`,
-/// because every string in it is a driver's — a label carrying
-/// `</script>` would otherwise end the block, and the same label
-/// through `Emitter.text` would arrive as five characters of nothing
-/// inside raw text.
 ///
 /// The fallback travels as an index rather than being assumed to be
 /// zero: it is `L.default_locale`'s position, read from the bundle, and
 /// a reader of the emitted page can see which one it is.
-fn stubData(em: *Emitter, comptime L: type, stub: LocaleStub(L)) !void {
+///
+/// It returns bytes rather than writing them because it is the *data*
+/// half of the pair `configBlock` writes — the same relationship
+/// `BootConfig` has to the other one.
+fn stubData(gpa: std.mem.Allocator, comptime L: type, stub: LocaleStub(L)) ![]u8 {
     const locales = comptime std.enums.values(L.Locale);
     var tags: [locales.len][]const u8 = undefined;
     var hrefs: [locales.len][]const u8 = undefined;
@@ -1160,11 +1195,9 @@ fn stubData(em: *Emitter, comptime L: type, stub: LocaleStub(L)) !void {
         hrefs[i] = @field(stub.choices, @tagName(loc)).href;
         if (loc == L.default_locale) fallback = i;
     }
-    const doc = try std.json.Stringify.valueAlloc(em.gpa, .{
+    return std.json.Stringify.valueAlloc(gpa, .{
         .tags = tags[0..],
         .hrefs = hrefs[0..],
         .fallback = fallback,
     }, .{});
-    defer em.gpa.free(doc);
-    try em.json(doc);
 }

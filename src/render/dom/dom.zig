@@ -47,10 +47,19 @@ pub const Dest = serialize.Dest;
 pub const AnchorError = serialize.AnchorError;
 
 /// The JavaScript a web build ships beside the wasm module — the live
-/// driver's whole browser half, as data. `addWebSite` copies exactly
-/// this list; a consumer whose own generator publishes the driver
-/// copies it too, so neither can drift from the set the edition
-/// actually needs (driver_files.zig says why it lives in a leaf file).
+/// driver's whole browser half plus the two scripts a *generated page*
+/// loads, as data. `addWebSite` copies exactly this list; a consumer
+/// whose own generator publishes the driver copies it too, so neither
+/// can drift from the set the edition actually needs (driver_files.zig
+/// says why it lives in a leaf file).
+///
+/// The last two are why a static consumer must publish it whole rather
+/// than the one file a page names: `document` and `localeStub` write a
+/// `<script src>` and a data block instead of an inline script, so a
+/// site missing `live-boot.js` is a page that renders and never boots,
+/// and one missing `locale-stub.js` is a chooser that never chooses.
+/// That is the price of a site being servable under `script-src 'self'`
+/// (docs/static-sites.md).
 pub const driver_files = @import("driver_files.zig").driver_files;
 
 pub const DriverSource = struct { name: []const u8, bytes: []const u8 };

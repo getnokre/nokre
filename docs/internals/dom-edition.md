@@ -120,7 +120,7 @@ What it writes:
 | in the site | where it comes from |
 | --- | --- |
 | the app's module, under `web_wasm` | the consumer's own compile |
-| `live.js`, `live-worker.js`, `services.js`, `sw.js` | `src/render/dom`, copied by the build graph; the set is also exported as data for a generator that publishes the driver itself — `dom.driver_files` for the names, `dom.driver_sources` for the names *and* the embedded bytes, so such a generator writes files it never had to locate |
+| `live.js`, `live-boot.js`, `live-worker.js`, `services.js`, `locale-stub.js`, `sw.js` | `src/render/dom`, copied by the build graph; the set is also exported as data for a generator that publishes the driver itself — `dom.driver_files` for the names, `dom.driver_sources` for the names *and* the embedded bytes, so such a generator writes files it never had to locate |
 | `style.css` | *generated*, by running `emit_css.zig` on the host |
 | `fonts/*.ttf` | `src/assets/fonts` |
 | `index.html`, `page.css`, `boot.js`, `manifest.webmanifest`, `icon-*.png` | the packaging tree's `web/` corner (packaging.zig) |
@@ -188,6 +188,13 @@ used to carry its column in a `<style>` block and its mount in an inline
 thing a policy buys, and a page that hashed its own two blocks would be
 one no consumer could lift to their edge without carrying hashes that
 change under them.
+
+**And two revisions later the static writer made the same move**, which
+is the section below. This page had one inline block and could have
+hashed it; a generated site has one per published page, each carrying
+that page's own route and locale, so hashing was never available there
+at all — and the whole `script-src` of the first site to publish one went
+to `'unsafe-inline'` for scripts nokre had written itself.
 
 **One loosening stayed, and it is `style-src`'s.** The serializer writes
 inline style *attributes* on element after element — a list's measured
@@ -264,6 +271,76 @@ the children and not about a width, so the serializer answers it with no
 ruler at all; *where* the lines then break is `flex-wrap`'s, which is the
 reader's own metrics in the reader's own window. The fold needs a
 measurement a generator does not have. Wrapping needs none.
+
+#### Neither script on a generated page is an inline one
+
+`dom.document` writes a boot and `dom.localeStub` writes a chooser, and
+both used to be `<script>` blocks with the library's own JavaScript in
+them. That is what `script-src 'self'` exists to refuse, and the refusal
+is not one a static site can buy its way out of with hashes: a boot
+block carries `route` and `locale`, a chooser block carries that page's
+destinations, so the count of distinct bodies is the count of published
+pages. The first migration to meet it — 1,126 stubs and six boots on one
+distribution, behind one response header, which cannot carry a per-page
+hash at all — turned `script-src` over to `'unsafe-inline'` for scripts
+that were the library's from the first byte.
+
+**The bytes that differ per page are data, not code.** So each of them
+is two tags:
+
+```html
+<script type="application/json" data-nokre="boot">{"wasm":"/app.wasm","into":"chrome","content":"content","addressing":"documents","route":"docs","locale":"fa","seed":"/md/docs.md"}</script>
+<script type="module" src="/live-boot.js"></script>
+```
+
+- **The code is a file the site already serves.** `live-boot.js` and
+  `locale-stub.js` are members of `driver_files`, so a consumer that
+  installs the driver set whole has them, and a consumer that copies
+  `dom.driver_sources` gets them with no list to extend. One file, one
+  cache entry, one parse, however many pages import it — where 1,132
+  inline blocks were none of those things.
+- **The data is a block a browser never executes.** HTML's script
+  preparation calls a `<script>` whose type is neither a JavaScript MIME
+  type nor `module` a *data block* and returns before the policy is ever
+  consulted, which is why `application/ld+json` has always ridden under
+  a strict policy. So the block costs the directive nothing, and there
+  is no third thing to allow.
+- **It is found by `data-nokre`, not by an `id`.** Ids on these pages
+  belong to the driver: the two mount points are names a consumer
+  invented and every heading id is derived from words. A library
+  reserving a word in that space is a collision waiting for the page
+  that spells it. `data-nokre` is already the attribute that says *this
+  node is the library's*, and the value says which — `document` on the
+  root element, `boot` and `locale` on the two blocks
+  ([class_names.zig](../../src/render/dom/class_names.zig), where a
+  comptime check holds each JavaScript selector against the Zig
+  constant, exactly as it holds the class live.js toggles).
+- **The block is `mount`'s option set, not a translation of it.**
+  `live-boot.js` spreads the parsed object straight into `mount` and
+  overrides only the two mounts, which travel as the ids the markup
+  already used. So there is no second list of names to keep in step, and
+  an option that grows on the Zig side arrives on the JavaScript side
+  with nothing to update. Absence is a value: no `seed` is a builder
+  that needs nothing fetched, no `route` is an app on no screen, no
+  `addressing` is `mount`'s own default, and a written-but-empty
+  `locale` is the catalog's template — which is why the key is always
+  present and the other three are not.
+- **The boot is a module and the chooser is not.** A module is deferred,
+  which is right for a boot that has to find the mounts the page
+  finished parsing, and wrong for a chooser: everything under a stub's
+  script is a page the reader is not meant to see, so it is a classic
+  script in the head with its data block immediately above it, where a
+  script that runs *where it stands* can reach it.
+
+What it costs is one request on a page that had none — a cold stub now
+fetches a kilobyte before it redirects, and warms the cache for every
+other stub on the site. That is the price of the directive, and the
+directive is what the whole arrangement is for.
+
+The one page that did not move is [packaging.zig](../../src/packaging/packaging.zig)'s
+`webIndexHtml`: its boot already was a file, and there is exactly one of
+it per site with two arguments out of the declaration, so it writes them
+into `boot.js` and has no per-page data to state.
 
 #### The document is the library's; the names in it are the driver's
 
@@ -359,10 +436,12 @@ half sits where it does.
   than a derivation. Its head order settles it independently: the CSP
   meta has to precede the stylesheet link it governs, and `Document`'s
   one head seam splices at the *end* of the head. Its boot call is the
-  set's second writer too, and the differences there are facts about a
-  file rather than drift — a `.js` module needs no `\x3C`, where an
-  inline `<script>` does — with the module name itself derived from
-  `driver_files.entry` in both.
+  set's second writer too, and the one difference left is a fact about
+  the page rather than drift: there is exactly one host page per site
+  and its two arguments are the declaration's, so they are written into
+  `boot.js`, where a generated page's — which differ per page — are a
+  data block ("Neither script on a generated page is an inline one"
+  above). The module name is `driver_files.entry` on both paths.
 
   Resolution stays where it was. Nothing in the driver maps a tag to a
   catalog: the pinned tag lands in the `locale` service exactly where
@@ -642,7 +721,7 @@ try dom.localeStub(&em, L, .{
   The script cannot call it — that is comptime Zig, and this page loads
   no wasm on purpose, since a redirect that first fetches an app is a
   redirect nobody waits for — so
-  [locale_stub.js](../../src/render/dom/locale_stub.js) transcribes it
+  [locale-stub.js](../../src/render/dom/locale-stub.js) transcribes it
   *once, in the library*, over tags the bundle itself hands out: exact
   tag (case and `-`/`_` ignored), then bare language in bundle order,
   then `L.default_locale`. It reads `navigator.language`, the same one
