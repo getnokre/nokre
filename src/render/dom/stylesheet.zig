@@ -199,6 +199,27 @@ pub fn write(gpa: std.mem.Allocator, out: *std.ArrayList(u8), options: Options) 
         \\
     );
 
+    // …and the whole of the clear space bottom chrome owes the page,
+    // named once. It is `trailingSpace` plus `navBarHeight` to the pixel
+    // (layout.zig), and it was written out twice in longhand — once for
+    // the screen at every width and once inside the band's own block —
+    // which is two copies of a five-term sum in a file whose whole point
+    // is that a derivation travels rather than the pixel it lands on.
+    //
+    // Published rather than private, and that is deliberate: a driver
+    // that puts something of its own below the app can spend this
+    // instead of re-deriving it from the five properties under it. It
+    // should not have to — `class_names.seam` is how the seam gets the
+    // space without asking — but a name a consumer can read is the
+    // difference between a stylesheet that couples to nokre's arithmetic
+    // and one that couples to nokre's answer.
+    try out.appendSlice(gpa,
+        \\  --chrome-reserve: calc(
+        \\    var(--nav-content-gap) + var(--nav-bar-pad) + var(--nav-slot) + var(--bar-bottom) + var(--safe-b)
+        \\  );
+        \\
+    );
+
     // ---- the type scale ----
     inline for (@typeInfo(Scale).@"enum".fields) |f| {
         const s: Scale = @enumFromInt(f.value);
@@ -420,17 +441,6 @@ fn writeDerived(gpa: std.mem.Allocator, out: *std.ArrayList(u8)) !void {
         \\    outline-offset: calc(-1 * var(--focus));
         \\    border-color: transparent;
         \\  }
-        \\  /* A screen whose bar is in the band owes it the clear space
-        \\     again: `trailingSpace` plus `navBarHeight` to the pixel, so
-        \\     nothing may *rest* behind the destinations. The OS band is
-        \\     inside `--bar-bottom`, exactly as `navBarBottomPad` puts it
-        \\     there. */
-        \\
-    ++ "  :root:has(.nav) " ++ root_sel_chromed ++ " {\n" ++
-        \\    padding-bottom: calc(
-        \\      var(--nav-content-gap) + var(--nav-bar-pad) + var(--nav-slot) + var(--bar-bottom) + var(--safe-b)
-        \\    );
-        \\  }
         \\  /* The section list is the tile group's card, not the modal
         \\     pane's surface: it floats clear of every edge, so all four
         \\     corners are its own and all four are drawn. It is sized to
@@ -498,6 +508,106 @@ fn writeDerived(gpa: std.mem.Allocator, out: *std.ArrayList(u8)) !void {
             .{ row[0], scale_name, row[0], scale_name, yoff },
         );
     }
+
+    // ---- the bottom reserve ------------------------------------------
+    //
+    // The whole of it, last, so each of these four is the final word on
+    // its selector — and in one place, which is the correction. It used
+    // to be two rules in the static sheet and one inside the band's
+    // media query, three hand-written copies of a question none of them
+    // asked the same way.
+    //
+    // What the reserve is: `trailingSpace` plus `navBarHeight` to the
+    // pixel (layout.zig), so nothing may *rest* behind the destinations
+    // — a fully scrolled page still leaves the content gap above the
+    // bar, the bar's own top pad, its slot, and the clear space below
+    // it, with the OS band inside `--bar-bottom` exactly as
+    // `navBarBottomPad` puts it there.
+    try out.appendSlice(gpa, "\n/* The clear space bottom chrome owes the page, at the four widths it is asked. */\n");
+    // Owed: a bottom-anchored layer is on the page at every width.
+    // `has-chrome` is one class over three of them (`hasBottomChrome`),
+    // so the test is which is present — a notice banner and the bare
+    // notices indicator are bottom-anchored whatever the window is.
+    try writeReserve(gpa, out, "", "", true);
+    // Not owed: a bar standing *above* the page in flow took its space
+    // where it stands. The nav is the only layer this can be true of,
+    // and it is never on the page beside a banner (`chrome` emits the
+    // banner instead of it).
+    try writeReserve(gpa, out, "", ":has(.nav)", false);
+    // Owed again, at the width the bar is back in the band.
+    try out.print(gpa, "\n@media (max-width: {d}px) {{\n", .{metrics.sheet_max_w});
+    try writeReserve(gpa, out, "  ", ":has(.nav)", true);
+    try out.appendSlice(gpa, "}\n");
+    // And not owed on paper, where the nav is `display: none` and a
+    // reserve is an inch of nothing at the end of every printout. Both
+    // quals, because the second has to outrank the band's rule above:
+    // a page box narrower than the pane cap is a paper size, not a
+    // phone, and the sheet had been letting the phone's answer win it.
+    try out.appendSlice(gpa, "\n@media print {\n");
+    try writeReserve(gpa, out, "  ", "", false);
+    try writeReserve(gpa, out, "  ", ":has(.nav)", false);
+    try out.appendSlice(gpa, "}\n");
+}
+
+/// One statement of the bottom reserve, at both of the boxes it can land
+/// in. `qual` is what else must be true of `:root` for this to be the
+/// answer; `owed` is whether the clear space is owed at all.
+///
+/// **Two selectors because the last thing in the document is not always
+/// the screen.** The reserve is `padding-bottom`, and padding is inside
+/// the box it is on — so putting it on the screen reserved the space
+/// *above* anything standing below the screen. For an app mounted in a
+/// page it did not write there is nothing below the screen this edition
+/// may touch, and the screen is right. For a page nokre wrote whole
+/// there is: `Document.body_end` is a seam by design, documented as
+/// "whatever stands below the app but inside the document", and a
+/// driver's footer put there sat under the fixed band at a phone's
+/// width on every page it published — the band covered it whole, and
+/// the arithmetic could not see it because the arithmetic was inside
+/// the wrong box.
+///
+/// So the space goes at the bottom of whatever *is* last, and the sheet
+/// is told which that is rather than guessing: `class_names.seam` on
+/// `<body>`, written from the seam's own bytes (`document.zig`). A page
+/// with no seam takes the first selector and is what it always was, to
+/// the byte; a page with one takes the second, the screen keeps its
+/// ordinary page pad above the footer, and the footer gets the clear
+/// space it is the last thing before.
+///
+/// A driver spends nothing for this. `--chrome-reserve` is published
+/// beside it for the case no seam can reach, but the seam is the case
+/// there was, and a consumer re-deriving five of nokre's custom
+/// properties and its breakpoint literal to fix its own footer is the
+/// coupling this removes.
+fn writeReserve(gpa: std.mem.Allocator, out: *std.ArrayList(u8), indent: []const u8, qual: []const u8, owed: bool) !void {
+    // `:root` for the qual because the two mounts are siblings at best
+    // and the sheet does not know what a driver wrapped them in: the nav
+    // is somewhere in the page, and the page is what every document has.
+    // `body` on both sides because it is the one element between the
+    // root and the screen in every arrangement either writer makes.
+    try out.print(
+        gpa,
+        "{s}:root{s} body:not(.{s}) " ++ root_sel_chromed ++ " {{ padding-bottom: {s}; }}\n" ++
+            "{s}:root{s} body.{s}:has(" ++ root_sel_chromed ++ ") {{ padding-bottom: {s}; }}\n",
+        .{
+            indent,
+            qual,
+            class_names.seam,
+            // Not the reserve is the page's own pad, which is what the
+            // screen's `padding` shorthand already says — restated so
+            // this rule is the last word rather than a rule that has to
+            // be absent to be right.
+            if (owed) "var(--chrome-reserve)" else "var(--pad)",
+            indent,
+            qual,
+            class_names.seam,
+            // …and zero for the document, which owes the space only
+            // while something is anchored over the bottom of it. The
+            // screen keeps its own pad in this branch, so the footer
+            // still stands clear of the words above it.
+            if (owed) "var(--chrome-reserve)" else "0",
+        },
+    );
 }
 
 fn writeFaces(gpa: std.mem.Allocator, out: *std.ArrayList(u8), dir: []const u8, ext: []const u8) !void {
@@ -801,30 +911,10 @@ const sheet =
     \\  background: var(--paper);
     \\}
     \\
-    \\/* The bottom reserve is the library's, and it is `trailingSpace`
-    \\   plus `navBarHeight` to the pixel: nothing may *rest* behind the
-    \\   destinations, so a fully scrolled page still leaves the content
-    \\   gap above the bar, the bar's own top pad, its slot, and the clear
-    \\   space below it. The OS band is inside `--bar-bottom`, exactly as
-    \\   `navBarBottomPad` puts it there. */
-++ "\n" ++ root_sel_chromed ++ " {\n" ++
-    \\  padding-bottom: calc(
-    \\    var(--nav-content-gap) + var(--nav-bar-pad) + var(--nav-slot) + var(--bar-bottom) + var(--safe-b)
-    \\  );
-    \\}
-    \\/* …and a bar standing *above* the page in flow reserves nothing at
-    \\   the bottom: it took its space where it stands. `has-chrome` is
-    \\   one class over three layers (`hasBottomChrome`), so the test is
-    \\   which of them is on the page — a notice banner and the bare
-    \\   notices indicator are bottom-anchored at every width and keep the
-    \\   reserve, and neither is ever on the page beside the nav (`chrome`
-    \\   emits the banner *instead of* it). `writeDerived` gives the band
-    \\   its reserve back at the width the bar is in the band.
-    \\
-    \\   `:root` because the two mounts are siblings at best and the sheet
-    \\   does not know what a driver wrapped them in: the nav is somewhere
-    \\   in the page, and the page is what every document has. */
-++ "\n:root:has(.nav) " ++ root_sel_chromed ++ " { padding-bottom: var(--pad); }\n" ++
+    \\/* The bottom reserve is not here. It was, in longhand, with a
+    \\   second copy inside the band's own block — so `writeReserve`
+    \\   writes all four of its rules together, at the end of this
+    \\   file. */
     \\
     \\/* A flex item will not shrink below its own min-content unless it
     \\   is told it may, and a code block's min-content is its longest
@@ -2078,14 +2168,14 @@ const sheet =
     \\/* Print. Nothing `position: fixed` belongs on paper — it lands on
     \\   the first sheet over the content and on no other sheet at all —
     \\   so the nav goes, and the reserve the screen kept for it goes with
-    \\   it or every printout ends in an inch of nothing. The skip link
-    \\   goes because there is no keyboard on paper. The modal layers are
-    \\   deliberately left: a sheet that is open is content the reader is
-    \\   looking at, and a printout that dropped it would be printing a
-    \\   screen nobody is on. */
+    \\   it or every printout ends in an inch of nothing (the reserve's own
+    \\   print rules are in `writeDerived` with the rest of the group). The
+    \\   skip link goes because there is no keyboard on paper. The modal
+    \\   layers are deliberately left: a sheet that is open is content the
+    \\   reader is looking at, and a printout that dropped it would be
+    \\   printing a screen nobody is on. */
     \\@media print {
 ++ "\n  .nav, ." ++ class_names.skip ++ " { display: none; }\n" ++
-    "  " ++ root_sel_chromed ++ " { padding-bottom: var(--pad); }\n" ++
     \\}
     \\
 ;

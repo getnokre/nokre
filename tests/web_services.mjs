@@ -115,6 +115,14 @@ function probes(nk) {
       if (len === -2) throw failure();
       return text(len);
     },
+    /// The same page with a footer through `body_end`. The seam is the
+    /// only difference between this file and the one above, so anything
+    /// that differs downstream is the seam's doing and nothing else's.
+    documentSeam() {
+      const len = nk.nokre_probe_document_seam();
+      if (len === -2) throw failure();
+      return text(len);
+    },
     /// Which chip the app believes is chosen.
     view: () => nk.nokre_probe_view(),
 
@@ -861,6 +869,160 @@ function computed(rules, classes, width) {
   return out;
 }
 
+/// The `:root` block's custom properties as numbers, resolved the way a
+/// browser resolves them — `var()` followed, `calc()` evaluated,
+/// `max()` taken, and `env()` standing down to its fallback, which is
+/// what a device with no inset reports and what node has.
+///
+/// It exists because the reserve is arithmetic and the failure was
+/// arithmetic: a substring check sees `padding-bottom:
+/// var(--chrome-reserve)` and is satisfied by a sum that does not cover
+/// the band. Nothing here reads a literal — every number is the
+/// library's own, so a metric that moves moves both sides at once.
+function rootLengths(rules) {
+  const decls = {};
+  for (const rule of rules) if (rule.sel === ":root" && rule.media === null) Object.assign(decls, rule.decls);
+
+  const open = new Set();
+  const value = (name) => {
+    if (!(name in decls)) throw new Error(`the sheet has no ${name}`);
+    if (open.has(name)) throw new Error(`${name} resolves through itself`);
+    open.add(name);
+    try {
+      return read(decls[name]);
+    } finally {
+      open.delete(name);
+    }
+  };
+
+  const read = (src) => {
+    let i = 0;
+    const ws = () => {
+      while (i < src.length && /\s/.test(src[i])) i++;
+    };
+    const closing = (from) => {
+      let depth = 0;
+      for (let k = from; k < src.length; k++) {
+        if (src[k] === "(") depth++;
+        else if (src[k] === ")" && --depth === 0) return k;
+      }
+      throw new Error(`unclosed group in ${src}`);
+    };
+    const args = () => {
+      const out = [];
+      i++;
+      for (;;) {
+        out.push(expr());
+        ws();
+        if (src[i] === ",") {
+          i++;
+          continue;
+        }
+        if (src[i] === ")") {
+          i++;
+          return out;
+        }
+        throw new Error(`unreadable argument list in ${src}`);
+      }
+    };
+    const atom = () => {
+      ws();
+      if (src[i] === "(") {
+        i++;
+        const v = expr();
+        ws();
+        i++;
+        return v;
+      }
+      const fn = /^([a-zA-Z-]+)\(/.exec(src.slice(i));
+      if (fn) {
+        i += fn[0].length - 1;
+        const name = fn[1];
+        if (name === "var") {
+          const close = closing(i);
+          const ref = src.slice(i + 1, close).trim();
+          i = close + 1;
+          return value(ref);
+        }
+        if (name === "env") {
+          // The inset a device reports is not a length this file can
+          // know, and the fallback is what the sheet wrote for exactly
+          // that reason.
+          const close = closing(i);
+          const comma = src.indexOf(",", i);
+          const fallback = comma > 0 && comma < close ? src.slice(comma + 1, close) : "0";
+          i = close + 1;
+          return read(fallback);
+        }
+        const a = args();
+        if (name === "calc") return a[0];
+        if (name === "max") return Math.max(...a);
+        if (name === "min") return Math.min(...a);
+        throw new Error(`the sheet grew a function this check cannot read: ${name}()`);
+      }
+      const num = /^-?\d+(?:\.\d+)?(?:px)?/.exec(src.slice(i));
+      if (!num) throw new Error(`unreadable length at ${i} in ${src}`);
+      i += num[0].length;
+      return Number.parseFloat(num[0]);
+    };
+    const term = () => {
+      let v = atom();
+      for (;;) {
+        ws();
+        const op = src[i];
+        if (op !== "*" && op !== "/") return v;
+        i++;
+        const rhs = atom();
+        v = op === "*" ? v * rhs : v / rhs;
+      }
+    };
+    const expr = () => {
+      let v = term();
+      for (;;) {
+        ws();
+        const op = src[i];
+        if (op !== "+" && op !== "-") return v;
+        i++;
+        const rhs = term();
+        v = op === "+" ? v + rhs : v - rhs;
+      }
+    };
+    const v = expr();
+    ws();
+    if (i !== src.length) throw new Error(`trailing bytes in ${src}`);
+    return v;
+  };
+
+  return value;
+}
+
+/// Which box carries the bottom chrome's clear space, for a page with
+/// or without a seam below its screen, at a width. The answer is a pair
+/// and exactly one half of it is ever set: the screen's, or the
+/// document's.
+///
+/// `computed` above cannot read these — every one of them is a
+/// descendant selector qualified on `:root` — and the shape is stated
+/// here rather than matched loosely, so a rule the sheet stops writing
+/// is an `undefined` and not a silent pass.
+function reserveAt(rules, { nav, seam, width }) {
+  const shape = /^:root(:has\(\.nav\))? body(?:(\.has-seam):has\(\.nokre\.has-chrome\)|:not\(\.has-seam\) \.nokre\.has-chrome)$/;
+  const hits = [];
+  for (const rule of rules) {
+    if (rule.media !== null && width > rule.media) continue;
+    const m = shape.exec(rule.sel);
+    if (!m) continue;
+    if (m[1] && !nav) continue;
+    const onBody = Boolean(m[2]);
+    if (onBody !== seam) continue;
+    hits.push({ onBody, spec: m[1] ? 1 : 0, order: rule.order, value: rule.decls["padding-bottom"] });
+  }
+  hits.sort((a, b) => a.spec - b.spec || a.order - b.order);
+  const out = { screen: undefined, body: undefined };
+  for (const hit of hits) out[hit.onBody ? "body" : "screen"] = hit.value;
+  return out;
+}
+
 /// Which shape the *sheet* draws at this width, in the two words the
 /// rest of the library uses for them.
 function sheetShape(rules, width) {
@@ -1013,6 +1175,128 @@ async function bootIsDerivedFromWhatIsOnThePage() {
   done("the nav — a page's need for a runtime is derived, and only the absent one is refused");
 }
 
+/// The derivation's own input, which was the coarser of the two facts
+/// on the page for as long as it existed. `Element.needsRuntime` asked
+/// the *role*, where a tile is a control unconditionally — and a tile is
+/// not one thing: it is the row-shaped form of `link` and `button`, and
+/// the serializer beside it had always written an anchor when it
+/// navigates and a button when it acts.
+///
+/// So a hub of navigating rows — a site's home page, a section index —
+/// derived a need it did not have and published a module its readers
+/// never ran, with no way to decline it, because a derivation is a
+/// floor. Both halves are asserted here because either alone is the
+/// wrong fix: turning `.tile` off outright would publish a page of dead
+/// rows, which is the failure the derivation exists to close.
+async function tilesAreAnchorsOrButtons() {
+  const { app } = await page({}, { route: "home", locale: "" }, 1200);
+
+  // Three rows, every one of them a route: three anchors, no button,
+  // and nothing on the page for a runtime to answer.
+  app.switchTo("hub");
+  const hub = app.documentUnbooted();
+  assert.equal((hub.match(/<a class="tile"/g) ?? []).length, 3, "a navigating row came out as something else");
+  assert.ok(!hub.includes("<button type=\"button\" class=\"tile\""));
+  assert.ok(!hub.includes("<script"), "a page of navigating rows was given a module anyway");
+  // Every one of them reaches somewhere, which is what makes the page
+  // whole without a runtime rather than merely quiet.
+  const served = makeBrowser({ site });
+  served.openPage(hub);
+  const hrefs = document.body.querySelectorAll("a").map((a) => a.getAttribute("href"));
+  for (const name of ["second", "explore", "collections"]) {
+    assert.ok(hrefs.some((href) => href.includes(name)), `the hub lost ${name}`);
+  }
+
+  // The same group with one row that acts. One button in row clothing
+  // is the whole difference, and it is refused before a byte.
+  app.switchTo("actions");
+  assert.throws(
+    () => app.documentUnbooted(),
+    /PageNeedsBoot/,
+    "a row that answers a press was published with nothing to answer it",
+  );
+  const booted = app.document();
+  assert.ok(booted.includes("<button type=\"button\" class=\"tile\""), "the acting row is not a button");
+  assert.ok(booted.includes("<a class=\"tile\""), "the navigating row beside it stopped being an anchor");
+  done("the tile — a row that navigates is an anchor, and only the row that acts needs an app");
+}
+
+/// The reserve the bottom chrome owes the page, and the box it lands
+/// in. It was `padding-bottom` on the *screen*, on the unstated
+/// assumption that the screen is the last thing in the document — and
+/// `Document.body_end` is a seam whose whole job is to put something
+/// below it. A consumer's footer, seven links and a language row, sat
+/// under a fixed band at 375px on every page in every locale.
+///
+/// Both halves are needed and neither is enough. The sheet has to put
+/// the space in the box the footer is *inside*, and the arithmetic has
+/// to cover the band — a rule naming `--chrome-reserve` says nothing
+/// about how tall the thing it is clearing is, which is how a check on
+/// the sum passed while a reader saw a covered footer.
+async function theSeamClearsTheBand() {
+  const css = parseCss(await fs.readFile(path.join(site, "style.css"), "utf8"));
+  const px = rootLengths(css);
+
+  // What a reader on a phone is actually looking at, from the sheet's
+  // own numbers: the bar's top pad, one slot, and the clear space below
+  // it with the OS band inside `--bar-bottom`.
+  const band = px("--nav-bar-pad") + px("--nav-slot") + px("--bar-bottom") + px("--safe-b");
+  assert.ok(band > 0, "the band has no height, so this proves nothing");
+  assert.equal(
+    px("--chrome-reserve") - band,
+    px("--nav-content-gap"),
+    "the reserve is no longer the band plus the gap nothing may rest inside",
+  );
+
+  const { app } = await page({}, { route: "home", locale: "" }, 1200);
+  app.wideNav();
+  app.switchTo("hub");
+
+  // The file a site publishes: a screen, and a footer through the seam.
+  const withSeam = app.documentSeam();
+  const served = makeBrowser({ site });
+  served.openPage(withSeam);
+  assert.deepEqual(
+    document.body.childNodes.filter((n) => n.nodeType === 1).map((n) => n.nodeName),
+    ["A", "DIV", "MAIN", "FOOTER"],
+    "the seam is not where the reserve has to reach past",
+  );
+  assert.ok(
+    document.body.getAttribute("class").split(" ").includes("has-seam"),
+    "the document does not say it has anything below the screen",
+  );
+  assert.ok(document.body.querySelector("main").getAttribute("class").split(" ").includes("has-chrome"));
+
+  // At a phone's width the bar is a fixed band over the page, and the
+  // clear space for it is on the box the footer is inside rather than
+  // on the box above the footer.
+  const narrow = reserveAt(css, { nav: true, seam: true, width: 375 });
+  assert.equal(narrow.screen, undefined, "the space is still inside the screen, which the footer is not in");
+  assert.equal(narrow.body, "var(--chrome-reserve)", "the document reserves nothing for the band");
+  assert.ok(px("--chrome-reserve") >= band, "the document reserves less than the band is tall");
+
+  // Above the cap the bar is a header in flow: it took its space where
+  // it stands, and a reserve there is an inch of nothing.
+  assert.equal(reserveAt(css, { nav: true, seam: true, width: 900 }).body, "0");
+
+  // And the page with no seam is the page it always was. Strip the one
+  // class and the footer and the two files are the same bytes, which is
+  // what makes this safe for every generated page that never used the
+  // seam — the app shell's own included.
+  const plain = app.documentUnbooted();
+  served.openPage(plain);
+  assert.equal(document.body.getAttribute("class"), null, "a page with nothing below the screen grew a class");
+  assert.equal(
+    withSeam.replace(" class=\"has-seam\"", "").replace(/<footer>[\s\S]*?<\/footer>\n/, ""),
+    plain,
+    "the seam changed something other than the seam",
+  );
+  const bare = reserveAt(css, { nav: true, seam: false, width: 375 });
+  assert.equal(bare.screen, "var(--chrome-reserve)", "a screen that is the last thing lost its reserve");
+  assert.equal(bare.body, undefined);
+  done("the reserve — the clear space lands under the last thing in the document, footer included");
+}
+
 // ---- the run -----------------------------------------------------
 
 const scenarios = [
@@ -1041,6 +1325,8 @@ const scenarios = [
   navShapeFollowsTheWindow,
   navBandCarriesEveryDestination,
   bootIsDerivedFromWhatIsOnThePage,
+  tilesAreAnchorsOrButtons,
+  theSeamClearsTheBand,
 ];
 
 for (const scenario of scenarios) {

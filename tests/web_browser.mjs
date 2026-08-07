@@ -849,6 +849,12 @@ export function makeBrowser({
         document.documentElement.setAttribute(name, value);
       }
       const body = root.querySelector("body") ?? root;
+      // The body's own attributes and not only its children: a page
+      // nokre wrote whole says on `<body>` whether anything of the
+      // driver's stands below the screen, and the sheet's bottom
+      // reserve is selected on that (`class_names.seam`).
+      document.body.attrs = new Map();
+      for (const { name, value } of body.attributes ?? []) document.body.setAttribute(name, value);
       document.body.childNodes = [];
       for (const child of [...body.childNodes]) document.body.appendChild(child);
       return document.body;

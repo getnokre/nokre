@@ -249,6 +249,37 @@ fn buildSecond(_: *State, app: *h.App) !void {
     _ = app;
 }
 
+/// A press with nothing behind it. What makes the second tile below a
+/// button is that it is wired at all, not what the wire runs.
+fn onSignOut(state: *State) void {
+    state.view = 0;
+}
+
+/// A hub of rows that navigate — a site's home page, and the shape a
+/// section index is. Every tile carries a route, so every one of them
+/// is an `<a href>` the browser answers (`serialize.tile`) and the page
+/// is whole with nothing running.
+///
+/// It is here because the census that decides that used to ask the
+/// *role*, where `.tile` is a control unconditionally: a page like this
+/// derived a need it does not have, and a driver had no way to decline
+/// what a derivation asserts.
+fn buildHub(_: *State, app: *h.App) !void {
+    const group = try app.tree.appendId(app.tree.rootId(), .{ .tile_group = .{} });
+    for ([_][]const u8{ "second", "explore", "collections" }) |name| {
+        try app.tree.append(group, .{ .tile = .{ .label = name, .route = name } });
+    }
+}
+
+/// The same rows with one that acts instead of navigating — a button in
+/// row clothing, which nothing but an app can answer. The pair is the
+/// assertion: one page derives no need and one derives it.
+fn buildActions(state: *State, app: *h.App) !void {
+    const group = try app.tree.appendId(app.tree.rootId(), .{ .tile_group = .{} });
+    try app.tree.append(group, .{ .tile = .{ .label = "Explore everything", .route = "explore" } });
+    try app.tree.append(group, .{ .tile = .{ .label = "Sign out", .on_press = .bind(onSignOut, state) } });
+}
+
 /// The four extra destinations `nokre_probe_wide_nav` declares. Long
 /// names on purpose: a roster is measured in the words it holds, so
 /// this is the set that makes the row's width a real question in a
@@ -260,6 +291,8 @@ const routes = h.Routes(State).table(&.{
     .{ .name = "collections", .title = .{ .fixed = "Saved collections" }, .build = buildSecond },
     .{ .name = "account", .title = .{ .fixed = "Your whole account" }, .build = buildSecond },
     .{ .name = "documentation", .title = .{ .fixed = "Documentation" }, .build = buildSecond },
+    .{ .name = "hub", .title = .{ .fixed = "Everything here" }, .build = buildHub },
+    .{ .name = "actions", .title = .{ .fixed = "Things to do" }, .build = buildActions },
 });
 
 comptime {
@@ -462,7 +495,7 @@ pub export fn nokre_probe_view() usize {
 /// document too long for the result buffer: a probe that outgrew its
 /// transport, not a fault in what it measured.
 pub export fn nokre_probe_document() isize {
-    return writeDocument(true);
+    return writeDocument(true, false);
 }
 
 /// The same file with the boot left off — the 1,124-in-1,126 page of a
@@ -476,7 +509,22 @@ pub export fn nokre_probe_document() isize {
 /// the booted file's, because which shape a roster wears is the
 /// reader's window's and nothing about the file is a term in it.
 pub export fn nokre_probe_document_unbooted() isize {
-    return writeDocument(false);
+    return writeDocument(false, false);
+}
+
+/// The same file with a footer in `body_end` — the seam a site puts its
+/// copyright, its cross-locale links and its colophon through, which
+/// `document.zig` documents as "whatever stands below the app but
+/// inside the document".
+///
+/// It is a probe of its own rather than a flag on the one above because
+/// what it proves is a *difference*: a page with no seam is byte for
+/// byte the page it always was, and a page with one puts the bottom
+/// chrome's clear space under the footer instead of over it. Both files
+/// come out of the same app on the same screen, so nothing but the seam
+/// is different between them.
+pub export fn nokre_probe_document_seam() isize {
+    return writeDocument(false, true);
 }
 
 /// Puts the app on a screen by name, arriving rather than pushing —
@@ -512,7 +560,15 @@ pub export fn nokre_probe_wide_nav() i32 {
     return 1;
 }
 
-fn writeDocument(booted: bool) isize {
+/// A driver's own footer, in the shape sites actually hand the seam: a
+/// copyright line and a row of links, none of which is a place the
+/// route table knows (docs/static-sites.md, "A site's header is a
+/// roster, not a seam" — the footer is the half that stays bytes).
+const footer =
+    "<footer><p>© nokre</p><ul><li><a href=\"/terms/\">Terms</a></li>" ++
+    "<li><a href=\"/privacy/\">Privacy</a></li></ul></footer>\n";
+
+fn writeDocument(booted: bool, seam: bool) isize {
     const s = probe();
     doc_buf.clearRetainingCapacity();
     var em: dom.Emitter = .{
@@ -532,6 +588,7 @@ fn writeDocument(booted: bool) isize {
         .content_id = "content",
         .content_class = "page",
         .skip = "Skip to content",
+        .body_end = if (seam) footer else "",
         .boot = if (booted) .{ .wasm = "/app.wasm", .addressing = .documents } else null,
     }) catch |err| {
         note(s, err);

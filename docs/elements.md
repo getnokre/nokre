@@ -1237,6 +1237,14 @@ is never called, and with neither the row is a tab stop that answers
 nothing. Focus is the picker's pattern — a heavier stroke hugging the
 row — because an outset ring would collide with the separators.
 
+Because exactly one of the two is set, the split is total, and it
+reaches further than the chevron: **a routed tile is answered by the
+browser, so a page made of them publishes as a file with nothing running
+behind it** ([static-sites.md](static-sites.md), "Whether a page needs a
+runtime is derived"). A hub or a section index built out of routed rows
+costs its readers no module. One `on_press` row on the same page is a
+control, and then the page needs an app.
+
 An optional `icon` (any [`IconName`](#icon)) leads the row. It is
 **decorative**: the `label` stays the accessible name, and the glyph
 enters no accessibility tree at all — it is a field on the tile, not a

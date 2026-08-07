@@ -307,6 +307,83 @@ test "the runtime a page needs is read off the page, not declared beside it" {
     try expectContains(out.items, "app.wasm");
 }
 
+test "a tile that navigates needs nothing, and the one beside it that acts needs everything" {
+    const Screens = struct {
+        fn press(_: ?*anyopaque) void {}
+        fn hub(_: ?*anyopaque, app: *App) anyerror!void {
+            const group = try app.tree.appendId(app.tree.rootId(), .{ .tile_group = .{} });
+            try app.tree.append(group, .{ .tile = .{ .label = "Guide", .route = "guide" } });
+            try app.tree.append(group, .{ .tile = .{ .label = "Things", .route = "things" } });
+        }
+        fn things(_: ?*anyopaque, app: *App) anyerror!void {
+            const group = try app.tree.appendId(app.tree.rootId(), .{ .tile_group = .{} });
+            try app.tree.append(group, .{ .tile = .{ .label = "Guide", .route = "guide" } });
+            try app.tree.append(group, .{ .tile = .{ .label = "Sign out", .on_press = .{ .call = press } } });
+        }
+        fn bare(_: ?*anyopaque, _: *App) anyerror!void {}
+    };
+    var app = try App.init(testing.allocator, .{
+        .viewport = .{ .w = 1200, .h = 800 },
+        .services = .mocks(),
+        .routes = &.{
+            .{ .name = "hub", .title = .{ .fixed = "Hub" }, .build = Screens.hub },
+            .{ .name = "things", .title = .{ .fixed = "Things" }, .build = Screens.things },
+            .{ .name = "guide", .title = .{ .fixed = "Guide" }, .build = Screens.bare },
+        },
+    });
+    defer app.deinit();
+    try app.navigate("hub");
+
+    var out: std.ArrayList(u8) = .empty;
+    defer out.deinit(testing.allocator);
+    var em: serialize.Emitter = .{ .gpa = testing.allocator, .app = &app, .out = &out };
+    defer em.deinit();
+
+    // Rows that navigate are anchors — the serializer has always said so
+    // — and an anchor is answered by the browser. A census over the
+    // *role* could not see that, so a hub of pure navigation carried a
+    // module its readers would never run, and a floor cannot be
+    // declined.
+    try testing.expectEqual(@as(?element_mod.Role, null), document.needsRuntime(&app));
+    try document.document(&em, plain("Hub"));
+    try expectContains(out.items, "<a class=\"tile\"");
+    try expectLacks(out.items, "<script");
+
+    // One row that acts is a button in row clothing, and the page it is
+    // on is refused. The two screens differ by that row and nothing
+    // else.
+    try app.switchTo("things");
+    try testing.expectEqual(@as(?element_mod.Role, .tile), document.needsRuntime(&app));
+    out.clearRetainingCapacity();
+    try testing.expectError(error.PageNeedsBoot, document.document(&em, plain("Things")));
+}
+
+test "a seam below the screen moves the bottom reserve onto the document" {
+    var app = try test_app.init(400, 400);
+    defer app.deinit();
+    // The class is written from the seam's bytes and from nothing else.
+    // Whether the page *owes* a reserve is `has-chrome` on the screen and
+    // stays there; this says which box the space lands in when it does
+    // (`stylesheet.writeReserve`, and serialize_test's own reserve test).
+
+    // No seam, no class: every page that never used `body_end` is the
+    // page it always was, which is what makes this safe for the app
+    // shell and for every document already published.
+    const bare = try write(&app, plain("Hello"));
+    defer testing.allocator.free(bare);
+    try expectContains(bare, "\n<body>\n");
+
+    var doc = plain("Hello");
+    doc.body_end = "<footer><p>© nokre</p></footer>\n";
+    const seamed = try write(&app, doc);
+    defer testing.allocator.free(seamed);
+    try expectContains(seamed, "\n<body class=\"" ++ class_names.seam ++ "\">\n");
+    // And the footer is where the class says it is: below the screen,
+    // outside the box the reserve used to be inside.
+    const screen_end = std.mem.indexOf(u8, seamed, "</main>").?;
+    try testing.expect(std.mem.indexOf(u8, seamed, "<footer>").? > screen_end);
+}
+
 test "a document nokre wrote whole says so, and the sheet styles the page for it" {
     var app = try test_app.init(400, 400);
     defer app.deinit();

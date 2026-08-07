@@ -30,8 +30,9 @@ const std = @import("std");
 /// in; every rule in the sheet that reaches the screen hangs off it.
 pub const root = "nokre";
 
-/// The bottom reserve, conditional on `layout.hasBottomChrome`. Written
-/// beside `root` on the same element, never alone.
+/// Whether the bottom reserve is owed at all, conditional on
+/// `layout.hasBottomChrome`. Written beside `root` on the same element,
+/// never alone. Which *box* the space then lands in is `seam` below.
 pub const has_chrome = "has-chrome";
 
 /// The skip link's, on the anchor `document.zig` writes past the chrome
@@ -51,6 +52,27 @@ pub const skip = "skip";
 // answer for a row that will not fit, and it has one that costs no
 // driver — the row scrolls (stylesheet.zig). One markup, one band, and
 // nothing in the sheet asks whether anything is running.
+
+/// On `<body>`, and only on a page nokre wrote whole: the document has
+/// markup of the driver's standing *below* the screen
+/// (`Document.body_end`, non-empty).
+///
+/// It exists because `has_chrome` at the top says the clear space is
+/// owed and never said which box owes it. The reserve was
+/// `padding-bottom` on the screen, on the unstated
+/// assumption that the screen is the last thing in the document — true
+/// of every app mounted in someone else's page, and false of exactly
+/// the page this edition also writes, where the seam is below the
+/// screen and inside the file. A footer put there sat under the fixed
+/// band at a phone's width, on every page, in every locale: the band
+/// covered it whole and nothing said so.
+///
+/// So the clear space goes at the bottom of whatever is last, and this
+/// is how the sheet knows which that is. A fact nokre already holds —
+/// `document.zig` was handed the bytes — rather than a number a driver
+/// re-derives from the five properties the reserve is made of
+/// (docs/static-sites.md).
+pub const seam = "has-seam";
 
 /// The root attribute a page nokre wrote **whole** carries, and the
 /// only thing that distinguishes one from an app mounted in someone
@@ -99,5 +121,13 @@ comptime {
     // checked here, where the file is already being read.
     if (std.mem.indexOf(u8, js, document_attr) != null) {
         @compileError("live.js stamps \"" ++ document_attr ++ "\", which claims a host page the live driver did not write");
+    }
+    // And `seam` for the same reason one step in: it is a class on
+    // `body`, it moves the bottom reserve off the screen and onto the
+    // document, and a mounted app writing it would take the clear space
+    // out of its host's page and put it somewhere it has no business
+    // padding.
+    if (std.mem.indexOf(u8, js, seam) != null) {
+        @compileError("live.js writes \"" ++ seam ++ "\", which is a claim about a document the live driver did not write");
     }
 }

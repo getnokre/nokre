@@ -433,18 +433,19 @@ controls, and does nothing when they are pressed. Nobody should be
 typing that fact, because it is not a fact about intent — it is a fact
 about **what is on the page**, and nokre has just built the tree.
 
-So nokre derives it. `Element.Role.needsRuntime` is exhaustive over a
-closed element set, which makes the derivation total rather than a
-heuristic, and it draws one line: **a link is answered by the browser
-and a control is answered by an app.** Prose, headings, images, tables,
-code blocks, QR codes, `link`, `nav_item` and the roster's own row
-publish and work with nothing running. A `button`, `icon_button`,
-`tile`, `more` or `back`; a `toggle`, `checkbox`, `text_input`,
-`text_area`, `segmented`, `radio_group` or `select`, every one of which
-keeps its state in the tree and only mirrors it into the DOM; a
-`copyable`, whose press writes the clipboard; and every layer that
-exists because something is running — `sheet`, `picker`, `notice`, and
-the collapsed roster's `nav_current` among them — need one.
+So nokre derives it. `Element.needsRuntime` is exhaustive over a closed
+element set, which makes the derivation total rather than a heuristic,
+and it draws one line: **a link is answered by the browser and a control
+is answered by an app.** Prose, headings, images, tables, code blocks,
+QR codes, `link`, `nav_item`, the roster's own row and a `tile` that
+navigates publish and work with nothing running. A `button`,
+`icon_button`, `more`, `back` or a `tile` that acts; a `toggle`,
+`checkbox`, `text_input`, `text_area`, `segmented`, `radio_group` or
+`select`, every one of which keeps its state in the tree and only
+mirrors it into the DOM; a `copyable`, whose press writes the clipboard;
+and every layer that exists because something is running — `sheet`,
+`picker`, `notice`, and the collapsed roster's `nav_current` among them
+— need one.
 
 Two consequences worth stating outright.
 
@@ -521,6 +522,123 @@ into a second stylesheet to reason about — which is the failure a reset
 invites, not a gap in this one. It is the line the rest of this page
 draws: the library takes what it holds, and a shape you chose stays
 yours.
+
+## The writer knew, and the reader beside it assumed
+
+The site that produced every section above adopted the round they landed
+in and came back with two findings. They are **one item**, because they
+are one defect twice. In each of them a fact was already written down
+correctly by one part of this edition, and a second part a few hundred
+lines away answered a question about the same fact on a coarser input —
+and got a different answer.
+
+Neither is a missing feature and neither is a refusal. Both are the
+library disagreeing with itself, which is the failure this page has been
+about since its first paragraph: **two writers of one fact, and the
+second one is where it goes wrong.** What is new is that the second
+writer need not be a *copy*. It can be a derivation reading one level up
+from where the fact lives — the kind instead of the thing, the screen
+instead of the document — and at that altitude it cannot see the case
+that would have changed its answer.
+
+The test both of these failed, and the one to run on the next
+derivation: **what is the finest thing this is a fact about, and is that
+what it reads?**
+
+### A tile is an anchor when it navigates and a button when it acts
+
+`needsRuntime` took a `Role`, and `.tile` was unconditionally a control.
+But a `tile` is *the row-shaped form of `link` and `button`*, and the
+serializer beside it had always said so out loud — `<a class="tile"
+href>` when it carries a route, `<button class="tile">` when it carries
+a press. One file could tell an anchor from a button and the file next
+to it could not.
+
+What that cost is the ordinary shape of a static site. A home page and a
+section hub are tile groups of pure navigation; both derived a need
+neither had, and both shipped a **575 KB module their readers never
+ran** — boot going from two pages to four. There was no remedy, either,
+and that is the part worth keeping in view: `boot` is a floor, so a
+driver may add a runtime and may never take one away. The correct
+answer, "this page needs nothing", was unstatable. The consumer
+published the module and reported it rather than gut its main navigation
+surface into plain links, which is exactly right and is what a floor
+should cost when the floor is wrong.
+
+So the census asks the **element**. `Tile.route` decides it, for the
+same reason it decides the tag, and it decides it *totally*: a tile
+carries exactly one destination or it does not enter the tree
+(`TileHasOneDestination`, `TileNeedsDestination`), so route-or-press is
+a partition rather than a guess. `Span.route` was the precedent and it
+is the same precedent it always was — a field that says whether a thing
+navigates or acts, read by whoever needs to know.
+
+**The rest of the table was re-read against that and none of it moved.**
+It is worth saying which nearly did:
+
+- **`notice`** carries a `route` too, and its open control genuinely is
+  an anchor. But a notice is installed by `App.notify` and arrives with
+  its dismiss and expand controls beside that one, so the *layer* needs
+  an app whatever the row links to.
+- **`button`** could have read `Action.wired` and answered "no" for an
+  unwired one. It does not. An unwired button is inert with or without a
+  runtime, and deriving "this page needs nothing" from it would turn
+  *you forgot to wire it* into a published page of dead controls — the
+  silent direction, which is the whole reason this derivation exists.
+- **`copyable`, `back`, `nav_current`, `more`** and the modal layers are
+  facts about the kind. A copyable's press is intrinsic and writes the
+  clipboard; Back pops a stack; a chip opens a list. None of them has a
+  field that could say otherwise.
+- **`link`, `nav_item`, `scroll_region`, `code_block`** were already on
+  the browser's side whole, and stay there.
+
+### A footer in the seam is the last thing in the document
+
+The clear space below bottom chrome — the band's own height plus the
+24px nothing may rest inside — was `padding-bottom` on the screen. That
+is correct exactly while the screen is the last thing in the document,
+which is true of every app mounted in a page it did not write and false
+of the page this library also writes: `Document.body_end` is a seam
+whose stated job is *whatever stands below the app but inside the
+document*.
+
+So a driver putting a footer there — doing precisely what the seam is
+for — got 73px of copyright, links and a language row under a 72px fixed
+band, at 375px, on every page in every locale. Padding is inside the box
+it is on, and the footer was outside it. Nothing in the library could
+say so and nothing did.
+
+The consumer fixed it in a stylesheet of its own, and that fix is the
+diagnosis: it **re-derived five of nokre's `:root` properties and its
+breakpoint literal** to work out a number the library already knew. A
+consumer coupled to nokre's arithmetic is a consumer that breaks
+silently the next time a metric moves.
+
+**The space now goes at the bottom of whatever is last, and nokre is
+told which that is rather than guessing.** `document.zig` was handed the
+seam's bytes; where they are non-empty it writes one class on `<body>`
+(`class_names.seam`), and the reserve lands on the document instead of
+on the screen. The screen keeps its ordinary page pad above the footer,
+the footer gets the full clearance below it, and the arithmetic never
+leaves the library. **A driver spends nothing.**
+
+Three things fall out, and each was a choice:
+
+- **A page with no seam is unchanged to the byte.** The class is absent,
+  every rule is the one it always was, and the app shell — which is also
+  a page this writer produces — never enters the new branch. The web
+  gate asserts the two files against each other: strip the class and the
+  footer from the seamed one and it *is* the other.
+- **`--chrome-reserve` is published anyway.** The sum had been written
+  out twice in longhand, which is the drift this file exists to rule
+  out, so it is now a `:root` property spent by all four of its rules.
+  A driver that puts something below the app by a route no seam can
+  reach may spend it too — but it should not have to, and it no longer
+  does.
+- **This is not a `body_start` in disguise.** The seam class says one
+  thing about the document's *shape* — something is below the screen —
+  and nothing about what. The refusal above stands: a header of
+  destinations is still a roster, not markup.
 
 ## A default is not an opinion about your site
 

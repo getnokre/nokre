@@ -14,6 +14,7 @@
 const std = @import("std");
 
 const app_mod = @import("../../core/app.zig");
+const class_names = @import("class_names.zig");
 const element_mod = @import("../../core/element.zig");
 const overlays = @import("../../core/overlays.zig");
 const semantics = @import("../../a11y/semantics.zig");
@@ -1403,12 +1404,28 @@ test "the root class list is the sheet's own, and the reserve is layout's answer
     var css: std.ArrayList(u8) = .empty;
     defer css.deinit(testing.allocator);
     try stylesheet.write(testing.allocator, &css, .{});
-    for ([_][]const u8{ plain, chromed }) |list| {
-        const selector = try std.mem.replaceOwned(u8, testing.allocator, list, " ", ".");
-        defer testing.allocator.free(selector);
-        const rule = try std.fmt.allocPrint(testing.allocator, "\n.{s} {{", .{selector});
-        defer testing.allocator.free(rule);
-        try expectContains(css.items, rule);
+    const root_rule = try std.fmt.allocPrint(testing.allocator, "\n.{s} {{", .{plain});
+    defer testing.allocator.free(root_rule);
+    try expectContains(css.items, root_rule);
+
+    // The modifier's only readers are the reserve's four rules, and
+    // every one of them is qualified — by what is on the page and by
+    // who wrote it (`writeReserve`) — so the compound is looked for
+    // wherever it stands rather than at the head of a rule.
+    const compound = try std.mem.replaceOwned(u8, testing.allocator, chromed, " ", ".");
+    defer testing.allocator.free(compound);
+    const spent = try std.fmt.allocPrint(testing.allocator, " .{s} {{ padding-bottom:", .{compound});
+    defer testing.allocator.free(spent);
+    try expectContains(css.items, spent);
+
+    // And the modifier alone is never a compound of its own, which is
+    // the half of the pair a host document gets wrong. Both leading
+    // bytes a selector can start after, so the check cannot be passed
+    // by the compound it is looking past.
+    for ([_][]const u8{ "\n.", " ." }) |lead| {
+        const alone = try std.fmt.allocPrint(testing.allocator, "{s}{s}", .{ lead, class_names.has_chrome });
+        defer testing.allocator.free(alone);
+        try testing.expectEqual(@as(?usize, null), std.mem.indexOf(u8, css.items, alone));
     }
 }
 
@@ -1460,18 +1477,25 @@ test "the roster has two shapes and the sheet's one breakpoint picks" {
     try expectContains(css.items, "\n.chip.current { color: var(--ink); font-weight: 700; }");
 
     // The band is the exception, and the width it hangs off is the pane
-    // cap itself — the sheet's only breakpoint, spent twice. A second
-    // number here would be a phone the library guessed at.
+    // cap itself — the sheet's only breakpoint. A second *number* here
+    // would be a phone the library guessed at, so the sweep is over
+    // every width query in the file rather than over the count of them:
+    // the reserve's own narrow rule is a second block behind the same
+    // figure, which is the invariant holding and not a breach of it.
     var expected: [64]u8 = undefined;
     const query = try std.fmt.bufPrint(&expected, "@media (max-width: {d}px) {{", .{layout.metrics.sheet_max_w});
     try expectContains(css.items, query);
-    try testing.expectEqual(
-        @as(?usize, null),
-        std.mem.indexOfPos(u8, css.items, std.mem.indexOf(u8, css.items, query).? + query.len, "@media (max-width:"),
-    );
+    var scan: usize = 0;
+    while (std.mem.indexOfPos(u8, css.items, scan, "@media (max-width:")) |at| {
+        try testing.expectEqualStrings(query, css.items[at..][0..query.len]);
+        scan = at + query.len;
+    }
     const band = std.mem.indexOf(u8, css.items, query).?;
-    // Every declaration the band needs is inside it, and the reserve
-    // the screen keeps for it comes back with it.
+    // Every declaration the band needs is inside it. The reserve is not
+    // one of them any more and that is the fix rather than a loss: it
+    // was a copy of a sum the static sheet also held, written against a
+    // different box, and it lives with the other three in one group
+    // (`writeReserve`, and the test below).
     //
     // Every selector here is a bare `.nav`, which is the whole of the
     // second half: no roster is held out of the band, and the sheet
@@ -1486,7 +1510,6 @@ test "the roster has two shapes and the sheet's one breakpoint picks" {
         ".nav-row::-webkit-scrollbar { display: none; }",
         ".chip {\n    height: var(--nav-slot);",
         ".chip.current { background: var(--g10);",
-        ":root:has(.nav) .nokre.has-chrome {\n    padding-bottom: calc(",
         ".picker.above-nav {",
     }) |rule| {
         const at = std.mem.indexOf(u8, css.items, rule) orelse {
@@ -1506,7 +1529,56 @@ test "the roster has two shapes and the sheet's one breakpoint picks" {
         std.mem.indexOfPos(u8, css.items[0..row_end], row, "justify-content"),
     );
     // And a bar standing above the page reserves nothing under it.
-    try expectContains(css.items, "\n:root:has(.nav) .nokre.has-chrome { padding-bottom: var(--pad); }");
+    try expectContains(css.items, "\n:root:has(.nav) body:not(.has-seam) .nokre.has-chrome { padding-bottom: var(--pad); }\n");
+}
+
+test "the bottom reserve lands under the last thing in the document, seam included" {
+    const layout = @import("../../core/layout.zig");
+    var css: std.ArrayList(u8) = .empty;
+    defer css.deinit(testing.allocator);
+    try stylesheet.write(testing.allocator, &css, .{});
+
+    // The sum is named once. It was written out twice in longhand, and
+    // the five terms are exactly what a consumer had to re-derive in a
+    // sheet of its own to keep its footer off the band.
+    try expectContains(css.items,
+        \\  --chrome-reserve: calc(
+        \\    var(--nav-content-gap) + var(--nav-bar-pad) + var(--nav-slot) + var(--bar-bottom) + var(--safe-b)
+        \\  );
+    );
+
+    // Four rules, and each is a pair: the screen carries the space in a
+    // page nokre did not write whole, and `body` carries it in the one
+    // it did — where `Document.body_end` may put a footer *below* the
+    // screen, which is the box the old reserve was inside.
+    const seam = ".has-seam:has(.nokre.has-chrome)";
+    for ([_][]const u8{
+        // Bottom chrome at any width: a notice banner, the notices
+        // indicator, the band.
+        "\n:root body:not(.has-seam) .nokre.has-chrome { padding-bottom: var(--chrome-reserve); }\n",
+        "\n:root body" ++ seam ++ " { padding-bottom: var(--chrome-reserve); }\n",
+        // A bar above the page in flow took its space where it stands.
+        "\n:root:has(.nav) body:not(.has-seam) .nokre.has-chrome { padding-bottom: var(--pad); }\n",
+        "\n:root:has(.nav) body" ++ seam ++ " { padding-bottom: 0; }\n",
+    }) |rule| try expectContains(css.items, rule);
+
+    // Owed again inside the band's width, and the seam is owed it there
+    // too — which is the whole finding: 375px, a fixed 72px band, and a
+    // footer with nothing reserving for it.
+    var expected: [64]u8 = undefined;
+    const narrow = try std.fmt.bufPrint(&expected, "@media (max-width: {d}px) {{\n  :root:has(.nav) body", .{layout.metrics.sheet_max_w});
+    const at = std.mem.lastIndexOf(u8, css.items, narrow).?;
+    try expectContains(css.items[at..],
+        \\:root:has(.nav) body.has-seam:has(.nokre.has-chrome) { padding-bottom: var(--chrome-reserve); }
+    );
+
+    // Print takes it away in both quals. The second is not decoration:
+    // the band's rule above outranks a bare one, and a page box narrower
+    // than the pane cap is a paper size rather than a phone.
+    const print_at = std.mem.indexOf(u8, css.items, "\n@media print {\n  :root body:not(.has-seam)").?;
+    try testing.expect(print_at > at);
+    try expectContains(css.items[print_at..], "\n  :root:has(.nav) body:not(.has-seam) .nokre.has-chrome { padding-bottom: var(--pad); }\n");
+    try expectContains(css.items[print_at..], "\n  :root:has(.nav) body.has-seam:has(.nokre.has-chrome) { padding-bottom: 0; }\n");
 }
 
 test "the modal surfaces share the scrims' z-index, so document order is the stacking" {

@@ -990,17 +990,40 @@ rather than analyzed:
   runtime (`PageNeedsBoot`), the screen of prose and links publishes
   whole with no script at all, and a module on a page that needs none is
   never refused.
+- **the tile's two forms** — the derivation's own input, on the shape
+  that caught it out. A hub of rows that all carry routes must publish
+  with no module at all and three anchors in it, each reaching
+  somewhere; the same group with one `on_press` row must be
+  `PageNeedsBoot`, and booted must hold the button and the anchor beside
+  each other. Both halves, because either alone is the wrong fix — a
+  `tile` that never needed a runtime would publish a page of dead rows.
+- **the bottom reserve** — the sheet's arithmetic against the sheet's
+  own geometry, and the second place the tree and the sheet are held
+  against each other. The band's height is computed from the resolved
+  `:root` properties (`var()` followed, `calc()` evaluated, `env()`
+  standing down to its fallback), and the reserve must exceed it by the
+  gap nothing may rest inside. Then the file: a page with a footer
+  through `body_end` must carry the seam class and hold that footer
+  *below* the screen in the body, and at 375px the reserve must resolve
+  onto the document rather than onto the screen the footer is not
+  inside. And the control: the same page with no seam must be the same
+  bytes minus the class and the footer, with the reserve back on the
+  screen — which is what makes the change safe for every page that never
+  used the seam.
 
 What that gate is **not** is a browser. Layout, styling, the real event
 loop, a real popup's window management and a real storage's quota
 behaviour are the stub's approximations, and nothing there asserts how a
 page *looks* or where text wrapped — the golden tests are that, on the
-desktop editions. The nav scenarios are the nearest thing to an
-exception and the line is worth stating exactly: they resolve the
-cascade, which is a fact about the sheet's own bytes, and they compute
-no box. That an `overflow-x: auto` row *scrolls* is the browser's
-business; that the row is one, and that every destination is in the
-markup with somewhere to go, is nokre's. Still uncovered on the web
+desktop editions. The nav and reserve scenarios are the nearest thing to
+an exception and the line is worth stating exactly: they resolve the
+cascade and evaluate the lengths the sheet declares, both of which are
+facts about the sheet's own bytes, and they compute **no box**. That an
+`overflow-x: auto` row *scrolls* is the browser's business; that the row
+is one, and that every destination is in the markup with somewhere to
+go, is nokre's. That 96px of padding renders as 96 pixels is the
+browser's; that the number the sheet asks for covers the band the sheet
+also describes is nokre's. Still uncovered on the web
 specifically: the compute
 worker (`live-worker.js` in a real `Worker`), the service worker
 (`sw.js`, and therefore the notification leg), the http leg's `fetch`,

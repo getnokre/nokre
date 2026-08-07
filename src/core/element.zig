@@ -1647,44 +1647,6 @@ pub const Role = enum {
         };
     }
 
-    /// Whether an element of this role is inert on a page with nothing
-    /// running behind it — a control that needs an app to answer it.
-    ///
-    /// **Derived, not declared.** Whether a published page needs a
-    /// runtime used to be a driver's word (`dom.Document.boot` was set
-    /// by hand, and the nav's shape hung off it), and a word is a thing
-    /// to forget: the failure is a file that renders, shows its
-    /// controls, and does nothing when they are pressed. The element set
-    /// is closed, so the question is answerable outright — this switch
-    /// is exhaustive with no `else`, and a new element cannot be added
-    /// without saying which side it falls on.
-    ///
-    /// **A link is not one of these and that is the whole line.** An
-    /// `<a href>` is answered by the browser: a `link`, a `nav_item`,
-    /// a `nav_here` and every static element publish and work with no
-    /// script at all, which is what makes a document a document. What
-    /// needs an app is anything whose press runs consumer code
-    /// (`button`, `icon_button`, `tile`, `more`, `back`), anything
-    /// holding state the tree owns and the DOM only mirrors (`toggle`,
-    /// `checkbox`, `text_input`, `text_area`, `segmented`,
-    /// `radio_group`, `select`), anything reaching a platform service
-    /// (`copyable`, whose press writes the clipboard and whose
-    /// acknowledgement mark only an app can clear), and every layer that
-    /// exists because something is running (`sheet`, `picker`, `notice`
-    /// and their controls). `nav_current` is in that last group and is
-    /// the reason this began: a collapsed roster is a combobox that
-    /// opens a list, and a list is opened by a driver.
-    ///
-    /// `scroll_region` and `code_block` are deliberately *not* here:
-    /// both are focusable because both scroll, and on the one medium
-    /// that publishes files the browser scrolls them.
-    pub fn needsRuntime(self: Role) bool {
-        return switch (self) {
-            .button, .toggle, .checkbox, .text_input, .text_area, .segmented, .tile, .radio_group, .select, .copyable, .nav_current, .sheet, .sheet_close, .back, .notice, .notices_pane, .icon_button, .picker, .picker_item, .more => true,
-            .text, .heading, .icon, .box, .divider, .badge, .meter, .qr, .stack, .link, .list, .list_item, .code_block, .blockquote, .document, .table, .row, .cell, .scroll_region, .tile_group, .nav, .nav_item, .nav_here => false,
-        };
-    }
-
     /// Whether an element of this role must carry a non-empty
     /// accessible name to enter the tree (`Tree.validateAppend`,
     /// `error.UnlabeledInteractive`). The consumer-built interactive
@@ -1853,6 +1815,74 @@ pub const Element = union(Role) {
             // the order with `isInteractive` and Tab walks past it —
             // the button's `disabled` arm, arrived at by the default.
             else => self.isInteractive(),
+        };
+    }
+
+    /// Whether this element is inert on a page with nothing running
+    /// behind it — a control that needs an app to answer it.
+    ///
+    /// **Derived, not declared.** Whether a published page needs a
+    /// runtime used to be a driver's word (`dom.Document.boot` was set
+    /// by hand, and the nav's shape hung off it), and a word is a thing
+    /// to forget: the failure is a file that renders, shows its
+    /// controls, and does nothing when they are pressed. The element set
+    /// is closed, so the question is answerable outright — this switch
+    /// is exhaustive with no `else`, and a new element cannot be added
+    /// without saying which side it falls on.
+    ///
+    /// **A link is not one of these and that is the whole line.** An
+    /// `<a href>` is answered by the browser: a `link`, a `nav_item`,
+    /// a `nav_here` and every static element publish and work with no
+    /// script at all, which is what makes a document a document. What
+    /// needs an app is anything whose press runs consumer code
+    /// (`button`, `icon_button`, `more`, `back`), anything holding state
+    /// the tree owns and the DOM only mirrors (`toggle`, `checkbox`,
+    /// `text_input`, `text_area`, `segmented`, `radio_group`, `select`),
+    /// anything reaching a platform service (`copyable`, whose press
+    /// writes the clipboard and whose acknowledgement mark only an app
+    /// can clear), and every layer that exists because something is
+    /// running (`sheet`, `picker`, `notice` and their controls).
+    /// `nav_current` is in that last group and is the reason this began:
+    /// a collapsed roster is a combobox that opens a list, and a list is
+    /// opened by a driver.
+    ///
+    /// **Over the element and not over the `Role`**, which is the one
+    /// thing here that had to be corrected in the field. A `tile` is not
+    /// one thing — it is *the row-shaped form of `link` and `button`*
+    /// (`Tree.validateAppend`), an anchor when it navigates and a button
+    /// when it acts, and the DOM writer had been making that split off
+    /// `route` for as long as tiles have existed (`serialize.tile`).
+    /// Asking the kind meant asking a question the writer beside it had
+    /// already answered better: a hub of navigating rows — the ordinary
+    /// shape of a site's home page — derived a need it did not have and
+    /// published a module its readers never ran, with no way to decline
+    /// it, because a derivation is a floor. `route` decides it here for
+    /// the same reason it decides the tag, and it decides it *totally*:
+    /// a tile carries exactly one destination or it does not enter the
+    /// tree (`error.TileHasOneDestination`, `error.TileNeedsDestination`),
+    /// so route-or-press is a partition and not a guess.
+    ///
+    /// Every other arm was re-read against that and stayed a fact about
+    /// the kind. `link` and `nav_item` carry destinations too and are
+    /// already on the browser's side whole. A `notice` may carry a
+    /// `route`, and its open control is indeed an anchor — but a notice
+    /// is installed by `App.notify` and arrives with dismiss and expand
+    /// controls beside that one, so the *layer* needs an app whatever
+    /// the row links to. A `button` whose `on_press` is unwired is inert
+    /// either way, and reading `Action.wired` here would turn "you
+    /// forgot to wire it" into "this page needs nothing" — the silent
+    /// direction, which is the direction this whole derivation exists to
+    /// close.
+    ///
+    /// `scroll_region` and `code_block` are deliberately *not* here:
+    /// both are focusable because both scroll, and on the one medium
+    /// that publishes files the browser scrolls them.
+    pub fn needsRuntime(self: Element) bool {
+        return switch (self) {
+            // An anchor when it navigates, a button when it acts.
+            .tile => |t| t.route.len == 0,
+            .button, .toggle, .checkbox, .text_input, .text_area, .segmented, .radio_group, .select, .copyable, .nav_current, .sheet, .sheet_close, .back, .notice, .notices_pane, .icon_button, .picker, .picker_item, .more => true,
+            .text, .heading, .icon, .box, .divider, .badge, .meter, .qr, .stack, .link, .list, .list_item, .code_block, .blockquote, .document, .table, .row, .cell, .scroll_region, .tile_group, .nav, .nav_item, .nav_here => false,
         };
     }
 

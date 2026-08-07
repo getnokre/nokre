@@ -473,6 +473,19 @@ distinguishes "into `<head>`" from "into the body" — a field does. A
 bytes with the same escaping the document gets, point a second emitter
 at a buffer of your own: `em.fragment(&out)`.
 
+**A seam that is used changes one thing the library owns.** Where
+`body_end` is non-empty, `<body>` gets `class_names.seam` — one class,
+saying only that something of the driver's stands below the screen — and
+the sheet lands the bottom chrome's clear space on the document instead
+of on the screen. Padding is inside the box it is on, so the old
+placement reserved the space *above* whatever the seam held: a footer
+sat under the fixed band at a phone's width, on every page that had one
+([static-sites.md](../static-sites.md), "A footer in the seam is the
+last thing in the document"). An empty seam writes no class and takes
+the rules it always took. The live driver may not write it, and that is
+a comptime check on live.js rather than a habit, exactly as `data-nokre`
+is.
+
 **And there are two of them, not three.** There is no `body_start`
 mirroring `body_end`, and the refusal is written where a driver author
 will meet it ([static-sites.md](../static-sites.md), "A site's header is
@@ -501,7 +514,10 @@ What the driver still owes when it boots over the page it wrote:
   the address bar, so the bar and the links cannot disagree.
 - **The class list after boot.** The live driver keeps the conditional
   half of `rootClass` true as the screen changes underneath, toggling
-  the bottom reserve on the same element the file wrote it on.
+  the modifier the bottom reserve is selected on. It stays on the
+  element the file wrote it on; which *box* the reserve then lands in is
+  the body's seam class, and that one no driver touches after the file
+  is written, because a seam cannot appear at runtime.
 
 And what it hands back: with `addressing: "documents"` a link is the
 browser's. It has a file behind it, so intercepting it would take the one

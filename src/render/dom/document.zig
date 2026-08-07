@@ -401,7 +401,20 @@ pub fn document(em: *Emitter, doc: Document) !void {
     try headOpen(em, doc.title, doc.description, doc.stylesheet);
     if (doc.meta) |m| try metaTags(em, doc, m);
     try em.raw(doc.head);
-    try em.raw("</head>\n<body>\n");
+    // The one class on `<body>`, and it says one thing: something of the
+    // driver's stands below the screen in this file. It is written from
+    // `body_end` and from nothing else, because that is the only way
+    // anything can — a page nokre wrote whole has the screen, the chrome
+    // mount, the skip link, the boot script and the seam in it, and the
+    // seam is the only one of them the library did not place.
+    //
+    // What it buys is the bottom reserve landing under the last thing
+    // rather than under the screen (`stylesheet.zig`'s reserve block,
+    // `class_names.seam`). Absent, and every rule is the one it always
+    // was, which is why a page with no footer is unchanged to the byte.
+    try em.raw("</head>\n<body");
+    if (doc.body_end.len != 0) try em.print(" class=\"{s}\"", .{class_names.seam});
+    try em.raw(">\n");
 
     if (doc.skip.len != 0) {
         try em.print("<a class=\"{s}\" href=\"#", .{class_names.skip});
@@ -572,8 +585,14 @@ fn checkMeta(m: Meta) MetaError!void {
 /// declaration is a thing to get wrong in the silent direction: a file
 /// that renders, shows its controls, and does nothing when they are
 /// pressed. The element set is closed, so nokre can read the answer off
-/// the tree it just built (`element.Role.needsRuntime`, where the line
-/// between a control and a link is drawn and argued).
+/// the tree it just built (`element.Element.needsRuntime`, where the
+/// line between a control and a link is drawn and argued).
+///
+/// It asks each *element*, not each role, and the role it hands back is
+/// the answer's name rather than its input: a `tile` with a route is an
+/// anchor and a `tile` with a press is a button, and a census that
+/// could not tell them apart made a page of navigating rows carry a
+/// module nobody on it would run.
 ///
 /// A generator's own use is the one this is public for:
 ///
@@ -585,8 +604,8 @@ fn checkMeta(m: Meta) MetaError!void {
 pub fn needsRuntime(app: *const App) ?element_mod.Role {
     var it = app.tree.dfs();
     while (it.next()) |id| {
-        const role = app.tree.getConst(id).?.role();
-        if (role.needsRuntime()) return role;
+        const el = app.tree.getConst(id).?;
+        if (el.needsRuntime()) return el.role();
     }
     return null;
 }
