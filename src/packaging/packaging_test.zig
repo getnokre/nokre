@@ -486,20 +486,16 @@ test "connect-src carries 'self', the declared origins, and nothing else" {
     );
 }
 
-test "a source that could end its own directive is refused" {
-    // The shapes a policy carries.
-    try std.testing.expectEqual(null, packaging.badConnectSrc(&.{
-        "https://api.example.com", "*.example.com", "wss://live.example.com:8443", "self.example.com",
-    }));
-    // A second directive smuggled in behind the first, the space that
-    // would start one, and the quote that would close the attribute the
-    // policy lives in — each is the whole point of checking at all.
+test "the name build.zig calls is the policy's own check" {
+    // The shapes a source may and may not take are asserted where the
+    // check lives (render/dom/csp.zig), because both writers of a policy
+    // spend it and a second copy of that table would be a second table
+    // to keep. What is this file's is the *name*: build.zig refuses a
+    // declaration through `packaging.badConnectSrc` before any emitter
+    // runs, and an alias that stopped pointing at the check would be a
+    // build that refuses nothing.
+    try std.testing.expectEqual(null, packaging.badConnectSrc(&.{"https://api.example.com"}));
     try std.testing.expectEqualStrings("x.com; script-src *", packaging.badConnectSrc(&.{"x.com; script-src *"}).?);
-    try std.testing.expectEqualStrings("x.com 'unsafe-inline'", packaging.badConnectSrc(&.{"x.com 'unsafe-inline'"}).?);
-    try std.testing.expectEqualStrings("x.com\">", packaging.badConnectSrc(&.{"x.com\">"}).?);
-    // And the one that needs no smuggling: every host there is.
-    try std.testing.expectEqualStrings("*", packaging.badConnectSrc(&.{"*"}).?);
-    try std.testing.expectEqualStrings("", packaging.badConnectSrc(&.{""}).?);
 }
 
 test "no byte a consumer supplies can smuggle a directive" {
