@@ -194,7 +194,14 @@ with nothing declared: direction is derived from the string itself (UAX
 #9's first-strong rule, per hard paragraph), an RTL paragraph
 right-aligns its lines, embedded Latin and numbers take their own
 left-to-right runs, and Arabic script shapes through the bundled
-companion face. There is no `dir` attribute and no per-locale direction
+companion face. **Numbers** means Arabic-script digits too, and that
+sentence was false until revision 55: the renderer picked a run's
+shaping direction from whether it was Arabic *script*, and Extended
+Arabic-Indic digits are Arabic script and bidi class EN — so `۷۴`
+shaped right-to-left and printed `۴۷`. A Persian balance screen showed
+47 credits to a reader holding 74, beside an ASCII table that was
+correct. The two questions are separated now (which face, which
+direction) and `tests/golden.zig` asserts the order in pixels. There is no `dir` attribute and no per-locale direction
 flag in ARB — a Persian string in an English locale and an English
 string in a Persian locale each lay out correctly on their own evidence.
 This never depends on the setting below.

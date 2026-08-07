@@ -119,7 +119,24 @@ bool isArabicScript(uint32_t cp) {
            (cp >= 0xFE70 && cp <= 0xFEFF);
 }
 
-bool containsArabic(const uint8_t *utf8, size_t len) {
+// Arabic-script digits: the Arabic-Indic set, its two separators, and
+// the extended (Persian/Urdu) set. Mirrors the AN and EN rows of
+// core/bidi_tables.zig for these blocks, and the distinction is the
+// whole of this file's bug history here — they need the companion face
+// like every other codepoint in the block, and they are *not* strong
+// RTL. A number runs left to right inside a right-to-left line; that is
+// the bidi algorithm's answer for AN and EN alike, and shaping a digit
+// run right-to-left prints it backwards.
+bool isArabicDigit(uint32_t cp) {
+    return (cp >= 0x0660 && cp <= 0x0669) || (cp >= 0x066B && cp <= 0x066C) ||
+           (cp >= 0x06F0 && cp <= 0x06F9);
+}
+
+// One scan, two answers: which face this run needs, and which direction
+// it shapes in. They are different questions about the same bytes and
+// were one question until a Persian balance rendered as its own
+// reverse.
+void scanArabic(const uint8_t *utf8, size_t len, bool *any_script, bool *any_letter) {
     // Decode only far enough to classify; malformed sequences can't
     // produce an Arabic lead byte pattern and just advance one byte.
     size_t i = 0;
@@ -140,24 +157,34 @@ bool containsArabic(const uint8_t *utf8, size_t len) {
                  ((utf8[i + 2] & 0x3F) << 6) | (utf8[i + 3] & 0x3F);
             n = 4;
         }
-        if (isArabicScript(cp)) return true;
+        if (isArabicScript(cp)) {
+            *any_script = true;
+            if (!isArabicDigit(cp)) {
+                *any_letter = true;
+                return;
+            }
+        }
         i += n;
     }
-    return false;
 }
 
 // Any Arabic-script codepoint selects the companion face (regular or
 // bold — the script has no italic tradition, so italics resolve to their
-// upright weight) and RTL shaping for the whole run; core/bidi.zig
-// guarantees a call never mixes directions.
+// upright weight). Direction is the *other* question: a run shapes
+// right-to-left only if something in it is strongly right-to-left, which
+// a digit is not. core/bidi.zig guarantees a call never mixes
+// directions, so one answer per run is enough — but the answer has to be
+// about direction and not about which face the bytes happen to want.
 int32_t resolveFace(int32_t face, const uint8_t *utf8, size_t len, bool *rtl) {
     face = clampFace(face);
-    if (containsArabic(utf8, len)) {
-        *rtl = true;
+    bool any_script = false;
+    bool any_letter = false;
+    scanArabic(utf8, len, &any_script, &any_letter);
+    *rtl = any_letter;
+    if (any_script) {
         const bool bold = face < HSK_FACE_ICONS && (face % 4 == 1 || face % 4 == 3);
         return bold ? HSK_FACE_ARABIC_BOLD : HSK_FACE_ARABIC;
     }
-    *rtl = false;
     return face;
 }
 

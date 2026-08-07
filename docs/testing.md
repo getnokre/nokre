@@ -867,7 +867,17 @@ Workflow:
    golden for eyeball diffing. If the change is intended, rerun with
    `-Dupdate-goldens` to rewrite the golden, then review the diff and
    commit.
-4. There is no tolerance and no perceptual diffing, deliberately. The
+4. Not every assertion in this tier wants a baseline. A golden is only
+   as good as the eye that reviewed it, and some defects make a
+   perfectly plausible picture — a Persian number rendered backwards is
+   one, and it passed every gate here for as long as the renderer has
+   existed. So "the first digit of a Persian number is the one that was
+   written first" compares the leading columns of a shaped run against
+   the same digit drawn alone: the first glyph of a run starts at the
+   pen, so the two must be identical, and a reversed run cannot be. No
+   file to review, and it fails on the defect rather than on anything
+   that changes around it.
+5. There is no tolerance and no perceptual diffing, deliberately. The
    pixel model ([internals/pixel-model.md](internals/pixel-model.md))
    makes exactness cheap; any variance is a bug by definition.
 

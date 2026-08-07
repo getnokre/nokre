@@ -1395,6 +1395,81 @@ test "golden: Persian text is shaped, reordered, and right-aligned" {
     try renderGolden(&harness, "persian");
 }
 
+/// Persian digits, which are Arabic *script* and bidi class EN: they
+/// need the companion face and they run left to right, and for as long
+/// as this renderer has existed it took the first fact for the second
+/// and shaped them right-to-left. `۷۴` printed as `۴۷` — a consumer's
+/// Persian balance screen showed 47 credits to a reader holding 74,
+/// beside an ASCII transaction table that was correct, on every frame of
+/// a store submission. Nothing here saw it: the byte-exact tests assert
+/// logical strings and pass either way, and the one Persian golden spells
+/// its numbers `1404` and `42`.
+fn buildPersianDigits(_: ?*anyopaque, app: *h.App) !void {
+    const tree = &app.tree;
+    const root = tree.rootId();
+    try tree.setTitle("ارقام");
+    // A bare number, a number after a word, and the ASCII pair whose
+    // correctness is what made the Persian one look deliberate.
+    try tree.append(root, .{ .text = .{ .content = "۷۴" } });
+    try tree.append(root, .{ .text = .{ .content = "۷۴ اعتبار" } });
+    try tree.append(root, .{ .text = .{ .content = "مارس ۲۰۲۶" } });
+    try tree.append(root, .{ .text = .{ .content = "74 credits" } });
+}
+
+test "golden: Persian digits read in the order they were written" {
+    var harness = try h.testing.Harness.init(std.testing.allocator, .{ .w = 400, .h = 240 }, .{ .build = buildPersianDigits });
+    defer harness.deinit();
+    try renderGolden(&harness, "persian-digits");
+}
+
+// The same claim without a baseline, and the reason this one is the gate
+// rather than the golden beside it: a golden is only as good as the eye
+// that reviewed it, and a reversed number is a perfectly plausible
+// picture. This asks the question directly instead — which digit is
+// drawn first — and answers it in pixels.
+//
+// The first glyph of a run starts at the pen, so its raster is the same
+// whether it was shaped alone or in company; only the glyphs after it
+// accumulate advances. So the leading columns of `۲۰۲۶` must be `۲`
+// drawn by itself. Reverse the run and they are `۶`. Nothing here
+// depends on a screen, a layout or a committed file, and it fails on the
+// defect rather than on anything around it.
+test "the first digit of a Persian number is the one that was written first" {
+    const size = 32;
+    const w = 200;
+    const hgt = 60;
+    const pen = 4;
+
+    var run_surface = try skia.Surface.init(w, hgt, 1);
+    defer run_surface.deinit();
+    run_surface.canvas().clear(.g0);
+    run_surface.canvas().drawText(pen, 40, .prose, size, "۲۰۲۶", .g11);
+
+    var lead_surface = try skia.Surface.init(w, hgt, 1);
+    defer lead_surface.deinit();
+    lead_surface.canvas().clear(.g0);
+    lead_surface.canvas().drawText(pen, 40, .prose, size, "۲", .g11);
+
+    const lead_w: usize = @intCast(pen + skia.measurer().measureRun(.prose, size, "۲"));
+    // RGBX, four bytes a pixel, as the surface hands them back.
+    const stride = run_surface.pixelWidth() * 4;
+    const run_px = run_surface.pixels();
+    const lead_px = lead_surface.pixels();
+    var inked: usize = 0;
+    for (0..run_surface.pixelHeight()) |row| {
+        const from = row * stride;
+        const cols = lead_w * 4;
+        for (run_px[from .. from + cols]) |p| inked += @intFromBool(p != run_px[from]);
+        try std.testing.expectEqualSlices(
+            u8,
+            lead_px[from .. from + cols],
+            run_px[from .. from + cols],
+        );
+    }
+    // A blank crop would pass the comparison above and prove nothing.
+    try std.testing.expect(inked != 0);
+}
+
 fn buildPersianRtl(_: ?*anyopaque, app: *h.App) !void {
     // The same evidence, now with the chrome mirrored (setDirection):
     // labels lead from the right, the toggle knob and track sit at the
