@@ -75,7 +75,10 @@ doesn't go in. When one does, it is a cross-cutting commitment:
 
 1. Struct + `Element` union arm + `Role` in
    [element.zig](../../src/core/element.zig)
-   (`role()`, `isInteractive()`, `isFocusable()`, `label()`), and its
+   (`role()`, `isInteractive()`, `isFocusable()`, `label()`,
+   `needsRuntime()` — that last one decides whether a page holding the
+   element can be published as a file with nothing running behind it,
+   and its switch is exhaustive so the answer cannot be skipped), and its
    cursor method in [cursor.zig](../../src/core/cursor.zig) in the same
    pass — the builder is closed exactly as the element set is, and the
    comptime check there refuses to compile a union member the cursor

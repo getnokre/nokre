@@ -297,6 +297,53 @@ pub fn navItemHeight() i32 {
     return text.Scale.body.lineHeight() + 2 * metrics.nav_item_pad_v;
 }
 
+/// What the surface an app is drawn on does with a row too wide for the
+/// space it was given — the one fact about a medium that settles a
+/// *tree* question, which is why it cannot be left to whoever draws.
+///
+/// `nav.syncNavChrome` picks between a row of links and a chip that
+/// opens a menu, and `semantics.roleOf` reads the element kind: the two
+/// shapes are different nodes, decided before either renderer sees the
+/// tree. So the renderer cannot own the decision, and core has to be
+/// told the one thing about the medium it cannot see.
+pub const Medium = enum {
+    /// The ink past the edge is lost. Every rastering edition — the
+    /// reference renderer and the platform shells over it — whose
+    /// window does not reflow text under a reader: what was laid out is
+    /// what is seen, so a row that will not fit has to be reshaped
+    /// before it is drawn.
+    ///
+    /// The default, and deliberately the cautious one: clipping is what
+    /// a medium does unless it says otherwise, and only the thing that
+    /// will actually draw the page can say otherwise (`App.setMedium`).
+    clips,
+    /// The line breaks and the row takes a second one. The DOM edition,
+    /// where the browser reflows under a reader whose window nobody
+    /// measured.
+    reflows,
+};
+
+/// Whether the row of destinations will *wrap* rather than be clipped —
+/// the whole of why `navCollapses` may decline to fire.
+///
+/// Two facts, and it needs both. A reflowing medium is one of them; the
+/// other is that the DOM edition's nav has two shapes and only the wider
+/// one wraps. Below the pane cap the roster is a band across the bottom:
+/// a fixed one-line strip over the page whose height the content reserve
+/// repeats to the pixel, so a second line there would put the page's
+/// last line behind the destinations. Above the cap it is a header in
+/// the page's own margin, wrapping at the page's own gap
+/// (render/dom/stylesheet.zig, "the roster has two shapes").
+///
+/// `sheet_max_w` is the same number the sheet spends on the same fact,
+/// which is what keeps the two from drifting: this is not a second
+/// answer to the sheet's question, it is core declining to answer a
+/// question the sheet has already made unaskable. A row that cannot
+/// fail to fit has no failure to reshape for.
+pub fn navRowWraps(viewport: Size, medium: Medium) bool {
+    return medium == .reflows and viewport.w > metrics.sheet_max_w;
+}
+
 /// Whether the roster fits a row of pills, or the nav has to collapse
 /// to the single chip (`nav.syncNavChrome`).
 ///
@@ -324,12 +371,24 @@ pub fn navItemHeight() i32 {
 /// outside. The row now takes exactly the width its items need and
 /// reopens the moment the window can hold it.
 ///
+/// `navRowWraps` above spends that cap on a different question and the
+/// two do not conflict: it asks *whether this surface has a one-line
+/// row at all*, and only where the answer is yes does the width below
+/// get measured — against the viewport, never against the cap.
+///
 /// The indicator's slot is reserved whether or not one is present. A
 /// nav that changed shape because a notice arrived — and changed back
 /// when it was dismissed — would move the only navigation on screen for
 /// a reason that has nothing to do with navigation.
-pub fn navCollapses(measurer: text.Measurer, items: anytype, viewport: Size) bool {
+pub fn navCollapses(measurer: text.Measurer, items: anytype, viewport: Size, medium: Medium) bool {
     if (items.len == 0) return false;
+    // Asked before anything is measured, because on a surface that
+    // wraps there is no width at which the row fails: the question the
+    // measurement answers is not live (`navRowWraps`). This is the arm
+    // that stopped a header from swapping itself for a chip in a 900px
+    // browser window — the row had wrapped, the CSS said so, and core
+    // was still measuring it against one line.
+    if (navRowWraps(viewport, medium)) return false;
     var row: i32 = 0;
     for (items) |item| {
         row += navItemPillWidth(measurer, item.icon, item.label) + metrics.nav_item_gap;

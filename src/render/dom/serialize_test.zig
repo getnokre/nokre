@@ -1019,11 +1019,11 @@ test "chrome is separable from content, and the nav names where you are" {
 
     const bar = try renderChrome(&app);
     defer testing.allocator.free(bar);
-    // Bare `nav`, always: the modifier that keeps a roster out of the
-    // bottom band says the page has no boot script, and the driver
-    // emitting this frame is that boot (`class_names.no_boot`). A frame
-    // that carried it would also be a frame that no longer matched the
-    // file it is patching, byte for byte.
+    // Bare `nav`, and there is no other kind. One markup for both
+    // shapes and for both writers of a page — the file a generator
+    // published and the frame a driver patches it with — because the
+    // only question about the shape is the reader's window's, and the
+    // sheet asks it (class_names.zig, where a modifier once stood).
     try expectContains(bar, "<nav class=\"nav\" aria-label=\"Sections\">");
     // Consumers never manage selected state; the current route is
     // exposed as aria-current.
@@ -1472,12 +1472,21 @@ test "the roster has two shapes and the sheet's one breakpoint picks" {
     const band = std.mem.indexOf(u8, css.items, query).?;
     // Every declaration the band needs is inside it, and the reserve
     // the screen keeps for it comes back with it.
+    //
+    // Every selector here is a bare `.nav`, which is the whole of the
+    // second half: no roster is held out of the band, and the sheet
+    // cannot ask whether anything is running on the page. The band's
+    // answer for a row that will not fit is in the block too, and it is
+    // the one thing here a driver is not needed for.
     for ([_][]const u8{
-        ".nav:not(.no-boot) {\n    position: fixed;",
-        ".nav:not(.no-boot) .nav-row {\n    flex-wrap: nowrap;",
-        ".nav:not(.no-boot) .chip {\n    height: var(--nav-slot);",
-        ".nav:not(.no-boot) .chip.current { background: var(--g10);",
-        ":root:has(.nav:not(.no-boot)) .nokre.has-chrome {",
+        ".nav {\n    position: fixed;",
+        ".nav-row {\n    flex-wrap: nowrap;",
+        "    overflow-x: auto;",
+        "    scrollbar-width: none;",
+        ".nav-row::-webkit-scrollbar { display: none; }",
+        ".chip {\n    height: var(--nav-slot);",
+        ".chip.current { background: var(--g10);",
+        ":root:has(.nav) .nokre.has-chrome {\n    padding-bottom: calc(",
         ".picker.above-nav {",
     }) |rule| {
         const at = std.mem.indexOf(u8, css.items, rule) orelse {
@@ -1486,6 +1495,16 @@ test "the roster has two shapes and the sheet's one breakpoint picks" {
         };
         try testing.expect(at > band);
     }
+    // The row inside the band is *not* centred, and the layer over it
+    // is: a centred scroll container overflows both ends and the
+    // leading one is unreachable, which is the whole reason the two
+    // rules are not the same rule.
+    const row = std.mem.indexOf(u8, css.items, ".nav-row {\n    flex-wrap: nowrap;").?;
+    const row_end = std.mem.indexOfPos(u8, css.items, row, "\n  }").?;
+    try testing.expectEqual(
+        @as(?usize, null),
+        std.mem.indexOfPos(u8, css.items[0..row_end], row, "justify-content"),
+    );
     // And a bar standing above the page reserves nothing under it.
     try expectContains(css.items, "\n:root:has(.nav) .nokre.has-chrome { padding-bottom: var(--pad); }");
 }

@@ -968,11 +968,40 @@ rather than analyzed:
   the control is written by `build`, so it only moves if the screen was
   rebuilt and patched in.
 
+- **the nav's two shapes** — the one place the *tree* and the *sheet*
+  are held against each other, which is where three releases running
+  shipped a nav that passed its tests and looked wrong in a browser. The
+  stylesheet the build just wrote is parsed and its cascade resolved at
+  a width, the way a browser resolves it; the app is booted at the same
+  width through the shipped `live.js` and re-measured by the resize
+  event a reader's drag fires; and the assertion is that the two agree
+  about what is on screen. Above the pane cap, at six widths, the sheet
+  wraps the header and the tree must be a row of six — a sweep rather
+  than one number, because the defect lived in a *band* of widths and
+  any single one could have missed it. Below the cap the sheet is the
+  band and the tree is the chip, and dragging back must reopen the row,
+  because what a reader hits is a drag and not a load. Then the band's
+  overflow answer from both sides: the row must resolve to a scroll
+  container packed to the start — a centred one's leading overflow
+  cannot be reached — and the file a generator published must hold every
+  destination as a link with an address of its own, six of them, all
+  distinct, none of them bare `#`. And the derivation: the screen
+  holding a button and a segmented control cannot be published without a
+  runtime (`PageNeedsBoot`), the screen of prose and links publishes
+  whole with no script at all, and a module on a page that needs none is
+  never refused.
+
 What that gate is **not** is a browser. Layout, styling, the real event
 loop, a real popup's window management and a real storage's quota
 behaviour are the stub's approximations, and nothing there asserts how a
 page *looks* or where text wrapped — the golden tests are that, on the
-desktop editions. Still uncovered on the web specifically: the compute
+desktop editions. The nav scenarios are the nearest thing to an
+exception and the line is worth stating exactly: they resolve the
+cascade, which is a fact about the sheet's own bytes, and they compute
+no box. That an `overflow-x: auto` row *scrolls* is the browser's
+business; that the row is one, and that every destination is in the
+markup with somewhere to go, is nokre's. Still uncovered on the web
+specifically: the compute
 worker (`live-worker.js` in a real `Worker`), the service worker
 (`sw.js`, and therefore the notification leg), the http leg's `fetch`,
 and IME and scrolling, which belong to the browser rather than to a

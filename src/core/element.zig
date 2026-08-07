@@ -1112,11 +1112,15 @@ pub const Copyable = struct {
 };
 
 /// App-level navigation chrome; children must be `nav_item`s. Installed
-/// once via `App.setNav` and preserved across router rebuilds. Always
-/// the bottom band of the viewport, holding whatever it holds at that
-/// thing's own width and centered there — not the sheet's 560, which is
-/// a rule about line length and about nothing a bar carries
-/// (`layout.navCollapses`).
+/// once via `App.setNav` and preserved across router rebuilds.
+///
+/// The bottom band of the viewport wherever the roster is a thumb's
+/// affordance, holding whatever it holds at that thing's own width and
+/// centered there — not the sheet's 560, which is a rule about line
+/// length and about nothing a bar carries. On the one medium whose
+/// window resizes under a reader it is a header above the page instead
+/// at any width past that cap, over these same nodes and decided by
+/// nothing this element carries (`layout.Medium`, and the sheet).
 pub const Nav = struct {};
 
 /// Every string nokre itself puts on a screen or into the accessibility
@@ -1640,6 +1644,44 @@ pub const Role = enum {
         return switch (self) {
             .nav, .icon_button, .notice, .notices_pane, .sheet, .picker => true,
             .text, .heading, .icon, .box, .divider, .badge, .meter, .qr, .stack, .button, .link, .toggle, .checkbox, .text_input, .text_area, .list, .list_item, .code_block, .blockquote, .document, .table, .row, .cell, .scroll_region, .segmented, .tile_group, .tile, .radio_group, .select, .copyable, .nav_item, .nav_current, .nav_here, .sheet_close, .back, .picker_item, .more => false,
+        };
+    }
+
+    /// Whether an element of this role is inert on a page with nothing
+    /// running behind it — a control that needs an app to answer it.
+    ///
+    /// **Derived, not declared.** Whether a published page needs a
+    /// runtime used to be a driver's word (`dom.Document.boot` was set
+    /// by hand, and the nav's shape hung off it), and a word is a thing
+    /// to forget: the failure is a file that renders, shows its
+    /// controls, and does nothing when they are pressed. The element set
+    /// is closed, so the question is answerable outright — this switch
+    /// is exhaustive with no `else`, and a new element cannot be added
+    /// without saying which side it falls on.
+    ///
+    /// **A link is not one of these and that is the whole line.** An
+    /// `<a href>` is answered by the browser: a `link`, a `nav_item`,
+    /// a `nav_here` and every static element publish and work with no
+    /// script at all, which is what makes a document a document. What
+    /// needs an app is anything whose press runs consumer code
+    /// (`button`, `icon_button`, `tile`, `more`, `back`), anything
+    /// holding state the tree owns and the DOM only mirrors (`toggle`,
+    /// `checkbox`, `text_input`, `text_area`, `segmented`,
+    /// `radio_group`, `select`), anything reaching a platform service
+    /// (`copyable`, whose press writes the clipboard and whose
+    /// acknowledgement mark only an app can clear), and every layer that
+    /// exists because something is running (`sheet`, `picker`, `notice`
+    /// and their controls). `nav_current` is in that last group and is
+    /// the reason this began: a collapsed roster is a combobox that
+    /// opens a list, and a list is opened by a driver.
+    ///
+    /// `scroll_region` and `code_block` are deliberately *not* here:
+    /// both are focusable because both scroll, and on the one medium
+    /// that publishes files the browser scrolls them.
+    pub fn needsRuntime(self: Role) bool {
+        return switch (self) {
+            .button, .toggle, .checkbox, .text_input, .text_area, .segmented, .tile, .radio_group, .select, .copyable, .nav_current, .sheet, .sheet_close, .back, .notice, .notices_pane, .icon_button, .picker, .picker_item, .more => true,
+            .text, .heading, .icon, .box, .divider, .badge, .meter, .qr, .stack, .link, .list, .list_item, .code_block, .blockquote, .document, .table, .row, .cell, .scroll_region, .tile_group, .nav, .nav_item, .nav_here => false,
         };
     }
 

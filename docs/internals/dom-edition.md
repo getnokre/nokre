@@ -1150,13 +1150,33 @@ try dom.chrome(&em);    // notice, nav, sheet, picker
 
   Both shapes are **one markup**, which is the whole reason this is a
   sheet rule and not a tree decision: the wasm side knows nothing about
-  it, and a served file cannot disagree with the frame that patches it.
-  The one thing the sheet cannot see is whether the page has a driver at
-  all — that is `class_names.no_boot`, written by `document.zig` out of
-  `Document.boot` and by nobody else, and it keeps a page nothing will
-  ever mount over out of the band at every width. The reference edition
-  has no such rule and draws the band always: it lays out rects, and
-  what it laid out is what the reader sees.
+  it, a served file cannot disagree with the frame that patches it, and
+  no fact about who published a page is a term in it. The reference
+  edition has no such rule and draws the band always: it lays out rects,
+  and what it laid out is what the reader sees.
+
+  **What core does have to be told is the medium.** Which shape a nav
+  wears is the sheet's, but whether the roster *collapses* is a tree
+  decision — `nav.syncNavChrome` picks between a row of links and a
+  combobox, and `semantics.roleOf` reads the element kind — so it cannot
+  move into a renderer. Above the cap this edition wraps the header, and
+  a row that wraps has no width at which it fails, so
+  `layout.navCollapses` declines before it measures, on the one input
+  core cannot see: `layout.Medium`, `reflows` here and `clips` on every
+  rastering edition. The driver installs it, beside the measurer and for
+  the same reason (`live.zig`'s boot, `document.zig`'s first line).
+  Below the cap the band is one line by construction, the measurement is
+  live again, and the chip is what a narrow window gets.
+
+  **The band's own overflow answer needs nobody running.** A nowrap row
+  in a fixed layer clips at both screen edges, and the band cannot wrap
+  out of that — its height is arithmetic the content reserve repeats to
+  the pixel. So the row is a scroll container, packed to the start
+  rather than centred (a centred one's leading overflow cannot be
+  scrolled to) and one line tall either way, with no scrollbar, because
+  a scrollbar in a fixed band is height the reserve cannot see. A driver
+  upgrades that to the chip; a page with none keeps a shape that already
+  works.
 
 - **The reset is not tidiness.** It is the edition's half of matching
   the reference: `font-synthesis: none`, because the bundle ships real

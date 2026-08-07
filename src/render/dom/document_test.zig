@@ -135,14 +135,15 @@ test "a site's header is a roster, and a roster is above the page's own title" {
     try testing.expect(bar < main);
     try testing.expect(main < title);
     try expectContains(html, "aria-current=\"page\">Pricing</a>");
-    // And it is a header rather than a bottom bar at every width this
-    // file will be read at, because nothing on it can reshape it: the
-    // page carries no boot (`plain`), so the shape it was served in is
-    // the whole of what its reader gets.
-    try expectContains(html, "<nav class=\"nav no-boot\"");
+    // And the roster carries no modifier at all, on a page (`plain`)
+    // that will never boot. Which shape a reader gets is their window's
+    // to decide and the sheet decides it, so a fact about the file has
+    // no business in the class list: this page takes the bottom band on
+    // a phone exactly as an app shell does.
+    try expectContains(html, "<nav class=\"nav\" aria-label=");
 }
 
-test "a page that boots keeps the shape the reader's window picks" {
+test "one markup, whether or not anything will ever mount over it" {
     const Screens = struct {
         fn build(_: ?*anyopaque, app: *App) anyerror!void {
             try app.tree.setTitle("Pricing");
@@ -165,18 +166,24 @@ test "a page that boots keeps the shape the reader's window picks" {
 
     var doc = plain("Pricing");
     doc.boot = .{ .wasm = "/app.wasm" };
-    const html = try write(&app, doc);
-    defer testing.allocator.free(html);
-    // The modifier is about the file, not about the file's writer: a
-    // generated page with a driver on it collapses and reshapes exactly
-    // as an app shell does, so it wears the band on a phone and the
-    // header on anything wider, and the sheet is the only thing that
-    // ever decides which.
-    try expectContains(html, "<nav class=\"nav\"");
-    try expectLacks(html, "no-boot");
+    const booted = try write(&app, doc);
+    defer testing.allocator.free(booted);
+    const unbooted = try write(&app, plain("Pricing"));
+    defer testing.allocator.free(unbooted);
+
+    // The two files differ by the boot script and by nothing else. That
+    // is the property a modifier on the nav broke for one release, and
+    // breaking it is what took the bottom bar away from a reader who
+    // narrowed their window on a published page: the shape is the
+    // reader's window's question, the sheet asks it over these bytes,
+    // and no fact about the file is a term in it.
+    const script = std.mem.indexOf(u8, booted, "<script").?;
+    try testing.expectEqualStrings(unbooted[0..script], booted[0..script]);
+    try expectContains(booted, "<nav class=\"nav\" aria-label=");
+    try expectContains(unbooted, "<nav class=\"nav\" aria-label=");
 }
 
-test "a chip nothing can open is refused rather than published" {
+test "a page whose need for a runtime is on the page is refused without one" {
     const Screens = struct {
         fn build(_: ?*anyopaque, app: *App) anyerror!void {
             try app.tree.setTitle("Explore");
@@ -206,11 +213,20 @@ test "a chip nothing can open is refused rather than published" {
     defer out.deinit(testing.allocator);
     var em: serialize.Emitter = .{ .gpa = testing.allocator, .app = &app, .out = &out };
     defer em.deinit();
-    // The chip opens a list, and a list is opened by the driver. With no
+    // The chip opens a list, and a list is opened by an app. With no
     // boot on the page there is none, so the file would publish a
     // control that cannot answer and a crawler would read one button
     // where the site's sections are.
-    try testing.expectError(error.NavChipNeedsBoot, document.document(&em, plain("Explore")));
+    //
+    // It is no longer a rule about the nav, though, and the derivation
+    // is what says so: the chip is a `nav_current`, `nav_current` needs
+    // a runtime like every other combobox, and this is the tree being
+    // read rather than a special case being remembered.
+    try testing.expectEqual(
+        @as(?element_mod.Role, .nav_current),
+        document.needsRuntime(&app),
+    );
+    try testing.expectError(error.PageNeedsBoot, document.document(&em, plain("Explore")));
     // Before a byte, like every other check this writer makes.
     try testing.expectEqual(@as(usize, 0), out.items.len);
 
@@ -219,6 +235,76 @@ test "a chip nothing can open is refused rather than published" {
     booted.boot = .{ .wasm = "/app.wasm" };
     try document.document(&em, booted);
     try expectContains(out.items, "role=\"combobox\"");
+}
+
+test "the runtime a page needs is read off the page, not declared beside it" {
+    const Screens = struct {
+        fn prose(_: ?*anyopaque, app: *App) anyerror!void {
+            try app.tree.setTitle("Guide");
+            try app.tree.append(app.tree.rootId(), .{ .text = .{ .content = "Words and a link." } });
+            try app.tree.append(app.tree.rootId(), .{ .link = .{ .label = "Reference", .route = "guide" } });
+            try app.tree.append(app.tree.rootId(), .{ .code_block = .{ .content = "zig build" } });
+            try app.tree.append(app.tree.rootId(), .{ .qr = .{ .value = "https://example.com", .label = "This page" } });
+        }
+        fn control(_: ?*anyopaque, app: *App) anyerror!void {
+            try app.tree.setTitle("Guide");
+            try app.tree.append(app.tree.rootId(), .{ .copyable = .{ .label = "Key", .value = "abc123" } });
+        }
+    };
+    // Wide enough that the roster is a row, so nothing about the *nav*
+    // is answering here: what is under test is the page's own content.
+    var app = try App.init(testing.allocator, .{
+        .viewport = .{ .w = 1200, .h = 800 },
+        .services = .mocks(),
+        .routes = &.{
+            .{ .name = "guide", .title = .{ .fixed = "Guide" }, .build = Screens.prose },
+            .{ .name = "keys", .title = .{ .fixed = "Keys" }, .build = Screens.control },
+        },
+    });
+    defer app.deinit();
+    try app.setNav(&.{ .{ .route = "guide" }, .{ .route = "keys" } });
+    try app.navigate("guide");
+
+    var out: std.ArrayList(u8) = .empty;
+    defer out.deinit(testing.allocator);
+    var em: serialize.Emitter = .{ .gpa = testing.allocator, .app = &app, .out = &out };
+    defer em.deinit();
+    // Prose, a link, a code block, a QR and a roster of links: a page
+    // that is whole with nothing running, and the browser answers every
+    // affordance on it. This is what a static site mostly is, and the
+    // refusal must not reach it.
+    try testing.expectEqual(@as(?element_mod.Role, null), document.needsRuntime(&app));
+    try document.document(&em, plain("Guide"));
+    try expectContains(out.items, "Words and a link.");
+
+    // A generator that *pushes* its way from page to page has already
+    // failed, and the derivation is what says so rather than a note in
+    // a document: a pushed screen wears the framework's Back control,
+    // and Back pops a stack no published file has. A site's pages are
+    // each their own arrival — `switchTo`, which is also what the live
+    // driver boots a generated document with (live.zig).
+    try app.navigate("keys");
+    try testing.expectEqual(@as(?element_mod.Role, .back), document.needsRuntime(&app));
+
+    // Arrived at properly, the same screen needs a runtime for its own
+    // reason and one element: a `copyable` renders as a line of text
+    // with a glyph beside it, and every affordance on it — the
+    // clipboard write, the acknowledgement mark — is an app's.
+    try app.switchTo("keys");
+    try testing.expectEqual(@as(?element_mod.Role, .copyable), document.needsRuntime(&app));
+    out.clearRetainingCapacity();
+    try testing.expectError(error.PageNeedsBoot, document.document(&em, plain("Keys")));
+
+    // A driver may still publish a runtime the tree cannot ask for —
+    // the page whose static shape is deliberately inert because what it
+    // will show has not been fetched. The derivation is a floor, and
+    // this direction is the one that is never refused.
+    try app.switchTo("guide");
+    var seeded = plain("Guide");
+    seeded.boot = .{ .wasm = "/app.wasm" };
+    out.clearRetainingCapacity();
+    try document.document(&em, seeded);
+    try expectContains(out.items, "app.wasm");
 }
 
 test "a document nokre wrote whole says so, and the sheet styles the page for it" {

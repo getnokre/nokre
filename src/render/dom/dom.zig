@@ -93,6 +93,11 @@ pub const node = serialize.node;
 pub const document = document_mod.document;
 pub const Document = document_mod.Document;
 pub const Boot = document_mod.Boot;
+/// Whether this page can be published as a file with nothing running
+/// behind it — the first control on it that an app has to answer, or
+/// null. What a generator spends on `Document.boot`, so the fact is
+/// read off the tree rather than typed per page (document.zig).
+pub const needsRuntime = document_mod.needsRuntime;
 pub const Addressing = document_mod.Addressing;
 /// What the page says about itself to a crawler, a link preview and a
 /// share sheet: canonical, Open Graph, the Twitter card. Every

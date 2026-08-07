@@ -357,31 +357,122 @@ breakpoint: at and below it every bottom-anchored surface nokre draws
 is a pane standing in a window with room beside it. A bar sorts on the
 same fact and spends the same number, so the two cannot drift.
 
-### A page with no boot script keeps the header at every width
+### The header wraps, so nothing above the cap may collapse it
 
-One thing the width rule cannot do alone. Which shape fits is a question
-a *driver* re-asks every time the window moves, and the answer it falls
-back to when a row will not make a line is a chip that opens a list. A
-page with no `boot` has neither: no driver to re-ask, and nothing to
-work the chip. The markup it was served in is the whole of what its
-reader will ever get, so it has to be the shape that answers every
-width — the header, which wraps.
+The width rule above was half-applied for one release, and the half that
+was missing is the one core owns. The sheet wraps the header; core went
+on measuring the roster against a single line and swapping the row for
+the collapsed chip when it did not fit — so a browser window between the
+breakpoint and wherever the pills happened to fit again showed **one
+plated capsule where a site's sections should be**. Two mechanisms, one
+question, opposite answers.
 
-So `document` writes `class="nav no-boot"` when, and only when,
-`Document.boot` is null, and the sheet's band excludes it. This is not
-the attribute coming back in through a side door: the fact is not who
-wrote the file, it is whether anything on the page can reshape what is
-on it. A generated page that *does* boot carries no modifier and wears
-the band on a phone exactly as an app shell does, because there is a
-driver on it to work the chip.
+A row that wraps has no width at which it fails, so there is nothing to
+reshape for. Core declines before it measures. The condition is not a
+width, though, and this is why it could not simply be deleted: **the
+reference renderer does not reflow.** A native desktop window at 600px
+would clip an over-wide row, and clipping is what collapse is there to
+prevent. So the input is the *medium* — `layout.Medium`, `clips` or
+`reflows` — and it is a driver's word, installed exactly like the text
+measurer and for the same reason: the thing that will actually draw the
+page is the thing to ask. `live.zig` declares it at boot, `dom.document`
+declares it at the top of a file it is about to write, and **no consumer
+states it**, because a consumer that could state it would be a second
+place for it to be wrong.
 
-The same fact refuses the other half. A roster too wide for the viewport
-a generator ran at comes out as the chip, and on a page with no boot
-that chip cannot answer a press — a crawler reads one button where the
-site's sections should be, and the file renders. So `document` returns
-`error.NavChipNeedsBoot` rather than publishing it: the second tripwire,
-written by hand at the consumer, is now the library's, and the first has
-nothing left to pin.
+### The retraction: a page with no boot script was held out of the band
+
+The paragraph that used to stand here said the opposite of what follows,
+and the correction is worth keeping visible rather than editing out. It
+reasoned: which shape fits is a question a *driver* re-asks every time
+the window moves, and the answer it falls back to when a row will not
+make a line is a chip that opens a list; a page with no `boot` has
+neither; so the markup it was served in has to be the one shape that
+answers every width, and the sheet's band excluded it with a `no-boot`
+class.
+
+**What a reader got was a published page with no bottom bar on a phone.**
+The reasoning smuggled a fact about the *file* into a question about the
+*window*, which is the move the section above refuses — and the section
+above was right the first time. It also mis-stated the problem. The band
+did not need a driver; it needed **an answer for a row that will not
+fit**, and it had only ever had one because a driver's was the only one
+anybody had written down.
+
+There are three answers and the band can carry one:
+
+- **Clipping.** What a nowrap row in a fixed layer does left alone: the
+  ends hang past both screen edges and no gesture reaches them. Not an
+  answer, and what shipped before the band existed.
+- **Wrapping.** Ruled out by arithmetic rather than taste. The band's
+  height is `nav_bar_pad + nav_slot + bar_bottom + safe_bottom` and the
+  screen reserves exactly that much beneath itself; a second line makes
+  the band taller than the number the reserve repeats, and the page's
+  last line ends up behind the destinations.
+- **Scrolling.** What the band does now. The row is a scroll container,
+  it packs to the start when it overflows instead of centring — a
+  centred scroll container's leading overflow cannot be reached — and it
+  is *one line tall either way*, so the reserve stays exact. Every
+  destination is a link with an address of its own, in document order,
+  and a browser scrolls a focused one into view, so a keyboard, a screen
+  reader and a crawler reach all of them whatever a pointer finds. The
+  one thing it gives up is the scrollbar: a scrollbar in a fixed band is
+  height the reserve cannot see, so there is none, and what carries the
+  affordance is the pill cut off at the screen edge.
+
+The chip is then what a driver **upgrades** that shape to, not what the
+shape depends on. `no-boot` is gone, nothing in the sheet asks whether
+anything is running, and one markup takes the band at a phone's width
+whoever published it.
+
+### Whether a page needs a runtime is derived, and `boot` is a floor
+
+`Document.boot` was a driver's declaration, and the failure a
+declaration invites is the silent one: a file that renders, shows its
+controls, and does nothing when they are pressed. Nobody should be
+typing that fact, because it is not a fact about intent — it is a fact
+about **what is on the page**, and nokre has just built the tree.
+
+So nokre derives it. `Element.Role.needsRuntime` is exhaustive over a
+closed element set, which makes the derivation total rather than a
+heuristic, and it draws one line: **a link is answered by the browser
+and a control is answered by an app.** Prose, headings, images, tables,
+code blocks, QR codes, `link`, `nav_item` and the roster's own row
+publish and work with nothing running. A `button`, `icon_button`,
+`tile`, `more` or `back`; a `toggle`, `checkbox`, `text_input`,
+`text_area`, `segmented`, `radio_group` or `select`, every one of which
+keeps its state in the tree and only mirrors it into the DOM; a
+`copyable`, whose press writes the clipboard; and every layer that
+exists because something is running — `sheet`, `picker`, `notice`, and
+the collapsed roster's `nav_current` among them — need one.
+
+Two consequences worth stating outright.
+
+- **A generator must arrive at each page rather than push to it.** A
+  pushed screen wears the framework's Back control, and Back pops a
+  stack no published file has. `switchTo` per page, which is also what
+  the live driver boots a document with.
+- **`error.NavChipNeedsBoot` is gone** and no rule replaced it. The
+  collapsed chip is a `nav_current`, a `nav_current` needs a runtime
+  like every other combobox, and the case is now one row of a table. Its
+  remedy is unchanged: generate at a width the row fits, which costs a
+  document nothing.
+
+**What is still the driver's is `Boot` itself.** nokre does not know
+where a site published its wasm module, its driver directory or its
+seed, and cannot invent any of them — the doctrine `Meta` already states
+for URLs. So the pair is a **floor, not a ceiling**:
+
+```zig
+.boot = if (dom.needsRuntime(&app) != null) boot_options else null,
+```
+
+A page whose tree needs a runtime and carries no `boot` is
+`error.PageNeedsBoot`, refused before a byte. A page whose tree needs
+none may still carry one, for a need no tree can show — a screen whose
+static shape is deliberately inert because what it will draw has not
+been fetched yet. Only the missing direction is refused, because it is
+the only one where being wrong is silent.
 
 **What is still the driver's is the column.** nokre puts the header on
 the page's own 16px margin, inside whatever element the driver mounted
@@ -391,14 +482,12 @@ stylesheet has to bring the header into that column — the content class
 is a name the driver invented (the table above), and a library that
 guessed at the column would be styling a box it has never heard of.
 
-**Two things this does not fix, stated so they are not read as fixed.**
-A page that boots can still be served a row and then collapse to a chip
-when the reader's window turns out narrower than the generator's — the
-chip works there, so it is a reshape and not a dead control, but it is a
-reshape. And core measures the roster in *pills* whatever shape it is
-about to be drawn in, so an app shell in a smallish window can collapse
-where the header's words would have fitted. Both are the same residue:
-one measurement, taken against one viewport, for two shapes.
+**One thing this does not fix, stated so it is not read as fixed.** Core
+measures the roster in *pills* whatever shape it is about to be drawn
+in, so the width at which a band's row begins to scroll is a pill's
+width rather than a word's. That is the same residue it always was: one
+measurement, one viewport, two shapes. What is gone is the residue that
+mattered.
 
 ## A generated document has no host, so it has no unstyled half
 

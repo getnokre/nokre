@@ -781,8 +781,8 @@ test "layout: the row survives while the destinations it holds fit the window" {
         .{ .label = "Library" }, .{ .label = "Explore" }, .{ .label = "Account" },
         .{ .label = "History" }, .{ .label = "Support" },
     };
-    try testing.expect(!layout.navCollapses(text.Measurer.fixed, &fits, .{ .w = 716, .h = 600 }));
-    try testing.expect(layout.navCollapses(text.Measurer.fixed, &fits, .{ .w = 715, .h = 600 }));
+    try testing.expect(!layout.navCollapses(text.Measurer.fixed, &fits, .{ .w = 716, .h = 600 }, .clips));
+    try testing.expect(layout.navCollapses(text.Measurer.fixed, &fits, .{ .w = 715, .h = 600 }, .clips));
 
     // One character more anywhere in the set and the row wants 9 more:
     // each destination is its own width, so a longer word costs the row
@@ -791,13 +791,13 @@ test "layout: the row survives while the destinations it holds fit the window" {
         .{ .label = "Library" }, .{ .label = "Explore" },  .{ .label = "Account" },
         .{ .label = "History" }, .{ .label = "Settings" },
     };
-    try testing.expect(layout.navCollapses(text.Measurer.fixed, &longer, .{ .w = 716, .h = 600 }));
-    try testing.expect(!layout.navCollapses(text.Measurer.fixed, &longer, .{ .w = 725, .h = 600 }));
+    try testing.expect(layout.navCollapses(text.Measurer.fixed, &longer, .{ .w = 716, .h = 600 }, .clips));
+    try testing.expect(!layout.navCollapses(text.Measurer.fixed, &longer, .{ .w = 725, .h = 600 }, .clips));
 
     // Either set collapses on a portrait phone. Five destinations with
     // marks beside their words do not fit 375px, and no arrangement of
     // them would: the chip is what that width can hold.
-    try testing.expect(layout.navCollapses(text.Measurer.fixed, &fits, .{ .w = 375, .h = 600 }));
+    try testing.expect(layout.navCollapses(text.Measurer.fixed, &fits, .{ .w = 375, .h = 600 }, .clips));
 }
 
 test "layout: a wider viewport reopens the row at the width it asked for" {
@@ -807,9 +807,9 @@ test "layout: a wider viewport reopens the row at the width it asked for" {
     };
     // 120 + 129 + 120 + 120 of pills, four gaps, the reserve, the
     // insets: 597.
-    try testing.expect(layout.navCollapses(text.Measurer.fixed, &items, .{ .w = 375, .h = 600 }));
-    try testing.expect(layout.navCollapses(text.Measurer.fixed, &items, .{ .w = 596, .h = 600 }));
-    try testing.expect(!layout.navCollapses(text.Measurer.fixed, &items, .{ .w = 597, .h = 600 }));
+    try testing.expect(layout.navCollapses(text.Measurer.fixed, &items, .{ .w = 375, .h = 600 }, .clips));
+    try testing.expect(layout.navCollapses(text.Measurer.fixed, &items, .{ .w = 596, .h = 600 }, .clips));
+    try testing.expect(!layout.navCollapses(text.Measurer.fixed, &items, .{ .w = 597, .h = 600 }, .clips));
 
     // A longer set wants more, and gets it: the 560px pane cap governs
     // the bottom chrome that is a surface holding prose, and a row of
@@ -820,8 +820,41 @@ test "layout: a wider viewport reopens the row at the width it asked for" {
         .{ .label = "Library" }, .{ .label = "Settings" },
         .{ .label = "Explore" }, .{ .label = "Subscriptions" },
     };
-    try testing.expect(layout.navCollapses(text.Measurer.fixed, &long, .{ .w = 650, .h = 1440 }));
-    try testing.expect(!layout.navCollapses(text.Measurer.fixed, &long, .{ .w = 651, .h = 1440 }));
+    try testing.expect(layout.navCollapses(text.Measurer.fixed, &long, .{ .w = 650, .h = 1440 }, .clips));
+    try testing.expect(!layout.navCollapses(text.Measurer.fixed, &long, .{ .w = 651, .h = 1440 }, .clips));
+}
+
+test "layout: a row that wraps has no width at which it fails to fit" {
+    // The set from the threshold test above, which does not make a line
+    // at 715 and does at 716 — on a surface that clips. Where the
+    // surface wraps, every one of those answers is the wrong question
+    // asked: the row is already on two lines and nothing was lost.
+    const fits = [_]NavLabel{
+        .{ .label = "Library" }, .{ .label = "Explore" }, .{ .label = "Account" },
+        .{ .label = "History" }, .{ .label = "Support" },
+    };
+    for ([_]i32{ 561, 600, 715, 716, 900, 1400, 5120 }) |w| {
+        const viewport: geometry.Size = .{ .w = w, .h = 900 };
+        try testing.expect(layout.navRowWraps(viewport, .reflows));
+        try testing.expect(!layout.navCollapses(text.Measurer.fixed, &fits, viewport, .reflows));
+        // The same window on the medium that cannot wrap keeps the
+        // answer it always had: this is one arm, not a new threshold.
+        try testing.expect(!layout.navRowWraps(viewport, .clips));
+        try testing.expectEqual(
+            w < 716,
+            layout.navCollapses(text.Measurer.fixed, &fits, viewport, .clips),
+        );
+    }
+
+    // At and below the pane cap a reflowing medium has the band, which
+    // is one line by construction — so the measurement is live again and
+    // both mediums answer alike. The chip is what that width holds.
+    for ([_]i32{ 320, 375, 480, metrics.sheet_max_w }) |w| {
+        const viewport: geometry.Size = .{ .w = w, .h = 900 };
+        try testing.expect(!layout.navRowWraps(viewport, .reflows));
+        try testing.expect(layout.navCollapses(text.Measurer.fixed, &fits, viewport, .reflows));
+        try testing.expect(layout.navCollapses(text.Measurer.fixed, &fits, viewport, .clips));
+    }
 }
 
 test "layout: a row past the shared cap takes the width it needs, centered" {
@@ -853,7 +886,7 @@ test "layout: the threshold reserves the indicator whether or not one is there" 
         .{ .label = "Alpha" }, .{ .label = "Bravo" }, .{ .label = "Charlie" },
     };
     const viewport: geometry.Size = .{ .w = 375, .h = 600 };
-    const decided = layout.navCollapses(text.Measurer.fixed, &items, viewport);
+    const decided = layout.navCollapses(text.Measurer.fixed, &items, viewport, .clips);
 
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
@@ -862,7 +895,7 @@ test "layout: the threshold reserves the indicator whether or not one is there" 
     try tree.append(tree.rootId(), .{ .icon_button = .{ .label = "Notices", .glyph = .expand } });
     compute(&tree, text.Measurer.fixed, viewport);
 
-    try testing.expectEqual(decided, layout.navCollapses(text.Measurer.fixed, &items, viewport));
+    try testing.expectEqual(decided, layout.navCollapses(text.Measurer.fixed, &items, viewport, .clips));
 }
 
 test "layout: the collapsed chip is as wide as what it holds" {

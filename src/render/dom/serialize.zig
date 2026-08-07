@@ -134,19 +134,6 @@ pub const Emitter = struct {
     /// frame.
     ref_buf: std.ArrayList(u8) = .empty,
 
-    /// Whether the page this walk is writing carries no boot script, so
-    /// the nav it emits gets `class_names.no_boot`.
-    ///
-    /// Not in `Options`: a driver never states this. It is
-    /// `Document.boot == null`, read by `document.zig` off the
-    /// declaration the driver already made, and set on the emitter for
-    /// the length of one file — a second place to say it is a second
-    /// place for it to be wrong, and the wrong answer here is a bar
-    /// that renders and cannot be worked. The default is the live
-    /// driver's, which needs no setter: the driver rendering the frame
-    /// *is* the boot whose absence this names.
-    unbooted: bool = false,
-
     pub fn deinit(self: *Emitter) void {
         for (self.ids.items) |id| self.gpa.free(id);
         self.ids.deinit(self.gpa);
@@ -732,15 +719,14 @@ pub fn node(em: *Emitter, id: NodeId) anyerror!void {
             // language: the same word the collapsed chip's picker is
             // titled with, because it names the same set.
             //
-            // The modifier is the sheet's, and it says the roster has no
-            // driver behind it: nothing on this page will re-ask which
-            // shape fits when the window moves, and nothing can work the
-            // chip a narrow one would collapse to, so the bar stays the
-            // header at every width (`class_names.no_boot`). One markup
-            // either way — the class is on the file, not on the reader's
-            // window, and a page that boots never carries it.
-            try em.print("<nav class=\"nav{s}\" aria-label=\"{s}\"><div class=\"nav-row\">", .{
-                if (em.unbooted) " " ++ class_names.no_boot else "",
+            // One class and no modifier. Which shape this wears is the
+            // reader's window's, decided by the sheet over these same
+            // bytes, and nothing about the file it was served in is a
+            // term in that question — not who wrote it, not whether
+            // anything will mount over it. The band that a modifier once
+            // held such a page out of has an answer for a row that will
+            // not fit which needs nobody running (stylesheet.zig).
+            try em.print("<nav class=\"nav\" aria-label=\"{s}\"><div class=\"nav-row\">", .{
                 em.app.chrome.sections,
             });
             try children(em, id);

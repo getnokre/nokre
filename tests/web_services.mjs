@@ -45,13 +45,24 @@ let loads = 0;
 
 /// `env` is the browser this page loads in; `options` is what the page
 /// itself hands `mount` — the two are separate because the whole of the
-/// locale question is what happens when they disagree.
-async function page(env = {}, options = {}) {
+/// locale question is what happens when they disagree. `width` is the
+/// mount element's, which is what core lays out against and so the only
+/// thing about this page that is not furniture.
+async function page(env = {}, options = {}, width = undefined) {
   const browser = makeBrowser({ site, ...env });
   const { mount } = await import(live + `?load=${++loads}`);
-  const into = browser.mountPoint();
+  const into = width === undefined ? browser.mountPoint() : browser.mountPoint(width);
   const nk = await mount({ wasm: "app.wasm", into, ...options });
   return { browser, into, nk, app: nk && probes(nk) };
+}
+
+/// The reader dragging the corner of their window. Both halves move,
+/// because the driver answers the event by re-measuring the *container*
+/// — a test that only fired the event would be asserting against the
+/// width it started at (live.js's `remeasure`).
+function resize(into, width) {
+  into.clientWidth = width;
+  dispatchEvent(new PageEvent("resize"));
 }
 
 /// The wasm app's probes, as calls that speak strings. Every view of
@@ -95,7 +106,10 @@ function probes(nk) {
       return text(len);
     },
     /// The same file with no boot on it — the page of a static site
-    /// that nothing will ever mount over.
+    /// that nothing will ever mount over. `-2` here is the writer
+    /// refusing rather than a buffer overrun, so the error name comes
+    /// back with the throw: a page that needs a runtime is not
+    /// publishable without one, and which is which is the assertion.
     documentUnbooted() {
       const len = nk.nokre_probe_document_unbooted();
       if (len === -2) throw failure();
@@ -103,6 +117,18 @@ function probes(nk) {
     },
     /// Which chip the app believes is chosen.
     view: () => nk.nokre_probe_view(),
+
+    /// Arrive at a screen the way a generator does, one page at a time
+    /// — never a push, which would hang a Back control over the file.
+    switchTo(name) {
+      const [n] = arg(name);
+      if (!nk.nokre_probe_switch_to(n)) throw failure();
+    },
+    /// Re-declare the roster as six long-named destinations: the set
+    /// whose row is a real question in a desktop window.
+    wideNav() {
+      if (!nk.nokre_probe_wide_nav()) throw failure();
+    },
 
     bootValue() {
       const len = nk.nokre_probe_boot_value();
@@ -700,23 +726,13 @@ async function documentsPage() {
   assert.ok(content.querySelector("[data-n]"), "the file states node ids");
 
   // Which shape the roster wears is the reader's window's, decided by
-  // the sheet over one markup — so this file, which boots, carries the
-  // same class list the frame below will rebuild, and the reader's
-  // window is free to change its mind afterwards without anything
-  // re-rendering. The page that will *never* boot is the other one: it
-  // says so on the nav, because nothing on it can re-ask the question
-  // or work the chip a narrow answer would collapse to.
+  // the sheet over one markup — so this file carries the same class
+  // list the frame below will rebuild, and the reader's window is free
+  // to change its mind afterwards without anything re-rendering. It
+  // carries the same list as a file with no boot on it, too: nothing
+  // about who will or will not mount over a page is a term in a
+  // question about the window it is read in.
   assert.equal(bar.getAttribute("class"), "nav", "a page that boots states a shape");
-  const unbooted = generator.app.documentUnbooted();
-  assert.ok(
-    unbooted.includes('<nav class="nav no-boot"'),
-    "a page with no boot script does not say so on its nav",
-  );
-  assert.equal(
-    unbooted.replaceAll(' class="nav no-boot"', ' class="nav"').indexOf('class="chip'),
-    file.indexOf('class="chip'),
-    "the two files differ in more than the nav's own class list",
-  );
 
   // The nodes the reader is looking at, held from before the mount.
   // Identity is the whole assertion: nokre states every focus stop's
@@ -767,6 +783,236 @@ async function documentsPage() {
   done("the document — two mounts hydrate node for node, and a press repaints");
 }
 
+// ---- the nav's two shapes ----------------------------------------
+//
+// Three releases in a row shipped a nav that passed its tests and was
+// wrong in a browser, and every one of them was the same kind of
+// mistake: the *tree* said one shape and the *sheet* drew another, and
+// nothing anywhere held the two against each other. Neither half can
+// catch it alone — a Zig test sees the tree the sheet never reads, and
+// a substring check on the sheet sees rules no tree ever met.
+//
+// So this section runs both. The stylesheet the build just wrote is
+// parsed and resolved at a width, the way a browser resolves it; the
+// app is booted at the same width through the shipped live.js; and the
+// assertion is that they agree about what a reader is looking at.
+
+/// The sheet as rules: a selector, the `max-width` it is behind (null
+/// for the unconditional ones), its declarations, and its place in the
+/// file — which is the cascade's last tiebreak and the one this sheet
+/// leans on, `writeDerived` coming after the static block precisely so
+/// each derived rule is the last word on its property.
+function parseCss(text) {
+  const src = text.replace(/\/\*[\s\S]*?\*\//g, "");
+  const rules = [];
+  let order = 0;
+
+  const collect = (body, media) => {
+    let k = 0;
+    while (k < body.length) {
+      const open = body.indexOf("{", k);
+      if (open < 0) break;
+      const prelude = body.slice(k, open).trim();
+      let depth = 0;
+      let close = open;
+      for (; close < body.length; close++) {
+        if (body[close] === "{") depth++;
+        else if (body[close] === "}" && --depth === 0) break;
+      }
+      const inner = body.slice(open + 1, close);
+      const at = /^@media\s*\(max-width:\s*(\d+)px\)$/.exec(prelude);
+      if (at) collect(inner, Number(at[1]));
+      else if (!prelude.startsWith("@")) {
+        const decls = {};
+        for (const part of inner.split(";")) {
+          const colon = part.indexOf(":");
+          if (colon > 0 && !part.slice(0, colon).includes("{")) {
+            decls[part.slice(0, colon).trim()] = part.slice(colon + 1).trim();
+          }
+        }
+        for (const sel of prelude.split(",")) {
+          rules.push({ sel: sel.trim(), media, decls, order: order++ });
+        }
+      }
+      k = close + 1;
+    }
+  };
+
+  collect(src, null);
+  return rules;
+}
+
+/// What a browser would compute for an element carrying `classes`, in a
+/// window `width` wide. Only the selectors that are a bare compound of
+/// classes are considered — `.nav`, `.nav-row`, `.chip.current` — which
+/// is every rule these shapes are made of, and the ones with
+/// combinators or pseudo-elements are somebody else's assertion.
+function computed(rules, classes, width) {
+  const hits = [];
+  for (const rule of rules) {
+    if (rule.media !== null && width > rule.media) continue;
+    if (!/^(\.[A-Za-z0-9_-]+)+$/.test(rule.sel)) continue;
+    const need = rule.sel.slice(1).split(".");
+    if (need.every((c) => classes.includes(c))) hits.push({ rule, spec: need.length });
+  }
+  hits.sort((a, b) => a.spec - b.spec || a.rule.order - b.rule.order);
+  const out = {};
+  for (const { rule } of hits) Object.assign(out, rule.decls);
+  return out;
+}
+
+/// Which shape the *sheet* draws at this width, in the two words the
+/// rest of the library uses for them.
+function sheetShape(rules, width) {
+  const nav = computed(rules, ["nav"], width);
+  const row = computed(rules, ["nav-row"], width);
+  if (nav.position === "fixed") {
+    assert.equal(row["flex-wrap"], "nowrap", "the band's row is one line by construction");
+    return "band";
+  }
+  assert.notEqual(nav.position, "fixed");
+  assert.equal(row["flex-wrap"], "wrap", "the header wraps, which is why it cannot fail to fit");
+  return "header";
+}
+
+/// Which shape the *tree* is in, read off the markup the driver just
+/// wrote into the page — a row of links, or the one combobox that
+/// stands in for all of them.
+function treeShape(into) {
+  const bar = into.querySelector("nav");
+  assert.ok(bar, "the page has no nav at all");
+  const chip = bar.querySelectorAll("[role=\"combobox\"]");
+  const links = bar.querySelectorAll("a");
+  if (chip.length) {
+    assert.equal(chip.length, 1);
+    assert.equal(links.length, 0, "a collapsed roster is one control, not a control beside a row");
+    return "chip";
+  }
+  return `row of ${links.length}`;
+}
+
+/// The finding this section exists for: at a width where the sheet
+/// wraps the header, core was still measuring the roster against one
+/// line and swapping the row for a chip — so a 900px browser window got
+/// a single plated capsule where a site's sections should be.
+///
+/// The sweep is the assertion rather than one width, because the bug
+/// lived in a band of widths between the breakpoint and wherever the
+/// row happened to fit again, and any single number could have missed
+/// it. Every width above the pane cap must be a row, and the same roster
+/// below the cap must be the chip — which is the other half of the
+/// claim, that nothing here turned collapse off.
+async function navShapeFollowsTheWindow() {
+  const css = parseCss(await fs.readFile(path.join(site, "style.css"), "utf8"));
+  const { into, app } = await page({}, { route: "home", locale: "" }, 900);
+  app.wideNav();
+
+  for (const width of [561, 600, 700, 900, 1050, 1400]) {
+    resize(into, width);
+    assert.equal(sheetShape(css, width), "header", `the sheet at ${width}`);
+    assert.equal(treeShape(into), "row of 6", `the tree at ${width}`);
+  }
+
+  for (const width of [560, 480, 375, 320]) {
+    resize(into, width);
+    assert.equal(sheetShape(css, width), "band", `the sheet at ${width}`);
+    assert.equal(treeShape(into), "chip", `the tree at ${width}`);
+  }
+
+  // And back, because the failure a reader hits is a drag rather than a
+  // load: the row has to come back, not merely have been there once.
+  resize(into, 900);
+  assert.equal(treeShape(into), "row of 6");
+  done("the nav — a header wraps, so no width above the cap collapses it");
+}
+
+/// The band's own half. Every roster is in it, and the row that will
+/// not fit inside it scrolls rather than hanging past both screen
+/// edges — which is the answer that needs nothing running, and so the
+/// answer a published file can rely on.
+///
+/// Reachability is asserted from both sides, because neither is enough.
+/// The sheet has to make the row a scroll container: a nowrap row in a
+/// fixed layer with no overflow rule is the *clipping* this replaced,
+/// and the ends of it are past the screen with no gesture that reaches
+/// them. And the markup has to hold every destination as a real link
+/// with an address of its own, so the reader who never scrolls — a
+/// crawler, a screen reader walking the landmark, a keyboard tabbing
+/// through it, all three of which the browser scrolls into view — gets
+/// all six whatever the pointer finds.
+async function navBandCarriesEveryDestination() {
+  const css = parseCss(await fs.readFile(path.join(site, "style.css"), "utf8"));
+  const { into, app } = await page({}, { route: "home", locale: "" }, 375);
+  app.wideNav();
+  resize(into, 375);
+
+  assert.equal(sheetShape(css, 375), "band");
+  const row = computed(css, ["nav-row"], 375);
+  assert.equal(row["overflow-x"], "auto", "the band's row clips instead of scrolling");
+  assert.equal(row["overscroll-behavior-inline"], "contain");
+  assert.equal(row["scrollbar-width"], "none", "a scrollbar in the band is height the reserve cannot see");
+  // Centring is the layer's, not the row's: a centred scroll container
+  // overflows both ends and the leading one cannot be scrolled to.
+  assert.equal(row["justify-content"], undefined);
+  assert.equal(computed(css, ["nav"], 375)["justify-content"], "center");
+
+  // The band applies to a nav with nothing else on it, which is the
+  // whole of the second finding: for one release the rule read
+  // `.nav:not(.no-boot)` and a published page never got a bottom bar.
+  assert.equal(into.querySelector("nav").getAttribute("class"), "nav");
+
+  // Now the file a reader of that band would actually have opened. A
+  // generator runs wide — the roster has to make a row in the window it
+  // was measured in, or the page it publishes is a chip, and a chip is
+  // a control nothing on the page can work (`PageNeedsBoot`, the
+  // scenario below). The file is then read at every width, and 375 is
+  // one of them: this is the case the band exists for and the one a
+  // modifier on the nav used to take it away from.
+  resize(into, 1200);
+  app.switchTo("second");
+  const file = app.documentUnbooted();
+  const served = makeBrowser({ site });
+  served.openPage(file);
+  const bar = document.body.querySelector("nav");
+  assert.equal(bar.getAttribute("class"), "nav", "a published page is held out of the band again");
+  const hrefs = bar.querySelectorAll("a").map((a) => a.getAttribute("href"));
+  assert.equal(hrefs.length, 6, "the file lost destinations the app had");
+  assert.equal(new Set(hrefs).size, 6, "two destinations share an address");
+  for (const href of hrefs) assert.ok(href && href !== "#", `a destination with nowhere to go: ${href}`);
+  done("the nav — every page takes the band, and the band reaches every destination");
+}
+
+/// Whether a page needs a runtime is read off the page. It was a
+/// driver's declaration for one release, and a declaration is a thing
+/// to forget in the direction nobody notices: a file that renders,
+/// shows its controls, and does nothing when they are pressed.
+async function bootIsDerivedFromWhatIsOnThePage() {
+  const { app } = await page({}, { route: "home", locale: "" });
+
+  // The home screen holds a button and a segmented control, and both
+  // are answered by the app. Publishing it with no module is refused
+  // before a byte.
+  assert.throws(
+    () => app.documentUnbooted(),
+    /PageNeedsBoot/,
+    "a page of dead controls was published instead of refused",
+  );
+
+  // The second screen is its title, its roster and nothing else — the
+  // page a static site mostly is. A link is answered by the browser, so
+  // nothing on it needs a runtime and it publishes whole.
+  app.switchTo("second");
+  const file = app.documentUnbooted();
+  assert.ok(file.includes("<nav class=\"nav\""), "the published page lost its roster");
+  assert.ok(!file.includes("<script"), "a page that needs nothing was given a module anyway");
+
+  // And the same screen with a module on it is the other direction,
+  // which is never refused: a driver may publish a runtime for a need
+  // no tree can show.
+  assert.ok(app.document().includes("app.wasm"));
+  done("the nav — a page's need for a runtime is derived, and only the absent one is refused");
+}
+
 // ---- the run -----------------------------------------------------
 
 const scenarios = [
@@ -792,6 +1038,9 @@ const scenarios = [
   localeChangeAfterBoot,
   scratchIsClamped,
   documentsPage,
+  navShapeFollowsTheWindow,
+  navBandCarriesEveryDestination,
+  bootIsDerivedFromWhatIsOnThePage,
 ];
 
 for (const scenario of scenarios) {

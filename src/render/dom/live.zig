@@ -207,7 +207,12 @@ fn boot(w: i32, h: i32, route_len: usize) callconv(.c) i32 {
     // screen adds a history entry and nothing else does.
     app.router.installObserver(null, onRoute);
     // Before the viewport, so the resync `setViewport` does already has
-    // real widths to decide the nav's shape with.
+    // real widths to decide the nav's shape with — and the same for the
+    // medium beside it, which decides whether that shape is a question
+    // at this width at all. A browser reflows; this is the one file
+    // that knows it, and the app it just built assumed the cautious
+    // answer until told (`App.medium`).
+    app.setMedium(.reflows);
     app.setMeasurer(browser_measurer);
     app.setViewport(.{ .w = w, .h = h });
     // `switchTo`, for the reason `navigate` gives: arriving by

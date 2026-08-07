@@ -249,9 +249,17 @@ fn buildSecond(_: *State, app: *h.App) !void {
     _ = app;
 }
 
+/// The four extra destinations `nokre_probe_wide_nav` declares. Long
+/// names on purpose: a roster is measured in the words it holds, so
+/// this is the set that makes the row's width a real question in a
+/// desktop window rather than only on a phone.
 const routes = h.Routes(State).table(&.{
     .{ .name = "home", .title = .{ .fixed = "Home" }, .build = buildHome },
     .{ .name = "second", .title = .{ .fixed = "Second" }, .build = buildSecond },
+    .{ .name = "explore", .title = .{ .fixed = "Explore everything" }, .build = buildSecond },
+    .{ .name = "collections", .title = .{ .fixed = "Saved collections" }, .build = buildSecond },
+    .{ .name = "account", .title = .{ .fixed = "Your whole account" }, .build = buildSecond },
+    .{ .name = "documentation", .title = .{ .fixed = "Documentation" }, .build = buildSecond },
 });
 
 comptime {
@@ -460,12 +468,48 @@ pub export fn nokre_probe_document() isize {
 /// The same file with the boot left off — the 1,124-in-1,126 page of a
 /// static site, which nothing will ever mount over.
 ///
-/// The pair is the assertion: the two files differ in the nav's class
-/// list and in nothing else about the roster, because which shape a
-/// roster wears is the reader's window's to pick and a page with no
-/// driver cannot pick again (`class_names.no_boot`).
+/// Two assertions ride it now. On a screen that holds a control an app
+/// has to answer, it is refused (`error.PageNeedsBoot`, read back
+/// through `nokre_probe_error`): nokre derives the need from the tree,
+/// so a driver cannot publish an inert page by forgetting. On a screen
+/// of prose and links, it is written — and byte for byte its roster is
+/// the booted file's, because which shape a roster wears is the
+/// reader's window's and nothing about the file is a term in it.
 pub export fn nokre_probe_document_unbooted() isize {
     return writeDocument(false);
+}
+
+/// Puts the app on a screen by name, arriving rather than pushing —
+/// `switchTo`, which is what a generator does per page and what the
+/// live driver does for a document (live.zig). The push is deliberately
+/// not offered: a pushed screen wears the Back control, and Back is one
+/// of the things that makes a page need a runtime.
+pub export fn nokre_probe_switch_to(len: usize) i32 {
+    const s = probe();
+    s.app.switchTo(arg_buf[0..len]) catch |err| {
+        note(s, err);
+        return 0;
+    };
+    return 1;
+}
+
+/// Re-declares the roster as six destinations with long names — the set
+/// that does not make a line in a browser window of six or seven
+/// hundred pixels, which is where a header stopped being a header.
+pub export fn nokre_probe_wide_nav() i32 {
+    const s = probe();
+    s.app.setNav(&.{
+        .{ .route = "home", .icon = .house },
+        .{ .route = "second", .icon = .settings },
+        .{ .route = "explore", .icon = .search },
+        .{ .route = "collections", .icon = .bookmark },
+        .{ .route = "account", .icon = .user },
+        .{ .route = "documentation", .icon = .file_text },
+    }) catch |err| {
+        note(s, err);
+        return 0;
+    };
+    return 1;
 }
 
 fn writeDocument(booted: bool) isize {

@@ -201,6 +201,16 @@ fn marked(app: *const App) bool {
 /// window picks"); the reference edition draws the band at every width,
 /// having no medium that reflows under a reader.
 ///
+/// **The collapse follows the medium, not the width alone.** A header
+/// wraps, and a row that wraps has no width at which it fails to fit —
+/// so where the surface reflows above the pane cap there is nothing for
+/// the chip to answer, and `navCollapses` declines before it measures
+/// (`layout.navRowWraps`). Where the surface clips, it fires at every
+/// width, which is the reference edition and every shell over it,
+/// unchanged. The band's own answer when a row will not fit is the
+/// chip where something can work one and a scrolling strip where
+/// nothing can, and neither is this call's to state.
+///
 /// **A generated document's header is one of these**, and that is the
 /// whole reason `Destination.icon` is optional. A static site's row of
 /// links across the top is a set of places the site always has, which
@@ -319,7 +329,7 @@ pub fn syncNavChrome(app: *App) !void {
     // own entry is measured like any other. A row with one more thing in
     // it collapses at a wider viewport, which is the same rule the
     // roster has always been under and not a special case for this.
-    const collapse = layout.navCollapses(app.measurer, roster, app.viewport);
+    const collapse = layout.navCollapses(app.measurer, roster, app.viewport, app.medium);
     if (collapse) {
         // Found whenever there is a screen at all: `effectiveRoster`
         // made an entry for it if the consumer declared none. What used

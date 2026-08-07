@@ -82,13 +82,18 @@ pub const Addressing = enum {
 /// document that reads, navigates and prints, which is the whole point
 /// of the pair (dom-edition.md, "Live over a generated page").
 ///
-/// Absence is a fact about the *page*, and two things read it. The nav
-/// keeps its header shape at every width rather than taking the phone's
-/// band, since nothing on the page can re-ask which shape fits or work
-/// the chip a narrow answer collapses to (`class_names.no_boot`). And a
-/// roster that already collapsed to that chip is `error.NavChipNeedsBoot`
-/// rather than a control published inert — generate at a width the row
-/// fits, which costs a document nothing.
+/// **Whether a page needs one is not this field's to say.** nokre reads
+/// that off the tree — `needsRuntime`, over a closed element set — and
+/// what stays here is the half nokre cannot know: *where the driver
+/// published the module*, which is `Meta.origin`'s doctrine again. So
+/// the pair is a floor and not a ceiling. A page whose tree holds a
+/// control an app has to answer and no `boot` is `error.PageNeedsBoot`
+/// rather than a file that renders and does nothing; a page whose tree
+/// shows no such need may still carry one, for a need no tree can show
+/// — a screen deliberately inert until it has fetched what it will
+/// draw. Nothing here reads the *absence*: one markup, whatever the
+/// page will or will not do, and the shape its nav wears is the
+/// reader's window's (`stylesheet.zig`).
 ///
 /// There is no locale field here, deliberately. The language the boot
 /// pins is the language the file was written in — `App.locale()`, the
@@ -335,17 +340,20 @@ pub const Document = struct {
 /// The chrome goes first, before the content, because the nav leads the
 /// focus order — a property of the tree, not of where CSS puts the bar.
 pub fn document(em: *Emitter, doc: Document) !void {
+    // The medium, declared before the tree is read: this file is about
+    // to become a browser's, and a browser reflows. An app a generator
+    // built assumed the cautious answer (`App.medium`), and the nav's
+    // shape is decided against it — so declaring it here is what keeps
+    // a *generated* page from wearing a chip an app shell in the same
+    // window would never have shown. Idempotent, and a no-op for an app
+    // the live driver already declared for.
+    em.app.setMedium(.reflows);
+
     // Before a byte, not as it goes: a document that fails halfway
     // leaves a truncated file behind, and every one of these is a
     // config mistake a build should die on rather than publish.
     if (doc.meta) |m| try checkMeta(m);
-    try checkNavShape(em, doc);
-    // One read of the declaration the driver already made, spent on the
-    // one thing the markup cannot derive from the reader's window
-    // (serialize.zig's `Emitter.unbooted`). Set on both arms rather than
-    // only the true one: an emitter a generator reuses page after page
-    // would otherwise carry the last file's answer into the next.
-    em.unbooted = doc.boot == null;
+    try checkRuntime(em, doc);
 
     // One read of the app's locale, spent twice: the attribute a
     // browser, a screen reader and a hyphenation table act on, and the
@@ -555,30 +563,64 @@ fn checkMeta(m: Meta) MetaError!void {
     try alternates_mod.check(m.alternates, m.path);
 }
 
-/// The one shape check this writer makes, and it is the same kind of
-/// thing `checkMeta` is: a relationship between two facts the driver
-/// stated, refused before a byte rather than published.
+/// The first control on this page that an app has to answer, or null
+/// for a page that is whole without one — the derived half of `boot`,
+/// and a question a driver should ask rather than answer.
 ///
-/// A roster too wide for the viewport it was built against comes out as
-/// the collapsed chip (`nav.syncNavChrome`), which is a control that
-/// opens a list — and a list is opened by the driver. On a page with no
-/// `boot` there is no driver: the chip cannot answer a press, and a
-/// crawler reading the file finds one button where the site's sections
-/// should be. Both failures are silent, and the file renders.
+/// **Whether a page needs a runtime is a fact about what is on it.** It
+/// was a driver's declaration for exactly one release, and a
+/// declaration is a thing to get wrong in the silent direction: a file
+/// that renders, shows its controls, and does nothing when they are
+/// pressed. The element set is closed, so nokre can read the answer off
+/// the tree it just built (`element.Role.needsRuntime`, where the line
+/// between a control and a link is drawn and argued).
 ///
-/// It is refused rather than reshaped. What shape the roster wears is
-/// core's answer to a question about a window (`layout.navCollapses`),
-/// and a writer that quietly overrode it would be a second answer to
-/// that question living in a serializer. The build's own fix is one
-/// line: generate at a width the row fits, which for a document is a
-/// free choice — the file is read at every width whatever it was
-/// measured at, since the shape it wears past that point is the
-/// reader's window's to pick (stylesheet.zig).
-fn checkNavShape(em: *const Emitter, doc: Document) error{NavChipNeedsBoot}!void {
+/// A generator's own use is the one this is public for:
+///
+/// ```zig
+/// .boot = if (dom.needsRuntime(&app) != null) boot_options else null,
+/// ```
+///
+/// …which is the whole of what a driver used to have to know per page.
+pub fn needsRuntime(app: *const App) ?element_mod.Role {
+    var it = app.tree.dfs();
+    while (it.next()) |id| {
+        const role = app.tree.getConst(id).?.role();
+        if (role.needsRuntime()) return role;
+    }
+    return null;
+}
+
+/// The one check this writer makes about the page as a whole, and it is
+/// the same kind of thing `checkMeta` is: a relationship between what
+/// the tree holds and what the driver declared, refused before a byte
+/// rather than published.
+///
+/// **The derivation is a floor, not a ceiling.** nokre reads the tree
+/// and says a runtime is needed; a driver may publish one anyway, for a
+/// need no tree can show — a screen whose static shape is deliberately
+/// inert because the thing it will show has not been fetched yet. What
+/// a driver may not do is take one away, and that is the only direction
+/// this refuses in, because it is the only direction where being wrong
+/// is silent.
+///
+/// **What is still the driver's is `Boot` itself**, and for `Meta`'s
+/// reason: nokre does not know where a site published its wasm, its
+/// driver directory or its seed, and cannot invent any of them. It owns
+/// what a driver gets *wrong* about them — here, leaving all three off a
+/// page that cannot work without them.
+///
+/// The nav is one row of this and no longer a rule of its own. A roster
+/// too wide for the viewport a generator ran at comes out as the
+/// collapsed chip (`nav.syncNavChrome`), the chip is a `nav_current`,
+/// and a `nav_current` needs a runtime like every other combobox — so
+/// the case `error.NavChipNeedsBoot` was written for is now one entry in
+/// a table, with the same remedy it always had: generate at a width the
+/// row fits, which for a document is free, since the shape it wears past
+/// that point is the reader's window's to pick (stylesheet.zig).
+fn checkRuntime(em: *const Emitter, doc: Document) error{PageNeedsBoot}!void {
     if (doc.boot != null) return;
-    const tree = &em.app.tree;
-    const nav = layout.findNav(tree) orelse return;
-    if (layout.soleNavCurrent(tree, nav) != null) return error.NavChipNeedsBoot;
+    if (needsRuntime(em.app) != null) return error.PageNeedsBoot;
 }
 
 /// Canonical, Open Graph and the Twitter card, in one pass so the

@@ -41,28 +41,16 @@ pub const has_chrome = "has-chrome";
 /// how the pair above got into trouble.
 pub const skip = "skip";
 
-/// The nav's, on a page that carries no boot script — the one thing
-/// that keeps the bar out of the bottom band at a phone's width.
-///
-/// Which shape the roster wears is the reader's window's to decide
-/// (stylesheet.zig, "two shapes and the reader's window picks"): the
-/// band at a phone's width, a header above the page anywhere wider.
-/// Deciding is something a *driver* does, though — it re-asks the
-/// question every time the window moves, and the shape it can fall back
-/// to when a row will not fit is a chip that opens a list. A page with
-/// no boot has neither. The markup it was served in is the whole of what
-/// its reader will ever get, at every width, so the shape it is served
-/// in has to be the one that answers every width — the header, which
-/// wraps.
-///
-/// It is not a claim about who wrote the file. `document_attr` is that
-/// claim and it is a different one: a generated page that *does* boot
-/// carries no `no-boot` and wears the band on a phone exactly as an app
-/// shell does, because there is a driver on it to work the chip.
-/// `document.zig` sets it from `Document.boot` and nothing else writes
-/// it — a live frame cannot, since the driver emitting the frame is the
-/// boot whose absence this names.
-pub const no_boot = "no-boot";
+// There was a `no_boot` modifier here for one release, written from
+// `Document.boot` and read by the band's every rule, so that a page
+// nothing would ever mount over kept the header at every width. It is
+// gone, and its going is the point rather than a tidy-up: a reader
+// narrowing their window on such a page got no bottom bar, because the
+// class had made *who published the file* a term in a question that is
+// the reader's window's alone. What the band actually needed was an
+// answer for a row that will not fit, and it has one that costs no
+// driver — the row scrolls (stylesheet.zig). One markup, one band, and
+// nothing in the sheet asks whether anything is running.
 
 /// The root attribute a page nokre wrote **whole** carries, and the
 /// only thing that distinguishes one from an app mounted in someone

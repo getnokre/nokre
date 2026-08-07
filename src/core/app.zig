@@ -55,6 +55,18 @@ pub const App = struct {
     /// consumer passed stays small and by-value.
     services: services_mod.Services,
     measurer: text.Measurer,
+    /// What the surface this app is drawn on does with a row too wide
+    /// for it (`layout.Medium`) — the driver's fact, installed by the
+    /// driver, exactly like `measurer` above and for the same reason:
+    /// the thing that will actually draw the page is the thing to ask.
+    ///
+    /// Not an `Options` field, and that is the point. There is one
+    /// place per edition that knows the answer — `live.zig` at boot,
+    /// `dom.document` at the top of a file it is about to write — and a
+    /// consumer that could also state it would be a second place for it
+    /// to be wrong, in the direction where being wrong is silent: a
+    /// header that swaps itself for a chip nobody asked for.
+    medium: layout.Medium = .clips,
     /// Bidi resolution workspace for the renderer and editing (~100 KB,
     /// so heap-pinned like the runtime rather than riding the by-value
     /// moves a stack App makes). Per-app: two apps on two threads must
@@ -810,6 +822,21 @@ pub const App = struct {
     /// measures them can change the answer (nav.zig).
     pub fn setMeasurer(self: *App, m: text.Measurer) void {
         self.measurer = m;
+        nav_mod.syncNavChrome(self) catch {};
+        self.invalidate();
+    }
+
+    /// Declares what the surface this app is drawn on does with a row
+    /// too wide for it — `layout.Medium`, and the driver's word, not the
+    /// consumer's (see the field).
+    ///
+    /// It resyncs the nav for `setMeasurer`'s reason and one more: the
+    /// answer it carries is *whether the shape question is live at all*,
+    /// so a bar already standing when a driver declares itself has to be
+    /// re-asked, not left in the shape a default answered for it.
+    pub fn setMedium(self: *App, m: layout.Medium) void {
+        if (self.medium == m) return;
+        self.medium = m;
         nav_mod.syncNavChrome(self) catch {};
         self.invalidate();
     }

@@ -66,13 +66,6 @@ const root_sel_chromed = root_sel ++ "." ++ class_names.has_chrome;
 // they are a rule that silently matches nothing.
 const document_sel = class_names.document_attr ++ "=\"" ++ class_names.document_value ++ "\"";
 
-// The bar the band is for: every roster except the one on a page that
-// will never boot, which keeps the header at every width
-// (`class_names.no_boot`). Spliced once because the band's block names
-// it on every rule it has, and six typed copies of a class name is the
-// drift this file exists to rule out.
-const band_sel = ".nav:not(." ++ class_names.no_boot ++ ")";
-
 pub const Options = struct {
     /// Where the bundled faces are served from. The edition ships no
     /// font stack and no fallback list: nokre renders in these and
@@ -312,11 +305,15 @@ fn writeDerived(gpa: std.mem.Allocator, out: *std.ArrayList(u8)) !void {
     // and every declaration here is one the header's own rule left it to
     // state.
     //
-    // A page with no boot script is not in it (`class_names.no_boot`).
-    // Which shape fits is a question a driver re-asks every time the
-    // window moves, and the answer it falls back to when a row will not
-    // fit is a chip that opens a list; a file nobody is going to boot
-    // has neither, so it keeps the one shape that answers every width.
+    // **Every roster is in it.** For one release a page with no boot
+    // script was held out, on the ground that a band needs a driver to
+    // answer a row that will not fit — and what that produced was a
+    // reader narrowing their window on a published page and getting no
+    // bottom bar, because a fact about the file had been made a term in
+    // a question that is the reader's window's alone. The row's answer
+    // when it will not fit is below, it needs nobody running, and the
+    // chip is what a driver *upgrades* it to rather than what the shape
+    // depends on.
     try out.print(gpa, "\n@media (max-width: {d}px) {{\n", .{metrics.sheet_max_w});
     try out.appendSlice(gpa,
         \\  /* No side border left to be part of the inset, so the words
@@ -327,8 +324,7 @@ fn writeDerived(gpa: std.mem.Allocator, out: *std.ArrayList(u8)) !void {
         \\  /* The bar has no ground: no track, no fill, no hairline. The
         \\     nav is its items and nothing else, each on a plate of its
         \\     own, with 8px of page showing between them. */
-        \\
-    ++ "  " ++ band_sel ++ " {\n" ++
+        \\  .nav {
         \\    position: fixed;
         \\    inset-inline: 0;
         \\    bottom: 0;
@@ -342,18 +338,57 @@ fn writeDerived(gpa: std.mem.Allocator, out: *std.ArrayList(u8)) !void {
         \\    pointer-events: none;
         \\  }
         \\  /* A *row* of destinations is measured and centred on the
-        \\     viewport as one group, and here it does not wrap:
-        \\     `navCollapses` asks whether the roster fits on one line and
-        \\     gives the nav its collapsed shape when it does not, so a
-        \\     second line is a state the library has already ruled out —
-        \\     for a screen whose window it measured. */
+        \\     viewport as one group, and here it does not wrap. The band
+        \\     is a fixed one-line strip over the page and the reserve
+        \\     below repeats its height to the pixel, so a second line is
+        \\     the page's last line standing behind the destinations.
         \\
-    ++ "  " ++ band_sel ++ " .nav-row {\n" ++
+        \\     Which leaves the row that will not make a line, and the
+        \\     answer is that it scrolls. Not clipping, which is what a
+        \\     nowrap row in a fixed layer does left alone — the ends hang
+        \\     past both screen edges and no gesture reaches them, and
+        \\     that is what a phone got on any page whose roster was
+        \\     measured against a wider window than the reader's. Not
+        \\     wrapping, for the reserve. A driver still has the better
+        \\     answer at this width and takes it — `navCollapses` gives
+        \\     the nav its chip, and a chip always fits — but that is an
+        \\     upgrade over a shape that already works, not the thing the
+        \\     shape depends on. Nothing in this block asks whether
+        \\     anything is running.
+        \\
+        \\     `justify-content` comes off the row for it. A centred
+        \\     scroll container overflows *both* ends and the leading one
+        \\     is unreachable: the classic way a scrolling row loses its
+        \\     first item. The layer above centres the row as a whole
+        \\     instead, which is the same picture while it fits — a flex
+        \\     item is its content's width — and packs to the start the
+        \\     moment it does not. */
+        \\  .nav-row {
         \\    flex-wrap: nowrap;
-        \\    justify-content: center;
         \\    gap: var(--nav-item-gap);
         \\    pointer-events: auto;
+        \\    overflow-x: auto;
+        \\    /* One axis non-visible makes the other `auto`. The row is
+        \\       exactly its pills' height and the focus ring is drawn
+        \\       *inside* the plate (below), so there is nothing here to
+        \\       scroll or to clip on that axis. */
+        \\    overflow-y: hidden;
+        \\    /* A swipe that runs out of strip is not a swipe back
+        \\       through the browser's history. */
+        \\    overscroll-behavior-inline: contain;
+        \\    /* The one thing this answer gives up. A scrollbar in here is
+        \\       height, and height in a fixed band is content resting
+        \\       behind the bar: the reserve is arithmetic and cannot see
+        \\       it, where `.seg-track`'s own gutter is in the page and is
+        \\       simply taller. What is left carries it — a pill cut off
+        \\       at the screen edge, which is the affordance
+        \\       `.seg-track.bled` argues for at its own edge — and a
+        \\       browser scrolls a focused destination into view, so the
+        \\       keyboard reaches every one of them whatever a pointer
+        \\       finds. */
+        \\    scrollbar-width: none;
         \\  }
+        \\  .nav-row::-webkit-scrollbar { display: none; }
         \\  /* Pills: the corner is half the slot's height, derived rather
         \\     than fixed, so the shape follows the slot instead of
         \\     drifting back to a rounded rectangle the next time the row
@@ -366,8 +401,7 @@ fn writeDerived(gpa: std.mem.Allocator, out: *std.ArrayList(u8)) !void {
         \\     .g10, under the 1.4.11 floor. The plate is the mark here,
         \\     so the regular face carries the words: bold *and* a fill
         \\     would be two marks for one state. */
-        \\
-    ++ "  " ++ band_sel ++ " .chip {\n" ++
+        \\  .chip {
         \\    height: var(--nav-slot);
         \\    padding-inline: calc(var(--nav-item-pad-h) - var(--border));
         \\    border: var(--border) solid transparent;
@@ -375,13 +409,13 @@ fn writeDerived(gpa: std.mem.Allocator, out: *std.ArrayList(u8)) !void {
         \\    background: var(--g11);
         \\    font-weight: 400;
         \\  }
-        \\
-    ++ "  " ++ band_sel ++ " .chip.current { background: var(--g10); border-color: var(--mid); }\n" ++
+        \\  .chip.current { background: var(--g10); border-color: var(--mid); }
         \\  /* A plate has an edge of its own, so focus takes it over
         \\     rather than drawing a second line beside it — the rule the
-        \\     header leaves to the band (`sheet`, the focus block). */
-        \\
-    ++ "  " ++ band_sel ++ " .chip:focus-visible {\n" ++
+        \\     header leaves to the band (`sheet`, the focus block). It is
+        \\     drawn *inside* that edge, which is also what lets the row
+        \\     above be a scroll container without clipping a ring. */
+        \\  .chip:focus-visible {
         \\    outline: var(--focus) solid var(--ink);
         \\    outline-offset: calc(-1 * var(--focus));
         \\    border-color: transparent;
@@ -392,7 +426,7 @@ fn writeDerived(gpa: std.mem.Allocator, out: *std.ArrayList(u8)) !void {
         \\     inside `--bar-bottom`, exactly as `navBarBottomPad` puts it
         \\     there. */
         \\
-    ++ "  :root:has(" ++ band_sel ++ ") " ++ root_sel_chromed ++ " {\n" ++
+    ++ "  :root:has(.nav) " ++ root_sel_chromed ++ " {\n" ++
         \\    padding-bottom: calc(
         \\      var(--nav-content-gap) + var(--nav-bar-pad) + var(--nav-slot) + var(--bar-bottom) + var(--safe-b)
         \\    );

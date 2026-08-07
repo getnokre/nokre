@@ -1481,12 +1481,24 @@ edition draws the band at every width — a native window is not a medium
 that reflows under a reader, and what it draws is what its own layout
 placed.
 
+**The collapsed chip is an upgrade, not a floor.** Whether the roster
+fits is only a question where a row *can* fail, and the header wraps —
+so no window above that width collapses anything, on any medium that
+reflows. In the band, which is one line by construction, a row that will
+not fit scrolls instead: every destination is a link with an address of
+its own, and a browser scrolls a focused one into view. A live driver
+replaces that with the chip, which always fits. So a page nothing will
+ever mount over gets the same band, the same markup and a reachable set
+of destinations at every width, and nothing about who published a file
+reaches the decision.
+
 A generated page states its header through this same call
 ([static-sites.md](static-sites.md)) — the roster leads the page's own
-title in document order — with one difference the library reads off the
-page rather than off a flag: a document with no boot script has no
-driver to re-ask which shape fits, and nothing on it to work the chip a
-narrow answer would collapse to, so it keeps the header at every width.
+title in document order — and it is where the library's one derived fact
+about a page shows up: whether anything on it needs a runtime is read
+off the tree rather than declared, so a document whose roster came out
+collapsed is refused rather than published with a control nothing can
+open.
 
 **`clearNav` is the counterpart**, and an app needs one whenever its bar
 belongs to a *session* rather than to the app: a rebuild preserves the
