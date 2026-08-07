@@ -244,8 +244,9 @@ pub fn modalOpen(tree: *const Tree) bool {
     return topModalLayer(tree) != null;
 }
 
-/// The bottom pane's width: full viewport up to the sheet cap. For the
-/// prose surfaces only — the bar measures itself with `navGroupX`.
+/// The width of a surface that holds prose: full viewport up to the
+/// cap. The page is one of them (`contentArea`) — the bar is not, and
+/// measures itself with `navGroupX`.
 pub fn paneWidth(viewport: Size) i32 {
     return @min(viewport.w, metrics.sheet_max_w);
 }
@@ -609,14 +610,41 @@ pub fn navBarHeight(safe_bottom: i32) i32 {
 /// half-covered line is the only thing telling a reader there is more
 /// below. What the reservation guarantees is the resting state: at
 /// either end of the scroll, nothing sits behind the chrome.
-pub fn contentArea(tree: *const Tree, viewport: Size, safe_bottom: i32) Rect {
+///
+/// Sideways it is `paneWidth`, centered — the same cap the sheet, the
+/// notices pane and a picker already spend, because it is a rule about
+/// line length and the page is the surface with the most prose on it.
+/// Without it a page had no maximum at all: every screen grew to
+/// whatever window it was opened in, so a desktop got a measure no one
+/// can read and a screen of short blocks got a huddle in one corner of
+/// an empty frame. A cap is not a knob — no element carries it and no
+/// consumer sets it — and below the cap it changes nothing, which is
+/// why every baseline narrower than `sheet_max_w` is untouched.
+///
+/// The whole rect, not just the flow: the hit test clips to it
+/// (`input.hitRect`) and the window's scroll indicator rides its
+/// trailing edge, so the page is one surface to a tap, to a reader and
+/// to the renderer rather than a column drawn inside a wider claim.
+///
+/// **Only where the viewport is the window.** A reflowing medium is
+/// mounted in a container somebody else sized, and that container is
+/// what the driver reports here as the viewport — a host page that
+/// holds the screen to a column has already answered this, with its own
+/// number (`packaging.web_page_css` ships one: 560 stepping to 760).
+/// Capping again would be core overruling it, and worse, core would
+/// then measure wrapping, folding and bleed against a width the browser
+/// is not laying out — the one desync that file's cap exists to
+/// prevent. So the page column is the clipping medium's, where no such
+/// container exists and the window is all there is.
+pub fn contentArea(tree: *const Tree, viewport: Size, safe_bottom: i32, medium: Medium) Rect {
     var h = viewport.h - safe_bottom;
     if (findNotice(tree)) |n| {
         h -= tree.getConst(n).?.notice.height;
     } else if (findNav(tree) != null or findIndicator(tree) != null) {
         h -= navBarHeight(safe_bottom);
     }
-    return .{ .x = 0, .y = 0, .w = viewport.w, .h = h };
+    if (medium == .reflows) return .{ .x = 0, .y = 0, .w = viewport.w, .h = h };
+    return .{ .x = paneX(viewport), .y = 0, .w = paneWidth(viewport), .h = h };
 }
 
 /// Space the root's flow keeps below its last element — the empty band
@@ -648,7 +676,7 @@ pub fn hasBottomChrome(tree: *const Tree) bool {
 /// with the framework's own English on the one control that is measured
 /// before it exists (`more_label`, below).
 pub fn compute(tree: *Tree, measurer: text.Measurer, viewport: Size) void {
-    _ = computeScrolled(tree, measurer, viewport, 0, 0, .ltr, element_mod.default_chrome.more);
+    _ = computeScrolled(tree, measurer, viewport, 0, 0, .ltr, element_mod.default_chrome.more, .clips);
 }
 
 /// Same, with the window content shifted up by `scroll` px. Returns the
@@ -667,8 +695,10 @@ pub fn compute(tree: *Tree, measurer: text.Measurer, viewport: Size) void {
 /// app state layout must know and cannot read off the tree. Every other
 /// framework string rides on the node it names, but the fold claims that
 /// control's width before the control is built, so this one arrives on
-/// its own.
-pub fn computeScrolled(tree: *Tree, measurer: text.Measurer, viewport: Size, scroll: i32, safe_bottom: i32, dir: bidi.Direction, more_label: []const u8) i32 {
+/// its own. `medium` arrives for the third time on that same argument
+/// and decides one thing here: whether the page column is core's to cap
+/// (`contentArea`).
+pub fn computeScrolled(tree: *Tree, measurer: text.Measurer, viewport: Size, scroll: i32, safe_bottom: i32, dir: bidi.Direction, more_label: []const u8, medium: Medium) i32 {
     const root = tree.rootId();
     const rtl = dir == .rtl;
     const nav = findNav(tree);
@@ -679,8 +709,9 @@ pub fn computeScrolled(tree: *Tree, measurer: text.Measurer, viewport: Size, scr
     const picker = findPicker(tree);
     const anchored: Size = .{ .w = viewport.w, .h = viewport.h - safe_bottom };
     if (nav == null and notice == null and pane == null and indicator == null and sheet == null and picker == null) {
+        const bare = contentArea(tree, viewport, safe_bottom, medium);
         var ctx: Ctx = .{ .tree = tree, .measurer = measurer, .bottom = anchored.h, .scroll = scroll, .rtl = rtl, .more_label = more_label };
-        const content_h = ctx.layoutBlock(root, 0, -scroll, viewport.w);
+        const content_h = ctx.layoutBlock(root, bare.x, -scroll, bare.w);
         tree.setRect(root, .{ .x = 0, .y = 0, .w = viewport.w, .h = viewport.h });
         return content_h;
     }
@@ -688,7 +719,7 @@ pub fn computeScrolled(tree: *Tree, measurer: text.Measurer, viewport: Size, scr
     if (nav) |n| layoutNavChrome(tree, measurer, n, anchored, safe_bottom, rtl);
     if (indicator) |n| layoutIndicator(tree, n, anchored, safe_bottom, rtl);
     if (notice) |n| layoutNoticeChrome(tree, measurer, n, anchored, rtl);
-    const area = contentArea(tree, viewport, safe_bottom);
+    const area = contentArea(tree, viewport, safe_bottom, medium);
     const s = tree.getConst(root).?.stack;
     const trailing = trailingSpace(tree, s.padding);
     var ctx: Ctx = .{ .tree = tree, .measurer = measurer, .bottom = area.bottom() - trailing, .scroll = scroll, .rtl = rtl, .more_label = more_label };

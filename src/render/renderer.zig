@@ -186,7 +186,7 @@ pub fn render(app: *App, target: Canvas) void {
             else => unreachable,
         }
     }
-    const area = layout.contentArea(&app.tree, app.viewport, app.safe_bottom);
+    const area = layout.contentArea(&app.tree, app.viewport, app.safe_bottom, app.medium);
     drawScrollIndicator(canvas, area, app.root_scroll, app.root_content_height, scrollEngaged(app, null), mirrored(app));
     // Chrome paints last: content scrolled past the area edge must sit
     // under the bottom pane, never over it. The nav has no pane to sit

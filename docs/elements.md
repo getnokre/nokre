@@ -566,6 +566,25 @@ named by the label, carrying the value.
 Vertical (default) or horizontal flow. `gap` (default 8), `padding`
 (default 0). The tree root is a vertical stack with padding 16.
 
+**The page has a maximum, and it is not yours to set.** Content flows in
+a column capped at `metrics.sheet_max_w` (560) and centered in whatever
+is left — the same cap the sheet, the notices pane and a picker spend,
+because it is a rule about line length and the page is the surface with
+the most prose on it. Below the cap it changes nothing, so a phone's
+page is what it always was; past it a window twice as wide reads the
+same as one at the cap instead of growing a measure nobody can follow.
+There is no element field, no `App` call and no opt-out, for the reason
+nothing else here has one: a knob would let two screens in one app
+disagree about how wide reading is.
+
+It applies where the viewport *is* the window — every rastering shell.
+A reflowing medium is mounted in a container somebody else sized, that
+container is the width the driver reports, and a host page that wants a
+column makes its own (the one this library ships steps 560 → 760 past a
+900px window, `packaging.web_page_css`). Capping a second time would
+overrule that and leave core measuring against a width the browser is
+not laying out.
+
 A borderless stack's padding is an advised margin, not a wall: children
 are inset by it as usual, but an element that must reach an edge to
 work — today only an overflowing `segmented` track — may decline the

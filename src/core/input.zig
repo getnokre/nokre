@@ -340,7 +340,7 @@ pub fn visibleRect(app: *App, id: NodeId) geometry.Rect {
         }
     }
     // Content scrolled under chrome must not steal its taps.
-    if (!inChrome(app, id)) r = r.intersect(layout.contentArea(&app.tree, app.viewport, app.safe_bottom));
+    if (!inChrome(app, id)) r = r.intersect(layout.contentArea(&app.tree, app.viewport, app.safe_bottom, app.medium));
     return r;
 }
 
@@ -808,7 +808,7 @@ pub fn revealFocused(app: *App) void {
     // Chrome sits at fixed positions, always visible; only content
     // participates in window scroll.
     if (inChrome(app, id)) return;
-    const window = layout.contentArea(&app.tree, app.viewport, app.safe_bottom);
+    const window = layout.contentArea(&app.tree, app.viewport, app.safe_bottom, app.medium);
     const delta = revealDelta(focusRect(app, stop).inset(-margin), window);
     if (delta != 0) scrolling.scrollRootBy(app, delta);
 }

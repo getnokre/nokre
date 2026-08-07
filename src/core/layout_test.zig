@@ -16,10 +16,59 @@ const NodeId = tree_mod.NodeId;
 const compute = layout.compute;
 const metrics = layout.metrics;
 const navBarHeight = layout.navBarHeight;
+const paneX = layout.paneX;
 const qrSide = layout.qrSide;
 const radioRowY = layout.radioRowY;
 
 fn noopPress(_: ?*anyopaque) void {}
+
+test "layout: the page stops at the pane cap and centers past it" {
+    var tree = try Tree.init(testing.allocator);
+    defer tree.deinit();
+    const body = try tree.appendId(tree.rootId(), .{ .text = .{ .content = "x" } });
+
+    // Below the cap nothing changed: the page is the viewport less its
+    // own two margins, which is every phone-sized baseline there is.
+    compute(&tree, text.Measurer.fixed, .{ .w = 480, .h = 640 });
+    try testing.expectEqual(@as(i32, 16), tree.rectOf(body).x);
+    try testing.expectEqual(@as(i32, 480 - 32), tree.rectOf(body).w);
+
+    // Exactly at it, still nothing: the cap is a maximum, not a width.
+    compute(&tree, text.Measurer.fixed, .{ .w = metrics.sheet_max_w, .h = 640 });
+    try testing.expectEqual(@as(i32, 16), tree.rectOf(body).x);
+    try testing.expectEqual(@as(i32, metrics.sheet_max_w - 32), tree.rectOf(body).w);
+
+    // Past it the column holds its measure and takes the middle, so a
+    // window twice the cap reads the same as one at it.
+    for ([_]i32{ 1024, 1180, 2400 }) |w| {
+        compute(&tree, text.Measurer.fixed, .{ .w = w, .h = 640 });
+        const r = tree.rectOf(body);
+        try testing.expectEqual(@as(i32, metrics.sheet_max_w - 32), r.w);
+        try testing.expectEqual(@divTrunc(w - metrics.sheet_max_w, 2) + 16, r.x);
+        try testing.expectEqual(w - r.right(), r.x);
+    }
+}
+
+test "layout: a reflowing medium keeps the whole width it was handed" {
+    var tree = try Tree.init(testing.allocator);
+    defer tree.deinit();
+    const body = try tree.appendId(tree.rootId(), .{ .text = .{ .content = "x" } });
+
+    // The viewport a reflowing driver reports is the container it was
+    // mounted in rather than the window, and a host that wanted a column
+    // has already made one (`packaging.web_page_css`). Capping here
+    // would overrule that number *and* leave core measuring wrap, fold
+    // and bleed against a width the browser is not laying out.
+    const wide: geometry.Size = .{ .w = 1180, .h = 640 };
+    _ = layout.computeScrolled(&tree, text.Measurer.fixed, wide, 0, 0, .ltr, element.default_chrome.more, .reflows);
+    try testing.expectEqual(@as(i32, 16), tree.rectOf(body).x);
+    try testing.expectEqual(@as(i32, 1180 - 32), tree.rectOf(body).w);
+
+    // The same tree at the same width on the other medium: the medium is
+    // the whole of the difference.
+    _ = layout.computeScrolled(&tree, text.Measurer.fixed, wide, 0, 0, .ltr, element.default_chrome.more, .clips);
+    try testing.expectEqual(@as(i32, metrics.sheet_max_w - 32), tree.rectOf(body).w);
+}
 
 test "layout: spanned text takes full width at the wrapped height" {
     var tree = try Tree.init(testing.allocator);
@@ -238,7 +287,7 @@ test "layout: segmented takes intrinsic width" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
     const seg = try tree.appendId(tree.rootId(), .{ .segmented = .{ .label = "View", .options = &.{ "List", "Grid" } } });
-    compute(&tree, text.Measurer.fixed, .{ .w = 640, .h = 480 });
+    compute(&tree, text.Measurer.fixed, .{ .w = 480, .h = 480 });
     const r = tree.rectOf(seg);
     // 2*2 track pad + 2 options * (4 chars * 9px + 2*12 pad) = 4 + 2*60
     try testing.expectEqual(@as(i32, 124), r.w);
@@ -377,7 +426,7 @@ test "layout rtl: the folded tail keeps the row's leading three and its trailing
     defer tree.deinit();
     const row = try buildButtonRow(&tree, 8);
     const more = try tree.appendId(row, .{ .more = .{} });
-    _ = layout.computeScrolled(&tree, text.Measurer.fixed, .{ .w = 400, .h = 480 }, 0, 0, .rtl, element.default_chrome.more);
+    _ = layout.computeScrolled(&tree, text.Measurer.fixed, .{ .w = 400, .h = 480 }, 0, 0, .rtl, element.default_chrome.more, .clips);
 
     // Mirrored, document order runs right-to-left: "One" holds the
     // right end and the row grows leftward, so the control ends up at
@@ -475,7 +524,7 @@ test "layout: a wrapped row mirrors, and breaks in the same places" {
     var rtl = try Tree.init(testing.allocator);
     defer rtl.deinit();
     const rtl_row = try buildChipRow(&rtl, 5);
-    _ = layout.computeScrolled(&rtl, text.Measurer.fixed, .{ .w = 200, .h = 480 }, 0, 0, .rtl, "More");
+    _ = layout.computeScrolled(&rtl, text.Measurer.fixed, .{ .w = 200, .h = 480 }, 0, 0, .rtl, "More", .clips);
 
     const w = badgeWidth(4);
     for (0..5) |i| {
@@ -641,9 +690,9 @@ test "layout: meter is a full-width block of label plus bar" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
     const meter = try tree.appendId(tree.rootId(), .{ .meter = .{ .label = "12 of 30 days", .value = 12, .max = 30 } });
-    compute(&tree, text.Measurer.fixed, .{ .w = 640, .h = 480 });
+    compute(&tree, text.Measurer.fixed, .{ .w = 480, .h = 480 });
     const r = tree.rectOf(meter);
-    try testing.expectEqual(@as(i32, 640 - 32), r.w);
+    try testing.expectEqual(@as(i32, 480 - 32), r.w);
     try testing.expectEqual(@as(i32, text.Scale.small.lineHeight() + metrics.input_label_gap + metrics.meter_h), r.h);
 }
 
@@ -651,10 +700,10 @@ test "layout: qr is a full-width block of label plus whole-module square" {
     var tree = try Tree.init(testing.allocator);
     defer tree.deinit();
     const qr = try tree.appendId(tree.rootId(), .{ .qr = .{ .label = "Invite link", .value = "https://example.com" } });
-    compute(&tree, text.Measurer.fixed, .{ .w = 640, .h = 800 });
+    compute(&tree, text.Measurer.fixed, .{ .w = 480, .h = 800 });
     const q = tree.getConst(qr).?.qr;
     const r = tree.rectOf(qr);
-    try testing.expectEqual(@as(i32, 640 - 32), r.w);
+    try testing.expectEqual(@as(i32, 480 - 32), r.w);
     const side = qrSide(q.size, r.w);
     try testing.expectEqual(text.Scale.small.lineHeight() + metrics.input_label_gap + side, r.h);
     // The square is a whole number of pixels per module, capped.
@@ -671,8 +720,8 @@ test "layout: tile group is hairline-gapped rows inside a 1px border" {
     const group = try tree.appendId(tree.rootId(), .{ .tile_group = .{} });
     const plain = try tree.appendId(group, .{ .tile = .{ .label = "Members", .on_press = .{ .call = noopPress } } });
     const detailed = try tree.appendId(group, .{ .tile = .{ .label = "Billing", .detail = "Visa 4242", .on_press = .{ .call = noopPress } } });
-    compute(&tree, text.Measurer.fixed, .{ .w = 640, .h = 480 });
-    try testing.expectEqual(@as(i32, 640 - 32), tree.rectOf(group).w);
+    compute(&tree, text.Measurer.fixed, .{ .w = 480, .h = 480 });
+    try testing.expectEqual(@as(i32, 480 - 32), tree.rectOf(group).w);
     try testing.expectEqual(@as(i32, 44), tree.rectOf(plain).h);
     // A detail line adds the small line height.
     try testing.expectEqual(@as(i32, 44 + 16), tree.rectOf(detailed).h);
@@ -700,9 +749,9 @@ test "layout: radio group is a full-width tile group under its label" {
         .label = "Delivery",
         .options = &.{ "Email", "SMS" },
     } });
-    compute(&tree, text.Measurer.fixed, .{ .w = 640, .h = 480 });
+    compute(&tree, text.Measurer.fixed, .{ .w = 480, .h = 480 });
     const r = tree.rectOf(rg);
-    try testing.expectEqual(@as(i32, 640 - 32), r.w);
+    try testing.expectEqual(@as(i32, 480 - 32), r.w);
     // small label (16) + 6 gap + 2 rows * 44 + 3 borders (top, hairline, bottom)
     try testing.expectEqual(@as(i32, 16 + 6 + 2 * 44 + 3), r.h);
     try testing.expectEqual(r.h, radioRowY(2));
@@ -739,9 +788,13 @@ test "layout: the row is its own width, centered, whatever the viewport" {
     try testing.expect(first.w != second.w);
     try testing.expectEqual(first.right(), second.x);
 
-    // Content ignores the row entirely.
-    try testing.expectEqual(@as(i32, 16), tree.rectOf(body).x);
-    try testing.expectEqual(@as(i32, 800 - 32), tree.rectOf(body).w);
+    // Content ignores the row entirely — and the two are centered on
+    // different widths, which is the whole of `sheet_max_w`'s refusal to
+    // cap the bar: the page stops at the cap, the row at its own words.
+    const page = paneX(.{ .w = 800, .h = 600 });
+    try testing.expectEqual(page + 16, tree.rectOf(body).x);
+    try testing.expectEqual(@as(i32, metrics.sheet_max_w - 32), tree.rectOf(body).w);
+    try testing.expect(tree.rectOf(nav).x != page);
 }
 
 test "layout: a narrow viewport centers the same row, not a stretched one" {
@@ -944,7 +997,7 @@ test "layout: safe_bottom anchors chrome above the band and shrinks content" {
     const nav = try appendNav(&tree);
     const body = try tree.appendId(tree.rootId(), .{ .text = .{ .content = "content" } });
     const inset = 34;
-    _ = layout.computeScrolled(&tree, text.Measurer.fixed, .{ .w = 400, .h = 600 }, 0, inset, .ltr, element.default_chrome.more);
+    _ = layout.computeScrolled(&tree, text.Measurer.fixed, .{ .w = 400, .h = 600 }, 0, inset, .ltr, element.default_chrome.more, .clips);
 
     // The bar sits above the band; no rect enters it. With a home
     // indicator below, the band *is* the bar's clear space, so the
@@ -960,7 +1013,7 @@ test "layout: safe_bottom anchors chrome above the band and shrinks content" {
         try testing.expectEqual(600 - inset - metrics.nav_bar_pad, tree.rectOf(item).bottom());
     }
 
-    const area = layout.contentArea(&tree, .{ .w = 400, .h = 600 }, inset);
+    const area = layout.contentArea(&tree, .{ .w = 400, .h = 600 }, inset, .clips);
     try testing.expectEqual(600 - inset - bar_h, area.h);
     try testing.expect(tree.rectOf(body).bottom() <= area.h);
 }
@@ -1077,7 +1130,7 @@ test "layout: a page with bottom chrome ends a clear band above it" {
     _ = try appendNav(&tree);
     const body = try tree.appendId(tree.rootId(), .{ .text = .{ .content = "line" } });
     const viewport: geometry.Size = .{ .w = 400, .h = 600 };
-    const content_h = layout.computeScrolled(&tree, text.Measurer.fixed, viewport, 0, 34, .ltr, element.default_chrome.more);
+    const content_h = layout.computeScrolled(&tree, text.Measurer.fixed, viewport, 0, 34, .ltr, element.default_chrome.more, .clips);
 
     // Nothing hides what passes behind the items, so the page reserves
     // the band itself: its own top margin, its words, then 24px of air
@@ -1090,9 +1143,9 @@ test "layout: a page with bottom chrome ends a clear band above it" {
     // of the page behind them.
     var i: usize = 0;
     while (i < 40) : (i += 1) try tree.append(tree.rootId(), .{ .text = .{ .content = "line" } });
-    const long_h = layout.computeScrolled(&tree, text.Measurer.fixed, viewport, 0, 34, .ltr, element.default_chrome.more);
-    const area = layout.contentArea(&tree, viewport, 34);
-    _ = layout.computeScrolled(&tree, text.Measurer.fixed, viewport, long_h - area.h, 34, .ltr, element.default_chrome.more);
+    const long_h = layout.computeScrolled(&tree, text.Measurer.fixed, viewport, 0, 34, .ltr, element.default_chrome.more, .clips);
+    const area = layout.contentArea(&tree, viewport, 34, .clips);
+    _ = layout.computeScrolled(&tree, text.Measurer.fixed, viewport, long_h - area.h, 34, .ltr, element.default_chrome.more, .clips);
 
     var last: NodeId = body;
     var it = tree.children(tree.rootId());
@@ -1324,7 +1377,7 @@ test "a blockquote indents past its rule and consumes the advised margin" {
 // ---- RTL chrome mirroring (App.setDirection(.rtl)) -------------------------
 
 fn computeRtl(tree: *Tree, viewport: geometry.Size) void {
-    _ = layout.computeScrolled(tree, text.Measurer.fixed, viewport, 0, 0, .rtl, element.default_chrome.more);
+    _ = layout.computeScrolled(tree, text.Measurer.fixed, viewport, 0, 0, .rtl, element.default_chrome.more, .clips);
 }
 
 test "layout rtl: an intrinsic block snaps to the right edge" {
